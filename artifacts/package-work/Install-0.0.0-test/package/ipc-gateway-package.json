@@ -1,0 +1,11 @@
+﻿{
+    "packageId":  "ipc-gateway-Install-0.0.0-test",
+    "product":  "IPC.Gateway",
+    "packageType":  "Install",
+    "version":  "0.0.0-test",
+    "minVersion":  "",
+    "createdTime":  "2026-06-22T14:56:15.1912544Z",
+    "entryDirectory":  "payload",
+    "requiresRestart":  true,
+    "description":  "Install package for IPC Gateway 0.0.0-test"
+}

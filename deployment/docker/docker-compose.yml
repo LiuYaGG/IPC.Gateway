@@ -1,0 +1,48 @@
+services:
+  ipc-gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: ipc-gateway:latest
+    container_name: ipc-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5184:5184"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://0.0.0.0:5184
+      Gateway__Database__Provider: PostgreSQL
+      Gateway__Database__Host: postgres
+      Gateway__Database__Port: "5432"
+      Gateway__Database__Database: ipc_gateway
+      Gateway__Database__Username: ipc_gateway
+      Gateway__Database__Password: ipc_gateway_password
+      Gateway__Auth__Secret: change-this-secret-before-production
+      Gateway__Auth__BootstrapAdminPassword: ChangeThisAdminPassword1!
+      Gateway__Watchdog__RequestHostStopOnUnrecoverable: "true"
+    volumes:
+      - ipc_gateway_data:/app/Data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ipc-gateway-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ipc_gateway
+      POSTGRES_USER: ipc_gateway
+      POSTGRES_PASSWORD: ipc_gateway_password
+    volumes:
+      - ipc_gateway_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ipc_gateway -d ipc_gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ipc_gateway_data:
+  ipc_gateway_postgres:

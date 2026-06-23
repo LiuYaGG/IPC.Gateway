@@ -1,0 +1,14 @@
+.git
+.vs
+.agents
+artifacts
+**/bin
+**/obj
+**/Data
+**/logs
+**/node_modules
+IPC.Gateway.Web/dist
+IPC.Gateway.Web/vite-browser-qa*.log
+postgres-start.log
+*.user
+*.suo

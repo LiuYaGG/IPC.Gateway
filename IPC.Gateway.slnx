@@ -1,0 +1,14 @@
+<Solution>
+  <Project Path="IPC.Gateway.Core/IPC.Gateway.Core.csproj" />
+  <Project Path="IPC.Gateway.DataProcessing/IPC.Gateway.DataProcessing.csproj" />
+  <Project Path="IPC.Gateway.FlowRules/IPC.Gateway.FlowRules.csproj" />
+  <Project Path="IPC.Gateway.Inference/IPC.Gateway.Inference.csproj" />
+  <Project Path="IPC.Gateway.Mqtt/IPC.Gateway.Mqtt.csproj" />
+  <Project Path="IPC.Gateway.Maintenance/IPC.Gateway.Maintenance.csproj" />
+  <Project Path="IPC.Gateway.Watchdog/IPC.Gateway.Watchdog.csproj" />
+  <Project Path="IPC.Gateway.Tests/IPC.Gateway.Tests.csproj" />
+  <Project Path="IPC.Gateway.LegacyProtocolPlugins/IPC.Gateway.LegacyProtocolPlugins.csproj" />
+  <Project Path="IPC.Gateway.LoadTests/IPC.Gateway.LoadTests.csproj" />
+  <Project Path="IPC.Gateway.TestProtocolPlugin/IPC.Gateway.TestProtocolPlugin.csproj" />
+  <Project Path="IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj" />
+</Solution>

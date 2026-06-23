@@ -1,0 +1,11 @@
+F:\IPC.Gateway\IPC.Gateway.Web\dist\assets\elementPlus-D9eUhtay.js
+F:\IPC.Gateway\IPC.Gateway.Web\dist\assets\index-hLuMSL8O.js
+F:\IPC.Gateway\IPC.Gateway.Web\dist\assets\vue-DxMauga7.js
+F:\IPC.Gateway\IPC.Gateway.Web\dist\assets\index--SAfaHCu.css
+F:\IPC.Gateway\IPC.Gateway.Web\dist\index.html
+wwwroot\.gitkeep
+..\IPC.Gateway.Web\dist\assets\elementPlus-D9eUhtay.js
+..\IPC.Gateway.Web\dist\assets\index--SAfaHCu.css
+..\IPC.Gateway.Web\dist\assets\index-hLuMSL8O.js
+..\IPC.Gateway.Web\dist\assets\vue-DxMauga7.js
+..\IPC.Gateway.Web\dist\index.html

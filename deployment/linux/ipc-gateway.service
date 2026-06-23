@@ -1,0 +1,29 @@
+[Unit]
+Description=IPC Gateway Edge Service
+Documentation=https://localhost/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ipc-gateway/app
+ExecStart=/usr/bin/dotnet /opt/ipc-gateway/app/IPC.Gateway.WebHost.dll
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+KillSignal=SIGINT
+TimeoutStopSec=30
+User=ipc-gateway
+Group=ipc-gateway
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5184
+Environment=Gateway__Watchdog__RequestHostStopOnUnrecoverable=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/ipc-gateway/app /opt/ipc-gateway/app/Data /opt/ipc-gateway/app/logs
+
+[Install]
+WantedBy=multi-user.target

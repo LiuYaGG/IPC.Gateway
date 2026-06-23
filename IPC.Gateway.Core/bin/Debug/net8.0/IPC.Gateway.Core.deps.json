@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "IPC.Gateway.Core/1.0.0": {
+        "runtime": {
+          "IPC.Gateway.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "IPC.Gateway.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

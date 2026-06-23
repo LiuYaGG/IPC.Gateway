@@ -1,0 +1,1723 @@
+[
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_0",
+    "RelativePath": "api/auth/login",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayLoginRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_1",
+    "RelativePath": "api/auth/logout",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_2",
+    "RelativePath": "api/auth/me",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_3",
+    "RelativePath": "api/auth/password",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayPasswordChangeRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_9",
+    "RelativePath": "api/auth/permissions",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_10",
+    "RelativePath": "api/auth/roles",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_11",
+    "RelativePath": "api/auth/roles",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayRoleSaveRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_12",
+    "RelativePath": "api/auth/roles/{roleName}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "roleName",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayRoleSaveRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_14",
+    "RelativePath": "api/auth/roles/{roleName}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "roleName",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_13",
+    "RelativePath": "api/auth/roles/{roleName}/permissions",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "roleName",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayRolePermissionSaveRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_4",
+    "RelativePath": "api/auth/users",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_5",
+    "RelativePath": "api/auth/users",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayUserSaveRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_6",
+    "RelativePath": "api/auth/users/{username}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "username",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayUserSaveRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_8",
+    "RelativePath": "api/auth/users/{username}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "username",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayAuthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayAuthEndpoints\u003Eb__1_7",
+    "RelativePath": "api/auth/users/{username}/password",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "username",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayUserPasswordResetRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_12",
+    "RelativePath": "api/config/apply",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_9",
+    "RelativePath": "api/config/audit",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "limit",
+        "Type": "System.Nullable\u00601[[System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      },
+      {
+        "Name": "offset",
+        "Type": "System.Nullable\u00601[[System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      },
+      {
+        "Name": "target",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "outcome",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "username",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "from",
+        "Type": "System.Nullable\u00601[[System.DateTime, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      },
+      {
+        "Name": "to",
+        "Type": "System.Nullable\u00601[[System.DateTime, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_10",
+    "RelativePath": "api/config/audit/export",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "limit",
+        "Type": "System.Nullable\u00601[[System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      },
+      {
+        "Name": "target",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "outcome",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "username",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "from",
+        "Type": "System.Nullable\u00601[[System.DateTime, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      },
+      {
+        "Name": "to",
+        "Type": "System.Nullable\u00601[[System.DateTime, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_16",
+    "RelativePath": "api/config/devices",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_17",
+    "RelativePath": "api/config/devices",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveDeviceConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_18",
+    "RelativePath": "api/config/devices/{deviceId}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveDeviceConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_19",
+    "RelativePath": "api/config/devices/{deviceId}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_20",
+    "RelativePath": "api/config/devices/{deviceId}/groups",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_21",
+    "RelativePath": "api/config/devices/{deviceId}/groups",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveGroupConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_24",
+    "RelativePath": "api/config/devices/{deviceId}/tags",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_25",
+    "RelativePath": "api/config/devices/{deviceId}/tags",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveTagConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_36",
+    "RelativePath": "api/config/flow-rules",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_38",
+    "RelativePath": "api/config/flow-rules",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveFlowRuleDefinitionCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_39",
+    "RelativePath": "api/config/flow-rules/{ruleId}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "ruleId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveFlowRuleDefinitionCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_40",
+    "RelativePath": "api/config/flow-rules/{ruleId}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "ruleId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_37",
+    "RelativePath": "api/config/flow-rules/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_22",
+    "RelativePath": "api/config/groups/{groupId}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "groupId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveGroupConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_23",
+    "RelativePath": "api/config/groups/{groupId}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "groupId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_26",
+    "RelativePath": "api/config/groups/{groupId}/tags",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "groupId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_27",
+    "RelativePath": "api/config/groups/{groupId}/tags",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "groupId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveTagConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_47",
+    "RelativePath": "api/config/history",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_49",
+    "RelativePath": "api/config/history",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveHistoryConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_48",
+    "RelativePath": "api/config/history/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_41",
+    "RelativePath": "api/config/mqtt",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_43",
+    "RelativePath": "api/config/mqtt",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveMqttConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_42",
+    "RelativePath": "api/config/mqtt/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_44",
+    "RelativePath": "api/config/opcua",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_46",
+    "RelativePath": "api/config/opcua",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveOpcUaServerConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_45",
+    "RelativePath": "api/config/opcua/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_13",
+    "RelativePath": "api/config/project",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_14",
+    "RelativePath": "api/config/project",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveProjectConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_11",
+    "RelativePath": "api/config/rollback",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.RollbackConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_31",
+    "RelativePath": "api/config/rules",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_33",
+    "RelativePath": "api/config/rules",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveRuleConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_34",
+    "RelativePath": "api/config/rules/{ruleId}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "ruleId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveRuleConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_35",
+    "RelativePath": "api/config/rules/{ruleId}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "ruleId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_32",
+    "RelativePath": "api/config/rules/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_0",
+    "RelativePath": "api/config/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_6",
+    "RelativePath": "api/config/status/history",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_2",
+    "RelativePath": "api/config/status/mqtt",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_3",
+    "RelativePath": "api/config/status/opcua",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_5",
+    "RelativePath": "api/config/status/rule-engine",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_4",
+    "RelativePath": "api/config/status/rules",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_1",
+    "RelativePath": "api/config/status/tags",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "deviceName",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "groupId",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "groupName",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "tagId",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "tagName",
+        "Type": "System.String",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_50",
+    "RelativePath": "api/config/storage-health",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_51",
+    "RelativePath": "api/config/storage-health",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveStorageHealthConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_7",
+    "RelativePath": "api/config/sync",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_28",
+    "RelativePath": "api/config/tags/{tagId}",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tagId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveTagConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_29",
+    "RelativePath": "api/config/tags/{tagId}",
+    "HttpMethod": "DELETE",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tagId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_30",
+    "RelativePath": "api/config/tags/write",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.WriteTagCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_15",
+    "RelativePath": "api/config/validate",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "command",
+        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.ValidateProjectConfigurationCommand",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_8",
+    "RelativePath": "api/config/versions",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "type",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "limit",
+        "Type": "System.Nullable\u00601[[System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_4",
+    "RelativePath": "api/health",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_2",
+    "RelativePath": "api/health/live",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_5",
+    "RelativePath": "api/health/ready",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_1",
+    "RelativePath": "api/maintenance/updates/packages",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_2",
+    "RelativePath": "api/maintenance/updates/packages/{packageId}/prepare",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "packageId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_3",
+    "RelativePath": "api/maintenance/updates/rollback/{rollbackId}/prepare",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "rollbackId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_0",
+    "RelativePath": "api/maintenance/updates/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayWatchdogEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayWatchdogEndpoints\u003Eb__0_1",
+    "RelativePath": "api/maintenance/watchdog/config",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayWatchdogEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayWatchdogEndpoints\u003Eb__0_2",
+    "RelativePath": "api/maintenance/watchdog/config",
+    "HttpMethod": "PUT",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "options",
+        "Type": "IPC.Gateway.Watchdog.GatewayWatchdogOptions",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayWatchdogEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayWatchdogEndpoints\u003Eb__0_0",
+    "RelativePath": "api/maintenance/watchdog/status",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewaySecurityEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewaySecurityEndpoints\u003Eb__0_1",
+    "RelativePath": "api/security/certificates",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewaySecurityEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewaySecurityEndpoints\u003Eb__0_0",
+    "RelativePath": "api/security/summary",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_0",
+    "RelativePath": "health",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_1",
+    "RelativePath": "health/live",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_3",
+    "RelativePath": "health/ready",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  }
+]

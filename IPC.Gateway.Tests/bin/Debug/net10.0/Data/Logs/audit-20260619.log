@@ -1,0 +1,462 @@
+﻿2026-06-19 08:50:20.308 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 08:50:20.308 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 08:50:20.312 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 08:50:20.312 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 08:50:20.314 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 08:50:20.315 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 08:50:20.315 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 08:50:20.324 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 08:50:20.325 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 08:50:20.325 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 08:50:20.325 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 08:50:20.330 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 08:50:20.330 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 08:50:20.339 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 08:50:20.340 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 08:50:20.340 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 08:50:20.341 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 08:50:20.342 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 08:50:21.432 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 08:50:21.433 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 08:50:21.433 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:00:10.577 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:00:10.577 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 09:00:10.582 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:00:10.582 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:00:10.585 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 09:00:10.586 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 09:00:10.586 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 09:00:10.586 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 09:00:10.586 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 09:00:10.587 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 09:00:10.587 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 09:00:10.592 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 09:00:10.593 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 09:00:10.602 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 09:00:10.603 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 09:00:10.603 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 09:00:10.605 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 09:00:10.606 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 09:00:11.696 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 09:00:11.697 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:00:11.697 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:01:40.906 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:01:40.906 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 09:01:40.911 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:01:40.911 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:01:40.913 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 09:01:40.914 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 09:01:40.914 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 09:01:40.915 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 09:01:40.915 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 09:01:40.915 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 09:01:40.916 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 09:01:40.920 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 09:01:40.921 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 09:01:40.929 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 09:01:40.931 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 09:01:40.931 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 09:01:40.934 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 09:01:40.936 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 09:01:42.029 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 09:01:42.030 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:01:42.030 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:51:19.243 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:51:19.244 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 09:51:19.247 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:51:19.248 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 09:51:19.249 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 09:51:19.250 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 09:51:19.251 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 09:51:19.251 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 09:51:19.251 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 09:51:19.251 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 09:51:19.252 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 09:51:19.256 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 09:51:19.257 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 09:51:19.266 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 09:51:19.267 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 09:51:19.267 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 09:51:19.268 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 09:51:19.270 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 09:51:20.366 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 09:51:20.367 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 09:51:20.367 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 10:50:37.265 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 10:50:37.265 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:50:37.269 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:50:37.269 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 10:50:37.271 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 10:50:37.272 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 10:50:37.272 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 10:50:37.272 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 10:50:37.272 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 10:50:37.272 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 10:50:37.273 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 10:50:37.276 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 10:50:37.277 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 10:50:37.285 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 10:50:37.286 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 10:50:37.286 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 10:50:37.288 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 10:50:37.289 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 10:50:38.376 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 10:50:38.377 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:50:38.378 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 10:52:41.938 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:52:41.939 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 10:52:41.942 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:52:41.942 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 10:52:41.944 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 10:52:41.945 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 10:52:41.945 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 10:52:41.945 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 10:52:41.945 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 10:52:41.946 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 10:52:41.946 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 10:52:41.949 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 10:52:41.950 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 10:52:41.960 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 10:52:41.961 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 10:52:41.961 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 10:52:41.963 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 10:52:41.965 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 10:52:43.059 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 10:52:43.059 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 10:52:43.060 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 11:51:02.984 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 11:51:02.984 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 11:51:02.987 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 11:51:02.988 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 11:51:02.991 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 11:51:02.991 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 11:51:02.992 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 11:51:02.992 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 11:51:02.993 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 11:51:02.993 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 11:51:02.994 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 11:51:02.995 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 11:51:02.996 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 11:51:03.004 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 11:51:03.005 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 11:51:03.005 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 11:51:03.007 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 11:51:03.008 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 11:51:04.103 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 11:51:04.104 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 11:51:04.104 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 12:54:09.442 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 12:54:09.443 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 12:54:09.446 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 12:54:09.447 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 12:54:09.448 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 12:54:09.449 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 12:54:09.449 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 12:54:09.450 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 12:54:09.450 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 12:54:09.450 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 12:54:09.451 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 12:54:09.454 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 12:54:09.455 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 12:54:09.463 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 12:54:09.464 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 12:54:09.464 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 12:54:09.466 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 12:54:09.467 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 12:54:10.558 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 12:54:10.559 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 12:54:10.559 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 13:56:57.754 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 13:56:57.754 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 13:56:57.758 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 13:56:57.758 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 13:56:57.760 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 13:56:57.761 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 13:56:57.761 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 13:56:57.761 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 13:56:57.761 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 13:56:57.761 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 13:56:57.762 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 13:56:57.765 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 13:56:57.766 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 13:56:57.774 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 13:56:57.775 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 13:56:57.775 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 13:56:57.777 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 13:56:57.778 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 13:56:58.863 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 13:56:58.864 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 13:56:58.864 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 14:57:16.682 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 14:57:16.683 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 14:57:16.686 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 14:57:16.687 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 14:57:16.688 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 14:57:16.689 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 14:57:16.689 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 14:57:16.690 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 14:57:16.690 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 14:57:16.690 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 14:57:16.691 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 14:57:16.694 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 14:57:16.694 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 14:57:16.703 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 14:57:16.704 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 14:57:16.704 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 14:57:16.705 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 14:57:16.707 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 14:57:17.797 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 14:57:17.798 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 14:57:17.799 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 16:55:43.379 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 16:55:43.379 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 16:55:43.382 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 16:55:43.383 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 16:55:43.384 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 16:55:43.385 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 16:55:43.385 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 16:55:43.386 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 16:55:43.386 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 16:55:43.386 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 16:55:43.387 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 16:55:43.390 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 16:55:43.390 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 16:55:43.399 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 16:55:43.400 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 16:55:43.400 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 16:55:43.402 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 16:55:43.403 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 16:55:44.491 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 16:55:44.492 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 16:55:44.492 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 17:52:45.334 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 17:52:45.335 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 17:52:45.338 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 17:52:45.338 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 17:52:45.340 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 17:52:45.341 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 17:52:45.341 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 17:52:45.341 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 17:52:45.341 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 17:52:45.341 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 17:52:45.342 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 17:52:45.345 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 17:52:45.346 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 17:52:45.354 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 17:52:45.355 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 17:52:45.355 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 17:52:45.357 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 17:52:45.358 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 17:52:46.449 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 17:52:46.449 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 17:52:46.450 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 18:55:09.992 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 18:55:09.992 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 18:55:09.994 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 18:55:09.995 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 18:55:09.996 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 18:55:09.997 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 18:55:09.997 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 18:55:09.998 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 18:55:09.998 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 18:55:09.998 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 18:55:09.999 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 18:55:10.002 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 18:55:10.003 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 18:55:10.011 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 18:55:10.012 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 18:55:10.012 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 18:55:10.014 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 18:55:10.015 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 18:55:11.101 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 18:55:11.102 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 18:55:11.102 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 20:05:12.329 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:05:12.329 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 20:05:12.331 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:05:12.332 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 20:05:12.334 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 20:05:12.334 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 20:05:12.335 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 20:05:12.335 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 20:05:12.335 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 20:05:12.335 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 20:05:12.336 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 20:05:12.339 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 20:05:12.340 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 20:05:12.349 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 20:05:12.350 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 20:05:12.350 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 20:05:12.352 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 20:05:12.354 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 20:05:13.441 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 20:05:13.442 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:05:13.442 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 20:06:06.639 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:06:06.639 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 20:06:06.641 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:06:06.641 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 20:06:06.643 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 20:06:06.644 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 20:06:06.644 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 20:06:06.644 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 20:06:06.644 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 20:06:06.645 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 20:06:06.645 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 20:06:06.649 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 20:06:06.649 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 20:06:06.658 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 20:06:06.659 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 20:06:06.659 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 20:06:06.661 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 20:06:06.663 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 20:06:07.749 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 20:06:07.750 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 20:06:07.750 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:52:55.026 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:52:55.026 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 21:52:55.028 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:52:55.029 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:52:55.030 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 21:52:55.031 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 21:52:55.031 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 21:52:55.032 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 21:52:55.032 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 21:52:55.032 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 21:52:55.032 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 21:52:55.035 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 21:52:55.036 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 21:52:55.044 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 21:52:55.045 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 21:52:55.046 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 21:52:55.047 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 21:52:55.049 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 21:52:56.135 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 21:52:56.136 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:52:56.136 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:53:34.132 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 21:53:34.132 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:53:34.134 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:53:34.135 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:53:34.137 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 21:53:34.138 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 21:53:34.138 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 21:53:34.138 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 21:53:34.138 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 21:53:34.139 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 21:53:34.139 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 21:53:34.142 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 21:53:34.142 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 21:53:34.581 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 21:53:34.582 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 21:53:34.583 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 21:53:34.584 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 21:53:34.585 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 21:53:35.251 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 21:53:35.252 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:53:35.252 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:54:08.545 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 21:54:08.545 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:54:08.548 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:54:08.548 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 21:54:08.550 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 21:54:08.551 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 21:54:08.551 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 21:54:08.551 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 21:54:08.551 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 21:54:08.552 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 21:54:08.552 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 21:54:08.555 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 21:54:08.556 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 21:54:08.566 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 21:54:08.566 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 21:54:08.567 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 21:54:08.568 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 21:54:08.570 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 21:54:09.654 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 21:54:09.655 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 21:54:09.656 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:01:39.761 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:01:39.761 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 22:01:39.763 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:01:39.764 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:01:39.765 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 22:01:39.766 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 22:01:39.767 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 22:01:39.767 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 22:01:39.767 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 22:01:39.767 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 22:01:39.768 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 22:01:39.771 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 22:01:39.771 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 22:01:40.080 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 22:01:40.081 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 22:01:40.081 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 22:01:40.083 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 22:01:40.084 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 22:01:40.882 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 22:01:40.882 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:01:40.883 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:18:48.695 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:18:48.696 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 22:18:48.698 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:18:48.698 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:18:48.700 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 22:18:48.701 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 22:18:48.701 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 22:18:48.701 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 22:18:48.701 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 22:18:48.701 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 22:18:48.702 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 22:18:48.705 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 22:18:48.706 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 22:18:48.716 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 22:18:48.717 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 22:18:48.717 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 22:18:48.719 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 22:18:48.720 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 22:18:49.812 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 22:18:49.813 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:18:49.813 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:25:24.295 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:25:24.295 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 22:25:24.298 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:25:24.298 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:25:24.301 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 22:25:24.302 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 22:25:24.303 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 22:25:24.303 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 22:25:24.304 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 22:25:24.304 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 22:25:24.304 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 22:25:24.307 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 22:25:24.308 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 22:25:24.317 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 22:25:24.319 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 22:25:24.319 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 22:25:24.320 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 22:25:24.322 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 22:25:25.413 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 22:25:25.414 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:25:25.415 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:27:16.732 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:27:16.732 [AUDIT] action=EdgeRule target=Transform flow detail=active:> 50 52
+2026-06-19 22:27:16.734 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:27:16.735 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
+2026-06-19 22:27:16.737 [AUDIT] action=EdgeRule target=Or combination detail=active:CombinationOr 4
+2026-06-19 22:27:16.738 [AUDIT] action=EdgeRule target=RateOfChange rule detail=active:RateOfChange 25
+2026-06-19 22:27:16.738 [AUDIT] action=EdgeRule target=RateOfChange rule detail=clear:RateOfChange 30
+2026-06-19 22:27:16.738 [AUDIT] action=EdgeRule target=Sequence flow detail=active:Sequence 25
+2026-06-19 22:27:16.739 [AUDIT] action=EdgeRule target=And combination detail=active:CombinationAnd 4
+2026-06-19 22:27:16.739 [AUDIT] action=EdgeRule target=And combination detail=clear:CombinationAnd 8
+2026-06-19 22:27:16.740 [AUDIT] action=EdgeRule target=Deadband rule detail=active:Deadband 16
+2026-06-19 22:27:16.743 [AUDIT] action=EdgeRule target=Same tag sequence flow detail=active:Sequence 21
+2026-06-19 22:27:16.744 [AUDIT] action=EdgeRule target=Indirect flow detail=active:> 10 11
+2026-06-19 22:27:16.752 [AUDIT] action=EdgeRule target=Transform expression flow detail=active:> 40 50
+2026-06-19 22:27:16.753 [AUDIT] action=EdgeRule target=Hysteresis flow detail=active:HysteresisHigh 11
+2026-06-19 22:27:16.753 [AUDIT] action=EdgeRule target=Hysteresis flow detail=clear:HysteresisHigh 7
+2026-06-19 22:27:16.755 [AUDIT] action=EdgeRule target=Expression flow detail=active:Expression 11
+2026-06-19 22:27:16.756 [AUDIT] action=EdgeRule target=Multi level flow detail=active:Critical 25
+2026-06-19 22:27:17.849 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 12
+2026-06-19 22:27:17.849 [AUDIT] action=EdgeRule target=Threshold rule detail=active:High 11
+2026-06-19 22:27:17.850 [AUDIT] action=EdgeRule target=Threshold rule detail=clear:High 5
