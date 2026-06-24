@@ -6,8 +6,9 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "IPC.Gateway.Core/0.0.0-test": {
+      "IPC.Gateway.Core/1.0.0": {
         "dependencies": {
+          "IPC.Gateway.DataProcessing": "1.0.0",
           "IPC.Gateway.Mqtt": "1.0.0",
           "Microsoft.Data.SqlClient": "7.0.1",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
@@ -841,18 +842,26 @@
           }
         }
       },
+      "IPC.Gateway.DataProcessing/1.0.0": {
+        "runtime": {
+          "IPC.Gateway.DataProcessing.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
       "IPC.Gateway.Mqtt/1.0.0": {
         "runtime": {
           "IPC.Gateway.Mqtt.dll": {
-            "assemblyVersion": "0.0.0.0",
-            "fileVersion": "0.0.0.0"
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
           }
         }
       }
     }
   },
   "libraries": {
-    "IPC.Gateway.Core/0.0.0-test": {
+    "IPC.Gateway.Core/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -1227,6 +1236,11 @@
       "sha512": "sha512-t8S9IDpjJKsLpLkeBdW8cWtcPyYqrGu93Dej1RO6WwuL/lkFSqWlan3rMJfortqz1mRIh+sys2AFsSA6jWJ3Jg==",
       "path": "system.security.cryptography.protecteddata/9.0.13",
       "hashPath": "system.security.cryptography.protecteddata.9.0.13.nupkg.sha512"
+    },
+    "IPC.Gateway.DataProcessing/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
     },
     "IPC.Gateway.Mqtt/1.0.0": {
       "type": "project",

@@ -1,0 +1,11 @@
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\bin\Release\net10.0\IPC.Gateway.DataProcessing.deps.json
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\bin\Release\net10.0\IPC.Gateway.DataProcessing.dll
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\bin\Release\net10.0\IPC.Gateway.DataProcessing.pdb
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.GeneratedMSBuildEditorConfig.editorconfig
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.AssemblyInfoInputs.cache
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.AssemblyInfo.cs
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.csproj.CoreCompileInputs.cache
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.dll
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\refint\IPC.Gateway.DataProcessing.dll
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\IPC.Gateway.DataProcessing.pdb
+F:\IPC.Gateway\IPC.Gateway.DataProcessing\obj\Release\net10.0\ref\IPC.Gateway.DataProcessing.dll
