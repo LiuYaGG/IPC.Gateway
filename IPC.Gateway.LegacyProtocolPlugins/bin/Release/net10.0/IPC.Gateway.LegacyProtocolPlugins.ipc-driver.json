@@ -1,0 +1,6 @@
+{
+  "driverId": "legacy-plc-protocols",
+  "displayName": "Legacy PLC Protocol Drivers",
+  "version": "1.0.0",
+  "minGatewayVersion": "1.0.0"
+}
