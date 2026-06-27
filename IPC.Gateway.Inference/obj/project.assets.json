@@ -2787,11 +2787,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj",
+      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj",
       "projectName": "IPC.Gateway.Inference",
-      "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj",
+      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj",
       "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.Inference\\obj\\",
+      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -2814,8 +2814,8 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
             }
           }
         }
@@ -2824,6 +2824,9 @@
         "warnAsError": [
           "NU1605"
         ]
+      },
+      "restoreLockProperties": {
+        "restorePackagesWithLockFile": "true"
       },
       "restoreAuditProperties": {
         "enableAudit": "true",

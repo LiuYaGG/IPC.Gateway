@@ -2704,11 +2704,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
+      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
       "projectName": "IPC.Gateway.Watchdog",
-      "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
+      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
       "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\obj\\",
+      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -2731,8 +2731,8 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
             }
           }
         }
@@ -2741,6 +2741,9 @@
         "warnAsError": [
           "NU1605"
         ]
+      },
+      "restoreLockProperties": {
+        "restorePackagesWithLockFile": "true"
       },
       "restoreAuditProperties": {
         "enableAudit": "true",

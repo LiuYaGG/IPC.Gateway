@@ -2426,11 +2426,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
+      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
       "projectName": "IPC.Gateway.WebHost",
-      "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
+      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
       "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\obj\\",
+      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -2453,17 +2453,17 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
             },
-            "F:\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj"
             },
-            "F:\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj"
             },
-            "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj"
             }
           }
         }
@@ -2472,6 +2472,9 @@
         "warnAsError": [
           "NU1605"
         ]
+      },
+      "restoreLockProperties": {
+        "restorePackagesWithLockFile": "true"
       },
       "restoreAuditProperties": {
         "enableAudit": "true",

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "6A7pso1zW30=",
+  "dgSpecHash": "JtAdX0xhqnM=",
   "success": true,
-  "projectFilePath": "F:\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
+  "projectFilePath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\liuYGG\\.nuget\\packages\\bitfaster.caching\\2.6.0\\bitfaster.caching.2.6.0.nupkg.sha512",
     "C:\\Users\\liuYGG\\.nuget\\packages\\microsoft.bcl.cryptography\\9.0.13\\microsoft.bcl.cryptography.9.0.13.nupkg.sha512",

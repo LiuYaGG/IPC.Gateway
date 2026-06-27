@@ -10,6 +10,7 @@
         <el-tag :class="['maintenance-status-tag', status?.enabled ? 'maintenance-status-tag--enabled' : 'maintenance-status-tag--disabled']" :type="status?.enabled ? 'success' : 'info'" effect="light">
           {{ status?.enabled ? '已启用' : '未启用' }}
         </el-tag>
+        <el-button :icon="Download" :loading="snapshotLoading" @click="downloadSupportSnapshot">售后快照</el-button>
         <el-button :icon="Refresh" :loading="loading" type="primary" @click="refresh">刷新</el-button>
       </div>
     </section>
@@ -151,6 +152,97 @@
       @save-watchdog-config="persistWatchdogConfig"
     />
 
+    <section class="commercial-grid">
+      <el-card shadow="never" class="panel-card">
+        <template #header>
+          <div class="card-header">
+            <div class="detail-title">
+              <span>商业授权</span>
+              <small>许可证状态、版本授权和现场限制</small>
+            </div>
+          </div>
+        </template>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="状态">
+            <el-tag :type="license?.operational ? 'success' : 'danger'" effect="light">{{ license?.status || '-' }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="版本">{{ license?.edition || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ license?.customerName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="到期">{{ license?.expiresUtc ? formatDateTime(license.expiresUtc) : '-' }}</el-descriptions-item>
+          <el-descriptions-item label="限制">{{ licenseLimitText }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card shadow="never" class="panel-card">
+        <template #header>
+          <div class="card-header">
+            <div class="detail-title">
+              <span>项目备份恢复</span>
+              <small>导出或恢复项目、通信和历史配置</small>
+            </div>
+            <div class="card-actions">
+              <el-button :icon="Download" :loading="backupLoading" @click="downloadProjectBackup">导出备份</el-button>
+            </div>
+          </div>
+        </template>
+        <el-upload
+          drag
+          accept=".json"
+          :auto-upload="false"
+          :show-file-list="false"
+          :disabled="restoreLoading"
+          :on-change="handleRestoreBackup"
+        >
+          <el-icon class="upload-icon"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖入项目备份 JSON，或点击选择</div>
+        </el-upload>
+      </el-card>
+    </section>
+
+    <section class="commercial-grid">
+      <el-card shadow="never" class="panel-card">
+        <template #header>
+          <div class="card-header">
+            <div class="detail-title">
+              <span>版本兼容矩阵</span>
+              <small>网关、配置 schema、插件和协议能力范围</small>
+            </div>
+          </div>
+        </template>
+        <el-table :data="compatibility?.items ?? []" empty-text="暂无兼容矩阵" height="240">
+          <el-table-column prop="capability" label="能力" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="currentVersion" label="当前版本" width="130" />
+          <el-table-column prop="compatibleRange" label="兼容范围" width="150" show-overflow-tooltip />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'Compatible' ? 'success' : 'danger'" effect="light">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <el-card shadow="never" class="panel-card">
+        <template #header>
+          <div class="card-header">
+            <div class="detail-title">
+              <span>协议驱动签名</span>
+              <small>内置和外部协议驱动的版本、摘要与签名状态</small>
+            </div>
+          </div>
+        </template>
+        <el-table :data="drivers" empty-text="暂无协议驱动" height="240">
+          <el-table-column prop="driverId" label="驱动" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="protocol" label="协议" width="110" />
+          <el-table-column label="签名" width="120">
+            <template #default="{ row }">
+              <el-tag :type="driverSignatureType(row.signatureStatus)" effect="light">{{ row.signatureStatus || '-' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="signer" label="签名方" min-width="130" show-overflow-tooltip />
+        </el-table>
+      </el-card>
+    </section>
+
     <section class="maintenance-layout">
       <el-card shadow="never" class="panel-card upload-panel">
         <template #header>
@@ -174,7 +266,7 @@
           <div class="el-upload__text">拖入升级包，或点击选择</div>
           <template #tip>
             <div class="el-upload__tip">
-              {{ canUpload ? '包内需要包含 ipc-gateway-package.json 和 payload 目录' : '当前用户没有上传升级包权限' }}
+              {{ canUpload ? '包内需要包含清单、payload 目录和文件摘要；生产环境建议启用发布签名' : '当前用户没有上传升级包权限' }}
             </div>
           </template>
         </el-upload>
@@ -193,6 +285,17 @@
           <el-descriptions-item label="安装目录">{{ status?.installDirectory || '-' }}</el-descriptions-item>
           <el-descriptions-item label="升级目录">{{ status?.updateDirectory || '-' }}</el-descriptions-item>
           <el-descriptions-item label="离线脚本">{{ status?.offlineScriptPath || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="摘要策略">{{ status?.requirePackageFileDigests ? '必需' : '兼容旧包' }}</el-descriptions-item>
+          <el-descriptions-item label="签名策略">
+            <span class="policy-tags">
+              <el-tag :type="status?.requirePackageSignature ? 'danger' : 'warning'" effect="light">
+                {{ status?.requirePackageSignature ? '必需' : '可选' }}
+              </el-tag>
+              <el-tag :type="status?.trustedPackagePublicKeyConfigured ? 'success' : 'info'" effect="plain">
+                {{ status?.trustedPackagePublicKeyConfigured ? '公钥已配置' : '公钥未配置' }}
+              </el-tag>
+            </span>
+          </el-descriptions-item>
         </el-descriptions>
       </el-card>
     </section>
@@ -216,6 +319,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="version" label="版本" width="130" />
+        <el-table-column label="可信状态" width="170">
+          <template #default="{ row }">
+            <el-tooltip :content="trustStatusDetail(row)" placement="top">
+              <div class="trust-cell">
+                <el-tag :type="trustStatusType(row.trustStatus)" effect="light">
+                  {{ trustStatusText(row.trustStatus) }}
+                </el-tag>
+                <small>{{ trustSubtext(row) }}</small>
+              </div>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column label="大小" width="110">
           <template #default="{ row }">{{ formatBytes(row.sizeBytes) }}</template>
         </el-table-column>
@@ -230,7 +345,7 @@
                 size="small"
                 type="primary"
                 :icon="Switch"
-                :disabled="!canPrepare"
+                :disabled="!canPrepare || !canPrepareTrustedPackage(row)"
                 :loading="preparingId === row.packageId"
                 @click="preparePackage(row.packageId)"
               >
@@ -288,15 +403,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
-import { Box, Clock, DocumentCopy, FolderChecked, Refresh, RefreshLeft, Switch, UploadFilled } from '@element-plus/icons-vue'
+import { Box, Clock, DocumentCopy, Download, FolderChecked, Refresh, RefreshLeft, Switch, UploadFilled } from '@element-plus/icons-vue'
 import {
+  exportProjectBackup,
+  loadCompatibilityMatrix,
+  loadLicenseStatus,
+  loadProtocolDrivers,
+  loadSupportSnapshot,
   loadWatchdogConfig,
   loadWatchdogStatus,
   loadUpdateStatus,
   prepareUpdatePackage,
   prepareUpdateRollback,
+  restoreProjectBackup,
   saveWatchdogConfig,
   uploadUpdatePackage,
+  type GatewayCompatibilityMatrix,
+  type GatewayLicenseStatus,
+  type GatewayProtocolDriverInfo,
+  type GatewayUpdatePackageRecord,
+  type GatewaySupportSnapshot,
   type GatewayWatchdogConfig,
   type GatewayWatchdogStatus,
   type GatewayUpdateStatus
@@ -308,11 +434,17 @@ import { PERMISSIONS, usePermissions } from '../utils/permissions'
 const { hasPermission } = usePermissions()
 const loading = ref(false)
 const uploading = ref(false)
+const snapshotLoading = ref(false)
+const backupLoading = ref(false)
+const restoreLoading = ref(false)
 const savingWatchdogConfig = ref(false)
 const preparingId = ref('')
 const status = ref<GatewayUpdateStatus | null>(null)
 const watchdog = ref<GatewayWatchdogStatus | null>(null)
 const watchdogConfig = ref<GatewayWatchdogConfig | null>(null)
+const license = ref<GatewayLicenseStatus | null>(null)
+const compatibility = ref<GatewayCompatibilityMatrix | null>(null)
+const drivers = ref<GatewayProtocolDriverInfo[]>([])
 
 const canUpload = computed(() => hasPermission(PERMISSIONS.maintenancePackagesUpload))
 const canPrepare = computed(() => hasPermission(PERMISSIONS.maintenanceUpdatePrepare))
@@ -323,6 +455,12 @@ const latestRollbackLabel = computed(() => {
   const latest = status.value?.rollbackPoints?.[0]
   return latest ? formatDateTime(latest.createdTime) : '无快照'
 })
+const licenseLimitText = computed(() => {
+  if (!license.value) return '-'
+  const devices = license.value.maxDevices > 0 ? `${license.value.maxDevices} 设备` : '设备不限'
+  const tags = license.value.maxTags > 0 ? `${license.value.maxTags} 点位` : '点位不限'
+  return `${devices} / ${tags}`
+})
 const pendingText = computed(() => {
   const action = status.value?.pendingAction
   if (!action) return ''
@@ -330,12 +468,60 @@ const pendingText = computed(() => {
   return `${type}已准备：${action.version || action.packageId || action.rollbackId}，脚本：${action.scriptPath}`
 })
 
+function canPrepareTrustedPackage(row: GatewayUpdatePackageRecord) {
+  if (status.value?.requirePackageFileDigests && !row.contentHashValid) return false
+  if (status.value?.requirePackageSignature && !row.signatureValid) return false
+  return true
+}
+
+function trustStatusText(value: string | null | undefined) {
+  switch ((value || '').toLowerCase()) {
+    case 'trusted':
+      return '签名可信'
+    case 'contentverified':
+      return '摘要通过'
+    case 'unverified':
+      return '未验证'
+    case 'untrusted':
+      return '不可信'
+    default:
+      return value || '-'
+  }
+}
+
+function trustStatusType(value: string | null | undefined) {
+  switch ((value || '').toLowerCase()) {
+    case 'trusted':
+      return 'success'
+    case 'contentverified':
+      return 'warning'
+    case 'untrusted':
+      return 'danger'
+    default:
+      return 'info'
+  }
+}
+
+function trustSubtext(row: GatewayUpdatePackageRecord) {
+  if (row.signatureValid) return row.signer || '已签名'
+  if (row.contentHashValid) return `${row.fileCount || 0} 个文件`
+  return '缺少摘要'
+}
+
+function trustStatusDetail(row: GatewayUpdatePackageRecord) {
+  const detail = [row.trustMessage || trustStatusText(row.trustStatus)]
+  if (row.fileCount) detail.push(`文件：${row.fileCount}`)
+  if (row.signer) detail.push(`发布者：${row.signer}`)
+  if (row.signedTime) detail.push(`签名时间：${formatDateTime(row.signedTime)}`)
+  return detail.join('；')
+}
+
 onMounted(() => refresh())
 
 async function refresh() {
   loading.value = true
   try {
-    const [updateData, watchdogData, watchdogConfigData] = await Promise.all([
+    const [updateData, watchdogData, watchdogConfigData, licenseData, compatibilityData, driverData] = await Promise.all([
       loadUpdateStatus(),
       loadWatchdogStatus().catch(error => {
         ElMessage.warning(error instanceof Error ? error.message : '看门狗状态加载失败')
@@ -344,11 +530,26 @@ async function refresh() {
       loadWatchdogConfig().catch(error => {
         ElMessage.warning(error instanceof Error ? error.message : '看门狗配置加载失败')
         return null
+      }),
+      loadLicenseStatus().catch(error => {
+        ElMessage.warning(error instanceof Error ? error.message : '许可证状态加载失败')
+        return null
+      }),
+      loadCompatibilityMatrix().catch(error => {
+        ElMessage.warning(error instanceof Error ? error.message : '兼容矩阵加载失败')
+        return null
+      }),
+      loadProtocolDrivers().catch(error => {
+        ElMessage.warning(error instanceof Error ? error.message : '协议驱动状态加载失败')
+        return []
       })
     ])
     status.value = updateData
     watchdog.value = watchdogData
     watchdogConfig.value = watchdogConfigData
+    license.value = licenseData
+    compatibility.value = compatibilityData
+    drivers.value = driverData
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '安装升级状态加载失败')
   } finally {
@@ -370,6 +571,58 @@ async function persistWatchdogConfig(config: GatewayWatchdogConfig) {
     ElMessage.error(error instanceof Error ? error.message : '看门狗配置保存失败')
   } finally {
     savingWatchdogConfig.value = false
+  }
+}
+
+async function downloadSupportSnapshot() {
+  snapshotLoading.value = true
+  try {
+    const snapshot = await loadSupportSnapshot()
+    downloadSnapshotJson(snapshot)
+    ElMessage.success('售后快照已生成')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '售后快照生成失败')
+  } finally {
+    snapshotLoading.value = false
+  }
+}
+
+async function downloadProjectBackup() {
+  backupLoading.value = true
+  try {
+    const blob = await exportProjectBackup()
+    downloadBlob(blob, `ipc-gateway-project-${snapshotTimestamp(new Date().toISOString())}.json`)
+    ElMessage.success('项目备份已生成')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '项目备份导出失败')
+  } finally {
+    backupLoading.value = false
+  }
+}
+
+async function handleRestoreBackup(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  try {
+    await ElMessageBox.confirm('恢复项目备份会覆盖当前项目和通信配置。确认继续？', '恢复项目备份', {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+
+  restoreLoading.value = true
+  try {
+    const text = await raw.text()
+    const result = await restoreProjectBackup(text)
+    ElMessage.success(`项目已恢复：${result.projectName || result.projectId}`)
+    await refresh()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '项目备份恢复失败')
+  } finally {
+    restoreLoading.value = false
   }
 }
 
@@ -439,6 +692,47 @@ async function copyScriptPath() {
   ElMessage.success('脚本路径已复制')
 }
 
+function downloadSnapshotJson(snapshot: GatewaySupportSnapshot) {
+  const payload = JSON.stringify(snapshot, null, 2)
+  const blob = new Blob([payload], { type: 'application/json;charset=utf-8' })
+  downloadBlob(blob, `ipc-gateway-support-${snapshotTimestamp(snapshot.capturedTimeUtc)}.json`)
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function driverSignatureType(value: string | null | undefined) {
+  switch ((value || '').toLowerCase()) {
+    case 'builtin':
+    case 'trusted':
+      return 'success'
+    case 'unsigned':
+    case 'unverified':
+      return 'warning'
+    case 'invalid':
+    case 'hashmismatch':
+    case 'missing':
+    case 'untrusted':
+      return 'danger'
+    default:
+      return 'info'
+  }
+}
+
+function snapshotTimestamp(value: string) {
+  const source = value || new Date().toISOString()
+  const digits = source.replace(/\D/g, '')
+  return digits.slice(0, 14) || 'snapshot'
+}
+
 function formatBytes(value: number) {
   if (!value) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -489,6 +783,12 @@ function watchdogStateType(state: string | null | undefined) {
 <style scoped>
 .maintenance-view {
   gap: 18px;
+}
+
+.commercial-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
 }
 
 .maintenance-hero {
@@ -645,8 +945,31 @@ function watchdogStateType(state: string | null | undefined) {
   color: var(--el-text-color-secondary);
 }
 
+.policy-tags,
+.trust-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trust-cell {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.2;
+}
+
+.trust-cell small {
+  max-width: 130px;
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 1180px) {
   .maintenance-metrics,
+  .commercial-grid,
   .maintenance-layout,
   .watchdog-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -661,6 +984,7 @@ function watchdogStateType(state: string | null | undefined) {
   }
 
   .maintenance-metrics,
+  .commercial-grid,
   .maintenance-layout,
   .watchdog-summary {
     grid-template-columns: 1fr;

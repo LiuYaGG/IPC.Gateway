@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Oq6X9Plca+Y=",
+  "dgSpecHash": "iEvKZ+2YxRY=",
   "success": true,
-  "projectFilePath": "F:\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
+  "projectFilePath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\liuYGG\\.nuget\\packages\\bitfaster.caching\\2.6.0\\bitfaster.caching.2.6.0.nupkg.sha512",
     "C:\\Users\\liuYGG\\.nuget\\packages\\microsoft.bcl.cryptography\\9.0.13\\microsoft.bcl.cryptography.9.0.13.nupkg.sha512",

@@ -5,11 +5,68 @@ param(
     [string]$PackageType = "Upgrade",
     [string]$Configuration = "Release",
     [string]$OutputDirectory = "",
+    [string]$BuildId = "",
+    [string]$SigningPrivateKeyPath = "",
+    [string]$Signer = "",
     [switch]$SkipFrontendBuild,
     [switch]$NoRestore
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-RelativeZipPath {
+    param(
+        [string]$Root,
+        [string]$Path
+    )
+
+    $rootPath = [System.IO.Path]::GetFullPath($Root).TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+    $filePath = [System.IO.Path]::GetFullPath($Path)
+    $relative = [Uri]::UnescapeDataString(([Uri]$rootPath).MakeRelativeUri([Uri]$filePath).ToString())
+    return $relative.Replace("\", "/")
+}
+
+function Add-SigningLine {
+    param(
+        [System.Text.StringBuilder]$Builder,
+        [string]$Key,
+        [object]$Value
+    )
+
+    $text = ""
+    if ($null -ne $Value) {
+        $text = [string]$Value
+    }
+    $text = $text.Replace("`r", " ").Replace("`n", " ")
+    [void]$Builder.Append($Key).Append("=").Append($text).Append("`n")
+}
+
+function Get-PackageSigningPayload {
+    param(
+        [object]$Manifest
+    )
+
+    $builder = [System.Text.StringBuilder]::new()
+    Add-SigningLine -Builder $builder -Key "manifestVersion" -Value $Manifest.manifestVersion
+    Add-SigningLine -Builder $builder -Key "packageId" -Value $Manifest.packageId
+    Add-SigningLine -Builder $builder -Key "product" -Value $Manifest.product
+    Add-SigningLine -Builder $builder -Key "packageType" -Value $Manifest.packageType
+    Add-SigningLine -Builder $builder -Key "version" -Value $Manifest.version
+    Add-SigningLine -Builder $builder -Key "minVersion" -Value $Manifest.minVersion
+    Add-SigningLine -Builder $builder -Key "buildId" -Value $Manifest.buildId
+    Add-SigningLine -Builder $builder -Key "entryDirectory" -Value $Manifest.entryDirectory
+    Add-SigningLine -Builder $builder -Key "requiresRestart" -Value ([string]$Manifest.requiresRestart).ToLowerInvariant()
+    Add-SigningLine -Builder $builder -Key "hashAlgorithm" -Value $Manifest.hashAlgorithm
+    Add-SigningLine -Builder $builder -Key "signatureAlgorithm" -Value $Manifest.signatureAlgorithm
+    Add-SigningLine -Builder $builder -Key "signer" -Value $Manifest.signer
+    Add-SigningLine -Builder $builder -Key "signedTime" -Value $Manifest.signedTime
+
+    foreach ($file in ($Manifest.files | Sort-Object -Property path)) {
+        Add-SigningLine -Builder $builder -Key "file" -Value "$($file.path)|$($file.sizeBytes)|$($file.sha256)"
+    }
+
+    return $builder.ToString()
+}
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -17,6 +74,9 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repoRoot "artifacts\packages"
+}
+if ([string]::IsNullOrWhiteSpace($BuildId)) {
+    $BuildId = "local-" + (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
 }
 
 $workRoot = Join-Path $repoRoot "artifacts\package-work\$PackageType-$Version"
@@ -91,16 +151,63 @@ foreach ($relative in $scriptCandidates) {
     }
 }
 
+$packageFiles = @(
+    Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
+        Sort-Object -Property FullName |
+        ForEach-Object {
+            $digest = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+            [ordered]@{
+                path = Get-RelativeZipPath -Root $packageRoot -Path $_.FullName
+                sha256 = $digest.Hash.ToLowerInvariant()
+                sizeBytes = $_.Length
+            }
+        }
+)
+
 $manifest = [ordered]@{
+    manifestVersion = 2
     packageId = "ipc-gateway-$PackageType-$Version"
     product = "IPC.Gateway"
     packageType = $PackageType
     version = $Version
     minVersion = ""
     createdTime = (Get-Date).ToUniversalTime().ToString("O")
+    buildId = $BuildId
     entryDirectory = "payload"
     requiresRestart = $true
     description = "$PackageType package for IPC Gateway $Version"
+    hashAlgorithm = "SHA256"
+    files = $packageFiles
+    signatureAlgorithm = ""
+    signature = ""
+    signer = ""
+    signedTime = $null
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SigningPrivateKeyPath)) {
+    $resolvedKeyPath = (Resolve-Path -LiteralPath $SigningPrivateKeyPath).Path
+    $manifest.signatureAlgorithm = "RS256"
+    $manifest.signer = if ([string]::IsNullOrWhiteSpace($Signer)) { [Environment]::UserName } else { $Signer }
+    $manifest.signedTime = (Get-Date).ToUniversalTime().ToString("O")
+
+    $rsa = [System.Security.Cryptography.RSA]::Create()
+    try {
+        $pem = [System.IO.File]::ReadAllText($resolvedKeyPath)
+        $rsa.ImportFromPem($pem)
+        $payload = Get-PackageSigningPayload -Manifest $manifest
+        $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $signatureBytes = $rsa.SignData(
+            $payloadBytes,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $manifest.signature = [Convert]::ToBase64String($signatureBytes)
+    }
+    catch [System.Management.Automation.MethodException] {
+        throw "Package signing requires a PowerShell runtime that supports RSA.ImportFromPem. Use PowerShell 7+ or sign in CI."
+    }
+    finally {
+        $rsa.Dispose()
+    }
 }
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $packageRoot "ipc-gateway-package.json") -Encoding UTF8
 

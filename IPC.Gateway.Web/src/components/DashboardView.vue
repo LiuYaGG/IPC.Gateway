@@ -418,7 +418,8 @@ const componentLabels: Record<string, string> = {
   history: '历史库',
   historyStorage: '历史库磁盘',
   ruleEngine: '规则引擎',
-  scheduler: '采集调度'
+  scheduler: '采集调度',
+  systemResources: '系统资源'
 }
 
 function readinessTone(status?: string): CardTone {
@@ -455,6 +456,15 @@ function componentDetail(component: GatewayHealthComponent) {
 
   if (component.name === 'mqtt') {
     return `积压 ${readNumber(data, 'outboxPendingCount')} · 最老 ${formatDurationSeconds(readNumber(data, 'outboxOldestPendingAgeSeconds'))} · 隔离 ${readNumber(data, 'outboxQuarantineCount')} · 连续失败 ${readNumber(data, 'publishConsecutiveFailureCount')}`
+  }
+
+  if (component.name === 'systemResources') {
+    const cpu = formatNumber(readNumber(data, 'cpuUsagePercent'), 1)
+    const memory = formatNumber(readNumber(data, 'memoryUsagePercent'), 1)
+    const workers = readNumber(data, 'threadPoolAvailableWorkerThreads')
+    const maxWorkers = readNumber(data, 'threadPoolMaxWorkerThreads')
+    const workingSet = formatBytes(readNumber(data, 'processWorkingSetBytes'))
+    return `CPU ${cpu}% · 内存 ${memory}% · Worker ${workers}/${maxWorkers} · 进程 ${workingSet}`
   }
 
   if (component.name === 'scheduler') {

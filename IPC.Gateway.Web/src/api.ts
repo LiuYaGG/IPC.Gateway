@@ -346,6 +346,11 @@ export interface SystemResourceStatus {
   availableMemoryBytes: number
   usedMemoryBytes: number
   processWorkingSetBytes: number
+  threadPoolAvailableWorkerThreads: number
+  threadPoolMaxWorkerThreads: number
+  threadPoolAvailableCompletionPortThreads: number
+  threadPoolMaxCompletionPortThreads: number
+  threadPoolWorkerUtilizationPercent: number
   sampleTime: string
   source: string
 }
@@ -764,6 +769,35 @@ export interface PlcConnection {
   driverOptionsJson: string
 }
 
+export interface GatewayConnectionParameterDefinition {
+  key: string
+  label: string
+  parameterType: string
+  group: string
+  defaultValue: string
+  placeholder: string
+  helpText: string
+  unit: string
+  required: boolean
+  secret: boolean
+  advanced: boolean
+  readOnly: boolean
+  min?: number | null
+  max?: number | null
+  options: string[]
+}
+
+export interface GatewayProtocolCatalogItem {
+  driverId: string
+  displayName: string
+  protocol: string
+  category: string
+  builtIn: boolean
+  signatureStatus: string
+  signatureError: string
+  parameters: GatewayConnectionParameterDefinition[]
+}
+
 export interface GroupConfig {
   id: string
   deviceId: string
@@ -1133,15 +1167,29 @@ export interface WriteTagResult {
 }
 
 export interface GatewayUpdatePackageManifest {
+  manifestVersion: number
   packageId: string
   product: string
   packageType: string
   version: string
   minVersion: string
   createdTime: string
+  buildId: string
   entryDirectory: string
   requiresRestart: boolean
   description: string
+  hashAlgorithm: string
+  files: GatewayUpdatePackageFileDigest[]
+  signatureAlgorithm: string
+  signature: string
+  signer: string
+  signedTime?: string | null
+}
+
+export interface GatewayUpdatePackageFileDigest {
+  path: string
+  sha256: string
+  sizeBytes: number
 }
 
 export interface GatewayUpdatePackageRecord {
@@ -1155,6 +1203,14 @@ export interface GatewayUpdatePackageRecord {
   uploadedTime: string
   status: string
   errorMessage: string
+  manifestVersion: number
+  fileCount: number
+  contentHashValid: boolean
+  signatureValid: boolean
+  trustStatus: string
+  trustMessage: string
+  signer: string
+  signedTime?: string | null
   manifest: GatewayUpdatePackageManifest
 }
 
@@ -1191,6 +1247,9 @@ export interface GatewayUpdateStatus {
   installDirectory: string
   updateDirectory: string
   offlineScriptPath: string
+  requirePackageFileDigests: boolean
+  requirePackageSignature: boolean
+  trustedPackagePublicKeyConfigured: boolean
   pendingAction?: GatewayPendingUpdateAction | null
   packages: GatewayUpdatePackageRecord[]
   rollbackPoints: GatewayRollbackPoint[]
@@ -1200,6 +1259,57 @@ export interface GatewayPrepareUpdateResult {
   prepared: boolean
   message: string
   pendingAction: GatewayPendingUpdateAction
+}
+
+export interface GatewaySupportRuntimeSummary {
+  isRunning: boolean
+  projectId: string
+  projectName: string
+  configurationStore: string
+  deviceCount: number
+  onlineDeviceCount: number
+  tagCount: number
+  goodTagCount: number
+  badTagCount: number
+  noDataTagCount: number
+  startedTime: string
+  lastReloadTime: string
+}
+
+export interface GatewaySupportComponent {
+  name: string
+  status: string
+  message: string
+  data: Record<string, unknown>
+}
+
+export interface GatewaySupportAuditEntry {
+  timestamp: string
+  action: string
+  outcome: string
+  target: string
+  userName: string
+  path: string
+  traceId: string
+  errorMessage: string
+}
+
+export interface GatewaySupportSnapshot {
+  snapshotId: string
+  traceId: string
+  capturedTimeUtc: string
+  capturedBy: string
+  productId: string
+  version: string
+  environmentName: string
+  machineName: string
+  processId: number
+  runtime: GatewaySupportRuntimeSummary
+  components: GatewaySupportComponent[]
+  recentErrors: RuntimeErrorDetail[]
+  recentAudit: GatewaySupportAuditEntry[]
+  auditDetailsIncluded: boolean
+  recommendedActions: string[]
 }
 
 export interface GatewayWatchdogCheckResult {
@@ -1265,6 +1375,87 @@ export interface GatewayWatchdogConfig {
   monitorRuleEngine: boolean
   monitorOpcUa: boolean
   monitorScheduler: boolean
+}
+
+export interface GatewayDeviceTemplateSummary {
+  templateId: string
+  name: string
+  protocol: string
+  description: string
+  groupCount: number
+  tagCount: number
+}
+
+export interface GatewayDeviceTemplateApplyRequest {
+  deviceName: string
+  host: string
+  port: number
+  groupName: string
+  defaultScanRateMs: number
+}
+
+export interface GatewayDeviceTemplateApplyResult {
+  device: DeviceConfig
+  addedGroupCount: number
+  addedTagCount: number
+}
+
+export interface GatewayTagImportResult {
+  totalRows: number
+  addedCount: number
+  updatedCount: number
+  warnings: string[]
+}
+
+export interface GatewayLicenseStatus {
+  configured: boolean
+  valid: boolean
+  operational: boolean
+  expired: boolean
+  signatureVerified: boolean
+  requireValidLicense: boolean
+  productId: string
+  customerName: string
+  edition: string
+  serialNumber: string
+  expiresUtc: string
+  maxDevices: number
+  maxTags: number
+  features: string[]
+  status: string
+  message: string
+}
+
+export interface GatewayCompatibilityMatrix {
+  gatewayVersion: string
+  configurationSchemaVersion: string
+  backupSchemaVersion: string
+  minimumSupportedPluginManifestVersion: string
+  items: GatewayCompatibilityItem[]
+}
+
+export interface GatewayCompatibilityItem {
+  capability: string
+  currentVersion: string
+  compatibleRange: string
+  status: string
+  notes: string
+}
+
+export interface GatewayProtocolDriverInfo {
+  driverId: string
+  displayName: string
+  protocol: string
+  version: string
+  minGatewayVersion: string
+  maxGatewayVersion: string
+  assemblyPath: string
+  assemblySha256: string
+  signatureStatus: string
+  signatureError: string
+  signer: string
+  loadContextId: string
+  builtIn: boolean
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -1437,6 +1628,12 @@ export async function loadSync(signal?: AbortSignal) {
   return result.data
 }
 
+export async function loadProtocolCatalog() {
+  const result = await request<ApiResult<GatewayProtocolCatalogItem[]>>('/api/config/protocols')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Protocol catalog failed to load')
+  return result.data
+}
+
 export async function loadReadyHealth(signal?: AbortSignal) {
   return requestHealth<GatewayHealthResponse>('/api/health/ready', signal)
 }
@@ -1496,6 +1693,12 @@ export async function loadUpdateStatus() {
   return result.data
 }
 
+export async function loadSupportSnapshot() {
+  const result = await request<ApiResult<GatewaySupportSnapshot>>('/api/maintenance/support/snapshot')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '售后快照生成失败')
+  return result.data
+}
+
 export async function uploadUpdatePackage(file: File) {
   const form = new FormData()
   form.append('file', file)
@@ -1552,6 +1755,90 @@ export async function saveWatchdogConfig(options: GatewayWatchdogConfig) {
     body: JSON.stringify(options)
   })
   if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '看门狗配置保存失败')
+  return result.data
+}
+
+export async function loadDeviceTemplates() {
+  const result = await request<ApiResult<GatewayDeviceTemplateSummary[]>>('/api/commercial/device-templates')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Device templates failed to load')
+  return result.data
+}
+
+export async function applyDeviceTemplate(templateId: string, payload: GatewayDeviceTemplateApplyRequest) {
+  const result = await request<ApiResult<GatewayDeviceTemplateApplyResult>>(`/api/commercial/device-templates/${encodeURIComponent(templateId)}/apply`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Device template apply failed')
+  return result.data
+}
+
+export async function exportTagsCsv(deviceId = '') {
+  const suffix = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+  let response: Response
+  try {
+    response = await fetch(`/api/commercial/tags/export${suffix}`, {
+      credentials: 'include',
+      headers: { Accept: 'text/csv' }
+    })
+  } catch (error) {
+    if (isAbortError(error)) throw error
+    throw new Error(localizeErrorMessage(error instanceof Error ? error.message : undefined) || 'Tag export failed')
+  }
+  if (!response.ok) throw new Error(`Tag export failed (HTTP ${response.status})`)
+  return await response.blob()
+}
+
+export async function importTagsCsv(csv: string, deviceId = '') {
+  const suffix = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+  const result = await request<ApiResult<GatewayTagImportResult>>(`/api/commercial/tags/import${suffix}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/csv' },
+    body: csv
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Tag import failed')
+  return result.data
+}
+
+export async function exportProjectBackup() {
+  let response: Response
+  try {
+    response = await fetch('/api/commercial/project/backup', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' }
+    })
+  } catch (error) {
+    if (isAbortError(error)) throw error
+    throw new Error(localizeErrorMessage(error instanceof Error ? error.message : undefined) || 'Project backup failed')
+  }
+  if (!response.ok) throw new Error(`Project backup failed (HTTP ${response.status})`)
+  return await response.blob()
+}
+
+export async function restoreProjectBackup(json: string) {
+  const result = await request<ApiResult<{ backupId: string; projectId: string; projectName: string; deviceCount: number; tagCount: number }>>('/api/commercial/project/restore', {
+    method: 'POST',
+    body: json
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Project restore failed')
+  return result.data
+}
+
+export async function loadLicenseStatus() {
+  const result = await request<ApiResult<GatewayLicenseStatus>>('/api/commercial/license')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'License status failed to load')
+  return result.data
+}
+
+export async function loadCompatibilityMatrix() {
+  const result = await request<ApiResult<GatewayCompatibilityMatrix>>('/api/commercial/compatibility')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Compatibility matrix failed to load')
+  return result.data
+}
+
+export async function loadProtocolDrivers() {
+  const result = await request<ApiResult<GatewayProtocolDriverInfo[]>>('/api/commercial/drivers')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Protocol driver status failed to load')
   return result.data
 }
 

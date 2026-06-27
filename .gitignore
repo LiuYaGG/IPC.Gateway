@@ -1,0 +1,44 @@
+# IDE and local workspace state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET build output
+**/bin/
+**/obj/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.nupkg
+*.snupkg
+
+# Node/Vite build output
+**/node_modules/
+IPC.Gateway.Web/dist/
+IPC.Gateway.Web/.vite/
+
+# Release packaging output
+artifacts/
+
+# Runtime data and local logs
+**/Data/
+**/logs/
+*.log
+vite-*.log
+postgres-start.log
+
+# Local-only configuration overrides. Keep tracked examples in source control.
+*.Local.json
+*.local.json
+appsettings.*.local.json
+appsettings.Local.json
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

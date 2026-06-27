@@ -65,7 +65,9 @@ Pass criteria:
 - API readiness returns structured JSON and the expected health status for the smoke configuration.
 - The root page returns HTML from the published `wwwroot`.
 - The smoke output reports `DevelopmentConfigPresent=false` and at least one frontend asset.
+- When metrics are enabled, an authorized API Token with `runtime.view` can scrape `/metrics` and receives Prometheus text containing `ipc_gateway_runtime_up`.
 - Browser smoke follows `deployment/BROWSER_SMOKE_CHECKLIST.md` and verifies login, dashboard readiness, audit view, storage health settings, and the device/rule navigation paths.
+- Commercial smoke verifies device template apply, tag CSV export/import on a test device, project backup download, project restore dry-run evidence, license status display, protocol driver signature status, and compatibility matrix rendering.
 
 ## 5. Production Promotion Gates
 
@@ -75,7 +77,12 @@ Do not promote when any of these are true:
 - `Gateway:Auth:Secret` or `Gateway:Auth:BootstrapAdminPassword` is empty, default, or stored in source control.
 - Forwarded headers are enabled without trusted proxy IP or CIDR boundaries.
 - Storage health thresholds are not sized for the target gateway disk.
-- Readiness is `Unhealthy` for runtime, configuration, scheduler, storage, history, MQTT outbox, or rule engine.
+- Reliability thresholds are not sized for the target gateway CPU, memory, and thread-pool baseline.
+- Readiness is `Unhealthy` for runtime, configuration, scheduler, storage, system resources, history, MQTT outbox, or rule engine.
+- Prometheus/OpenTelemetry metrics are enabled but `/metrics` scraping has not been verified with a production API Token.
+- Maintenance support snapshot generation fails for an authorized maintenance user.
+- Commercial license public key, signed license file, protocol driver signature policy, and trusted driver public key are missing or still set to development defaults.
+- Project backup/restore and tag CSV import/export have not been tested against the target version compatibility matrix.
 - Rollback package, database backup, and service recovery steps are not available.
 
 ## 6. Rollback Evidence
@@ -85,6 +92,7 @@ Before starting the upgrade, record:
 - Previous package path and checksum.
 - New package path and checksum.
 - Database backup location.
+- Gateway project backup location and compatibility matrix output.
 - Machine-local production configuration location.
 - Windows Service name and startup account.
 - Operator responsible for rollback approval.

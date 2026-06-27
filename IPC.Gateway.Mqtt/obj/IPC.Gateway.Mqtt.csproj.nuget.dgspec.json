@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj": {}
+    "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj": {}
   },
   "projects": {
-    "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj": {
+    "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
+        "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
         "projectName": "IPC.Gateway.Mqtt",
-        "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
+        "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
         "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-        "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\obj\\",
+        "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -40,6 +40,9 @@
           "warnAsError": [
             "NU1605"
           ]
+        },
+        "restoreLockProperties": {
+          "restorePackagesWithLockFile": "true"
         },
         "restoreAuditProperties": {
           "enableAudit": "true",

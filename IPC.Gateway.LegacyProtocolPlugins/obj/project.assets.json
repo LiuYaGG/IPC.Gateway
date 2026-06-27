@@ -4495,11 +4495,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
+      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
       "projectName": "IPC.Gateway.LegacyProtocolPlugins",
-      "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
+      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj",
       "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\obj\\",
+      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -4522,8 +4522,8 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj",
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj",
               "excludeAssets": "runtime"
             }
           }
@@ -4533,6 +4533,9 @@
         "warnAsError": [
           "NU1605"
         ]
+      },
+      "restoreLockProperties": {
+        "restorePackagesWithLockFile": "true"
       },
       "restoreAuditProperties": {
         "enableAudit": "true",

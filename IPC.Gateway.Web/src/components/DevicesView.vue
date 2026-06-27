@@ -8,6 +8,7 @@
       </el-input>
       <el-tag type="info">{{ filteredDevices.length }} / {{ devices.length }}</el-tag>
       <el-button :icon="Refresh" @click="emit('changed')">刷新</el-button>
+      <el-button v-if="canCreateDevice" :icon="Collection" @click="openTemplateDrawer">设备模板</el-button>
       <el-button v-if="canCreateDevice" type="primary" :icon="Plus" @click="openCreate">新增设备</el-button>
     </div>
 
@@ -64,6 +65,16 @@
             <div class="card-actions">
               <el-button v-if="selectedNode.type === 'device' && selectedDevice && canCreateGroup" size="small" @click="openCreateGroup(selectedDevice)">新增分组</el-button>
               <el-button v-if="selectedDevice && canCreateTag" size="small" type="primary" @click="openCreateTag(selectedDevice, selectedGroup)">新增标签</el-button>
+              <el-button v-if="selectedDevice" size="small" :icon="Download" @click="exportSelectedTags">导出点位</el-button>
+              <el-upload
+                v-if="selectedDevice && canImportTags"
+                accept=".csv"
+                :auto-upload="false"
+                :show-file-list="false"
+                :on-change="handleImportTags"
+              >
+                <el-button size="small" :icon="Upload">导入点位</el-button>
+              </el-upload>
               <el-button v-if="selectedGroup && canEditGroup" size="small" @click="openEditGroup(selectedGroup)">编辑分组</el-button>
               <el-button v-if="selectedGroup && canDeleteGroup" size="small" type="danger" @click="removeGroup(selectedGroup)">删除分组</el-button>
               <el-button v-if="selectedDevice && canEditDevice" size="small" @click="openEdit(selectedDevice)">编辑设备</el-button>
@@ -204,6 +215,52 @@
       </el-card>
     </div>
 
+    <el-drawer v-model="templateDrawerVisible" title="设备模板" size="520px">
+      <el-form label-width="120px" class="device-form">
+        <el-form-item label="模板">
+          <el-select v-model="templateForm.templateId" filterable :loading="templateLoading">
+            <el-option
+              v-for="item in deviceTemplates"
+              :key="item.templateId"
+              :label="`${item.name} (${item.protocol})`"
+              :value="item.templateId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="设备名称" required>
+          <el-input v-model="templateForm.deviceName" placeholder="例如：Line1 PLC" />
+        </el-form-item>
+        <div class="form-grid">
+          <el-form-item label="主机">
+            <el-input v-model="templateForm.host" placeholder="IP / endpoint" />
+          </el-form-item>
+          <el-form-item label="端口">
+            <el-input-number v-model="templateForm.port" :min="0" :max="65535" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item label="分组名称">
+            <el-input v-model="templateForm.groupName" placeholder="Process" />
+          </el-form-item>
+          <el-form-item label="采集周期(ms)">
+            <el-input-number v-model="templateForm.defaultScanRateMs" :min="100" :max="3600000" />
+          </el-form-item>
+        </div>
+        <el-alert
+          v-if="selectedTemplate"
+          type="info"
+          :closable="false"
+          :title="`${selectedTemplate.description}，${selectedTemplate.groupCount} 组 / ${selectedTemplate.tagCount} 点位`"
+        />
+      </el-form>
+      <template #footer>
+        <div class="drawer-footer">
+          <el-button @click="templateDrawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="applyingTemplate" @click="submitTemplate">应用模板</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
     <el-drawer v-model="drawerVisible" :title="editingId ? '编辑设备' : '新增设备'" size="640px">
       <el-form v-if="form" label-width="130px" :model="form" class="device-form">
         <el-divider content-position="left">基础信息</el-divider>
@@ -212,8 +269,8 @@
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="协议" required>
-            <el-select v-model="form.protocol" filterable @change="changeProtocol">
-              <el-option v-for="item in protocolOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <el-select :model-value="selectedProtocolValue" filterable :loading="protocolCatalogLoading" @change="changeProtocol">
+              <el-option v-for="item in availableProtocolOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
           <el-form-item label="启用">
@@ -233,7 +290,7 @@
         </div>
 
         <el-divider content-position="left">连接参数</el-divider>
-        <DeviceConnectionFields :device="form" :protocol="form.protocol" />
+        <DeviceConnectionFields :device="form" :protocol="form.protocol" :parameters="selectedProtocolParameters" />
       </el-form>
 
       <template #footer>
@@ -309,10 +366,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Collection, CollectionTag, Connection, Delete, Edit, Folder, FolderAdd, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElLoading, ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
+import { Collection, CollectionTag, Connection, Delete, Download, Edit, Folder, FolderAdd, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import {
+  applyDeviceTemplate,
   createDeviceTag,
   createDevice,
   createGroup,
@@ -320,12 +378,19 @@ import {
   deleteDevice,
   deleteGroup as deleteGroupRequest,
   deleteTag as deleteTagRequest,
+  exportTagsCsv,
+  importTagsCsv,
+  loadDeviceTemplates,
+  loadProtocolCatalog,
   updateGroup,
   updateTag,
   updateDevice,
   writeTag,
   type DeviceConfig,
   type DeviceRuntimeStatus,
+  type GatewayConnectionParameterDefinition,
+  type GatewayDeviceTemplateSummary,
+  type GatewayProtocolCatalogItem,
   type GroupConfig,
   type ProjectConfig,
   type TagConfig,
@@ -339,8 +404,7 @@ import {
   cloneDevice,
   createDeviceDraft,
   normalizeDevice,
-  protocolLabel,
-  protocolOptions
+  protocolLabel
 } from '../utils/deviceDefaults'
 import { cloneGroup, cloneTag, createGroupDraft, createTagDraft, normalizeGroup, normalizeTag } from '../utils/tagDefaults'
 import { formatDateTime } from '../utils/format'
@@ -407,8 +471,23 @@ const devicePageSize = ref(100)
 const selectedNodeKey = ref('root')
 const drawerVisible = ref(false)
 const saving = ref(false)
+const deletingDeviceId = ref('')
 const editingId = ref('')
 const form = ref<DeviceConfig | null>(null)
+const protocolCatalog = ref<GatewayProtocolCatalogItem[]>([])
+const protocolCatalogLoading = ref(false)
+const templateDrawerVisible = ref(false)
+const templateLoading = ref(false)
+const applyingTemplate = ref(false)
+const deviceTemplates = ref<GatewayDeviceTemplateSummary[]>([])
+const templateForm = reactive({
+  templateId: '',
+  deviceName: '',
+  host: '',
+  port: 0,
+  groupName: '',
+  defaultScanRateMs: 1000
+})
 const groupDrawerVisible = ref(false)
 const groupSaving = ref(false)
 const editingGroupId = ref('')
@@ -435,6 +514,7 @@ const contextMenu = reactive({
   node: null as DeviceTreeNode | null
 })
 let filterTimer: number | undefined
+let protocolCatalogLoadPromise: Promise<void> | null = null
 
 const editingActive = computed(() =>
   drawerVisible.value ||
@@ -442,6 +522,7 @@ const editingActive = computed(() =>
   tagDrawerVisible.value ||
   writeDrawerVisible.value ||
   saving.value ||
+  Boolean(deletingDeviceId.value) ||
   groupSaving.value ||
   tagSaving.value ||
   writeSaving.value)
@@ -459,6 +540,25 @@ const hasTagWritePermission = computed(() => hasPermission(PERMISSIONS.tagsWrite
 const canSaveCurrentDevice = computed(() => editingId.value ? canEditDevice.value : canCreateDevice.value)
 const canSaveCurrentGroup = computed(() => editingGroupId.value ? canEditGroup.value : canCreateGroup.value)
 const canSaveCurrentTag = computed(() => editingTagId.value ? canEditTag.value : canCreateTag.value)
+const canImportTags = computed(() => canCreateTag.value || canEditTag.value)
+const selectedTemplate = computed(() => deviceTemplates.value.find(item => item.templateId === templateForm.templateId) ?? null)
+const availableProtocolOptions = computed(() => {
+  return protocolCatalog.value.map(item => ({
+    label: item.displayName || protocolLabel(item.protocol),
+    value: protocolSelectionValue(item),
+    item
+  }))
+})
+const selectedProtocolItem = computed(() => {
+  if (!form.value) return null
+  return findProtocolCatalogItem(form.value.protocol, form.value.connection?.driverId)
+})
+const selectedProtocolParameters = computed(() => selectedProtocolItem.value?.parameters ?? [])
+const selectedProtocolValue = computed(() => {
+  if (!form.value) return ''
+  const item = selectedProtocolItem.value
+  return item ? protocolSelectionValue(item) : form.value.protocol
+})
 
 const devices = computed(() => (props.project?.devices ?? []).map(cloneDevice))
 const runtimeMap = computed(() => {
@@ -580,6 +680,10 @@ watch(selectedNodeKey, key => {
   expandSelectedNodePath(key)
 })
 
+onMounted(() => {
+  void ensureProtocolCatalogLoaded()
+})
+
 onBeforeUnmount(() => {
   if (filterTimer !== undefined) window.clearTimeout(filterTimer)
 })
@@ -632,13 +736,117 @@ function runContextAction(action: string) {
   closeContextMenu()
   if (!node) return
 
-  if (action === 'add-device') openCreate()
-  else if (action === 'edit-device' && node.device) openEdit(node.device)
+  if (action === 'add-device') void openCreate()
+  else if (action === 'edit-device' && node.device) void openEdit(node.device)
   else if (action === 'delete-device' && node.device) removeDevice(node.device)
   else if (action === 'add-group' && node.device) openCreateGroup(node.device)
   else if (action === 'edit-group' && node.group) openEditGroup(node.group, node.device)
   else if (action === 'delete-group' && node.group) removeGroup(node.group, node.device)
   else if (action === 'add-tag' && node.device) openCreateTag(node.device, node.type === 'group' ? node.group : undefined)
+}
+
+async function ensureProtocolCatalogLoaded() {
+  if (protocolCatalog.value.length) return
+  if (!protocolCatalogLoadPromise) {
+    protocolCatalogLoading.value = true
+    protocolCatalogLoadPromise = loadProtocolCatalog()
+      .then(items => {
+        protocolCatalog.value = items
+      })
+      .catch(error => {
+        ElMessage.warning(error instanceof Error ? error.message : '协议目录加载失败')
+      })
+      .finally(() => {
+        protocolCatalogLoading.value = false
+        protocolCatalogLoadPromise = null
+      })
+  }
+  await protocolCatalogLoadPromise
+}
+
+function protocolSelectionValue(item: GatewayProtocolCatalogItem) {
+  if (!item.builtIn && item.driverId) return `driver:${item.driverId}`
+  return item.protocol
+}
+
+function findProtocolSelection(value: string) {
+  return availableProtocolOptions.value.find(option => option.value === value)?.item ?? null
+}
+
+function findProtocolCatalogItem(protocol: string, driverId = '') {
+  const normalizedDriverId = normalizeKey(driverId)
+  if (normalizedDriverId) {
+    const driverMatch = protocolCatalog.value.find(item => normalizeKey(item.driverId) === normalizedDriverId)
+    if (driverMatch) return driverMatch
+  }
+  return protocolCatalog.value.find(item => item.protocol === protocol) ?? null
+}
+
+function applyCatalogProtocol(device: DeviceConfig, item: GatewayProtocolCatalogItem) {
+  applyProtocolDefaults(device, item.protocol)
+  device.connection.protocol = item.protocol
+  device.connection.driverId = item.builtIn ? '' : item.driverId
+  applyConnectionParameterDefaults(device.connection, item.parameters)
+}
+
+function applyConnectionParameterDefaults(
+  connection: DeviceConfig['connection'],
+  parameters: GatewayConnectionParameterDefinition[]
+) {
+  for (const parameter of parameters) {
+    if (!parameter.key || parameter.defaultValue === '') continue
+    applyConnectionParameterDefault(connection, parameter)
+  }
+}
+
+function applyConnectionParameterDefault(
+  connection: DeviceConfig['connection'],
+  parameter: GatewayConnectionParameterDefinition
+) {
+  const value = parseParameterDefault(parameter)
+  if (parameter.key.startsWith('driverOptions.')) {
+    const optionKey = parameter.key.slice('driverOptions.'.length)
+    const options = readDriverOptionsJson(connection.driverOptionsJson)
+    if (shouldApplyParameterDefault(options[optionKey], parameter)) {
+      options[optionKey] = value
+      connection.driverOptionsJson = JSON.stringify(options)
+    }
+    return
+  }
+
+  const connectionRecord = connection as unknown as Record<string, unknown>
+  if (shouldApplyParameterDefault(connectionRecord[parameter.key], parameter)) {
+    connectionRecord[parameter.key] = value
+  }
+}
+
+function shouldApplyParameterDefault(currentValue: unknown, parameter: GatewayConnectionParameterDefinition) {
+  if (currentValue === undefined || currentValue === null || currentValue === '') return true
+  return typeof currentValue === 'number' && currentValue === 0 && parameter.defaultValue !== '0'
+}
+
+function parseParameterDefault(parameter: GatewayConnectionParameterDefinition) {
+  const type = (parameter.parameterType || '').toLowerCase()
+  if (type === 'number') {
+    const value = Number(parameter.defaultValue)
+    return Number.isFinite(value) ? value : undefined
+  }
+  if (type === 'switch') {
+    const value = parameter.defaultValue.toLowerCase()
+    return value === 'true' || value === '1'
+  }
+  return parameter.defaultValue
+}
+
+function readDriverOptionsJson(json: string) {
+  try {
+    const parsed = JSON.parse(json || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 function treeNodeIcon(node: DeviceTreeNode) {
@@ -920,28 +1128,117 @@ function normalizeKey(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase()
 }
 
-function openCreate() {
+async function openTemplateDrawer() {
   if (!canCreateDevice.value) {
     ElMessage.warning('当前用户没有新增设备权限')
     return
   }
+  templateDrawerVisible.value = true
+  if (deviceTemplates.value.length) return
+
+  templateLoading.value = true
+  try {
+    deviceTemplates.value = await loadDeviceTemplates()
+    templateForm.templateId = deviceTemplates.value[0]?.templateId || ''
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '设备模板加载失败')
+  } finally {
+    templateLoading.value = false
+  }
+}
+
+async function submitTemplate() {
+  if (!templateForm.templateId) {
+    ElMessage.warning('请选择设备模板')
+    return
+  }
+  if (!templateForm.deviceName.trim()) {
+    ElMessage.warning('请输入设备名称')
+    return
+  }
+
+  applyingTemplate.value = true
+  try {
+    const result = await applyDeviceTemplate(templateForm.templateId, {
+      deviceName: templateForm.deviceName,
+      host: templateForm.host,
+      port: templateForm.port,
+      groupName: templateForm.groupName,
+      defaultScanRateMs: templateForm.defaultScanRateMs
+    })
+    ElMessage.success(`模板已应用：新增 ${result.addedTagCount} 个点位`)
+    selectedNodeKey.value = deviceNodeKey(result.device)
+    templateDrawerVisible.value = false
+    emit('changed')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '设备模板应用失败')
+  } finally {
+    applyingTemplate.value = false
+  }
+}
+
+async function exportSelectedTags() {
+  if (!selectedDevice.value) return
+  try {
+    const blob = await exportTagsCsv(selectedDevice.value.id)
+    downloadBlob(blob, `ipc-gateway-tags-${selectedDevice.value.name || 'device'}-${snapshotTimestamp()}.csv`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '点位导出失败')
+  }
+}
+
+async function handleImportTags(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw || !selectedDevice.value) return
+  try {
+    const text = await raw.text()
+    const result = await importTagsCsv(text, selectedDevice.value.id)
+    ElMessage.success(`点位导入完成：新增 ${result.addedCount}，更新 ${result.updatedCount}`)
+    if (result.warnings?.length) ElMessage.warning(result.warnings[0])
+    emit('changed')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '点位导入失败')
+  }
+}
+
+async function openCreate() {
+  if (!canCreateDevice.value) {
+    ElMessage.warning('当前用户没有新增设备权限')
+    return
+  }
+  await ensureProtocolCatalogLoaded()
   editingId.value = ''
   form.value = createDeviceDraft()
+  const defaultProtocol = availableProtocolOptions.value.find(option => option.item.protocol === 'ModbusTcp')?.item ??
+    availableProtocolOptions.value[0]?.item
+  if (!defaultProtocol) {
+    ElMessage.warning('没有可用协议，请确认驱动插件已加载')
+    return
+  }
+  applyCatalogProtocol(form.value, defaultProtocol)
   drawerVisible.value = true
 }
 
-function openEdit(device: DeviceConfig) {
+async function openEdit(device: DeviceConfig) {
   if (!canEditDevice.value) {
     ElMessage.warning('当前用户没有编辑设备权限')
     return
   }
+  await ensureProtocolCatalogLoaded()
   editingId.value = device.id
   form.value = cloneDevice(device)
+  const catalogItem = findProtocolCatalogItem(form.value.protocol, form.value.connection?.driverId)
+  if (catalogItem) applyConnectionParameterDefaults(form.value.connection, catalogItem.parameters)
   drawerVisible.value = true
 }
 
 function changeProtocol(protocol: string) {
   if (!form.value) return
+  const catalogItem = findProtocolSelection(protocol)
+  if (catalogItem) {
+    applyCatalogProtocol(form.value, catalogItem)
+    return
+  }
   applyProtocolDefaults(form.value, protocol)
 }
 
@@ -979,6 +1276,7 @@ async function saveDevice() {
 }
 
 async function removeDevice(device: DeviceConfig) {
+  if (deletingDeviceId.value) return
   if (!canDeleteDevice.value) {
     ElMessage.warning('当前用户没有删除设备权限')
     return
@@ -989,7 +1287,19 @@ async function removeDevice(device: DeviceConfig) {
       confirmButtonText: '删除',
       cancelButtonText: '取消'
     })
-    await deleteDevice(device.id)
+    deletingDeviceId.value = device.id
+    const loading = ElLoading.service({
+      lock: true,
+      fullscreen: true,
+      text: `正在删除设备“${device.name}”，请稍候...`,
+      background: 'rgba(15, 23, 42, 0.35)'
+    })
+    try {
+      await deleteDevice(device.id)
+    } finally {
+      loading.close()
+      deletingDeviceId.value = ''
+    }
     if (selectedDevice.value?.id === device.id) selectedNodeKey.value = 'root'
     ElMessage.success('设备已删除')
     emit('changed')
@@ -1171,6 +1481,22 @@ async function removeTag(tag: TagConfig) {
 
 function countDeviceTags(device: DeviceConfig) {
   return (device.tags?.length ?? 0) + (device.groups ?? []).reduce((total, group) => total + (group.tags?.length ?? 0), 0)
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function snapshotTimestamp() {
+  const digits = new Date().toISOString().replace(/\D/g, '')
+  return digits.slice(0, 14) || 'export'
 }
 
 function connectionSummary(device: DeviceConfig) {

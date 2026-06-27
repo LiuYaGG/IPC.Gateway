@@ -2552,11 +2552,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC.Gateway\\IPC.Gateway.LoadTests\\IPC.Gateway.LoadTests.csproj",
+      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LoadTests\\IPC.Gateway.LoadTests.csproj",
       "projectName": "IPC.Gateway.LoadTests",
-      "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.LoadTests\\IPC.Gateway.LoadTests.csproj",
+      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LoadTests\\IPC.Gateway.LoadTests.csproj",
       "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC.Gateway\\IPC.Gateway.LoadTests\\obj\\",
+      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LoadTests\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -2579,8 +2579,8 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
             }
           }
         }
@@ -2589,6 +2589,9 @@
         "warnAsError": [
           "NU1605"
         ]
+      },
+      "restoreLockProperties": {
+        "restorePackagesWithLockFile": "true"
       },
       "restoreAuditProperties": {
         "enableAudit": "true",

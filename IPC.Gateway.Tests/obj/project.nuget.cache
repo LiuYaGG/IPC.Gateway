@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "uCPpinFXYzw=",
+  "dgSpecHash": "ZsH62iNx1QM=",
   "success": true,
-  "projectFilePath": "F:\\IPC.Gateway\\IPC.Gateway.Tests\\IPC.Gateway.Tests.csproj",
+  "projectFilePath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Tests\\IPC.Gateway.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\liuYGG\\.nuget\\packages\\bitfaster.caching\\2.6.0\\bitfaster.caching.2.6.0.nupkg.sha512",
     "C:\\Users\\liuYGG\\.nuget\\packages\\coverlet.collector\\6.0.4\\coverlet.collector.6.0.4.nupkg.sha512",

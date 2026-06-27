@@ -24,7 +24,13 @@ This document tracks the commercial-readiness baseline for the gateway. Keep it 
 - Device connection failures and recoveries are recorded in the runtime error timeline and persisted through the runtime state cache.
 - MQTT outbox status exposes oldest pending age, invalid cache files, quarantined corrupt files, quarantine retention cleanup, consecutive publish failures, and next retry time for outage recovery visibility.
 - Readiness checks include MQTT outbox and local history storage watermarks, with configurable `Gateway:StorageHealth` thresholds. Low free space is reported as `Degraded`; critically low free space is reported as `Unhealthy`.
-- The operations dashboard consumes `/api/health/ready` and shows component-level readiness for gateway runtime, configuration, MQTT, storage, history, rule engine, and scheduler.
+- Readiness checks include configurable `Gateway:Reliability` CPU, memory, and thread-pool thresholds so site resource pressure can degrade or fail traffic admission before runtime work stalls.
+- The operations dashboard consumes `/api/health/ready` and shows component-level readiness for gateway runtime, configuration, MQTT, storage, history, rule engine, scheduler, and system resources.
+- Maintenance users can generate a compact support snapshot from `/api/maintenance/support/snapshot`, covering runtime summary, component health, recent runtime errors, update state, watchdog state, recommendations, and permission-gated audit detail.
+- The WebHost registers OpenTelemetry-compatible .NET metrics under the `IPC.Gateway` Meter and exposes a Prometheus scrape endpoint at `/metrics` for runtime, device, tag, MQTT, scheduler, system-resource, history, rule-engine, and OPC UA status.
+- Commercial operations expose device templates, tag CSV import/export, license status, protocol driver trust state, project backup/restore, and a version compatibility matrix under `/api/commercial`.
+- Protocol driver manifests carry assembly SHA256 and RSA-SHA256 signature metadata; production deployments can require trusted signatures through `Gateway:ProtocolDrivers`.
+- Commercial license validation supports signed offline license payloads through `Gateway:License`, with production examples requiring a valid trusted license.
 - Storage health thresholds are editable from the operations dashboard through `/api/config/storage-health` and are stored as versioned gateway configuration.
 - Published WebHost packages include the built frontend under `wwwroot`, while development runs can still serve `IPC.Gateway.Web/dist` from the source tree.
 - Release WebHost publish packages exclude `appsettings.Development.json` so development-only passwords and auth secrets are not shipped with plant-floor packages.
@@ -57,8 +63,9 @@ This document tracks the commercial-readiness baseline for the gateway. Keep it 
 ## Commercial Readiness Checklist
 
 - Security: no production default secrets, no default administrator password, role checks on configuration writes, and baseline response security headers.
-- Operations: health endpoints expose live and ready states, and the dashboard surfaces component-level runtime, scheduler, MQTT outbox, and storage status.
-- Reliability: scheduler timeout, queue backpressure, device reconnect backoff, MQTT outbox, and local history are visible in runtime status.
-- Readiness: `/health/ready` degrades or fails when scheduler pressure, runtime state, storage watermarks, or health collection failures indicate the gateway is no longer ready.
+- Operations: health endpoints expose live and ready states, Prometheus/OpenTelemetry metrics expose machine-scrapable runtime signals, the dashboard surfaces component-level runtime, scheduler, MQTT outbox, storage, and resource-pressure status, and maintenance support snapshots provide first-response evidence for after-sales support.
+- Reliability: scheduler timeout, queue backpressure, device reconnect backoff, MQTT outbox, local history, CPU pressure, memory pressure, and thread-pool pressure are visible in runtime/readiness status.
+- Readiness: `/health/ready` degrades or fails when scheduler pressure, runtime state, storage watermarks, system resource pressure, or health collection failures indicate the gateway is no longer ready.
+- Commercial capability: device templates, tag CSV import/export, signed protocol drivers, signed license authorization, project backup/restore, and compatibility matrix checks must be smoke-tested before delivery.
 - Deployment: production configuration must be supplied via environment variables or deployment-specific config, including storage watermarks sized for the target gateway disk and trusted forwarded-header proxy settings when deployed behind TLS termination. `IPC.Gateway.WebHost/appsettings.Production.example.json`, `deployment/nginx/ipc-gateway.conf.example`, and `deployment/windows` provide the current production starting point.
 - Verification: backend tests, frontend build, and dependency audit must run before each release candidate.

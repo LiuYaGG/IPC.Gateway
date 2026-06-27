@@ -35,9 +35,24 @@ Use `deployment/package/build-ipc-gateway-package.ps1` to create an offline pack
 ```powershell
 deployment/package/build-ipc-gateway-package.ps1 -PackageType Install -Version 1.0.0
 deployment/package/build-ipc-gateway-package.ps1 -PackageType Upgrade -Version 1.0.1
+deployment/package/build-ipc-gateway-package.ps1 -PackageType Upgrade -Version 1.0.2 -SigningPrivateKeyPath C:\secure\update-signing-private.pem -Signer "IPC Release"
 ```
 
-Each package is a zip containing `ipc-gateway-package.json`, `payload/`, and deployment tools. Upload upgrade packages from the Web console under `安装升级`. The WebHost validates and stages the package, creates a rollback point, and writes `Data/Updates/pending-action.json` plus `Data/Updates/apply-pending-update.ps1`.
+Each package is a zip containing `ipc-gateway-package.json`, `payload/`, and deployment tools. The manifest lists every archive file with SHA256 and size; the WebHost rejects missing files, extra files, digest mismatches, invalid paths, and signature failures before staging. Upload upgrade packages from the Web console under `安装升级`. The WebHost validates and stages the package, creates a rollback point, and writes `Data/Updates/pending-action.json` plus `Data/Updates/apply-pending-update.ps1`.
+
+For commercial delivery, keep the signing private key only in CI/release custody and deploy the public key to the gateway, for example:
+
+```json
+"Gateway": {
+  "Maintenance": {
+    "Updates": {
+      "RequirePackageFileDigests": true,
+      "RequirePackageSignature": true,
+      "TrustedPackagePublicKeyPath": "security/update-signing-public.pem"
+    }
+  }
+}
+```
 
 Run the generated script during a maintenance window, or use `deployment/windows/apply-ipc-gateway-offline-update.ps1 -PendingActionPath <Data/Updates/pending-action.json>`.
 
@@ -61,10 +76,58 @@ Run the full release candidate checklist in `deployment/RELEASE_CHECKLIST.md` be
 - Readiness: `GET /health/ready`
 - API readiness: `GET /api/health/ready`
 
-Use readiness, not liveness, for traffic admission. Readiness includes runtime, scheduler, MQTT outbox, storage, history, rule engine, and configuration health.
+Use readiness, not liveness, for traffic admission. Readiness includes runtime, scheduler, MQTT outbox, storage, history, rule engine, system resources, and configuration health.
+
+Site reliability thresholds are configured under `Gateway:Reliability`. For production deployments, tune these values with environment variables such as `Gateway__Reliability__DegradedCpuUsagePercent`, `Gateway__Reliability__UnhealthyCpuUsagePercent`, `Gateway__Reliability__DegradedMemoryUsagePercent`, `Gateway__Reliability__UnhealthyMemoryUsagePercent`, `Gateway__Reliability__DegradedAvailableThreadPoolWorkers`, and `Gateway__Reliability__UnhealthyAvailableThreadPoolWorkers`.
+
+## Metrics
+
+The WebHost registers OpenTelemetry-compatible .NET metrics through the `IPC.Gateway` Meter and exposes Prometheus text at `GET /metrics` when `Gateway:Observability:MetricsEnabled=true`.
+
+Prometheus should scrape `/metrics` with an API Token that has `runtime.view` permission, using either `Authorization: Bearer <token>` or the configured `Gateway:Security:ApiTokens:HeaderName`. A starting scrape config is available at `deployment/prometheus/ipc-gateway-prometheus.yml`.
+
+The exported metrics include runtime up state, device/tag quality counts, MQTT connection and outbox state, scheduler queue and timeout counters, CPU and memory pressure, history storage size, rule-engine state, and OPC UA server state.
+
+## Commercial Operations
+
+The WebHost exposes commercial plant-floor operations under `/api/commercial`:
+
+- Device templates: list built-in PLC templates and apply them to create a device, group, and starter tags.
+- Tag bulk operations: export and import device tags as CSV for commissioning worksheets.
+- License status: report signed offline license validity, expiry, feature flags, and capacity limits.
+- Protocol drivers: report loaded drivers, manifest compatibility, assembly SHA256, signer, and signature trust status.
+- Project backup/restore: export a versioned JSON backup and restore project, MQTT, OPC UA, history, and storage-health settings.
+- Compatibility matrix: report gateway, WebHost, backup schema, project schema, plugin manifest, metrics, and driver compatibility.
+
+For commercial production, configure signed license and protocol driver trust settings outside source control:
+
+```json
+"Gateway": {
+  "License": {
+    "ProductId": "IPC.Gateway",
+    "LicenseFile": "Data/License/ipc-gateway-license.json",
+    "TrustedPublicKeyPem": "-----BEGIN PUBLIC KEY-----...-----END PUBLIC KEY-----",
+    "RequireValidLicense": true
+  },
+  "ProtocolDrivers": {
+    "RequireSignature": true,
+    "TrustedPublicKeyPem": "-----BEGIN PUBLIC KEY-----...-----END PUBLIC KEY-----"
+  }
+}
+```
+
+Protocol driver manifests can be signed during release or partner certification:
+
+```powershell
+.\scripts\sign-protocol-driver.ps1 -AssemblyPath .\Drivers\Partner.Driver.dll -SigningPrivateKeyPath C:\secure\driver-signing-private.pem -Signer "IPC Partner"
+```
 
 ## Watchdog
 
 The WebHost starts `IPC.Gateway.Watchdog` as a separate hosted service. It monitors runtime liveness, scheduler progress, MQTT, history, rule engine, and OPC UA Server status. Runtime stalls trigger an in-process gateway restart first. Repeated recovery attempts are throttled by `Gateway:Watchdog` restart-protection settings and persisted under `Data/Watchdog`.
 
 For production Windows Service, systemd, and Docker deployments, keep `Gateway:Watchdog:RequestHostStopOnUnrecoverable=true` only when the external supervisor is configured to restart the service and has its own restart limits.
+
+## Support Snapshots
+
+Use `GET /api/maintenance/support/snapshot` or the Maintenance page support snapshot button when opening an after-sales support case. The snapshot is a compact JSON summary of runtime health, component status, recent runtime errors, update state, watchdog state, and recommended next actions. It requires `maintenance.view`; recent audit details are included only when the caller also has `audit.view`.

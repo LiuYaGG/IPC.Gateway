@@ -1,6 +1,49 @@
 <template>
   <div class="connection-fields">
-    <template v-if="protocol === 'VirtualPlc'">
+    <template v-if="connectionParameters.length">
+      <div class="form-grid">
+        <el-form-item
+          v-for="parameter in connectionParameters"
+          :key="parameter.key"
+          :label="parameter.label || parameter.key"
+          :required="parameter.required"
+        >
+          <el-input-number
+            v-if="parameterType(parameter) === 'number'"
+            :model-value="numberParameterValue(parameter)"
+            :min="parameter.min ?? undefined"
+            :max="parameter.max ?? undefined"
+            :disabled="parameter.readOnly"
+            @update:model-value="updateNumberParameter(parameter, $event)"
+          />
+          <el-select
+            v-else-if="parameterType(parameter) === 'select'"
+            :model-value="textParameterValue(parameter)"
+            :disabled="parameter.readOnly"
+            @update:model-value="updateTextParameter(parameter, $event)"
+          >
+            <el-option v-for="item in parameter.options" :key="item" :label="item" :value="item" />
+          </el-select>
+          <el-switch
+            v-else-if="parameterType(parameter) === 'switch'"
+            :model-value="switchParameterValue(parameter)"
+            :disabled="parameter.readOnly"
+            @update:model-value="updateSwitchParameter(parameter, $event)"
+          />
+          <el-input
+            v-else
+            :model-value="textParameterValue(parameter)"
+            :type="parameterType(parameter) === 'password' ? 'password' : parameterType(parameter) === 'textarea' ? 'textarea' : 'text'"
+            :placeholder="parameter.placeholder"
+            :disabled="parameter.readOnly"
+            :show-password="parameterType(parameter) === 'password'"
+            @update:model-value="updateTextParameter(parameter, $event)"
+          />
+        </el-form-item>
+      </div>
+    </template>
+
+    <template v-else-if="protocol === 'VirtualPlc'">
       <el-form-item label="虚拟源">
         <el-input v-model="device.connection.host" placeholder="default" />
       </el-form-item>
@@ -172,7 +215,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { DeviceConfig } from '../api'
+import type { DeviceConfig, GatewayConnectionParameterDefinition } from '../api'
 import {
   isNetworkProtocol,
   isSerialProtocol,
@@ -185,7 +228,10 @@ import {
 const props = defineProps<{
   device: DeviceConfig
   protocol: string
+  parameters?: GatewayConnectionParameterDefinition[]
 }>()
+
+const connectionParameters = computed(() => (props.parameters ?? []).filter(parameter => parameter.key))
 
 const networkHostLabel = computed(() => {
   if (props.protocol === 'OpcUa') return 'Endpoint'
@@ -202,4 +248,70 @@ const networkPortLabel = computed(() => props.protocol === 'OmronFins' ? 'FINS�
 const transportLocked = computed(() => props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa')
 const serialHostLabel = computed(() => props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '采集串口' : '串口')
 const serialPortLabel = computed(() => props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '表计波特率' : '波特率')
+function parameterType(parameter: GatewayConnectionParameterDefinition) {
+  return (parameter.parameterType || 'text').toLowerCase()
+}
+
+function textParameterValue(parameter: GatewayConnectionParameterDefinition) {
+  const value = getParameterValue(parameter)
+  if (value === null || value === undefined || value === '') return parameter.defaultValue ?? ''
+  return String(value)
+}
+
+function numberParameterValue(parameter: GatewayConnectionParameterDefinition) {
+  const value = getParameterValue(parameter)
+  const rawValue = value === null || value === undefined || value === '' ? parameter.defaultValue : value
+  const number = Number(rawValue)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function switchParameterValue(parameter: GatewayConnectionParameterDefinition) {
+  const value = getParameterValue(parameter)
+  if (typeof value === 'boolean') return value
+  const text = String(value === null || value === undefined || value === '' ? parameter.defaultValue : value).toLowerCase()
+  return text === 'true' || text === '1'
+}
+
+function updateTextParameter(parameter: GatewayConnectionParameterDefinition, value: string | number) {
+  updateParameterValue(parameter, value)
+}
+
+function updateNumberParameter(parameter: GatewayConnectionParameterDefinition, value: number | undefined) {
+  updateParameterValue(parameter, value)
+}
+
+function updateSwitchParameter(parameter: GatewayConnectionParameterDefinition, value: string | number | boolean) {
+  updateParameterValue(parameter, value)
+}
+
+function getParameterValue(parameter: GatewayConnectionParameterDefinition) {
+  const key = parameter.key
+  if (key.startsWith('driverOptions.')) {
+    const options = readDriverOptions()
+    return options[key.slice('driverOptions.'.length)]
+  }
+  return (props.device.connection as unknown as Record<string, unknown>)[key]
+}
+
+function updateParameterValue(parameter: GatewayConnectionParameterDefinition, value: unknown) {
+  const key = parameter.key
+  if (key.startsWith('driverOptions.')) {
+    const options = readDriverOptions()
+    options[key.slice('driverOptions.'.length)] = value
+    props.device.connection.driverOptionsJson = JSON.stringify(options)
+    return
+  }
+  ;(props.device.connection as unknown as Record<string, unknown>)[key] = value
+}
+
+function readDriverOptions() {
+  try {
+    const parsed = JSON.parse(props.device.connection.driverOptionsJson || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
+}
 </script>

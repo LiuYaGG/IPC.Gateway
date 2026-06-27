@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "G8tkilZTFWQ=",
+  "dgSpecHash": "5Sme17JLwfo=",
   "success": true,
-  "projectFilePath": "F:\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
+  "projectFilePath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Mqtt\\IPC.Gateway.Mqtt.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }
