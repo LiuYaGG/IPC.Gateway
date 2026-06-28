@@ -489,9 +489,9 @@ F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-
 F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-C7tCHC8k.css
 F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\5xxxrpwrzw-{0}-66chf79id9-66chf79id9.gz
 F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\elementPlus-DaD86Mdl.js.gz
-F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-xuLAljyh.js.gz
 F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\elementPlus-DaD86Mdl.js
-F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-xuLAljyh.js
 F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\jwatoi6cp9-{0}-kujaoo4wfd-kujaoo4wfd.gz
-F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\yvrshkfnuz-{0}-1tw5qi8qw6-1tw5qi8qw6.gz
-F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\sr9150fvzb-{0}-g823qud9ep-g823qud9ep.gz
+F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-Dj0z7SRl.js.gz
+F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Release\net10.0\wwwroot\assets\index-Dj0z7SRl.js
+F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\o6ogpw77bg-{0}-x0uaxdqrdv-x0uaxdqrdv.gz
+F:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Release\net10.0\compressed\sr9150fvzb-{0}-6w1ret9zpo-6w1ret9zpo.gz

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="IPC Gateway">
+  <rect width="64" height="64" rx="14" fill="#167c70"/>
+  <rect x="19" y="19" width="26" height="26" rx="6" fill="none" stroke="#ffffff" stroke-width="4"/>
+  <path d="M28 27h8v10h-8z" fill="#ffffff"/>
+  <path d="M14 22h6M14 32h6M14 42h6M44 22h6M44 32h6M44 42h6M22 14v6M32 14v6M42 14v6M22 44v6M32 44v6M42 44v6" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+</svg>

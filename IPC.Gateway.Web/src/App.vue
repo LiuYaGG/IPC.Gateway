@@ -262,6 +262,7 @@ import { ElMessage } from 'element-plus'
 import { Box, Connection, Cpu, DataLine, Document, Expand, Fold, Lock, Monitor, Operation, Promotion, Refresh, Share, SwitchButton, Tickets, User, UserFilled } from '@element-plus/icons-vue'
 import {
   loadSync,
+  loadStatus,
   loadReadyHealth,
   loadCurrentUser,
   login,
@@ -277,7 +278,11 @@ import {
   type HistoryConfig,
   type OpcUaServerConfig,
   type ProjectConfig,
+  type RuntimeDevicesChangedEvent,
+  type RuntimeEventEnvelope,
   type RuntimeErrorDetail,
+  type RuntimeStatusPatchEvent,
+  type RuntimeTagsChangedEvent,
   type StorageHealthConfig,
   type SyncPayload,
   type TagValueSnapshot
@@ -334,6 +339,9 @@ const loginForm = reactive({ username: '', password: '' })
 const captchaRef = ref<InstanceType<typeof LoginCaptcha> | null>(null)
 let refreshTimer: number | undefined
 let refreshController: AbortController | undefined
+let runtimeEvents: EventSource | undefined
+let lastRuntimeReconcileTime = 0
+const runtimeEventsConnected = ref(false)
 
 const status = computed(() => sync.value ? sanitizeStatus(sync.value.status, project.value ?? sync.value.project) : null)
 const permissionSet = computed(() => createPermissionSet(currentPermissions.value))
@@ -391,6 +399,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopRuntimeEvents()
   stopAutoRefresh()
   refreshController?.abort()
 })
@@ -417,6 +426,7 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
+  stopRuntimeEvents()
   stopAutoRefresh()
   refreshController?.abort()
   await logout().catch(() => undefined)
@@ -443,6 +453,36 @@ async function refresh(options: { silent: boolean }) {
   } catch (error) {
     if (isAbortError(error)) return
     if (!options.silent) ElMessage.error(error instanceof Error ? error.message : '加载失败')
+    if (error instanceof Error && error.message.includes('登录已过期')) {
+      localStorage.removeItem('ipc.gateway.authenticated')
+      currentPermissions.value = []
+      authenticated.value = false
+    }
+  } finally {
+    if (refreshController === controller) refreshController = undefined
+    if (!options.silent) loading.value = false
+  }
+}
+
+async function refreshRuntime(options: { silent: boolean; preserveTags?: boolean }) {
+  if (refreshController) return
+
+  const controller = new AbortController()
+  refreshController = controller
+  if (!options.silent) loading.value = true
+  try {
+    const [statusData, healthData] = await Promise.all([
+      loadStatus(controller.signal),
+      loadReadyHealth(controller.signal).catch(error => {
+        if (isAbortError(error)) throw error
+        return null
+      })
+    ])
+    if (controller.signal.aborted || refreshController !== controller || !sync.value) return
+    applyRuntimeStatus(statusData, healthData, { preserveTags: !!options.preserveTags })
+  } catch (error) {
+    if (isAbortError(error)) return
+    if (!options.silent) ElMessage.error(error instanceof Error ? error.message : '鍔犺浇澶辫触')
     if (error instanceof Error && error.message.includes('登录已过期')) {
       localStorage.removeItem('ipc.gateway.authenticated')
       currentPermissions.value = []
@@ -524,7 +564,221 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
     history.value = structuredClone(data.history)
   }
   storageHealth.value = structuredClone(data.storageHealth)
+  lastRuntimeReconcileTime = Date.now()
   pushTrend(data)
+}
+
+function applyRuntimeStatus(
+  statusData: GatewayStatus,
+  healthData: GatewayHealthResponse | null,
+  options: { preserveTags?: boolean } = {}
+) {
+  if (!sync.value) return
+
+  const nextStatus = options.preserveTags
+    ? { ...statusData, tags: sync.value.status.tags }
+    : statusData
+
+  const nextSync: SyncPayload = {
+    ...sync.value,
+    status: nextStatus
+  }
+  sync.value = nextSync
+  health.value = healthData
+  lastRefreshTime.value = new Date().toISOString()
+  lastRuntimeReconcileTime = Date.now()
+  pushTrend(nextSync)
+}
+
+function startRuntimeEvents() {
+  if (runtimeEvents || typeof EventSource === 'undefined') return
+
+  runtimeEvents = new EventSource('/api/config/status/events', { withCredentials: true })
+  runtimeEvents.onopen = () => {
+    runtimeEventsConnected.value = true
+  }
+  runtimeEvents.onerror = () => {
+    runtimeEventsConnected.value = false
+  }
+  runtimeEvents.addEventListener('tags', event => {
+    const payload = parseRuntimeEvent<RuntimeTagsChangedEvent>(event)
+    if (payload) applyRuntimeTags(payload)
+  })
+  runtimeEvents.addEventListener('devices', event => {
+    const payload = parseRuntimeEvent<RuntimeDevicesChangedEvent>(event)
+    if (payload) applyRuntimeDevices(payload)
+  })
+  runtimeEvents.addEventListener('status', event => {
+    const payload = parseRuntimeEvent<RuntimeStatusPatchEvent>(event)
+    if (payload) applyRuntimeStatusPatch(payload)
+  })
+}
+
+function stopRuntimeEvents() {
+  runtimeEvents?.close()
+  runtimeEvents = undefined
+  runtimeEventsConnected.value = false
+}
+
+function parseRuntimeEvent<T>(event: Event): T | null {
+  const data = (event as MessageEvent<string>).data
+  if (!data) return null
+  try {
+    const envelope = JSON.parse(data) as RuntimeEventEnvelope<T>
+    return envelope.data ?? null
+  } catch {
+    return null
+  }
+}
+
+function applyRuntimeTags(payload: RuntimeTagsChangedEvent) {
+  if (!sync.value || !payload.tags?.length) return
+
+  const currentStatus = sync.value.status
+  const tags = mergeRuntimeTags(currentStatus.tags ?? [], payload.tags)
+  if (tags === currentStatus.tags) return
+
+  sync.value.status = { ...currentStatus, tags }
+  lastRefreshTime.value = new Date().toISOString()
+}
+
+function applyRuntimeDevices(payload: RuntimeDevicesChangedEvent) {
+  if (!sync.value) return
+
+  const currentStatus = sync.value.status
+  const devices = mergeRuntimeDevices(currentStatus.devices ?? [], payload.devices ?? [], payload.removedDeviceKeys ?? [])
+  if (devices === currentStatus.devices) return
+
+  sync.value.status = { ...currentStatus, devices }
+  lastRefreshTime.value = new Date().toISOString()
+}
+
+function applyRuntimeStatusPatch(payload: RuntimeStatusPatchEvent) {
+  if (!sync.value || !payload.status) return
+
+  const currentStatus = sync.value.status
+  const patch = payload.status
+  const nextStatus: GatewayStatus = {
+    ...currentStatus,
+    ...patch,
+    devices: patch.devices?.length ? patch.devices : currentStatus.devices,
+    tags: currentStatus.tags
+  }
+
+  sync.value.status = nextStatus
+  lastRefreshTime.value = new Date().toISOString()
+  pushTrend({ ...sync.value, status: nextStatus })
+}
+
+function mergeRuntimeTags(current: TagValueSnapshot[], changed: TagValueSnapshot[]) {
+  if (changed.length === 0) return current
+
+  const index = new Map<string, number>()
+  current.forEach((tag, itemIndex) => {
+    const key = runtimeTagKey(tag)
+    if (key) index.set(key, itemIndex)
+  })
+
+  let modified = false
+  const next = current.slice()
+  for (const tag of changed) {
+    const key = runtimeTagKey(tag)
+    if (!key) continue
+
+    const itemIndex = index.get(key)
+    if (itemIndex === undefined) {
+      index.set(key, next.length)
+      next.push(tag)
+      modified = true
+      continue
+    }
+
+    if (!sameRuntimeTag(next[itemIndex], tag)) {
+      next[itemIndex] = { ...next[itemIndex], ...tag }
+      modified = true
+    }
+  }
+
+  return modified ? next : current
+}
+
+function mergeRuntimeDevices(current: DeviceRuntimeStatus[], changed: DeviceRuntimeStatus[], removedKeys: string[]) {
+  if (changed.length === 0 && removedKeys.length === 0) return current
+
+  const removed = new Set(removedKeys.map(normalizeKey).filter(Boolean))
+  const next = removed.size > 0
+    ? current.filter(device => !removed.has(normalizeKey(runtimeDeviceKey(device))))
+    : current.slice()
+  const index = new Map<string, number>()
+  next.forEach((device, itemIndex) => {
+    const key = runtimeDeviceKey(device)
+    if (key) index.set(key, itemIndex)
+  })
+
+  let modified = removed.size > 0 && next.length !== current.length
+  for (const device of changed) {
+    const key = runtimeDeviceKey(device)
+    if (!key) continue
+
+    const itemIndex = index.get(key)
+    if (itemIndex === undefined) {
+      index.set(key, next.length)
+      next.push(device)
+      modified = true
+      continue
+    }
+
+    if (!sameRuntimeDevice(next[itemIndex], device)) {
+      next[itemIndex] = { ...next[itemIndex], ...device }
+      modified = true
+    }
+  }
+
+  return modified ? next : current
+}
+
+function runtimeTagKey(tag: TagValueSnapshot) {
+  const id = normalizeKey(tag.tagId)
+  if (id) return `id:${id}`
+  return tagPathKey(`${tag.deviceId}|${tag.deviceName}`, `${tag.groupId}|${tag.groupName}`, tag.tagName)
+}
+
+function runtimeDeviceKey(device: DeviceRuntimeStatus) {
+  const id = normalizeKey(device.deviceId)
+  if (id) return `id:${id}`
+  const name = normalizeKey(device.deviceName)
+  return name ? `name:${name}` : ''
+}
+
+function sameRuntimeTag(left: TagValueSnapshot, right: TagValueSnapshot) {
+  return left.valueText === right.valueText &&
+    left.rawValueText === right.rawValueText &&
+    left.quality === right.quality &&
+    left.timestamp === right.timestamp &&
+    left.errorMessage === right.errorMessage &&
+    left.cleaningApplied === right.cleaningApplied &&
+    left.cleaningAction === right.cleaningAction &&
+    left.cleaningMessage === right.cleaningMessage
+}
+
+function sameRuntimeDevice(left: DeviceRuntimeStatus, right: DeviceRuntimeStatus) {
+  return left.isConnected === right.isConnected &&
+    left.isPolling === right.isPolling &&
+    left.status === right.status &&
+    left.consecutiveFailures === right.consecutiveFailures &&
+    left.totalReads === right.totalReads &&
+    left.successfulReads === right.successfulReads &&
+    left.failedReads === right.failedReads &&
+    left.successRate === right.successRate &&
+    left.lastPollTime === right.lastPollTime &&
+    left.lastSuccessTime === right.lastSuccessTime &&
+    left.lastFailureTime === right.lastFailureTime &&
+    left.nextPollTime === right.nextPollTime &&
+    left.lastTaskStatus === right.lastTaskStatus &&
+    left.lastTaskDurationMs === right.lastTaskDurationMs &&
+    left.slowPollCount === right.slowPollCount &&
+    left.timeoutCount === right.timeoutCount &&
+    left.lastError === right.lastError
 }
 
 function shouldPreserveActiveConfigDraft(view: string, options: { silent: boolean }) {
@@ -658,8 +912,22 @@ function normalizeKey(value: string | null | undefined) {
 
 function syncAutoRefresh() {
   stopAutoRefresh()
+  stopRuntimeEvents()
   if (!authenticated.value || !autoRefresh.value) return
-  refreshTimer = window.setInterval(() => refresh({ silent: true }), refreshIntervalMs.value)
+
+  if (typeof EventSource !== 'undefined') {
+    startRuntimeEvents()
+    refreshTimer = window.setInterval(() => {
+      const now = Date.now()
+      if (!runtimeEventsConnected.value || now - lastRuntimeReconcileTime > 30000) {
+        lastRuntimeReconcileTime = now
+        refreshRuntime({ silent: true, preserveTags: runtimeEventsConnected.value })
+      }
+    }, Math.max(refreshIntervalMs.value, 10000))
+    return
+  }
+
+  refreshTimer = window.setInterval(() => refreshRuntime({ silent: true }), refreshIntervalMs.value)
 }
 
 function stopAutoRefresh() {

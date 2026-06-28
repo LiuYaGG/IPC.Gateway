@@ -104,8 +104,12 @@
             <el-table-column label="标签" width="90">
               <template #default="{ row }">{{ countDeviceTags(row) }}</template>
             </el-table-column>
-            <el-table-column label="成功率" width="100">
-              <template #default="{ row }">{{ Number(deviceRuntime(row)?.successRate ?? 0).toFixed(1) }}%</template>
+            <el-table-column label="点位健康率" width="130">
+              <template #default="{ row }">
+                <el-tag size="small" :type="deviceTagHealth(row).type">
+                  {{ deviceTagHealth(row).label }}
+                </el-tag>
+              </template>
             </el-table-column>
             <el-table-column label="操作" width="178" fixed="right">
               <template #default="{ row }">
@@ -149,8 +153,8 @@
               </el-tag>
             </div>
             <div>
-              <span>成功率</span>
-              <strong>{{ Number(deviceRuntime(selectedDevice)?.successRate ?? 0).toFixed(1) }}%</strong>
+              <span>点位健康率</span>
+              <strong>{{ deviceTagHealth(selectedDevice).label }}</strong>
             </div>
           </div>
 
@@ -943,13 +947,60 @@ function deviceRuntime(device?: DeviceConfig) {
 }
 
 function tagSnapshot(tag: TagConfig) {
+  return findTagSnapshot(selectedDevice.value, selectedGroup.value, tag)
+}
+
+function findTagSnapshot(device: DeviceConfig | undefined, group: GroupConfig | null | undefined, tag: TagConfig) {
   const byId = runtimeTagMap.value.get(`id:${normalizeKey(tag.id)}`)
   if (byId) return byId
 
-  const device = selectedDevice.value
-  const group = selectedGroup.value
   return runtimeTagMap.value.get(`path:${tagPathKey(device?.name, group?.name, tag.name)}`) ??
     runtimeTagMap.value.get(`path:${tagPathKey(device?.id, group?.id, tag.name)}`)
+}
+
+function deviceTagHealth(device?: DeviceConfig) {
+  if (!device || !device.enabled) return { good: 0, total: 0, rate: 0, type: 'info' as const, label: '-' }
+
+  let good = 0
+  let total = 0
+  forEachReadableDeviceTag(device, (tag, group) => {
+    total += 1
+    const snapshot = findTagSnapshot(device, group, tag)
+    if (normalizeKey(snapshot?.quality) === 'good') good += 1
+  })
+
+  const rate = total <= 0 ? 0 : Number(((good / total) * 100).toFixed(1))
+  return {
+    good,
+    total,
+    rate,
+    type: healthRateType(rate, total),
+    label: total <= 0 ? '-' : `${rate.toFixed(1)}% (${good}/${total})`
+  }
+}
+
+function forEachReadableDeviceTag(device: DeviceConfig, visit: (tag: TagConfig, group?: GroupConfig) => void) {
+  for (const tag of device.tags ?? []) {
+    if (isReadableEnabledTag(tag)) visit(tag)
+  }
+
+  for (const group of device.groups ?? []) {
+    if (!group?.enabled) continue
+    for (const tag of group.tags ?? []) {
+      if (isReadableEnabledTag(tag)) visit(tag, group)
+    }
+  }
+}
+
+function isReadableEnabledTag(tag: TagConfig) {
+  return !!tag?.enabled && normalizeKey(tag.accessMode) !== 'writeonly'
+}
+
+function healthRateType(rate: number, total: number) {
+  if (total <= 0) return 'info'
+  if (rate >= 99.95) return 'success'
+  if (rate >= 80) return 'warning'
+  return 'danger'
 }
 
 function tagCurrentValue(tag: TagConfig) {

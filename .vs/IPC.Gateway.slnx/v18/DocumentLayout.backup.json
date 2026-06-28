@@ -3,19 +3,16 @@
   "WorkspaceRootPath": "F:\\IPC.Gateway\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|F:\\ipc.gateway\u672C\u673A\u53D1\u5E03\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
-      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\gatewayauthendpoints.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayauthendpoints.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -25,37 +22,28 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 1,
           "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "web.config",
-              "DocumentMoniker": "F:\\ipc.gateway\u672C\u673A\u53D1\u5E03\\web.config",
-              "RelativeDocumentMoniker": "..\\ipc.gateway\u672C\u673A\u53D1\u5E03\\web.config",
-              "ToolTip": "F:\\ipc.gateway\u672C\u673A\u53D1\u5E03\\web.config*",
-              "RelativeToolTip": "..\\ipc.gateway\u672C\u673A\u53D1\u5E03\\web.config*",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAACfAAAAAAAAAA==",
+              "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
+              "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\web.config",
+              "ToolTip": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
+              "RelativeToolTip": "IPC.Gateway.WebHost\\web.config",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABQAAAASAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000601|",
-              "WhenOpened": "2026-06-23T15:28:23.095Z",
+              "WhenOpened": "2026-06-24T02:36:52.274Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "appsettings.json",
-              "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\appsettings.json",
-              "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\appsettings.json",
-              "ToolTip": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\appsettings.json",
-              "RelativeToolTip": "IPC.Gateway.WebHost\\appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEUAAAAVAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-06-23T14:42:25.242Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
               "Title": "GatewayAuthEndpoints.cs",
               "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
               "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
@@ -76,8 +64,7 @@
               "RelativeToolTip": "IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
               "ViewState": "AgIAACIAAAAAAAAAAAAAwBEAAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-06-23T10:39:58.452Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-06-23T10:39:58.452Z"
             }
           ]
         }

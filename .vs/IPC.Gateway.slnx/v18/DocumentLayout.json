@@ -1,17 +1,37 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "F:\\IPC.Gateway\\",
+  "WorkspaceRootPath": "F:\\IPC\\IPC.Gateway\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.webhost\\gatewayruntimepushhostedservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayruntimepushhostedservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.webhost\\gatewayruntimepushevents.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayruntimepushevents.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.legacyprotocolplugins\\siemenss7\\s7client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|solutionrelative:ipc.gateway.legacyprotocolplugins\\siemenss7\\s7client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.legacyprotocolplugins\\siemenss7\\s7batchreadexecutor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|solutionrelative:ipc.gateway.legacyprotocolplugins\\siemenss7\\s7batchreadexecutor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.legacyprotocolplugins\\siemenss7\\s7batchreadcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{C835F7B4-5A65-18F2-5C2B-0352C7069608}|IPC.Gateway.LegacyProtocolPlugins\\IPC.Gateway.LegacyProtocolPlugins.csproj|solutionrelative:ipc.gateway.legacyprotocolplugins\\siemenss7\\s7batchreadcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.webhost\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
       "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\web.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\gatewayauthendpoints.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.webhost\\gatewayauthendpoints.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayauthendpoints.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc.gateway\\ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|f:\\ipc\\ipc.gateway\\ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{061DF15A-9165-B373-A89F-AC6F4EC971B6}|IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj|solutionrelative:ipc.gateway.webhost\\gatewayapisecuritycontrols.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
@@ -22,45 +42,105 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 0,
           "Children": [
-            {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
-            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "GatewayRuntimePushHostedService.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayRuntimePushHostedService.cs",
+              "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\GatewayRuntimePushHostedService.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayRuntimePushHostedService.cs",
+              "RelativeToolTip": "IPC.Gateway.WebHost\\GatewayRuntimePushHostedService.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-27T10:23:27.794Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "GatewayRuntimePushEvents.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayRuntimePushEvents.cs",
+              "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\GatewayRuntimePushEvents.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayRuntimePushEvents.cs",
+              "RelativeToolTip": "IPC.Gateway.WebHost\\GatewayRuntimePushEvents.cs",
+              "ViewState": "AgIAAAcAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-27T10:23:23.242Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "S7BatchReadExecutor.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadExecutor.cs",
+              "RelativeDocumentMoniker": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadExecutor.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadExecutor.cs",
+              "RelativeToolTip": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadExecutor.cs",
+              "ViewState": "AgIAAKYAAAAAAAAAAAAgwL0AAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-27T08:17:37.341Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "S7Client.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7Client.cs",
+              "RelativeDocumentMoniker": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7Client.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7Client.cs",
+              "RelativeToolTip": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7Client.cs",
+              "ViewState": "AgIAAN8BAAAAAAAAAAAAwOcBAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-27T07:49:10.069Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "S7BatchReadContext.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadContext.cs",
+              "RelativeDocumentMoniker": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadContext.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadContext.cs",
+              "RelativeToolTip": "IPC.Gateway.LegacyProtocolPlugins\\SiemensS7\\S7BatchReadContext.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-27T07:49:06.014Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
               "Title": "web.config",
-              "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
               "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\web.config",
-              "ToolTip": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\web.config",
               "RelativeToolTip": "IPC.Gateway.WebHost\\web.config",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABQAAAASAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABMAAAAxAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000601|",
               "WhenOpened": "2026-06-24T02:36:52.274Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 6,
               "Title": "GatewayAuthEndpoints.cs",
-              "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
               "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
-              "ToolTip": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
               "RelativeToolTip": "IPC.Gateway.WebHost\\GatewayAuthEndpoints.cs",
               "ViewState": "AgIAAB0AAAAAAAAAAADwvy0AAAANAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-06-23T10:40:14.657Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-06-23T10:40:14.657Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 7,
               "Title": "GatewayApiSecurityControls.cs",
-              "DocumentMoniker": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
+              "DocumentMoniker": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
               "RelativeDocumentMoniker": "IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
-              "ToolTip": "F:\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
+              "ToolTip": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
               "RelativeToolTip": "IPC.Gateway.WebHost\\GatewayApiSecurityControls.cs",
               "ViewState": "AgIAACIAAAAAAAAAAAAAwBEAAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",

@@ -339,6 +339,27 @@ export interface RuntimeErrorDetail {
   timestamp: string
 }
 
+export interface RuntimeEventEnvelope<T> {
+  sequence: number
+  type: string
+  timestamp: string
+  data: T
+}
+
+export interface RuntimeTagsChangedEvent {
+  tags: TagValueSnapshot[]
+  pendingCount: number
+}
+
+export interface RuntimeDevicesChangedEvent {
+  devices: DeviceRuntimeStatus[]
+  removedDeviceKeys: string[]
+}
+
+export interface RuntimeStatusPatchEvent {
+  status: Partial<GatewayStatus>
+}
+
 export interface SystemResourceStatus {
   cpuUsagePercent: number
   memoryUsagePercent: number
@@ -376,6 +397,12 @@ export interface RuntimeSchedulerStatus {
   totalSlow: number
   totalBackpressureThrottled: number
   totalRateLimited: number
+  tagValueChangedPendingCount: number
+  tagValueChangedQueueLimit: number
+  tagValueChangedMaxObservedPendingCount: number
+  totalTagValueChangedQueued: number
+  totalTagValueChangedDispatched: number
+  totalTagValueChangedDropped: number
   queue: RuntimePollingQueueStatus
   timeout: RuntimeTimeoutStats
   tasks: RuntimePollingTaskStatus[]
@@ -1625,6 +1652,12 @@ export async function deleteRole(roleName: string) {
 export async function loadSync(signal?: AbortSignal) {
   const result = await request<ApiResult<SyncPayload>>('/api/config/sync', { signal })
   if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '同步运行数据失败')
+  return result.data
+}
+
+export async function loadStatus(signal?: AbortSignal) {
+  const result = await request<ApiResult<GatewayStatus>>('/api/config/status', { signal })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Runtime status failed to load')
   return result.data
 }
 
