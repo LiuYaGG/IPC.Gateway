@@ -3,7 +3,7 @@
     <template v-if="connectionParameters.length">
       <div class="form-grid">
         <el-form-item
-          v-for="parameter in connectionParameters"
+          v-for="(parameter, parameterIndex) in connectionParameters"
           :key="parameter.key"
           :label="parameter.label || parameter.key"
           :required="parameter.required"
@@ -37,6 +37,8 @@
             :placeholder="parameter.placeholder"
             :disabled="parameter.readOnly"
             :show-password="parameterType(parameter) === 'password'"
+            :name="connectionInputName(parameterIndex)"
+            :autocomplete="connectionInputAutocomplete(parameter)"
             @update:model-value="updateTextParameter(parameter, $event)"
           />
         </el-form-item>
@@ -89,16 +91,32 @@
 
       <div v-if="protocol === 'OpcUa'" class="form-grid">
         <el-form-item label="用户名">
-          <el-input v-model="device.connection.username" />
+          <el-input
+            v-model="device.connection.username"
+            name="opcua-auth-principal"
+            autocomplete="off"
+          />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="device.connection.password" type="password" show-password />
+          <el-input
+            v-model="device.connection.password"
+            type="password"
+            show-password
+            name="opcua-auth-secret"
+            autocomplete="new-password"
+          />
         </el-form-item>
         <el-form-item label="客户端证书">
           <el-input v-model="device.connection.certificatePath" placeholder="Data/Certificates/device-client.pfx" />
         </el-form-item>
         <el-form-item label="证书密码">
-          <el-input v-model="device.connection.certificatePassword" type="password" show-password />
+          <el-input
+            v-model="device.connection.certificatePassword"
+            type="password"
+            show-password
+            name="opcua-certificate-secret"
+            autocomplete="new-password"
+          />
         </el-form-item>
         <el-form-item label="证书指纹">
           <el-input v-model="device.connection.certificateThumbprint" placeholder="可选，用于校验证书" />
@@ -155,6 +173,16 @@
           </el-select>
         </el-form-item>
       </div>
+
+      <el-form-item v-if="protocol === 'CanOpen'" label="CANopen 参数">
+        <el-input
+          v-model="device.connection.driverOptionsJson"
+          type="textarea"
+          :autosize="{ minRows: 3, maxRows: 6 }"
+          class="json-editor"
+          placeholder='例如：{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32}'
+        />
+      </el-form-item>
 
       <el-alert
         v-if="protocol === 'Dlt6452007' || protocol === 'Cjt1882004'"
@@ -214,9 +242,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import type { DeviceConfig, GatewayConnectionParameterDefinition } from '../api'
 import {
+  defaultPortForProtocolTransport,
   isNetworkProtocol,
   isSerialProtocol,
   parityOptions,
@@ -236,6 +265,7 @@ const connectionParameters = computed(() => (props.parameters ?? []).filter(para
 const networkHostLabel = computed(() => {
   if (props.protocol === 'OpcUa') return 'Endpoint'
   if (props.protocol === 'OmronFins') return 'PLC 地址'
+  if (props.protocol === 'BacnetIp') return 'BACnet 地址'
   return '主机 / 地址'
 })
 
@@ -244,12 +274,31 @@ const networkHostPlaceholder = computed(() => {
   return '127.0.0.1'
 })
 
-const networkPortLabel = computed(() => props.protocol === 'OmronFins' ? 'FINS端口' : '端口')
-const transportLocked = computed(() => props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa')
-const serialHostLabel = computed(() => props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '采集串口' : '串口')
-const serialPortLabel = computed(() => props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '表计波特率' : '波特率')
+const networkPortLabel = computed(() => props.protocol === 'OmronFins' ? 'FINS端口' : props.protocol === 'BacnetIp' ? 'BACnet/IP 端口' : '端口')
+const transportLocked = computed(() => props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa' || props.protocol === 'BacnetIp')
+const serialHostLabel = computed(() => props.protocol === 'CanOpen' ? 'CAN适配器串口' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '采集串口' : '串口')
+const serialPortLabel = computed(() => props.protocol === 'CanOpen' ? '适配器波特率' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '表计波特率' : '波特率')
+watch(
+  () => [props.protocol, props.device.connection.transport] as const,
+  ([protocol, transport]) => {
+    const port = defaultPortForProtocolTransport(protocol, transport)
+    if (port !== undefined) props.device.connection.port = port
+  }
+)
+
 function parameterType(parameter: GatewayConnectionParameterDefinition) {
   return (parameter.parameterType || 'text').toLowerCase()
+}
+
+function connectionInputName(index: number) {
+  const protocolToken = (props.protocol || 'device').replace(/[^A-Za-z0-9_-]/g, '-')
+  return `device-connection-${protocolToken}-${index}`
+}
+
+function connectionInputAutocomplete(parameter: GatewayConnectionParameterDefinition) {
+  if (parameterType(parameter) === 'password') return 'new-password'
+  const key = (parameter.key || '').toLowerCase()
+  return key.includes('user') || key.includes('account') || key.includes('login') ? 'off' : undefined
 }
 
 function textParameterValue(parameter: GatewayConnectionParameterDefinition) {

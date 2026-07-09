@@ -85,6 +85,45 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="安全" name="security">
+          <el-form :model="opcUa" :disabled="!canEditOpcUa" label-width="190px" class="settings-form settings-form--wide">
+            <el-form-item label="允许匿名访问">
+              <el-switch v-model="opcUa.allowAnonymous" @change="handleAnonymousChange" />
+            </el-form-item>
+            <el-form-item label="用户名密码登录">
+              <el-switch v-model="opcUa.usernamePasswordEnabled" @change="handleUsernamePasswordChange" />
+            </el-form-item>
+            <el-form-item label="用户名">
+              <el-input v-model="opcUa.username" :disabled="!canEditOpcUa || !opcUa.usernamePasswordEnabled" autocomplete="username" />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="opcUa.password"
+                type="password"
+                show-password
+                :placeholder="passwordPlaceholder"
+                :disabled="!canEditOpcUa || !opcUa.usernamePasswordEnabled"
+                autocomplete="new-password"
+              />
+            </el-form-item>
+            <el-form-item label="密码状态">
+              <el-tag size="small" :type="opcUa.passwordConfigured ? 'success' : 'info'">
+                {{ opcUa.passwordConfigured ? '已配置' : '未配置' }}
+              </el-tag>
+            </el-form-item>
+            <el-form-item label="安全策略">
+              <el-select v-model="securityPolicyValue" @change="handleSecurityPolicyChange">
+                <el-option
+                  v-for="policy in securityPolicyOptions"
+                  :key="policy.value"
+                  :label="policy.label"
+                  :value="policy.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="诊断" name="diagnostics">
           <div class="runtime-grid mqtt-outbox-grid">
             <el-form :model="opcUa" :disabled="!canEditOpcUa" label-width="180px" class="settings-form settings-form--wide">
@@ -136,6 +175,25 @@ const emit = defineEmits<{
 const { hasPermission } = usePermissions()
 const activeTab = ref('connection')
 const canEditOpcUa = computed(() => hasPermission(PERMISSIONS.opcUaEdit))
+const securityPolicyOptions = [
+  { label: 'None', value: 'None' },
+  { label: 'Basic256', value: 'Basic256' },
+  { label: 'Basic256Sha256', value: 'Basic256Sha256' }
+]
+
+const passwordPlaceholder = computed(() => {
+  return props.opcUa?.passwordConfigured ? '已配置，留空不修改' : '请输入密码'
+})
+
+const securityPolicyValue = computed({
+  get() {
+    if (!props.opcUa) return 'None'
+    return normalizeSecurityPolicy(props.opcUa.securityPolicy) || deriveSecurityPolicy()
+  },
+  set(value: string) {
+    setSecurityPolicy(value)
+  }
+})
 
 const endpointPreview = computed(() => {
   if (!props.opcUa) return '-'
@@ -144,4 +202,45 @@ const endpointPreview = computed(() => {
   const path = (props.opcUa.endpointPath || 'IPC.Gateway').replace(/^\/+|\/+$/g, '')
   return `opc.tcp://${host}:${props.opcUa.port || 4840}/${path}`
 })
+
+function handleAnonymousChange(value: string | number | boolean) {
+  if (!props.opcUa) return
+  if (!Boolean(value) && !props.opcUa.usernamePasswordEnabled) {
+    props.opcUa.allowAnonymous = true
+  }
+}
+
+function handleUsernamePasswordChange(value: string | number | boolean) {
+  if (!props.opcUa) return
+  if (!Boolean(value) && !props.opcUa.allowAnonymous) {
+    props.opcUa.allowAnonymous = true
+  }
+}
+
+function handleSecurityPolicyChange(value: string | number | boolean) {
+  setSecurityPolicy(String(value))
+}
+
+function setSecurityPolicy(value: string) {
+  if (!props.opcUa) return
+  const policy = normalizeSecurityPolicy(value) || 'None'
+  props.opcUa.securityPolicy = policy
+  props.opcUa.allowSecurityPolicyNone = policy === 'None'
+  props.opcUa.enableBasic256SignAndEncrypt = policy === 'Basic256'
+  props.opcUa.enableBasic256Sha256SignAndEncrypt = policy === 'Basic256Sha256'
+}
+
+function normalizeSecurityPolicy(value: string | undefined) {
+  return securityPolicyOptions.some(policy => policy.value === value) ? value || '' : ''
+}
+
+function deriveSecurityPolicy() {
+  if (!props.opcUa) return 'None'
+  if (props.opcUa.usernamePasswordEnabled && props.opcUa.enableBasic256SignAndEncrypt) return 'Basic256'
+  if (props.opcUa.usernamePasswordEnabled && props.opcUa.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
+  if (props.opcUa.allowSecurityPolicyNone) return 'None'
+  if (props.opcUa.enableBasic256SignAndEncrypt) return 'Basic256'
+  if (props.opcUa.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
+  return 'None'
+}
 </script>

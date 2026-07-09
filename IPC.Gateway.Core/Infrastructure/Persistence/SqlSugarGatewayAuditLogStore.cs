@@ -50,6 +50,16 @@ public sealed class SqlSugarGatewayAuditLogStore : IGatewayAuditLogStore
         db.Insertable(ToEntity(entry)).ExecuteCommand();
     }
 
+    public async Task AppendAsync(GatewayAuditLogEntry entry)
+    {
+        if (entry == null)
+            return;
+
+        await CleanupExpiredAsync(DateTime.Now);
+        using ISqlSugarClient db = _factory.Create();
+        await db.Insertable(ToEntity(entry)).ExecuteCommandAsync();
+    }
+
     public IReadOnlyList<GatewayAuditLogEntry> Query(GatewayAuditLogQuery query)
     {
         query ??= new GatewayAuditLogQuery();
@@ -88,6 +98,44 @@ public sealed class SqlSugarGatewayAuditLogStore : IGatewayAuditLogStore
             .ToList();
     }
 
+    public async Task<IReadOnlyList<GatewayAuditLogEntry>> QueryAsync(GatewayAuditLogQuery query)
+    {
+        query ??= new GatewayAuditLogQuery();
+        int limit = GatewayAuditLog.ClampLimit(query.Limit);
+        int offset = GatewayAuditLog.ClampOffset(query.Offset);
+        string target = (query.Target ?? string.Empty).Trim().ToLowerInvariant();
+        string outcome = (query.Outcome ?? string.Empty).Trim().ToLowerInvariant();
+        string username = (query.UserName ?? string.Empty).Trim().ToLowerInvariant();
+        DateTime? fromUtc = query.FromTime.HasValue ? ToUtc(query.FromTime.Value) : null;
+        DateTime? toUtc = query.ToTime.HasValue ? ToUtc(query.ToTime.Value) : null;
+
+        using ISqlSugarClient db = _factory.Create();
+        ISugarQueryable<GatewayAuditLogEntity> queryable = db.Queryable<GatewayAuditLogEntity>();
+
+        if (!string.IsNullOrWhiteSpace(target))
+            queryable = queryable.Where(item => item.Target.ToLower().Contains(target));
+
+        if (!string.IsNullOrWhiteSpace(outcome))
+            queryable = queryable.Where(item => item.Outcome.ToLower() == outcome);
+
+        if (!string.IsNullOrWhiteSpace(username))
+            queryable = queryable.Where(item => item.UserName.ToLower().Contains(username));
+
+        if (fromUtc.HasValue)
+            queryable = queryable.Where(item => item.TimestampUtc >= fromUtc.Value);
+
+        if (toUtc.HasValue)
+            queryable = queryable.Where(item => item.TimestampUtc <= toUtc.Value);
+
+        return (await queryable
+            .OrderBy(item => item.TimestampUtc, OrderByType.Desc)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync())
+            .Select(ToEntry)
+            .ToList();
+    }
+
     public int DeleteOlderThan(DateTime timestamp)
     {
         DateTime thresholdUtc = ToUtc(timestamp);
@@ -95,6 +143,15 @@ public sealed class SqlSugarGatewayAuditLogStore : IGatewayAuditLogStore
         return db.Deleteable<GatewayAuditLogEntity>()
             .Where(item => item.TimestampUtc < thresholdUtc)
             .ExecuteCommand();
+    }
+
+    public async Task<int> DeleteOlderThanAsync(DateTime timestamp)
+    {
+        DateTime thresholdUtc = ToUtc(timestamp);
+        using ISqlSugarClient db = _factory.Create();
+        return await db.Deleteable<GatewayAuditLogEntity>()
+            .Where(item => item.TimestampUtc < thresholdUtc)
+            .ExecuteCommandAsync();
     }
 
     internal int CleanupExpired(DateTime now)
@@ -109,6 +166,22 @@ public sealed class SqlSugarGatewayAuditLogStore : IGatewayAuditLogStore
             int retentionDays = GatewayAuditLogOptions.ClampRetentionDays(_options.RetentionDays);
             return DeleteOlderThan(now.AddDays(-retentionDays));
         }
+    }
+
+    internal async Task<int> CleanupExpiredAsync(DateTime now)
+    {
+        int retentionDays;
+        lock (_cleanupSync)
+        {
+            DateTime cleanupDate = now.Date;
+            if (_lastCleanupDate == cleanupDate)
+                return 0;
+
+            _lastCleanupDate = cleanupDate;
+            retentionDays = GatewayAuditLogOptions.ClampRetentionDays(_options.RetentionDays);
+        }
+
+        return await DeleteOlderThanAsync(now.AddDays(-retentionDays));
     }
 
     private static GatewayAuditLogEntity ToEntity(GatewayAuditLogEntry entry)

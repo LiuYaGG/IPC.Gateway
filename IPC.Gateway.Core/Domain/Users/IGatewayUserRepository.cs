@@ -20,9 +20,19 @@ namespace IPC.Gateway.Core.Domain.Users;
 public interface IGatewayUserRepository
 {
     GatewayUserInfo? ValidatePassword(string username, string password);
+    Task<GatewayUserInfo?> ValidatePasswordAsync(string username, string password) => Task.FromResult(ValidatePassword(username, password));
     GatewayUserAuthenticationResult Authenticate(string username, string password, GatewayAccountLockoutOptions? lockoutOptions);
+    Task<GatewayUserAuthenticationResult> AuthenticateAsync(string username, string password, GatewayAccountLockoutOptions? lockoutOptions) => Task.FromResult(Authenticate(username, password, lockoutOptions));
     GatewayUserInfo? FindByUsername(string username);
+    Task<GatewayUserInfo?> FindByUsernameAsync(string username) => Task.FromResult(FindByUsername(username));
     IList<GatewayUserInfo> GetUsers();
+    Task<IList<GatewayUserInfo>> GetUsersAsync() => Task.FromResult(GetUsers());
     GatewayUserInfo UpsertUser(string username, string displayName, string role, bool enabled, string password);
+    Task<GatewayUserInfo> UpsertUserAsync(string username, string displayName, string role, bool enabled, string password) => Task.FromResult(UpsertUser(username, displayName, role, enabled, password));
     void DeleteUser(string username);
+    Task DeleteUserAsync(string username)
+    {
+        DeleteUser(username);
+        return Task.CompletedTask;
+    }
 }

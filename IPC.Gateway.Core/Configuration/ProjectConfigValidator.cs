@@ -128,6 +128,7 @@ namespace IPC.Runtime.Configuration
                 return;
 
             if (device.Protocol == PlcProtocol.ModbusTcp ||
+                device.Protocol == PlcProtocol.BacnetIp ||
                 device.Protocol == PlcProtocol.Dlt6452007 ||
                 device.Protocol == PlcProtocol.Cjt1882004)
             {
@@ -135,6 +136,14 @@ namespace IPC.Runtime.Configuration
                     result.AddError(prefix + "主机地址不能为空。");
                 if (connection.Port <= 0 || connection.Port > 65535)
                     result.AddError(prefix + "端口必须在1到65535之间。");
+            }
+
+            if (device.Protocol == PlcProtocol.CanOpen)
+            {
+                if (string.IsNullOrWhiteSpace(connection.Host))
+                    result.AddError(prefix + "CANopen 串口不能为空。");
+                if (connection.Port <= 0)
+                    result.AddError(prefix + "CANopen 适配器波特率必须大于0。");
             }
 
             if (connection.TimeoutMilliseconds <= 0)

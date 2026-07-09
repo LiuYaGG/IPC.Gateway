@@ -81,7 +81,7 @@
       <MetricCard label="CPU" :value="`${cpuUsage}%`" :tone="cpuUsage < 80 ? 'good' : 'warn'" :icon="Odometer" />
       <MetricCard label="内存" :value="`${memoryUsage}%`" :tone="memoryUsage < 85 ? 'good' : 'warn'" :icon="Monitor" />
       <MetricCard label="MQTT" :value="mqttState" :tone="status?.mqtt?.isConnected ? 'good' : 'warn'" :icon="Promotion" />
-      <MetricCard label="规则" :value="ruleState" :tone="status?.ruleEngine?.isRunning ? 'good' : 'normal'" :icon="Operation" />
+      <MetricCard label="流程规则" :value="ruleState" :tone="status?.flowRuleEngine?.isRunning ? 'good' : 'normal'" :icon="Operation" />
     </div>
 
     <el-card shadow="never" class="panel-card readiness-card">
@@ -203,9 +203,9 @@
           </div>
           <div>
             <span>规则引擎</span>
-            <strong>{{ status?.ruleEngine?.enabledRuleCount ?? 0 }} / {{ status?.ruleEngine?.ruleCount ?? 0 }}</strong>
-            <el-tag size="small" :type="status?.ruleEngine?.isRunning ? 'success' : 'info'">
-              {{ status?.ruleEngine?.isRunning ? '运行中' : '未运行' }}
+            <strong>{{ status?.flowRuleEngine?.enabledRuleCount ?? 0 }} / {{ status?.flowRuleEngine?.ruleCount ?? 0 }}</strong>
+            <el-tag size="small" :type="status?.flowRuleEngine?.isRunning ? 'success' : 'info'">
+              {{ status?.flowRuleEngine?.isRunning ? '运行中' : '未运行' }}
             </el-tag>
           </div>
           <div>
@@ -349,7 +349,7 @@ const successRate = computed(() => {
 })
 
 const mqttState = computed(() => (props.status?.mqtt?.isConnected ? '已连接' : props.status?.mqtt?.isRunning ? '重连中' : '未运行'))
-const ruleState = computed(() => `${props.status?.ruleEngine?.activeRuleCount ?? 0} active`)
+const ruleState = computed(() => `${props.status?.flowRuleEngine?.activeRuleCount ?? 0} active`)
 const readinessState = computed(() => props.health?.status ?? '未知')
 const healthComponents = computed(() => props.health?.components ?? [])
 const healthComponentCounts = computed(() => {
@@ -382,7 +382,7 @@ const schedulerQueueText = computed(() => {
 })
 const schedulerTimeoutCount = computed(() => {
   const timeout = props.status?.scheduler?.timeout
-  return (timeout?.pollTimeoutCount ?? 0) + (timeout?.readTimeoutCount ?? 0)
+  return (timeout?.recentPollTimeoutCount ?? 0) + (timeout?.recentReadTimeoutCount ?? 0)
 })
 const dashboardTone = computed<CardTone>(() => readinessTone(props.health?.status))
 const dashboardLead = computed(() => {
@@ -417,7 +417,7 @@ const componentLabels: Record<string, string> = {
   mqttOutboxStorage: 'MQTT 缓存磁盘',
   history: '历史库',
   historyStorage: '历史库磁盘',
-  ruleEngine: '规则引擎',
+  ruleEngine: '流程规则',
   scheduler: '采集调度',
   systemResources: '系统资源'
 }
@@ -468,7 +468,7 @@ function componentDetail(component: GatewayHealthComponent) {
   }
 
   if (component.name === 'scheduler') {
-    const timeoutCount = readNumber(data, 'pollTimeoutCount') + readNumber(data, 'readTimeoutCount')
+    const timeoutCount = readNumber(data, 'recentPollTimeoutCount') + readNumber(data, 'recentReadTimeoutCount')
     const pressure = readNumber(data, 'utilizationPercent')
     const backpressure = readBoolean(data, 'backpressureActive') || readBoolean(data, 'queueBackpressureActive')
     const pressureText = backpressure ? '背压中' : `水位 ${formatNumber(pressure, 1)}%`

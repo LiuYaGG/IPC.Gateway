@@ -23,5 +23,6 @@ public interface IGatewayProjectApplicationService
 {
     ProjectConfig GetProject();
     ProjectConfig SaveProject(ProjectConfig project);
+    Task<ProjectConfig> SaveProjectAsync(ProjectConfig project);
     ProjectConfigValidationResult ValidateProject(ProjectConfig project);
 }

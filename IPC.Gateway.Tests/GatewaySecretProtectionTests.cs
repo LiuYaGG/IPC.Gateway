@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using IPC.EdgeGateway;
+using IPC.Gateway.Core.Application.Gateway.Contracts;
 using IPC.Gateway.Core.Domain.Configuration;
 using IPC.Gateway.Core.Domain.Users;
 using IPC.Gateway.Core.Gateway;
@@ -102,6 +103,42 @@ public sealed class GatewaySecretProtectionTests : IDisposable
         Assert.Equal("DeviceCert#12345", loadedProject.Devices[0].Connection.CertificatePassword);
         Assert.Equal("Mqtt#12345", loadedMqtt.Password);
         Assert.Equal("MqttCert#12345", loadedMqtt.ClientCertificatePassword);
+    }
+
+    [Fact]
+    public void ConfigurationRepository_StoresOpcUaPasswordHashWithoutPlainText()
+    {
+        GatewayDatabaseOptions options = CreateOptions();
+        SqlSugarGatewayConfigurationRepository repository = new SqlSugarGatewayConfigurationRepository(options);
+
+        OpcUaServerOptions opcUa = new OpcUaServerOptions
+        {
+            Enabled = true,
+            AllowAnonymous = true,
+            UsernamePasswordEnabled = true,
+            Username = "kepserver"
+        };
+        OpcUaPasswordHasher.SetPassword(opcUa, "OpcUa#12345");
+
+        repository.SaveOpcUa(opcUa, "Test", "Save OPC UA credentials");
+
+        using SqlSugar.ISqlSugarClient db = new SqlSugarConnectionFactory(options).Create();
+        string payload = db.Queryable<GatewayConfigurationEntity>()
+            .Where(item => item.ConfigType == GatewayConfigurationType.OpcUa && item.Active)
+            .First()
+            .Payload;
+
+        Assert.DoesNotContain("OpcUa#12345", payload);
+        Assert.Contains("UserPasswordHash", payload);
+        Assert.Contains("UserPasswordSalt", payload);
+
+        OpcUaServerOptions loaded = repository.LoadOrCreateOpcUa(new OpcUaServerOptions());
+        OpcUaServerConfigurationDto dto = GatewayConfigurationContractMapper.ToDto(loaded);
+
+        Assert.True(OpcUaPasswordHasher.VerifyPassword(loaded, "kepserver", "OpcUa#12345"));
+        Assert.False(OpcUaPasswordHasher.VerifyPassword(loaded, "kepserver", "wrong"));
+        Assert.True(dto.PasswordConfigured);
+        Assert.Equal(string.Empty, dto.Password);
     }
 
     [Fact]

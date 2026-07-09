@@ -320,8 +320,175 @@
     ]
   },
   {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_7",
+    "RelativePath": "api/commercial/compatibility",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_0",
+    "RelativePath": "api/commercial/device-templates",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_1",
+    "RelativePath": "api/commercial/device-templates/{templateId}/apply",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "templateId",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "IPC.Gateway.WebHost.GatewayDeviceTemplateApplyRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_8",
+    "RelativePath": "api/commercial/drivers",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_6",
+    "RelativePath": "api/commercial/license",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_4",
+    "RelativePath": "api/commercial/project/backup",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_5",
+    "RelativePath": "api/commercial/project/restore",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_2",
+    "RelativePath": "api/commercial/tags/export",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayCommercialEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayCommercialEndpoints\u003Eb__0_3",
+    "RelativePath": "api/commercial/tags/import",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceId",
+        "Type": "System.String",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_12",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_11",
     "RelativePath": "api/config/apply",
     "HttpMethod": "POST",
     "IsController": false,
@@ -337,7 +504,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_9",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_8",
     "RelativePath": "api/config/audit",
     "HttpMethod": "GET",
     "IsController": false,
@@ -389,7 +556,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_10",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_9",
     "RelativePath": "api/config/audit/export",
     "HttpMethod": "GET",
     "IsController": false,
@@ -436,7 +603,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_16",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_15",
     "RelativePath": "api/config/devices",
     "HttpMethod": "GET",
     "IsController": false,
@@ -452,7 +619,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_17",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_16",
     "RelativePath": "api/config/devices",
     "HttpMethod": "POST",
     "IsController": false,
@@ -474,7 +641,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_18",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_17",
     "RelativePath": "api/config/devices/{deviceId}",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -501,7 +668,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_19",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_18",
     "RelativePath": "api/config/devices/{deviceId}",
     "HttpMethod": "DELETE",
     "IsController": false,
@@ -523,7 +690,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_20",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_19",
     "RelativePath": "api/config/devices/{deviceId}/groups",
     "HttpMethod": "GET",
     "IsController": false,
@@ -545,7 +712,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_21",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_20",
     "RelativePath": "api/config/devices/{deviceId}/groups",
     "HttpMethod": "POST",
     "IsController": false,
@@ -572,7 +739,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_24",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_23",
     "RelativePath": "api/config/devices/{deviceId}/tags",
     "HttpMethod": "GET",
     "IsController": false,
@@ -594,7 +761,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_25",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_24",
     "RelativePath": "api/config/devices/{deviceId}/tags",
     "HttpMethod": "POST",
     "IsController": false,
@@ -621,7 +788,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_36",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_30",
     "RelativePath": "api/config/flow-rules",
     "HttpMethod": "GET",
     "IsController": false,
@@ -637,7 +804,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_38",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_32",
     "RelativePath": "api/config/flow-rules",
     "HttpMethod": "POST",
     "IsController": false,
@@ -659,7 +826,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_39",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_33",
     "RelativePath": "api/config/flow-rules/{ruleId}",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -686,7 +853,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_40",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_34",
     "RelativePath": "api/config/flow-rules/{ruleId}",
     "HttpMethod": "DELETE",
     "IsController": false,
@@ -708,7 +875,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_37",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_31",
     "RelativePath": "api/config/flow-rules/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -724,7 +891,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_22",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_21",
     "RelativePath": "api/config/groups/{groupId}",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -751,7 +918,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_23",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_22",
     "RelativePath": "api/config/groups/{groupId}",
     "HttpMethod": "DELETE",
     "IsController": false,
@@ -773,7 +940,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_26",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_25",
     "RelativePath": "api/config/groups/{groupId}/tags",
     "HttpMethod": "GET",
     "IsController": false,
@@ -795,7 +962,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_27",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_26",
     "RelativePath": "api/config/groups/{groupId}/tags",
     "HttpMethod": "POST",
     "IsController": false,
@@ -822,7 +989,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_47",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_41",
     "RelativePath": "api/config/history",
     "HttpMethod": "GET",
     "IsController": false,
@@ -838,7 +1005,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_49",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_43",
     "RelativePath": "api/config/history",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -860,7 +1027,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_48",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_42",
     "RelativePath": "api/config/history/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -876,7 +1043,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_41",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_35",
     "RelativePath": "api/config/mqtt",
     "HttpMethod": "GET",
     "IsController": false,
@@ -892,7 +1059,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_43",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_37",
     "RelativePath": "api/config/mqtt",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -914,7 +1081,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_42",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_36",
     "RelativePath": "api/config/mqtt/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -930,7 +1097,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_44",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_38",
     "RelativePath": "api/config/opcua",
     "HttpMethod": "GET",
     "IsController": false,
@@ -946,7 +1113,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_46",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_40",
     "RelativePath": "api/config/opcua",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -968,7 +1135,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_45",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_39",
     "RelativePath": "api/config/opcua/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -984,7 +1151,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_13",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_12",
     "RelativePath": "api/config/project",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1000,7 +1167,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_14",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_13",
     "RelativePath": "api/config/project",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -1022,7 +1189,23 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_11",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_2",
+    "RelativePath": "api/config/protocols",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_10",
     "RelativePath": "api/config/rollback",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1044,110 +1227,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_31",
-    "RelativePath": "api/config/rules",
-    "HttpMethod": "GET",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_33",
-    "RelativePath": "api/config/rules",
-    "HttpMethod": "POST",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "command",
-        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveRuleConfigurationCommand",
-        "IsRequired": true
-      }
-    ],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_34",
-    "RelativePath": "api/config/rules/{ruleId}",
-    "HttpMethod": "PUT",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "ruleId",
-        "Type": "System.String",
-        "IsRequired": true
-      },
-      {
-        "Name": "command",
-        "Type": "IPC.Gateway.Core.Application.Gateway.Contracts.SaveRuleConfigurationCommand",
-        "IsRequired": true
-      }
-    ],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_35",
-    "RelativePath": "api/config/rules/{ruleId}",
-    "HttpMethod": "DELETE",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "ruleId",
-        "Type": "System.String",
-        "IsRequired": true
-      }
-    ],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_32",
-    "RelativePath": "api/config/rules/status",
-    "HttpMethod": "GET",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_0",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_0",
     "RelativePath": "api/config/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1162,8 +1242,24 @@
     ]
   },
   {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints",
+    "Method": "StreamRuntimeEvents",
+    "RelativePath": "api/config/status/events",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_6",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_5",
     "RelativePath": "api/config/status/history",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1179,7 +1275,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_2",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_3",
     "RelativePath": "api/config/status/mqtt",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1195,7 +1291,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_3",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_4",
     "RelativePath": "api/config/status/opcua",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1211,39 +1307,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_5",
-    "RelativePath": "api/config/status/rule-engine",
-    "HttpMethod": "GET",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_4",
-    "RelativePath": "api/config/status/rules",
-    "HttpMethod": "GET",
-    "IsController": false,
-    "Order": 0,
-    "Parameters": [],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
-  },
-  {
-    "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_1",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_1",
     "RelativePath": "api/config/status/tags",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1290,7 +1354,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_50",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_44",
     "RelativePath": "api/config/storage-health",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1306,7 +1370,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_51",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_45",
     "RelativePath": "api/config/storage-health",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -1328,7 +1392,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_7",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_6",
     "RelativePath": "api/config/sync",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1344,7 +1408,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_28",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_27",
     "RelativePath": "api/config/tags/{tagId}",
     "HttpMethod": "PUT",
     "IsController": false,
@@ -1371,7 +1435,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_29",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_28",
     "RelativePath": "api/config/tags/{tagId}",
     "HttpMethod": "DELETE",
     "IsController": false,
@@ -1393,7 +1457,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_30",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_29",
     "RelativePath": "api/config/tags/write",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1415,7 +1479,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_15",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_14",
     "RelativePath": "api/config/validate",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1437,7 +1501,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayConfigurationEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__0_8",
+    "Method": "\u003CMapGatewayConfigurationEndpoints\u003Eb__1_7",
     "RelativePath": "api/config/versions",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1512,7 +1576,23 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_1",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_0",
+    "RelativePath": "api/maintenance/support/snapshot",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_2",
     "RelativePath": "api/maintenance/updates/packages",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1528,7 +1608,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_2",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_3",
     "RelativePath": "api/maintenance/updates/packages/{packageId}/prepare",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1550,7 +1630,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_3",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_4",
     "RelativePath": "api/maintenance/updates/rollback/{rollbackId}/prepare",
     "HttpMethod": "POST",
     "IsController": false,
@@ -1572,7 +1652,7 @@
   },
   {
     "ContainingType": "IPC.Gateway.WebHost.GatewayUpdateEndpoints\u002B\u003C\u003Ec",
-    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_0",
+    "Method": "\u003CMapGatewayUpdateEndpoints\u003Eb__0_1",
     "RelativePath": "api/maintenance/updates/status",
     "HttpMethod": "GET",
     "IsController": false,
@@ -1708,6 +1788,22 @@
     "ContainingType": "IPC.Gateway.WebHost.GatewayHealthEndpoints\u002B\u003C\u003Ec",
     "Method": "\u003CMapGatewayHealthEndpoints\u003Eb__5_3",
     "RelativePath": "health/ready",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "IPC.Gateway.WebHost.GatewayMetricsEndpoints\u002B\u003C\u003Ec",
+    "Method": "\u003CMapGatewayMetricsEndpoints\u003Eb__1_0",
+    "RelativePath": "metrics",
     "HttpMethod": "GET",
     "IsController": false,
     "Order": 0,

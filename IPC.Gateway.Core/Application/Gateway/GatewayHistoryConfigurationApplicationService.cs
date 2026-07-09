@@ -36,4 +36,10 @@ public sealed class GatewayHistoryConfigurationApplicationService : IGatewayHist
         _gateway.UpdateHistoryOptions(options);
         return _gateway.CurrentHistoryOptions;
     }
+
+    public async Task<LocalHistoryOptions> UpdateHistoryOptionsAsync(LocalHistoryOptions options)
+    {
+        await _gateway.UpdateHistoryOptionsAsync(options);
+        return _gateway.CurrentHistoryOptions;
+    }
 }

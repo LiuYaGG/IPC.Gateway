@@ -45,15 +45,9 @@ const modules = computed(() => {
       tone: status?.history?.isRunning ? 'good' : 'normal'
     },
     {
-      name: '规则引擎',
-      state: status?.ruleEngine?.isRunning ? '运行中' : '未运行',
-      detail: `active ${status?.ruleEngine?.activeRuleCount ?? 0} · 触发 ${formatNumber(status?.ruleEngine?.triggeredCount ?? 0)}`,
-      tone: status?.ruleEngine?.isRunning ? 'good' : 'normal'
-    },
-    {
       name: '流程规则',
       state: status?.flowRuleEngine?.isRunning ? '运行中' : '未运行',
-      detail: `active ${status?.flowRuleEngine?.activeRuleCount ?? 0} · 失败 ${status?.flowRuleEngine?.failedEvaluationCount ?? 0}`,
+      detail: `active ${status?.flowRuleEngine?.activeRuleCount ?? 0} · 触发 ${formatNumber(status?.flowRuleEngine?.triggeredCount ?? 0)}`,
       tone: status?.flowRuleEngine?.isRunning ? 'good' : 'normal'
     },
     {

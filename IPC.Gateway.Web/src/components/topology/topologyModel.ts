@@ -137,7 +137,7 @@ function addServiceNodes(nodes: TopologyNode[], links: TopologyLink[], status: G
     { id: 'service:mqtt', name: 'MQTT', tone: moduleTone(status?.mqtt?.enabled, status?.mqtt?.isRunning && status?.mqtt?.isConnected, status?.mqtt?.lastError), message: status?.mqtt?.lastError || status?.mqtt?.lastMessage || '-' },
     { id: 'service:opcua', name: 'OPC UA', tone: moduleTone(status?.opcUa?.enabled, status?.opcUa?.isRunning, status?.opcUa?.lastError), message: status?.opcUa?.lastError || status?.opcUa?.lastMessage || '-' },
     { id: 'service:history', name: '历史库', tone: moduleTone(status?.history?.enabled, status?.history?.isRunning, status?.history?.lastError), message: status?.history?.lastError || '-' },
-    { id: 'service:rules', name: '规则引擎', tone: moduleTone(status?.ruleEngine?.enabled, status?.ruleEngine?.isRunning, status?.ruleEngine?.lastError), message: status?.ruleEngine?.lastError || '-' }
+    { id: 'service:rules', name: '流程规则', tone: moduleTone(status?.flowRuleEngine?.enabled, status?.flowRuleEngine?.isRunning, status?.flowRuleEngine?.lastError), message: status?.flowRuleEngine?.lastError || '-' }
   ]
 
   services.forEach((service, index) => {

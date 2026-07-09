@@ -26,6 +26,8 @@ namespace IPC.EdgeGateway
 {
     public sealed class OpcUaServerService : IDisposable
     {
+        private static readonly ITelemetryContext s_telemetry = DefaultTelemetry.Create(_ => { });
+
         private readonly object _syncRoot;
         private readonly IRuntimeService _runtime;
         private readonly Func<ProjectConfig> _projectProvider;
@@ -73,10 +75,10 @@ namespace IPC.EdgeGateway
                 try
                 {
                     ApplicationConfiguration configuration = CreateApplicationConfiguration(_options);
-                    configuration.Validate(ApplicationType.Server).GetAwaiter().GetResult();
+                    configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None).GetAwaiter().GetResult();
 
                     _server = new OpcUaGatewayServer(_runtime, _projectProvider, _options, _status);
-                    _application = new ApplicationInstance(configuration);
+                    _application = new ApplicationInstance(configuration, s_telemetry);
                     bool certificateOk = _application.CheckApplicationInstanceCertificatesAsync(false, null, CancellationToken.None).AsTask().GetAwaiter().GetResult();
                     if (!certificateOk)
                         throw new InvalidOperationException("OPC UA Server application certificate could not be created or validated.");
@@ -183,7 +185,7 @@ namespace IPC.EdgeGateway
         {
             try
             {
-                _application?.Stop();
+                _application?.StopAsync().GetAwaiter().GetResult();
             }
             catch
             {
@@ -248,21 +250,8 @@ namespace IPC.EdgeGateway
                 ServerConfiguration = new ServerConfiguration
                 {
                     BaseAddresses = new StringCollection { normalized.EndpointUrl },
-                    SecurityPolicies = new ServerSecurityPolicyCollection
-                    {
-                        new ServerSecurityPolicy
-                        {
-                            SecurityMode = MessageSecurityMode.None,
-                            SecurityPolicyUri = SecurityPolicies.None
-                        }
-                    },
-                    UserTokenPolicies = new UserTokenPolicyCollection
-                    {
-                        new UserTokenPolicy
-                        {
-                            TokenType = UserTokenType.Anonymous
-                        }
-                    },
+                    SecurityPolicies = CreateSecurityPolicies(normalized),
+                    UserTokenPolicies = CreateUserTokenPolicies(normalized),
                     DiagnosticsEnabled = normalized.PublishDiagnostics,
                     MinRequestThreadCount = 1,
                     MaxRequestThreadCount = 20,
@@ -279,6 +268,107 @@ namespace IPC.EdgeGateway
                 },
                 DisableHiResClock = true
             };
+        }
+
+        private static ServerSecurityPolicyCollection CreateSecurityPolicies(OpcUaServerOptions options)
+        {
+            ServerSecurityPolicyCollection policies = new ServerSecurityPolicyCollection();
+
+            if (options.AllowSecurityPolicyNone)
+            {
+                policies.Add(new ServerSecurityPolicy
+                {
+                    SecurityMode = MessageSecurityMode.None,
+                    SecurityPolicyUri = SecurityPolicies.None
+                });
+            }
+
+            if (options.EnableBasic256Sha256SignAndEncrypt)
+            {
+                policies.Add(new ServerSecurityPolicy
+                {
+                    SecurityMode = MessageSecurityMode.SignAndEncrypt,
+                    SecurityPolicyUri = SecurityPolicies.Basic256Sha256
+                });
+            }
+
+            if (options.EnableBasic256SignAndEncrypt)
+            {
+                policies.Add(new ServerSecurityPolicy
+                {
+                    SecurityMode = MessageSecurityMode.SignAndEncrypt,
+                    SecurityPolicyUri = SecurityPolicies.Basic256
+                });
+            }
+
+            if (policies.Count == 0)
+            {
+                policies.Add(new ServerSecurityPolicy
+                {
+                    SecurityMode = MessageSecurityMode.SignAndEncrypt,
+                    SecurityPolicyUri = SecurityPolicies.Basic256Sha256
+                });
+            }
+
+            return policies;
+        }
+
+        private static UserTokenPolicyCollection CreateUserTokenPolicies(OpcUaServerOptions options)
+        {
+            UserTokenPolicyCollection policies = new UserTokenPolicyCollection();
+
+            if (options.AllowAnonymous)
+            {
+                policies.Add(new UserTokenPolicy
+                {
+                    PolicyId = "anonymous",
+                    TokenType = UserTokenType.Anonymous
+                });
+            }
+
+            if (options.UsernamePasswordEnabled && OpcUaPasswordHasher.IsPasswordConfigured(options))
+            {
+                if (options.EnableBasic256Sha256SignAndEncrypt)
+                {
+                    policies.Add(new UserTokenPolicy
+                    {
+                        PolicyId = "username_basic256sha256",
+                        TokenType = UserTokenType.UserName,
+                        SecurityPolicyUri = SecurityPolicies.Basic256Sha256
+                    });
+                }
+
+                if (options.EnableBasic256SignAndEncrypt)
+                {
+                    policies.Add(new UserTokenPolicy
+                    {
+                        PolicyId = "username_basic256",
+                        TokenType = UserTokenType.UserName,
+                        SecurityPolicyUri = SecurityPolicies.Basic256
+                    });
+                }
+
+                if (!options.EnableBasic256Sha256SignAndEncrypt && !options.EnableBasic256SignAndEncrypt)
+                {
+                    policies.Add(new UserTokenPolicy
+                    {
+                        PolicyId = "username_basic256sha256",
+                        TokenType = UserTokenType.UserName,
+                        SecurityPolicyUri = SecurityPolicies.Basic256Sha256
+                    });
+                }
+            }
+
+            if (policies.Count == 0)
+            {
+                policies.Add(new UserTokenPolicy
+                {
+                    PolicyId = "anonymous",
+                    TokenType = UserTokenType.Anonymous
+                });
+            }
+
+            return policies;
         }
 
         private static void ApplyOptionStatus(OpcUaServerStatus status, OpcUaServerOptions options)

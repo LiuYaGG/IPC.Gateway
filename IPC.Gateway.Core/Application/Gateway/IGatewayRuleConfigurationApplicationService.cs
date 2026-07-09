@@ -23,10 +23,16 @@ public interface IGatewayRuleConfigurationApplicationService
 {
     IList<EdgeRuleConfig> GetRules();
     EdgeRuleConfig AddRule(EdgeRuleConfig input);
+    Task<EdgeRuleConfig> AddRuleAsync(EdgeRuleConfig input);
     EdgeRuleConfig UpdateRule(string ruleId, EdgeRuleConfig input);
+    Task<EdgeRuleConfig> UpdateRuleAsync(string ruleId, EdgeRuleConfig input);
     EdgeRuleConfig DeleteRule(string ruleId);
+    Task<EdgeRuleConfig> DeleteRuleAsync(string ruleId);
     IList<FlowRuleDefinition> GetFlowRules();
     FlowRuleDefinition AddFlowRule(FlowRuleDefinition input);
+    Task<FlowRuleDefinition> AddFlowRuleAsync(FlowRuleDefinition input);
     FlowRuleDefinition UpdateFlowRule(string ruleId, FlowRuleDefinition input);
+    Task<FlowRuleDefinition> UpdateFlowRuleAsync(string ruleId, FlowRuleDefinition input);
     FlowRuleDefinition DeleteFlowRule(string ruleId);
+    Task<FlowRuleDefinition> DeleteFlowRuleAsync(string ruleId);
 }

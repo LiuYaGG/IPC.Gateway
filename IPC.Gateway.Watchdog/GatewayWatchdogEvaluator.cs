@@ -131,16 +131,17 @@ public sealed class GatewayWatchdogEvaluator
 
     private static GatewayWatchdogCheckResult CheckRuleEngine(GatewayRuntimeStatusDto status, DateTime now)
     {
-        if (!status.RuleEngine.Enabled)
+        RuleEngineRuntimeStatusDto ruleEngine = status.FlowRuleEngine;
+        if (!ruleEngine.Enabled)
             return Disabled("ruleEngine", "规则引擎未启用。", now);
 
         return new GatewayWatchdogCheckResult
         {
             Name = "ruleEngine",
-            State = status.RuleEngine.IsRunning ? GatewayWatchdogStates.Healthy : GatewayWatchdogStates.Degraded,
-            Message = status.RuleEngine.IsRunning
+            State = ruleEngine.IsRunning ? GatewayWatchdogStates.Healthy : GatewayWatchdogStates.Degraded,
+            Message = ruleEngine.IsRunning
                 ? "规则引擎运行正常。"
-                : string.IsNullOrWhiteSpace(status.RuleEngine.LastError) ? "规则引擎已启用但未运行。" : status.RuleEngine.LastError,
+                : string.IsNullOrWhiteSpace(ruleEngine.LastError) ? "规则引擎已启用但未运行。" : ruleEngine.LastError,
             ObservedTime = now
         };
     }

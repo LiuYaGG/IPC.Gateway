@@ -17,6 +17,7 @@
 //----------------------------------------------------------------*/
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
+using System.Text;
 using Opc.Ua;
 using Opc.Ua.Server;
 
@@ -49,9 +50,60 @@ namespace IPC.EdgeGateway
             return new MasterNodeManager(server, configuration, null, new INodeManager[] { GatewayNodeManager });
         }
 
+        protected override void OnServerStarted(IServerInternal server)
+        {
+            base.OnServerStarted(server);
+            if (server?.SessionManager != null)
+                server.SessionManager.ImpersonateUser += OnImpersonateUser;
+        }
+
         public void UpdateValue(IPC.Runtime.Values.TagValueSnapshot snapshot)
         {
             GatewayNodeManager?.UpdateValue(snapshot);
+        }
+
+        private void OnImpersonateUser(ISession session, ImpersonateEventArgs args)
+        {
+            OpcUaServerOptions options = OpcUaServerOptions.Normalize(_options);
+            UserIdentityToken token = args.NewIdentity;
+
+            if (token is AnonymousIdentityToken)
+            {
+                if (options.AllowAnonymous)
+                    AcceptIdentity(args, token);
+                else
+                    RejectIdentity(args, "Anonymous OPC UA access is disabled.");
+                return;
+            }
+
+            if (token is UserNameIdentityToken userNameToken &&
+                options.UsernamePasswordEnabled &&
+                OpcUaPasswordHasher.IsPasswordConfigured(options) &&
+                OpcUaPasswordHasher.VerifyPassword(options, userNameToken.UserName, DecodePassword(userNameToken)))
+            {
+                AcceptIdentity(args, userNameToken);
+                return;
+            }
+
+            RejectIdentity(args, "Invalid OPC UA username or password.");
+        }
+
+        private static string DecodePassword(UserNameIdentityToken token)
+        {
+            byte[] password = token.DecryptedPassword ?? Array.Empty<byte>();
+            return Encoding.UTF8.GetString(password);
+        }
+
+        private static void AcceptIdentity(ImpersonateEventArgs args, UserIdentityToken token)
+        {
+            UserIdentity identity = new UserIdentity(token);
+            args.Identity = identity;
+            args.EffectiveIdentity = identity;
+        }
+
+        private static void RejectIdentity(ImpersonateEventArgs args, string message)
+        {
+            args.IdentityValidationError = ServiceResult.Create(StatusCodes.BadUserAccessDenied, message);
         }
     }
 }

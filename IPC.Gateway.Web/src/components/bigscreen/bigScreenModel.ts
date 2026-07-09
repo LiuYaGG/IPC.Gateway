@@ -48,14 +48,47 @@ export function healthText(status?: string) {
 }
 
 export function healthScore(status: GatewayStatus | null, health: GatewayHealthResponse | null) {
-  if (!status) return 0
-  const online = percent(status.onlineDeviceCount ?? 0, status.deviceCount ?? 0)
-  const tags = percent(status.goodTagCount ?? 0, status.tagCount ?? 0)
-  const devices = status.devices ?? []
-  const success = averageSuccessRate(devices)
-  const errorPenalty = Math.min((status.recentErrors?.length ?? 0) * 3, 25)
-  const healthPenalty = normalizeStatus(health?.status) === 'unhealthy' ? 20 : normalizeStatus(health?.status) === 'degraded' ? 8 : 0
+  const runtime = health?.runtime
+  if (!status && !runtime) return 0
+
+  const deviceCount = pickPositive(status?.enabledDeviceCount, status?.deviceCount, runtime?.deviceCount)
+  const onlineDeviceCount = pickBounded(status?.onlineDeviceCount, runtime?.onlineDeviceCount, deviceCount)
+  const tagCount = pickPositive(status?.tagCount, runtime?.tagCount)
+  const goodTagCount = pickBounded(status?.goodTagCount, runtime?.goodTagCount, tagCount)
+  const online = percent(onlineDeviceCount, deviceCount)
+  const tags = percent(goodTagCount, tagCount)
+  const devices = status?.devices ?? []
+  const success = devices.length > 0 ? averageSuccessRate(devices) : averageFallbackRate(online, tags)
+  const recentErrors = Math.max(status?.recentErrors?.length ?? 0, runtime?.recentErrorCount ?? 0)
+  const errorPenalty = calculateErrorPenalty(recentErrors)
+  const normalizedHealth = normalizeStatus(health?.status)
+  const healthPenalty = normalizedHealth === 'unhealthy' ? 16 : normalizedHealth === 'degraded' ? 4 : 0
   return Math.max(0, Number(((online * 0.3) + (tags * 0.25) + (success * 0.35) + 10 - errorPenalty - healthPenalty).toFixed(1)))
+}
+
+function pickPositive(...values: Array<number | undefined>) {
+  for (const value of values) {
+    const normalized = Number(value ?? 0)
+    if (normalized > 0) return normalized
+  }
+
+  return 0
+}
+
+function pickBounded(primary: number | undefined, fallback: number | undefined, total: number) {
+  const value = pickPositive(primary, fallback)
+  return total > 0 ? Math.min(value, total) : value
+}
+
+function averageFallbackRate(...rates: number[]) {
+  const valid = rates.filter(rate => Number.isFinite(rate) && rate > 0)
+  if (valid.length === 0) return 0
+  return Number((valid.reduce((sum, rate) => sum + rate, 0) / valid.length).toFixed(1))
+}
+
+function calculateErrorPenalty(errorCount: number) {
+  if (!Number.isFinite(errorCount) || errorCount <= 0) return 0
+  return Math.min(Math.log2(errorCount + 1) * 1.5, 8)
 }
 
 export function normalizeStatus(status?: string) {

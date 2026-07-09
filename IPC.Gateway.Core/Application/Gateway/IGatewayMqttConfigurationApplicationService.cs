@@ -23,4 +23,5 @@ public interface IGatewayMqttConfigurationApplicationService
 {
     MqttGatewayOptions GetMqttOptions();
     MqttGatewayOptions UpdateMqttOptions(MqttGatewayOptions options);
+    Task<MqttGatewayOptions> UpdateMqttOptionsAsync(MqttGatewayOptions options);
 }

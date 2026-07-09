@@ -23,4 +23,5 @@ public interface IGatewayOpcUaConfigurationApplicationService
 {
     OpcUaServerOptions GetOpcUaOptions();
     OpcUaServerOptions UpdateOpcUaOptions(OpcUaServerOptions options);
+    Task<OpcUaServerOptions> UpdateOpcUaOptionsAsync(OpcUaServerOptions options);
 }

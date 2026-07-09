@@ -47,6 +47,18 @@ public sealed class GatewayRoleStore : IGatewayRoleRepository
             .ToList();
     }
 
+    public async Task<IList<GatewayRoleInfo>> GetRolesAsync()
+    {
+        using ISqlSugarClient db = _factory.Create();
+        Dictionary<string, int> userCounts = await LoadUserCountsAsync(db);
+        return (await db.Queryable<GatewayRoleEntity>()
+            .OrderBy(item => item.IsSystem, OrderByType.Desc)
+            .OrderBy(item => item.Name)
+            .ToListAsync())
+            .Select(item => ToInfo(item, userCounts))
+            .ToList();
+    }
+
     public GatewayRoleInfo? FindByName(string roleName)
     {
         string normalizedName = NormalizeRoleName(roleName, throwOnInvalid: false);
@@ -58,6 +70,19 @@ public sealed class GatewayRoleStore : IGatewayRoleRepository
             .Where(item => item.Name.ToLower() == normalizedName.ToLower())
             .First();
         return entity == null ? null : ToInfo(entity, LoadUserCounts(db));
+    }
+
+    public async Task<GatewayRoleInfo?> FindByNameAsync(string roleName)
+    {
+        string normalizedName = NormalizeRoleName(roleName, throwOnInvalid: false);
+        if (string.IsNullOrWhiteSpace(normalizedName))
+            return null;
+
+        using ISqlSugarClient db = _factory.Create();
+        GatewayRoleEntity? entity = await db.Queryable<GatewayRoleEntity>()
+            .Where(item => item.Name.ToLower() == normalizedName.ToLower())
+            .FirstAsync();
+        return entity == null ? null : ToInfo(entity, await LoadUserCountsAsync(db));
     }
 
     public GatewayRoleInfo UpsertRole(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions)
@@ -104,6 +129,53 @@ public sealed class GatewayRoleStore : IGatewayRoleRepository
         return saved ?? throw new InvalidOperationException("Role was saved but could not be loaded.");
     }
 
+    public async Task<GatewayRoleInfo> UpsertRoleAsync(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions)
+    {
+        string normalizedName = NormalizeRoleName(roleName, throwOnInvalid: true);
+        IReadOnlyList<string> normalizedPermissions = GatewayPermissions.Normalize(permissions);
+
+        using ISqlSugarClient db = _factory.Create();
+        GatewayRoleEntity? existing = await db.Queryable<GatewayRoleEntity>()
+            .Where(item => item.Name.ToLower() == normalizedName.ToLower())
+            .FirstAsync();
+
+        DateTime utcNow = DateTime.UtcNow;
+        if (existing == null)
+        {
+            existing = new GatewayRoleEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = normalizedName,
+                CreatedUtc = utcNow,
+                IsSystem = IsSystemRole(normalizedName)
+            };
+        }
+        else if (existing.IsSystem && !enabled)
+        {
+            throw new InvalidOperationException("系统角色不能停用。");
+        }
+
+        existing.DisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedName : displayName.Trim();
+        existing.Description = description?.Trim() ?? string.Empty;
+        existing.Enabled = existing.IsSystem || enabled;
+        existing.PermissionsJson = JsonSerializer.Serialize(normalizedPermissions);
+        existing.UpdatedUtc = utcNow;
+
+        if (string.IsNullOrWhiteSpace(existing.Id))
+            existing.Id = Guid.NewGuid().ToString("N");
+
+        GatewayRoleEntity? stored = await db.Queryable<GatewayRoleEntity>()
+            .Where(item => item.Id == existing.Id)
+            .FirstAsync();
+        if (stored != null)
+            await db.Updateable(existing).ExecuteCommandAsync();
+        else
+            await db.Insertable(existing).ExecuteCommandAsync();
+
+        GatewayRoleInfo? saved = await FindByNameAsync(normalizedName);
+        return saved ?? throw new InvalidOperationException("Role was saved but could not be loaded.");
+    }
+
     public void DeleteRole(string roleName)
     {
         string normalizedName = NormalizeRoleName(roleName, throwOnInvalid: false);
@@ -129,6 +201,35 @@ public sealed class GatewayRoleStore : IGatewayRoleRepository
         db.Deleteable<GatewayRoleEntity>()
             .Where(item => item.Id == entity.Id)
             .ExecuteCommand();
+    }
+
+    public async Task DeleteRoleAsync(string roleName)
+    {
+        string normalizedName = NormalizeRoleName(roleName, throwOnInvalid: false);
+        if (string.IsNullOrWhiteSpace(normalizedName))
+            return;
+
+        using ISqlSugarClient db = _factory.Create();
+        GatewayRoleEntity? entity = await db.Queryable<GatewayRoleEntity>()
+            .Where(item => item.Name.ToLower() == normalizedName.ToLower())
+            .FirstAsync();
+        if (entity == null)
+            return;
+
+        if (entity.IsSystem || IsSystemRole(entity.Name))
+            throw new InvalidOperationException("系统角色不能删除。");
+
+        int userCount = (await db.Queryable<GatewayUserEntity>()
+            .Where(item => item.Role.ToLower() == normalizedName.ToLower())
+            .Select(item => item.Id)
+            .ToListAsync())
+            .Count;
+        if (userCount > 0)
+            throw new InvalidOperationException("该角色仍有关联人员，不能删除。");
+
+        await db.Deleteable<GatewayRoleEntity>()
+            .Where(item => item.Id == entity.Id)
+            .ExecuteCommandAsync();
     }
 
     public static IReadOnlyList<string> GetDefaultPermissions(string roleName)
@@ -186,6 +287,15 @@ public sealed class GatewayRoleStore : IGatewayRoleRepository
             .GroupBy(item => item.Role)
             .Select(item => new RoleUserCountProjection { Role = item.Role, Count = SqlFunc.AggregateCount(item.Role) })
             .ToList()
+            .ToDictionary(item => item.Role ?? string.Empty, item => item.Count, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static async Task<Dictionary<string, int>> LoadUserCountsAsync(ISqlSugarClient db)
+    {
+        return (await db.Queryable<GatewayUserEntity>()
+            .GroupBy(item => item.Role)
+            .Select(item => new RoleUserCountProjection { Role = item.Role, Count = SqlFunc.AggregateCount(item.Role) })
+            .ToListAsync())
             .ToDictionary(item => item.Role ?? string.Empty, item => item.Count, StringComparer.OrdinalIgnoreCase);
     }
 

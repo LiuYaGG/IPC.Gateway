@@ -22,8 +22,16 @@ namespace IPC.Gateway.Core.Application.Users;
 public interface IGatewayRoleApplicationService
 {
     IList<GatewayRoleInfo> GetRoles();
+    Task<IList<GatewayRoleInfo>> GetRolesAsync() => Task.FromResult(GetRoles());
     GatewayRoleInfo? FindByName(string roleName);
+    Task<GatewayRoleInfo?> FindByNameAsync(string roleName) => Task.FromResult(FindByName(roleName));
     GatewayRoleInfo SaveRole(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions);
+    Task<GatewayRoleInfo> SaveRoleAsync(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions) => Task.FromResult(SaveRole(roleName, displayName, description, enabled, permissions));
     void DeleteRole(string roleName);
+    Task DeleteRoleAsync(string roleName)
+    {
+        DeleteRole(roleName);
+        return Task.CompletedTask;
+    }
     IReadOnlyList<GatewayPermissionInfo> GetPermissionCatalog();
 }

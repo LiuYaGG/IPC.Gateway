@@ -160,3 +160,9 @@ F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\obj\Release\net10.0\IPC.Gat
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\obj\Release\net10.0\refint\IPC.Gateway.LegacyProtocolPlugins.dll
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\obj\Release\net10.0\IPC.Gateway.LegacyProtocolPlugins.pdb
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\obj\Release\net10.0\ref\IPC.Gateway.LegacyProtocolPlugins.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\Common.Logging.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\Common.Logging.Core.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\log4net.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\PacketDotNet.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\SharpPcap.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Release\net10.0\BACnet.dll

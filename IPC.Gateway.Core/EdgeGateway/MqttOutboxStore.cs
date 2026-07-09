@@ -19,6 +19,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace IPC.EdgeGateway
 {
@@ -60,12 +62,33 @@ namespace IPC.EdgeGateway
             return EnqueueText(topic, payload, qos);
         }
 
+        public Task<MqttOutboxMessage> EnqueueAsync(string topic, string payload, int qos)
+        {
+            return EnqueueTextAsync(topic, payload, qos);
+        }
+
         public MqttOutboxMessage Enqueue(string topic, byte[] payload, int qos)
         {
             if (string.IsNullOrWhiteSpace(topic))
                 throw new ArgumentException("MQTT outbox topic is empty.", "topic");
 
             return EnqueueCore(new MqttOutboxMessage
+            {
+                Topic = topic,
+                Payload = string.Empty,
+                PayloadBytes = payload ?? Array.Empty<byte>(),
+                PayloadFormat = "Binary",
+                Qos = MqttGatewayOptions.ClampQos(qos),
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        public Task<MqttOutboxMessage> EnqueueAsync(string topic, byte[] payload, int qos)
+        {
+            if (string.IsNullOrWhiteSpace(topic))
+                throw new ArgumentException("MQTT outbox topic is empty.", "topic");
+
+            return EnqueueCoreAsync(new MqttOutboxMessage
             {
                 Topic = topic,
                 Payload = string.Empty,
@@ -92,6 +115,22 @@ namespace IPC.EdgeGateway
             });
         }
 
+        private Task<MqttOutboxMessage> EnqueueTextAsync(string topic, string payload, int qos)
+        {
+            if (string.IsNullOrWhiteSpace(topic))
+                throw new ArgumentException("MQTT outbox topic is empty.", "topic");
+
+            return EnqueueCoreAsync(new MqttOutboxMessage
+            {
+                Topic = topic,
+                Payload = payload ?? string.Empty,
+                PayloadBytes = Encoding.UTF8.GetBytes(payload ?? string.Empty),
+                PayloadFormat = "Text",
+                Qos = MqttGatewayOptions.ClampQos(qos),
+                CreatedAt = DateTime.Now
+            });
+        }
+
         private MqttOutboxMessage EnqueueCore(MqttOutboxMessage message)
         {
             lock (_syncRoot)
@@ -101,12 +140,35 @@ namespace IPC.EdgeGateway
 
                 string finalPath = BuildPath(id, ".msg");
                 string tempPath = BuildPath(id, ".tmp");
-                File.WriteAllText(tempPath, message.ToFileText(), System.Text.Encoding.UTF8);
+                WriteAllTextAsync(tempPath, message.ToFileText()).GetAwaiter().GetResult();
                 if (File.Exists(finalPath))
                     File.Delete(finalPath);
                 File.Move(tempPath, finalPath);
                 return message;
             }
+        }
+
+        private async Task<MqttOutboxMessage> EnqueueCoreAsync(MqttOutboxMessage message)
+        {
+            long id;
+            lock (_syncRoot)
+            {
+                id = NextId();
+                message.Id = id;
+            }
+
+            string finalPath = BuildPath(id, ".msg");
+            string tempPath = BuildPath(id, ".tmp");
+            await WriteAllTextAsync(tempPath, message.ToFileText());
+
+            lock (_syncRoot)
+            {
+                if (File.Exists(finalPath))
+                    File.Delete(finalPath);
+                File.Move(tempPath, finalPath);
+            }
+
+            return message;
         }
 
         public IList<MqttOutboxEntry> ListPending(int maxCount)
@@ -444,6 +506,16 @@ namespace IPC.EdgeGateway
         {
             if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 File.Delete(path);
+        }
+
+        private static async Task WriteAllTextAsync(string path, string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text ?? string.Empty);
+            using FileStream stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous);
+            byte[] preamble = Encoding.UTF8.GetPreamble();
+            if (preamble.Length > 0)
+                await stream.WriteAsync(preamble, 0, preamble.Length);
+            await stream.WriteAsync(bytes, 0, bytes.Length);
         }
     }
 

@@ -20,7 +20,15 @@ namespace IPC.Gateway.Core.Domain.Users;
 public interface IGatewayRoleRepository
 {
     IList<GatewayRoleInfo> GetRoles();
+    Task<IList<GatewayRoleInfo>> GetRolesAsync() => Task.FromResult(GetRoles());
     GatewayRoleInfo? FindByName(string roleName);
+    Task<GatewayRoleInfo?> FindByNameAsync(string roleName) => Task.FromResult(FindByName(roleName));
     GatewayRoleInfo UpsertRole(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions);
+    Task<GatewayRoleInfo> UpsertRoleAsync(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions) => Task.FromResult(UpsertRole(roleName, displayName, description, enabled, permissions));
     void DeleteRole(string roleName);
+    Task DeleteRoleAsync(string roleName)
+    {
+        DeleteRole(roleName);
+        return Task.CompletedTask;
+    }
 }

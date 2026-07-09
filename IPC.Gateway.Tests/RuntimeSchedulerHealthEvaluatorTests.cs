@@ -61,7 +61,7 @@ public sealed class RuntimeSchedulerHealthEvaluatorTests
     }
 
     [Fact]
-    public void Evaluate_RejectionsAndTimeouts_ReturnsDegradedWithReasons()
+    public void Evaluate_QueuePressureAndRecentTimeouts_ReturnsDegradedWithReasons()
     {
         RuntimeSchedulerStatus status = new RuntimeSchedulerStatus
         {
@@ -76,17 +76,77 @@ public sealed class RuntimeSchedulerHealthEvaluatorTests
             Timeout = new RuntimeTimeoutStats
             {
                 PollTimeoutCount = 1,
-                ReadTimeoutCount = 4
+                ReadTimeoutCount = 4,
+                RecentPollTimeoutCount = 1,
+                RecentReadTimeoutCount = 4,
+                TimeoutWindowSeconds = 300
             }
         };
 
         RuntimeSchedulerHealth health = RuntimeSchedulerHealthEvaluator.Evaluate(status);
 
         Assert.Equal(RuntimeSchedulerHealthEvaluator.Degraded, health.Status);
-        Assert.Contains("rejected", health.Message);
         Assert.Contains("near capacity", health.Message);
         Assert.Contains("timeout", health.Message);
-        Assert.Contains("slow poll", health.Message);
+        Assert.DoesNotContain("rejected", health.Message);
+        Assert.DoesNotContain("slow poll", health.Message);
+    }
+
+    [Fact]
+    public void Evaluate_CumulativeTimeoutsWithoutRecentTimeouts_ReturnsHealthy()
+    {
+        RuntimeSchedulerStatus status = new RuntimeSchedulerStatus
+        {
+            Queue = new RuntimePollingQueueStatus
+            {
+                PendingCount = 0,
+                QueueLimit = 100,
+                AvailableWorkers = 4
+            },
+            Timeout = new RuntimeTimeoutStats
+            {
+                PollTimeoutCount = 10,
+                ReadTimeoutCount = 20,
+                RecentPollTimeoutCount = 0,
+                RecentReadTimeoutCount = 0,
+                TimeoutWindowSeconds = 300
+            }
+        };
+
+        RuntimeSchedulerHealth health = RuntimeSchedulerHealthEvaluator.Evaluate(status);
+
+        Assert.Equal(RuntimeSchedulerHealthEvaluator.Healthy, health.Status);
+    }
+
+    [Fact]
+    public void Evaluate_CumulativeSchedulerCountersWithoutCurrentPressure_ReturnsHealthy()
+    {
+        RuntimeSchedulerStatus status = new RuntimeSchedulerStatus
+        {
+            TotalSlow = 5,
+            TotalFailed = 2,
+            Queue = new RuntimePollingQueueStatus
+            {
+                PendingCount = 0,
+                QueueLimit = 100,
+                AvailableWorkers = 4,
+                RejectedCount = 1,
+                BackpressureThrottledCount = 3,
+                RateLimitedCount = 2
+            },
+            Timeout = new RuntimeTimeoutStats
+            {
+                PollTimeoutCount = 10,
+                ReadTimeoutCount = 20,
+                RecentPollTimeoutCount = 0,
+                RecentReadTimeoutCount = 0,
+                TimeoutWindowSeconds = 300
+            }
+        };
+
+        RuntimeSchedulerHealth health = RuntimeSchedulerHealthEvaluator.Evaluate(status);
+
+        Assert.Equal(RuntimeSchedulerHealthEvaluator.Healthy, health.Status);
     }
 
     [Fact]
@@ -111,7 +171,7 @@ public sealed class RuntimeSchedulerHealthEvaluatorTests
 
         Assert.Equal(RuntimeSchedulerHealthEvaluator.Degraded, health.Status);
         Assert.Contains("backpressure", health.Message);
-        Assert.Contains("rate limited", health.Message);
         Assert.Contains("near capacity", health.Message);
+        Assert.DoesNotContain("rate limited", health.Message);
     }
 }

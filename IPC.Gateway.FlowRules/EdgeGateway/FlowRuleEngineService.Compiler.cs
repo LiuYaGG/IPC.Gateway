@@ -41,12 +41,46 @@ namespace IPC.EdgeGateway
             for (int i = 0; i < _projectConfig.FlowRules.Count; i++)
             {
                 FlowRuleDefinition? flowRule = _projectConfig.FlowRules[i];
+                EdgeRuleConfig? compiledProjectRule = FindCompiledProjectRule(flowRule);
+                if (compiledProjectRule != null)
+                {
+                    AddRuntimeRule(runtimeProject.Rules, compiledProjectRule);
+                    continue;
+                }
+
                 EdgeRuleConfig? compiled = CompileFlowRule(flowRule);
-                if (compiled != null)
-                    runtimeProject.Rules.Add(compiled);
+                AddRuntimeRule(runtimeProject.Rules, compiled);
             }
 
             return runtimeProject;
+        }
+
+        private EdgeRuleConfig? FindCompiledProjectRule(FlowRuleDefinition? flowRule)
+        {
+            if (flowRule == null ||
+                !flowRule.Enabled ||
+                !string.Equals(flowRule.Mode, FlowRuleModes.SimpleCompiled, StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(flowRule.CompiledRuleId) ||
+                _projectConfig == null ||
+                _projectConfig.Rules == null)
+                return null;
+
+            return _projectConfig.Rules.FirstOrDefault(rule =>
+                rule != null &&
+                rule.Enabled &&
+                string.Equals(rule.Id, flowRule.CompiledRuleId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static void AddRuntimeRule(IList<EdgeRuleConfig> rules, EdgeRuleConfig? rule)
+        {
+            if (rules == null || rule == null || !rule.Enabled)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(rule.Id) &&
+                rules.Any(item => item != null && string.Equals(item.Id, rule.Id, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            rules.Add(rule);
         }
 
         private EdgeRuleConfig? CompileFlowRule(FlowRuleDefinition? flowRule)

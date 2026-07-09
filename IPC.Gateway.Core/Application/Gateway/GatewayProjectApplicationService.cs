@@ -37,6 +37,12 @@ public sealed class GatewayProjectApplicationService : IGatewayProjectApplicatio
         return _gateway.CurrentProject;
     }
 
+    public async Task<ProjectConfig> SaveProjectAsync(ProjectConfig project)
+    {
+        await _gateway.ReloadAsync(project);
+        return _gateway.CurrentProject;
+    }
+
     public ProjectConfigValidationResult ValidateProject(ProjectConfig project)
     {
         ProjectConfigStore.Normalize(project);

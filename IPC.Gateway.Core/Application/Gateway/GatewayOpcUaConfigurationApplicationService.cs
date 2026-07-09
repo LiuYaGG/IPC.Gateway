@@ -36,4 +36,10 @@ public sealed class GatewayOpcUaConfigurationApplicationService : IGatewayOpcUaC
         _gateway.UpdateOpcUaOptions(options);
         return _gateway.CurrentOpcUaOptions;
     }
+
+    public async Task<OpcUaServerOptions> UpdateOpcUaOptionsAsync(OpcUaServerOptions options)
+    {
+        await _gateway.UpdateOpcUaOptionsAsync(options);
+        return _gateway.CurrentOpcUaOptions;
+    }
 }

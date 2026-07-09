@@ -15,6 +15,7 @@
 * Copyright @ ipc 2026. All rights reserved.
 *******************************************************************
 //----------------------------------------------------------------*/
+using System.Text.Json;
 using IPC.EdgeGateway;
 using IPC.Gateway.Core.Domain.Gateway;
 using IPC.Gateway.Core.Gateway;
@@ -39,6 +40,73 @@ public sealed class FlowRuleEngineServiceTests
         Assert.Equal(1, status.RuleCount);
         Assert.Equal(1, status.TriggeredCount);
         Assert.True(status.Rules.Single().IsActive);
+    }
+
+    [Fact]
+    public void FlowRule_WithFallbackPointCode_StillMatchesDeviceAndTag()
+    {
+        FlowRuleDefinition rule = IndirectFlowRule();
+        rule.Nodes.Single(node => node.Id == "tag").PointCode = "Pressure";
+        using FlowRuleHarness harness = FlowRuleHarness.Start(rule);
+
+        harness.Raise("Pressure", 11D);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.Equal(1, status.TriggeredCount);
+        Assert.True(status.Rules.Single().IsActive);
+    }
+
+    [Fact]
+    public void FlowRule_WithDuplicatePointCode_DoesNotUseOtherDevice()
+    {
+        using FlowRuleHarness harness = FlowRuleHarness.Start(BarcodeCombinationFlowRule());
+
+        harness.Raise("D1007", string.Empty, "AskBARCODE2", "AskBARCODE2", 1200D);
+        harness.Raise("D1002", string.Empty, "AskBARCODE1", "AskBARCODE1", 1200D);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.Equal(0, status.TriggeredCount);
+
+        harness.Raise("D1002", string.Empty, "AskBARCODE2", "AskBARCODE2", 1200D);
+
+        status = harness.Engine.GetStatus();
+        Assert.Equal(1, status.TriggeredCount);
+
+        EdgeRuleRuntimeEvent ruleEvent = status.RecentEvents.Single();
+        Assert.Equal("D1002", ruleEvent.Snapshot.DeviceName);
+        Assert.Equal("AskBARCODE2", ruleEvent.Snapshot.TagName);
+        Assert.Equal(2, ruleEvent.SourceValues.Count);
+        Assert.All(ruleEvent.SourceValues, item => Assert.Equal("D1002", item.Snapshot.DeviceName));
+        Assert.Contains(ruleEvent.SourceValues, item => item.Snapshot.TagName == "AskBARCODE1" && item.Snapshot.ValueText == "1200");
+        Assert.Contains(ruleEvent.SourceValues, item => item.Snapshot.TagName == "AskBARCODE2" && item.Snapshot.ValueText == "1200");
+
+        using JsonDocument payload = JsonDocument.Parse(ruleEvent.Payload);
+        JsonElement root = payload.RootElement;
+        Assert.Equal("D1002", root.GetProperty("device").GetString());
+        Assert.Equal("AskBARCODE2", root.GetProperty("tag").GetString());
+        JsonElement sourceValues = root.GetProperty("sourceValues");
+        Assert.Equal(JsonValueKind.Array, sourceValues.ValueKind);
+        Assert.Equal(2, sourceValues.GetArrayLength());
+        Assert.All(sourceValues.EnumerateArray(), item => Assert.Equal("D1002", item.GetProperty("device").GetString()));
+        Assert.Contains(sourceValues.EnumerateArray(), item => item.GetProperty("tag").GetString() == "AskBARCODE1");
+        Assert.Contains(sourceValues.EnumerateArray(), item => item.GetProperty("tag").GetString() == "AskBARCODE2");
+    }
+
+    [Fact]
+    public void FlowRule_SimpleCompiledMode_TriggersFromCompiledProjectRule()
+    {
+        FlowRuleDefinition rule = SimpleCompiledFlowRule();
+        ProjectConfig project = new ProjectConfig();
+        project.FlowRules.Add(rule);
+        FlowRuleCompiler.SyncCompiledRule(project, rule, string.Empty);
+        using FlowRuleHarness harness = FlowRuleHarness.StartProject(project);
+
+        harness.Raise("Temperature", 11D);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.Equal(FlowRuleModes.SimpleCompiled, rule.Mode);
+        Assert.Equal(1, status.RuleCount);
+        Assert.Equal(1, status.TriggeredCount);
     }
 
     [Fact]
@@ -540,6 +608,89 @@ public sealed class FlowRuleEngineServiceTests
         };
 
         return CreateLinearFlow("flow-hysteresis", "Hysteresis flow", tag, condition);
+    }
+
+    private static FlowRuleDefinition SimpleCompiledFlowRule()
+    {
+        FlowRuleNode tag = TemperatureTagNode();
+        FlowRuleNode condition = new FlowRuleNode
+        {
+            Id = "condition",
+            NodeType = FlowRuleNodeTypes.Condition,
+            Operator = EdgeRuleComparisonOperator.GreaterThan.ToString(),
+            CompareValue = 10D,
+            PublishToMqtt = true
+        };
+
+        return CreateLinearFlow("flow-simple-compiled", "Simple compiled flow", tag, condition);
+    }
+
+    private static FlowRuleDefinition BarcodeCombinationFlowRule()
+    {
+        FlowRuleNode firstTag = new FlowRuleNode
+        {
+            Id = "barcode1-tag",
+            NodeType = FlowRuleNodeTypes.TagInput,
+            DeviceName = "D1002",
+            GroupName = string.Empty,
+            TagName = "AskBARCODE1",
+            PointCode = "AskBARCODE1",
+            DataType = "Double"
+        };
+        FlowRuleNode secondTag = new FlowRuleNode
+        {
+            Id = "barcode2-tag",
+            NodeType = FlowRuleNodeTypes.TagInput,
+            DeviceName = "D1002",
+            GroupName = string.Empty,
+            TagName = "AskBARCODE2",
+            PointCode = "AskBARCODE2",
+            DataType = "Double"
+        };
+        FlowRuleNode firstCondition = new FlowRuleNode
+        {
+            Id = "barcode1-condition",
+            NodeType = FlowRuleNodeTypes.Condition,
+            Operator = EdgeRuleComparisonOperator.GreaterThan.ToString(),
+            CompareValue = 1000D
+        };
+        FlowRuleNode secondCondition = new FlowRuleNode
+        {
+            Id = "barcode2-condition",
+            NodeType = FlowRuleNodeTypes.Condition,
+            Operator = EdgeRuleComparisonOperator.GreaterThan.ToString(),
+            CompareValue = 1000D
+        };
+        FlowRuleNode logic = new FlowRuleNode
+        {
+            Id = "logic",
+            NodeType = FlowRuleNodeTypes.Logic,
+            LogicalOperator = EdgeRuleLogicalOperator.And.ToString()
+        };
+        FlowRuleNode mqtt = new FlowRuleNode
+        {
+            Id = "mqtt",
+            NodeType = FlowRuleNodeTypes.MqttPublish,
+            PublishToMqtt = true,
+            TopicTemplate = "ipc/rule/{pointCode}/{ruleName}"
+        };
+
+        return new FlowRuleDefinition
+        {
+            Id = "flow-barcode-combination",
+            Name = "Barcode combination flow",
+            Enabled = true,
+            Mode = FlowRuleModes.Flow,
+            Nodes = { firstTag, secondTag, firstCondition, secondCondition, logic, mqtt },
+            Edges =
+            {
+                new FlowRuleEdge { SourceNodeId = firstTag.Id, TargetNodeId = firstCondition.Id },
+                new FlowRuleEdge { SourceNodeId = secondTag.Id, TargetNodeId = secondCondition.Id },
+                new FlowRuleEdge { SourceNodeId = firstCondition.Id, TargetNodeId = logic.Id },
+                new FlowRuleEdge { SourceNodeId = secondCondition.Id, TargetNodeId = logic.Id },
+                new FlowRuleEdge { SourceNodeId = logic.Id, TargetNodeId = mqtt.Id }
+            }
+        };
     }
 
     private static FlowRuleDefinition MultiLevelFlowRule()
@@ -1305,6 +1456,17 @@ public sealed class FlowRuleEngineServiceTests
             FakeRuntimeService runtime = new FakeRuntimeService();
             ProjectConfig project = new ProjectConfig();
             project.FlowRules.AddRange(flowRules);
+            return StartProject(runtime, project, modelInference);
+        }
+
+        public static FlowRuleHarness StartProject(ProjectConfig project)
+        {
+            FakeRuntimeService runtime = new FakeRuntimeService();
+            return StartProject(runtime, project, null);
+        }
+
+        private static FlowRuleHarness StartProject(FakeRuntimeService runtime, ProjectConfig project, IModelInferenceService? modelInference)
+        {
             FlowRuleEngineService engine = new FlowRuleEngineService(
                 runtime,
                 project,
@@ -1329,12 +1491,22 @@ public sealed class FlowRuleEngineServiceTests
 
         public void Raise(string tagName, double value, TagQuality quality, DateTime? timestamp = null)
         {
+            Raise("Boiler", "Main", tagName, "Boiler.Main." + tagName, value, quality, timestamp);
+        }
+
+        public void Raise(string deviceName, string groupName, string tagName, string pointCode, double value, DateTime? timestamp = null)
+        {
+            Raise(deviceName, groupName, tagName, pointCode, value, TagQuality.Good, timestamp);
+        }
+
+        public void Raise(string deviceName, string groupName, string tagName, string pointCode, double value, TagQuality quality, DateTime? timestamp = null)
+        {
             _runtime.Raise(new TagValueSnapshot
             {
-                DeviceName = "Boiler",
-                GroupName = "Main",
+                DeviceName = deviceName,
+                GroupName = groupName,
                 TagName = tagName,
-                PointCode = "Boiler.Main." + tagName,
+                PointCode = pointCode,
                 DataType = "Double",
                 RawValue = value,
                 RawValueText = value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),

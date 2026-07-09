@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System;
+using System.Collections.Generic;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Values;
 
@@ -43,6 +44,7 @@ namespace IPC.EdgeGateway
             Topic = string.Empty;
             Payload = string.Empty;
             Snapshot = new TagValueSnapshot();
+            SourceValues = new List<EdgeRuleRuntimeSourceValue>();
             Value = 0D;
             Threshold = 0D;
             Timestamp = DateTime.Now;
@@ -57,8 +59,21 @@ namespace IPC.EdgeGateway
         public string Topic { get; set; }
         public string Payload { get; set; }
         public TagValueSnapshot Snapshot { get; set; }
+        public List<EdgeRuleRuntimeSourceValue> SourceValues { get; set; }
         public double Value { get; set; }
         public double Threshold { get; set; }
         public DateTime Timestamp { get; set; }
+    }
+
+    public sealed class EdgeRuleRuntimeSourceValue
+    {
+        public EdgeRuleRuntimeSourceValue()
+        {
+            Role = string.Empty;
+            Snapshot = new TagValueSnapshot();
+        }
+
+        public string Role { get; set; }
+        public TagValueSnapshot Snapshot { get; set; }
     }
 }

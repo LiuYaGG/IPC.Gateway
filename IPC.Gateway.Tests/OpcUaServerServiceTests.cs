@@ -17,6 +17,7 @@
 //----------------------------------------------------------------*/
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using IPC.EdgeGateway;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
@@ -25,6 +26,10 @@ namespace IPC.Gateway.Tests;
 
 public sealed class OpcUaServerServiceTests
 {
+    private const string SecurityPolicyNone = "http://opcfoundation.org/UA/SecurityPolicy#None";
+    private const string SecurityPolicyBasic256 = "http://opcfoundation.org/UA/SecurityPolicy#Basic256";
+    private const string SecurityPolicyBasic256Sha256 = "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256";
+
     [Fact]
     public void Start_WhenEnabled_CreatesCertificateAndRuns()
     {
@@ -58,6 +63,55 @@ public sealed class OpcUaServerServiceTests
         }
     }
 
+    [Fact]
+    public void SecurityPolicies_WhenBasic256Selected_PublishOnlyBasic256()
+    {
+        OpcUaServerOptions options = new OpcUaServerOptions
+        {
+            AllowAnonymous = false,
+            UsernamePasswordEnabled = true,
+            Username = "kepserver",
+            SecurityPolicy = OpcUaServerOptions.SecurityPolicyBasic256
+        };
+        OpcUaPasswordHasher.SetPassword(options, "OpcUa#12345");
+        options = OpcUaServerOptions.Normalize(options);
+
+        IEnumerable<object> securityPolicies = InvokeCreateSecurityPolicies(options);
+        IEnumerable<object> userTokenPolicies = InvokeCreateUserTokenPolicies(options);
+
+        Assert.DoesNotContain(securityPolicies, policy => ReadString(policy, "SecurityPolicyUri") == SecurityPolicyNone);
+        Assert.Contains(securityPolicies, policy =>
+            ReadString(policy, "SecurityMode") == "SignAndEncrypt" &&
+            ReadString(policy, "SecurityPolicyUri") == SecurityPolicyBasic256);
+        Assert.DoesNotContain(securityPolicies, policy => ReadString(policy, "SecurityPolicyUri") == SecurityPolicyBasic256Sha256);
+        Assert.DoesNotContain(userTokenPolicies, policy => ReadString(policy, "TokenType") == "Anonymous");
+        Assert.Contains(userTokenPolicies, policy =>
+            ReadString(policy, "TokenType") == "UserName" &&
+            ReadString(policy, "SecurityPolicyUri") == SecurityPolicyBasic256);
+        Assert.DoesNotContain(userTokenPolicies, policy =>
+            ReadString(policy, "TokenType") == "UserName" &&
+            ReadString(policy, "SecurityPolicyUri") == SecurityPolicyBasic256Sha256);
+    }
+
+    [Fact]
+    public void SecurityPolicies_WhenLegacyFlagsContainMultipleValues_NormalizeToSinglePolicy()
+    {
+        OpcUaServerOptions options = OpcUaServerOptions.Normalize(new OpcUaServerOptions
+        {
+            AllowAnonymous = false,
+            UsernamePasswordEnabled = true,
+            Username = "kepserver",
+            AllowSecurityPolicyNone = false,
+            EnableBasic256SignAndEncrypt = true,
+            EnableBasic256Sha256SignAndEncrypt = true
+        });
+
+        Assert.Equal(OpcUaServerOptions.SecurityPolicyBasic256, options.SecurityPolicy);
+        Assert.False(options.AllowSecurityPolicyNone);
+        Assert.True(options.EnableBasic256SignAndEncrypt);
+        Assert.False(options.EnableBasic256Sha256SignAndEncrypt);
+    }
+
     private static ProjectConfig CreateProject()
     {
         return new ProjectConfig
@@ -78,5 +132,29 @@ public sealed class OpcUaServerServiceTests
         {
             listener.Stop();
         }
+    }
+
+    private static IEnumerable<object> InvokeCreateSecurityPolicies(OpcUaServerOptions options)
+    {
+        MethodInfo? method = typeof(OpcUaServerService).GetMethod("CreateSecurityPolicies", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return ToObjects(method!.Invoke(null, new object[] { options })!);
+    }
+
+    private static IEnumerable<object> InvokeCreateUserTokenPolicies(OpcUaServerOptions options)
+    {
+        MethodInfo? method = typeof(OpcUaServerService).GetMethod("CreateUserTokenPolicies", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return ToObjects(method!.Invoke(null, new object[] { options })!);
+    }
+
+    private static IEnumerable<object> ToObjects(object value)
+    {
+        return ((System.Collections.IEnumerable)value).Cast<object>();
+    }
+
+    private static string ReadString(object value, string propertyName)
+    {
+        return value.GetType().GetProperty(propertyName)?.GetValue(value)?.ToString() ?? string.Empty;
     }
 }

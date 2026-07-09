@@ -62,12 +62,6 @@ public static class GatewayPermissions
     public const string DeleteTag = "tags.delete";
     public const string WriteTag = "tags.write";
 
-    public const string ViewRules = "rules.view";
-    public const string CreateRule = "rules.create";
-    public const string EditRule = "rules.edit";
-    public const string DeleteRule = "rules.delete";
-    public const string DebugRule = "rules.debug";
-
     public const string ViewFlowRules = "flowRules.view";
     public const string CreateFlowRule = "flowRules.create";
     public const string EditFlowRule = "flowRules.edit";
@@ -113,12 +107,6 @@ public static class GatewayPermissions
         Action(EditTag, "编辑标签", "设备管理", "编辑标签地址、数据类型、采集周期、清洗、缩放等配置。"),
         Action(DeleteTag, "删除标签", "设备管理", "删除标签。"),
         Action(WriteTag, "写入标签值", "设备管理", "在标签操作列执行写入。"),
-
-        Page(ViewRules, "规则引擎", "规则引擎", "查看简单规则列表、状态和事件。"),
-        Action(CreateRule, "新增规则", "规则引擎", "新增简单规则。"),
-        Action(EditRule, "编辑规则", "规则引擎", "编辑简单规则。"),
-        Action(DeleteRule, "删除规则", "规则引擎", "删除简单规则。"),
-        Action(DebugRule, "模拟测试规则", "规则引擎", "在规则详情中执行模拟测试。"),
 
         Page(ViewFlowRules, "流程规则", "流程规则", "查看流程规则列表和编辑器。"),
         Action(CreateFlowRule, "新增流程规则", "流程规则", "新增流程规则。"),
@@ -218,11 +206,6 @@ public static class GatewayPermissions
                 EditTag,
                 DeleteTag,
                 WriteTag,
-                ViewRules,
-                CreateRule,
-                EditRule,
-                DeleteRule,
-                DebugRule,
                 ViewFlowRules,
                 CreateFlowRule,
                 EditFlowRule,
@@ -245,7 +228,6 @@ public static class GatewayPermissions
             ViewBigScreen,
             ViewTopology,
             ViewDevices,
-            ViewRules,
             ViewFlowRules,
             ViewMqtt,
             ViewOpcUa,
@@ -283,14 +265,14 @@ public static class GatewayPermissions
             yield return item;
 
         if (input.Contains(ViewRuntime))
-            foreach (string item in new[] { ViewDashboard, ViewBigScreen, ViewTopology, ViewDevices, ViewRules, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewHistory })
+            foreach (string item in new[] { ViewDashboard, ViewBigScreen, ViewTopology, ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewHistory })
                 yield return item;
 
         if (input.Contains(WriteRuntime))
             yield return WriteTag;
 
         if (input.Contains(ReadConfiguration))
-            foreach (string item in new[] { ViewDevices, ViewRules, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewProject, ViewHistory })
+            foreach (string item in new[] { ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewProject, ViewHistory })
                 yield return item;
 
         if (input.Contains(WriteConfiguration))
@@ -306,10 +288,6 @@ public static class GatewayPermissions
                 CreateTag,
                 EditTag,
                 DeleteTag,
-                CreateRule,
-                EditRule,
-                DeleteRule,
-                DebugRule,
                 CreateFlowRule,
                 EditFlowRule,
                 DeleteFlowRule,

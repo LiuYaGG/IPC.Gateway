@@ -30,6 +30,8 @@ namespace IPC.Plc.Communication.Core
         Dlt6452007,
         Cjt1882004,
         ModbusRtu,
+        CanOpen,
+        BacnetIp,
         OpcUa,
         OpcDa,
         VirtualPlc,

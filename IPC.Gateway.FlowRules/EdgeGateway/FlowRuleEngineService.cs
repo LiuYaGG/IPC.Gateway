@@ -20,6 +20,7 @@ using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Resilience;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
+using IPC.Runtime.Values;
 
 namespace IPC.EdgeGateway
 {
@@ -32,6 +33,7 @@ namespace IPC.EdgeGateway
         private readonly MqttGatewayOptions _gatewayOptions;
         private readonly CircuitBreakerOptions _circuitBreakerOptions;
         private readonly IModelInferenceService _modelInference;
+        private readonly TagValueChangedWorker _tagValueWorker;
         private EdgeRuleEngineService _engine;
         private bool _running;
         private bool _disposed;
@@ -60,6 +62,10 @@ namespace IPC.EdgeGateway
             _circuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
             _syncRoot = new object();
+            _tagValueWorker = new TagValueChangedWorker(
+                "IPC Flow Rule Tag Worker",
+                100000,
+                ProcessTagValueChanged);
             _engine = CreateInnerEngine();
         }
 
@@ -70,13 +76,24 @@ namespace IPC.EdgeGateway
                 if (_running)
                     return;
                 ReplaceInnerEngine();
-                _engine.Start();
+                _engine.StartDetached();
                 _running = true;
+            }
+
+            _tagValueWorker.Start();
+            if (_runtime != null)
+            {
+                _runtime.TagValueChanged -= OnTagValueChanged;
+                _runtime.TagValueChanged += OnTagValueChanged;
             }
         }
 
         public void Stop()
         {
+            if (_runtime != null)
+                _runtime.TagValueChanged -= OnTagValueChanged;
+            _tagValueWorker.Stop(TimeSpan.FromSeconds(3));
+
             lock (_syncRoot)
             {
                 _engine.Stop();
@@ -86,6 +103,7 @@ namespace IPC.EdgeGateway
 
         public EdgeRuleEngineStatus GetStatus()
         {
+            _tagValueWorker.Drain(TimeSpan.FromMilliseconds(500));
             lock (_syncRoot)
                 return _engine.GetStatus();
         }
@@ -97,7 +115,29 @@ namespace IPC.EdgeGateway
 
             _disposed = true;
             Stop();
+            _tagValueWorker.Dispose();
             _engine.Dispose();
+        }
+
+        private void OnTagValueChanged(object? sender, TagValueChangedEventArgs e)
+        {
+            if (e == null || e.Snapshot == null)
+                return;
+
+            _tagValueWorker.Enqueue(e.Snapshot);
+        }
+
+        private void ProcessTagValueChanged(TagValueSnapshot snapshot)
+        {
+            EdgeRuleEngineService engine;
+            lock (_syncRoot)
+            {
+                if (!_running)
+                    return;
+                engine = _engine;
+            }
+
+            engine.ProcessSnapshot(snapshot);
         }
 
         private EdgeRuleEngineService CreateInnerEngine()

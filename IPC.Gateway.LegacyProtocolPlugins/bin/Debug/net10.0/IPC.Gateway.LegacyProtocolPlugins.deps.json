@@ -9,10 +9,38 @@
       "IPC.Gateway.LegacyProtocolPlugins/1.0.0": {
         "dependencies": {
           "Opc.UaFx.Client": "2.53.1",
-          "System.IO.Ports": "10.0.0"
+          "System.IO.Ports": "10.0.0",
+          "Talk.BACnet": "1.0.2"
         },
         "runtime": {
           "IPC.Gateway.LegacyProtocolPlugins.dll": {}
+        }
+      },
+      "Common.Logging/3.4.1": {
+        "dependencies": {
+          "Common.Logging.Core": "3.4.1"
+        },
+        "runtime": {
+          "lib/netstandard1.3/Common.Logging.dll": {
+            "assemblyVersion": "3.4.1.0",
+            "fileVersion": "3.4.0.0"
+          }
+        }
+      },
+      "Common.Logging.Core/3.4.1": {
+        "runtime": {
+          "lib/netstandard1.0/Common.Logging.Core.dll": {
+            "assemblyVersion": "3.4.1.0",
+            "fileVersion": "3.4.0.0"
+          }
+        }
+      },
+      "log4net/2.0.8": {
+        "runtime": {
+          "lib/netstandard1.3/log4net.dll": {
+            "assemblyVersion": "2.0.8.0",
+            "fileVersion": "2.0.8.0"
+          }
         }
       },
       "Microsoft.Data.SqlClient/7.0.1": {
@@ -63,6 +91,17 @@
           "lib/netcoreapp3.1/Opc.UaFx.Client.dll": {
             "assemblyVersion": "2.0.0.0",
             "fileVersion": "2.53.1.0"
+          }
+        }
+      },
+      "PacketDotNet/0.19.3": {
+        "dependencies": {
+          "log4net": "2.0.8"
+        },
+        "runtime": {
+          "lib/netstandard2.0/PacketDotNet.dll": {
+            "assemblyVersion": "0.19.3.0",
+            "fileVersion": "0.19.3.0"
           }
         }
       },
@@ -235,6 +274,17 @@
             "rid": "osx-x64",
             "assetType": "native",
             "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "SharpPcap/4.5.0": {
+        "dependencies": {
+          "PacketDotNet": "0.19.3"
+        },
+        "runtime": {
+          "lib/netstandard2.0/SharpPcap.dll": {
+            "assemblyVersion": "4.5.0.0",
+            "fileVersion": "4.5.0.0"
           }
         }
       },
@@ -497,6 +547,21 @@
           }
         }
       },
+      "Talk.BACnet/1.0.2": {
+        "dependencies": {
+          "Common.Logging": "3.4.1",
+          "Common.Logging.Core": "3.4.1",
+          "PacketDotNet": "0.19.3",
+          "SharpPcap": "4.5.0",
+          "System.IO.Ports": "10.0.0"
+        },
+        "runtime": {
+          "lib/netstandard2.0/BACnet.dll": {
+            "assemblyVersion": "1.0.2.0",
+            "fileVersion": "1.0.2.0"
+          }
+        }
+      },
       "IPC.Gateway.DataProcessing/1.0.0": {
         "runtime": {
           "IPC.Gateway.DataProcessing.dll": {
@@ -520,6 +585,27 @@
       "type": "project",
       "serviceable": false,
       "sha512": ""
+    },
+    "Common.Logging/3.4.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-5eZ/vgEOqzLg4PypZqnJ+wMhhgHyckicbZY4iDxqQ4FtOz0CpdYZ0xQ78aszMzeAJZiLLb5VdR9tPfunVQLz6g==",
+      "path": "common.logging/3.4.1",
+      "hashPath": "common.logging.3.4.1.nupkg.sha512"
+    },
+    "Common.Logging.Core/3.4.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wLHldZHvxsSD6Ahonfj00/SkfHfKqO+YT6jsUwVm8Rch1REL9IArHAcSLXxYxYfu5/4ydGtmXvOtaH3AkVPu0A==",
+      "path": "common.logging.core/3.4.1",
+      "hashPath": "common.logging.core.3.4.1.nupkg.sha512"
+    },
+    "log4net/2.0.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-N41MQGHZImiCfn0cUuSBjZxrcNfIQCuCgQP0rpgB3J/NWponEh3lc1LxJEuIsPAR9Oc1jVvfkNNFCY1C5hf9LA==",
+      "path": "log4net/2.0.8",
+      "hashPath": "log4net.2.0.8.nupkg.sha512"
     },
     "Microsoft.Data.SqlClient/7.0.1": {
       "type": "package",
@@ -555,6 +641,13 @@
       "sha512": "sha512-IcUahuNOvPLR6cP4aHpM9jB9zFjy3HUBnF0QCYWLdtuDr8Km2gjRlnhxmgqEY7LDfmDa90cVhJD9WVm2cktvng==",
       "path": "opc.uafx.client/2.53.1",
       "hashPath": "opc.uafx.client.2.53.1.nupkg.sha512"
+    },
+    "PacketDotNet/0.19.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-i7phQmaidpAaSA5SPW5g9B4VYxlyZWp0Z+ILvMNGoEzJI8RRQlpXADQNFs++KiYdJd1pxK9luGKepEQU5EC/1w==",
+      "path": "packetdotnet/0.19.3",
+      "hashPath": "packetdotnet.0.19.3.nupkg.sha512"
     },
     "Portable.BouncyCastle/1.9.0": {
       "type": "package",
@@ -682,6 +775,13 @@
       "path": "runtime.osx-x64.runtime.native.system.io.ports/10.0.0",
       "hashPath": "runtime.osx-x64.runtime.native.system.io.ports.10.0.0.nupkg.sha512"
     },
+    "SharpPcap/4.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-z8Wa5XBwmygHSgUgSZEMlVXu1pNIo1qiYhYJfHdYcaEbAl6r46VzXMHsIQKhcbBADe/hT3BRA4FwF8i9qIzu5g==",
+      "path": "sharppcap/4.5.0",
+      "hashPath": "sharppcap.4.5.0.nupkg.sha512"
+    },
     "SourceGear.sqlite3/3.50.4.5": {
       "type": "package",
       "serviceable": true,
@@ -744,6 +844,13 @@
       "sha512": "sha512-Wc9Hgg4Cmqi416zvEgq2sW1YYCGuhwWzspDclJWlFZqY6EGhFUPZU+kVpl5z9kAgrSOQP7/Uiik+PtSQtmq+5A==",
       "path": "system.servicemodel.primitives/4.5.3",
       "hashPath": "system.servicemodel.primitives.4.5.3.nupkg.sha512"
+    },
+    "Talk.BACnet/1.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-O5TWODz4sYEMBZfVwULuuvY95e9tiFTvIqT8aN1VXTJyap4swstohQoMUsELtuG5EP+bYBSayEzeenpsV86EAA==",
+      "path": "talk.bacnet/1.0.2",
+      "hashPath": "talk.bacnet.1.0.2.nupkg.sha512"
     },
     "IPC.Gateway.DataProcessing/1.0.0": {
       "type": "project",

@@ -8,3 +8,5 @@ runtime configuration.
 - Split large changes into multiple small patches, files, or phases.
 - Avoid unnecessary whole-repository formatting, build artifact churn, and
   broad mechanical rewrites.
+- Publish the website to `C:\IPC.Gateway\iis-app` unless the user asks for a
+  different target.

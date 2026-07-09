@@ -23,16 +23,26 @@ public interface IGatewayDeviceConfigurationApplicationService
 {
     IList<DeviceConfig> GetDevices();
     DeviceConfig AddDevice(DeviceConfig device);
+    Task<DeviceConfig> AddDeviceAsync(DeviceConfig device);
     DeviceConfig UpdateDevice(string deviceId, DeviceConfig input);
+    Task<DeviceConfig> UpdateDeviceAsync(string deviceId, DeviceConfig input);
     DeviceConfig DeleteDevice(string deviceId);
+    Task<DeviceConfig> DeleteDeviceAsync(string deviceId);
     IList<GroupConfig> GetDeviceGroups(string deviceId);
     GroupConfig AddGroup(string deviceId, GroupConfig input);
+    Task<GroupConfig> AddGroupAsync(string deviceId, GroupConfig input);
     GroupConfig UpdateGroup(string groupId, GroupConfig input);
+    Task<GroupConfig> UpdateGroupAsync(string groupId, GroupConfig input);
     GroupConfig DeleteGroup(string groupId);
+    Task<GroupConfig> DeleteGroupAsync(string groupId);
     IList<TagConfig> GetDeviceTags(string deviceId);
     TagConfig AddDeviceTag(string deviceId, TagConfig input);
+    Task<TagConfig> AddDeviceTagAsync(string deviceId, TagConfig input);
     IList<TagConfig> GetGroupTags(string groupId);
     TagConfig AddGroupTag(string groupId, TagConfig input);
+    Task<TagConfig> AddGroupTagAsync(string groupId, TagConfig input);
     TagConfig UpdateTag(string tagId, TagConfig input);
+    Task<TagConfig> UpdateTagAsync(string tagId, TagConfig input);
     TagConfig DeleteTag(string tagId);
+    Task<TagConfig> DeleteTagAsync(string tagId);
 }

@@ -18,6 +18,7 @@
     <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
     <ProjectReference Include="..\IPC.Gateway.DataProcessing\IPC.Gateway.DataProcessing.csproj" />
     <ProjectReference Include="..\IPC.Gateway.FlowRules\IPC.Gateway.FlowRules.csproj" />
+    <ProjectReference Include="..\IPC.Gateway.LegacyProtocolPlugins\IPC.Gateway.LegacyProtocolPlugins.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Watchdog\IPC.Gateway.Watchdog.csproj" />
     <ProjectReference Include="..\IPC.Gateway.WebHost\IPC.Gateway.WebHost.csproj" />
   </ItemGroup>

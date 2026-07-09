@@ -47,7 +47,6 @@ namespace IPC.Gateway.Core.Gateway
             Mqtt = new MqttGatewayStatus();
             OpcUa = new OpcUaServerStatus();
             History = new LocalHistoryStats();
-            RuleEngine = new EdgeRuleEngineStatus();
             FlowRuleEngine = new EdgeRuleEngineStatus();
             Scheduler = new RuntimeSchedulerStatus();
             System = new SystemResourceStatus();
@@ -77,7 +76,6 @@ namespace IPC.Gateway.Core.Gateway
         public MqttGatewayStatus Mqtt { get; set; }
         public OpcUaServerStatus OpcUa { get; set; }
         public LocalHistoryStats History { get; set; }
-        public EdgeRuleEngineStatus RuleEngine { get; set; }
         public EdgeRuleEngineStatus FlowRuleEngine { get; set; }
         public RuntimeSchedulerStatus Scheduler { get; set; }
         public SystemResourceStatus System { get; set; }

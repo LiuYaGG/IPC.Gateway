@@ -533,6 +533,8 @@ namespace IPC.Runtime.Configuration
                 Protocol = source.Protocol,
                 Connection = CloneConnection(source.Connection),
                 DefaultScanRateMs = source.DefaultScanRateMs,
+                FailureRetryDelayMs = source.FailureRetryDelayMs,
+                MaxFailureRetryDelayMs = source.MaxFailureRetryDelayMs,
                 Tags = new List<TagConfig>(),
                 Groups = new List<GroupConfig>()
             };

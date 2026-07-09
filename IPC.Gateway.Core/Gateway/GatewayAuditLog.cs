@@ -93,8 +93,15 @@ public sealed class GatewayAuditLogQueryResult
 public interface IGatewayAuditLogStore
 {
     void Append(GatewayAuditLogEntry entry);
+    Task AppendAsync(GatewayAuditLogEntry entry)
+    {
+        Append(entry);
+        return Task.CompletedTask;
+    }
     IReadOnlyList<GatewayAuditLogEntry> Query(GatewayAuditLogQuery query);
+    Task<IReadOnlyList<GatewayAuditLogEntry>> QueryAsync(GatewayAuditLogQuery query) => Task.FromResult(Query(query));
     int DeleteOlderThan(DateTime timestamp);
+    Task<int> DeleteOlderThanAsync(DateTime timestamp) => Task.FromResult(DeleteOlderThan(timestamp));
 }
 
 public static class GatewayAuditLog
@@ -113,12 +120,30 @@ public static class GatewayAuditLog
         store?.Append(entry);
     }
 
+    public static async Task WriteConfigurationChangeAsync(GatewayConfigurationAuditEvent auditEvent, IGatewayAuditLogStore? store = null)
+    {
+        auditEvent ??= new GatewayConfigurationAuditEvent();
+        GatewayAuditLogEntry entry = CreateConfigurationEntry(auditEvent);
+        IpcLogService.WriteAudit(ConfigurationWriteAction, Safe(auditEvent.Target), entry.RawDetail);
+        if (store != null)
+            await store.AppendAsync(entry);
+    }
+
     public static void WriteSecurityEvent(GatewaySecurityAuditEvent auditEvent, IGatewayAuditLogStore? store = null)
     {
         auditEvent ??= new GatewaySecurityAuditEvent();
         GatewayAuditLogEntry entry = CreateSecurityEntry(auditEvent);
         IpcLogService.WriteAudit(entry.Action, Safe(entry.Target), entry.RawDetail);
         store?.Append(entry);
+    }
+
+    public static async Task WriteSecurityEventAsync(GatewaySecurityAuditEvent auditEvent, IGatewayAuditLogStore? store = null)
+    {
+        auditEvent ??= new GatewaySecurityAuditEvent();
+        GatewayAuditLogEntry entry = CreateSecurityEntry(auditEvent);
+        IpcLogService.WriteAudit(entry.Action, Safe(entry.Target), entry.RawDetail);
+        if (store != null)
+            await store.AppendAsync(entry);
     }
 
     public static string BuildConfigurationDetail(GatewayConfigurationAuditEvent auditEvent)
@@ -176,6 +201,37 @@ public static class GatewayAuditLog
             .ToList();
     }
 
+    public static async Task<IReadOnlyList<GatewayAuditLogEntry>> ReadRecentAsync(GatewayAuditLogQuery? query, IGatewayAuditLogStore? store = null)
+    {
+        query ??= new GatewayAuditLogQuery();
+        int limit = ClampLimit(query.Limit);
+        List<GatewayAuditLogEntry> entries = new List<GatewayAuditLogEntry>(limit);
+        HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (store != null)
+        {
+            try
+            {
+                foreach (GatewayAuditLogEntry entry in await store.QueryAsync(query))
+                    AddEntry(entries, seen, entry, limit);
+            }
+            catch
+            {
+            }
+        }
+
+        if (entries.Count < limit)
+        {
+            foreach (GatewayAuditLogEntry entry in ReadRecentFromFiles(query))
+                AddEntry(entries, seen, entry, limit);
+        }
+
+        return entries
+            .OrderByDescending(item => item.Timestamp)
+            .Take(limit)
+            .ToList();
+    }
+
     public static GatewayAuditLogQueryResult ReadPage(GatewayAuditLogQuery? query, IGatewayAuditLogStore? store = null)
     {
         query ??= new GatewayAuditLogQuery();
@@ -183,6 +239,27 @@ public static class GatewayAuditLog
         int offset = ClampOffset(query.Offset);
         GatewayAuditLogQuery pageQuery = CopyQuery(query, offset, Math.Min(limit + 1, MaxReadLimit));
         List<GatewayAuditLogEntry> rows = ReadRecent(pageQuery, store).ToList();
+        bool hasMore = rows.Count > limit;
+        if (hasMore)
+            rows.RemoveAt(rows.Count - 1);
+
+        return new GatewayAuditLogQueryResult
+        {
+            Limit = limit,
+            Offset = offset,
+            Returned = rows.Count,
+            HasMore = hasMore,
+            Items = rows
+        };
+    }
+
+    public static async Task<GatewayAuditLogQueryResult> ReadPageAsync(GatewayAuditLogQuery? query, IGatewayAuditLogStore? store = null)
+    {
+        query ??= new GatewayAuditLogQuery();
+        int limit = ClampLimit(query.Limit);
+        int offset = ClampOffset(query.Offset);
+        GatewayAuditLogQuery pageQuery = CopyQuery(query, offset, Math.Min(limit + 1, MaxReadLimit));
+        List<GatewayAuditLogEntry> rows = (await ReadRecentAsync(pageQuery, store)).ToList();
         bool hasMore = rows.Count > limit;
         if (hasMore)
             rows.RemoveAt(rows.Count - 1);

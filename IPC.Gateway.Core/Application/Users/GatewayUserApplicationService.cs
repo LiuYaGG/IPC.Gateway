@@ -40,9 +40,19 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         return _users.ValidatePassword(username, password);
     }
 
+    public Task<GatewayUserInfo?> ValidatePasswordAsync(string username, string password)
+    {
+        return _users.ValidatePasswordAsync(username, password);
+    }
+
     public GatewayUserAuthenticationResult Authenticate(string username, string password)
     {
         return _users.Authenticate(username, password, _securityOptions.Lockout);
+    }
+
+    public Task<GatewayUserAuthenticationResult> AuthenticateAsync(string username, string password)
+    {
+        return _users.AuthenticateAsync(username, password, _securityOptions.Lockout);
     }
 
     public GatewayUserInfo? FindByUsername(string username)
@@ -56,9 +66,25 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         return user;
     }
 
+    public async Task<GatewayUserInfo?> FindByUsernameAsync(string username)
+    {
+        GatewayUserInfo? user = await _users.FindByUsernameAsync(username);
+        if (user == null)
+            return null;
+
+        user.PasswordHash = string.Empty;
+        user.PasswordSalt = string.Empty;
+        return user;
+    }
+
     public IList<GatewayUserInfo> GetUsers()
     {
         return _users.GetUsers();
+    }
+
+    public Task<IList<GatewayUserInfo>> GetUsersAsync()
+    {
+        return _users.GetUsersAsync();
     }
 
     public GatewayUserInfo SaveUser(string username, string displayName, string role, bool enabled, string password)
@@ -66,6 +92,13 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         if (!string.IsNullOrWhiteSpace(password))
             GatewayPasswordPolicyValidator.Validate(username, password, _securityOptions.Password);
         return _users.UpsertUser(username, displayName, role, enabled, password);
+    }
+
+    public async Task<GatewayUserInfo> SaveUserAsync(string username, string displayName, string role, bool enabled, string password)
+    {
+        if (!string.IsNullOrWhiteSpace(password))
+            GatewayPasswordPolicyValidator.Validate(username, password, _securityOptions.Password);
+        return await _users.UpsertUserAsync(username, displayName, role, enabled, password);
     }
 
     public void ChangePassword(string username, string currentPassword, string newPassword)
@@ -90,6 +123,28 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         _users.UpsertUser(currentUser.Username, currentUser.DisplayName, currentUser.Role, currentUser.Enabled, newPassword);
     }
 
+    public async Task ChangePasswordAsync(string username, string currentPassword, string newPassword)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("当前登录账号无效。", nameof(username));
+        if (string.IsNullOrWhiteSpace(currentPassword))
+            throw new ArgumentException("请输入当前密码。", nameof(currentPassword));
+        if (string.IsNullOrWhiteSpace(newPassword))
+            throw new ArgumentException("请输入新密码。", nameof(newPassword));
+
+        string normalizedUsername = username.Trim();
+        GatewayUserInfo? currentUser = await _users.FindByUsernameAsync(normalizedUsername);
+        if (currentUser == null || !currentUser.Enabled)
+            throw new InvalidOperationException("当前登录账号无效。");
+        if (await _users.ValidatePasswordAsync(normalizedUsername, currentPassword) == null)
+            throw new ArgumentException("当前密码不正确。", nameof(currentPassword));
+        if (await _users.ValidatePasswordAsync(normalizedUsername, newPassword) != null)
+            throw new ArgumentException("新密码不能与当前密码相同。", nameof(newPassword));
+
+        GatewayPasswordPolicyValidator.Validate(normalizedUsername, newPassword, _securityOptions.Password);
+        await _users.UpsertUserAsync(currentUser.Username, currentUser.DisplayName, currentUser.Role, currentUser.Enabled, newPassword);
+    }
+
     public GatewayUserInfo ResetPassword(string username, string newPassword)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -106,8 +161,29 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         return _users.UpsertUser(user.Username, user.DisplayName, user.Role, user.Enabled, newPassword);
     }
 
+    public async Task<GatewayUserInfo> ResetPasswordAsync(string username, string newPassword)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("请输入账号。", nameof(username));
+        if (string.IsNullOrWhiteSpace(newPassword))
+            throw new ArgumentException("请输入新密码。", nameof(newPassword));
+
+        string normalizedUsername = username.Trim();
+        GatewayUserInfo? user = await _users.FindByUsernameAsync(normalizedUsername);
+        if (user == null)
+            throw new InvalidOperationException("人员不存在：" + normalizedUsername);
+
+        GatewayPasswordPolicyValidator.Validate(normalizedUsername, newPassword, _securityOptions.Password);
+        return await _users.UpsertUserAsync(user.Username, user.DisplayName, user.Role, user.Enabled, newPassword);
+    }
+
     public void DeleteUser(string username)
     {
         _users.DeleteUser(username);
+    }
+
+    public Task DeleteUserAsync(string username)
+    {
+        return _users.DeleteUserAsync(username);
     }
 }

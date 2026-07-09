@@ -19,6 +19,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.VirtualPlc
@@ -32,7 +34,7 @@ namespace IPC.Plc.Communication.VirtualPlc
     
     
     
-    public sealed class VirtualPlcClient : IPlcClient
+    public sealed class VirtualPlcClient : IPlcClient, IAsyncPlcClient
     {
         private static readonly object StoreLock = new object();
         private static readonly Dictionary<string, Dictionary<string, object>> Stores = new Dictionary<string, Dictionary<string, object>>();
@@ -68,9 +70,22 @@ namespace IPC.Plc.Communication.VirtualPlc
             _connected = true;
         }
 
+        public ValueTask ConnectAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Connect();
+            return ValueTask.CompletedTask;
+        }
+
         public void Disconnect()
         {
             _connected = false;
+        }
+
+        public ValueTask DisconnectAsync(CancellationToken cancellationToken)
+        {
+            Disconnect();
+            return ValueTask.CompletedTask;
         }
 
         public PlcReadResult Read(string address, PlcDataType dataType, int elementCount, int elementOffset)
@@ -89,6 +104,17 @@ namespace IPC.Plc.Communication.VirtualPlc
             return new PlcReadResult(0, dataType.ToString(), value);
         }
 
+        public ValueTask<PlcReadResult> ReadAsync(
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ValueTask<PlcReadResult>(Read(address, dataType, elementCount, elementOffset));
+        }
+
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
             EnsureConnected();
@@ -99,6 +125,18 @@ namespace IPC.Plc.Communication.VirtualPlc
             {
                 Stores[_storeKey][key] = value;
             }
+        }
+
+        public ValueTask WriteAsync(
+            string address,
+            PlcDataType dataType,
+            string valueText,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Write(address, dataType, valueText, elementOffset);
+            return ValueTask.CompletedTask;
         }
 
         public void Dispose()

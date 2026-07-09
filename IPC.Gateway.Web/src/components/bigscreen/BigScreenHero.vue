@@ -14,7 +14,7 @@
       <span :class="{ active: status?.isRunning }">网关 {{ status?.isRunning ? '运行' : '停止' }}</span>
       <span :class="{ active: status?.mqtt?.isConnected }">MQTT {{ status?.mqtt?.isConnected ? '在线' : '离线' }}</span>
       <span :class="{ active: status?.history?.isRunning }">历史库 {{ status?.history?.isRunning ? '写入' : '停止' }}</span>
-      <span :class="{ active: status?.ruleEngine?.isRunning }">规则 {{ status?.ruleEngine?.isRunning ? '运行' : '停止' }}</span>
+      <span :class="{ active: status?.flowRuleEngine?.isRunning }">规则 {{ status?.flowRuleEngine?.isRunning ? '运行' : '停止' }}</span>
       <span :class="{ active: status?.opcUa?.isRunning }">OPC UA {{ status?.opcUa?.isRunning ? '运行' : '停止' }}</span>
     </div>
   </section>

@@ -40,11 +40,35 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<DeviceConfig> AddDeviceAsync(DeviceConfig device)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        DeviceConfig result = aggregate.AddDevice(device);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public DeviceConfig UpdateDevice(string deviceId, DeviceConfig input)
     {
         GatewayProjectAggregate aggregate = LoadAggregate();
+        DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
+        if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
+            return current;
+
         DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
         Save(aggregate);
+        return result;
+    }
+
+    public async Task<DeviceConfig> UpdateDeviceAsync(string deviceId, DeviceConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
+        if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
+            return current;
+
+        DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
+        await SaveAsync(aggregate);
         return result;
     }
 
@@ -53,6 +77,14 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         GatewayProjectAggregate aggregate = LoadAggregate();
         DeviceConfig result = aggregate.DeleteDevice(deviceId);
         Save(aggregate);
+        return result;
+    }
+
+    public async Task<DeviceConfig> DeleteDeviceAsync(string deviceId)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        DeviceConfig result = aggregate.DeleteDevice(deviceId);
+        await SaveAsync(aggregate);
         return result;
     }
 
@@ -69,6 +101,14 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<GroupConfig> AddGroupAsync(string deviceId, GroupConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        GroupConfig result = aggregate.AddGroup(deviceId, input);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public GroupConfig UpdateGroup(string groupId, GroupConfig input)
     {
         GatewayProjectAggregate aggregate = LoadAggregate();
@@ -77,11 +117,27 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<GroupConfig> UpdateGroupAsync(string groupId, GroupConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        GroupConfig result = aggregate.UpdateGroup(groupId, input);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public GroupConfig DeleteGroup(string groupId)
     {
         GatewayProjectAggregate aggregate = LoadAggregate();
         GroupConfig result = aggregate.DeleteGroup(groupId);
         Save(aggregate);
+        return result;
+    }
+
+    public async Task<GroupConfig> DeleteGroupAsync(string groupId)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        GroupConfig result = aggregate.DeleteGroup(groupId);
+        await SaveAsync(aggregate);
         return result;
     }
 
@@ -98,6 +154,14 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<TagConfig> AddDeviceTagAsync(string deviceId, TagConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        TagConfig result = aggregate.AddDeviceTag(deviceId, input);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public IList<TagConfig> GetGroupTags(string groupId)
     {
         return LoadAggregate().GetGroupTags(groupId);
@@ -111,11 +175,27 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<TagConfig> AddGroupTagAsync(string groupId, TagConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        TagConfig result = aggregate.AddGroupTag(groupId, input);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public TagConfig UpdateTag(string tagId, TagConfig input)
     {
         GatewayProjectAggregate aggregate = LoadAggregate();
         TagConfig result = aggregate.UpdateTag(tagId, input);
         Save(aggregate);
+        return result;
+    }
+
+    public async Task<TagConfig> UpdateTagAsync(string tagId, TagConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        TagConfig result = aggregate.UpdateTag(tagId, input);
+        await SaveAsync(aggregate);
         return result;
     }
 
@@ -127,6 +207,14 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         return result;
     }
 
+    public async Task<TagConfig> DeleteTagAsync(string tagId)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        TagConfig result = aggregate.DeleteTag(tagId);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     private GatewayProjectAggregate LoadAggregate()
     {
         return new GatewayProjectAggregate(_gateway.CurrentProject);
@@ -134,6 +222,11 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
 
     private void Save(GatewayProjectAggregate aggregate)
     {
-        _gateway.Reload(aggregate.Project);
+        _gateway.ApplyDeviceProject(aggregate.Project);
+    }
+
+    private Task SaveAsync(GatewayProjectAggregate aggregate)
+    {
+        return _gateway.ApplyDeviceProjectAsync(aggregate.Project);
     }
 }

@@ -144,6 +144,16 @@ namespace IPC.EdgeGateway
 
         public void Start()
         {
+            StartCore(true);
+        }
+
+        public void StartDetached()
+        {
+            StartCore(false);
+        }
+
+        private void StartCore(bool subscribeToRuntime)
+        {
             if (_runtime == null)
                 return;
 
@@ -154,8 +164,11 @@ namespace IPC.EdgeGateway
                 _running = true;
             }
 
-            _runtime.TagValueChanged -= OnTagValueChanged;
-            _runtime.TagValueChanged += OnTagValueChanged;
+            if (subscribeToRuntime)
+            {
+                _runtime.TagValueChanged -= OnTagValueChanged;
+                _runtime.TagValueChanged += OnTagValueChanged;
+            }
         }
 
         public void Stop()
@@ -242,7 +255,21 @@ namespace IPC.EdgeGateway
             if (e == null || e.Snapshot == null)
                 return;
 
-            RememberSnapshot(e.Snapshot);
+            ProcessSnapshot(e.Snapshot);
+        }
+
+        public void ProcessSnapshot(TagValueSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return;
+
+            lock (_syncRoot)
+            {
+                if (!_running)
+                    return;
+            }
+
+            RememberSnapshot(snapshot);
 
             if (!_circuitBreaker.CanExecute())
             {
@@ -255,16 +282,16 @@ namespace IPC.EdgeGateway
                 return;
 
             double value;
-            bool hasNumericValue = TryGetNumericValue(e.Snapshot, out value);
+            bool hasNumericValue = TryGetNumericValue(snapshot, out value);
 
             for (int i = 0; i < rules.Count; i++)
             {
                 EdgeRuleConfig rule = rules[i];
                 if (rule == null || !rule.Enabled)
                     continue;
-                if (e.Snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule))
+                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule))
                     continue;
-                if (RequiresNumericValue(rule) && !hasNumericValue && !(e.Snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
+                if (RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
                     continue;
 
                 try
@@ -273,13 +300,13 @@ namespace IPC.EdgeGateway
                         rule.ConditionType == EdgeRuleConditionType.Sequence)
                     {
                         RecordEvaluation(rule);
-                        EvaluateRule(rule, e.Snapshot, value);
+                        EvaluateRule(rule, snapshot, value);
                         _circuitBreaker.RecordSuccess();
                     }
-                    else if (Matches(rule, e.Snapshot))
+                    else if (Matches(rule, snapshot))
                     {
                         RecordEvaluation(rule);
-                        EvaluateRule(rule, e.Snapshot, value);
+                        EvaluateRule(rule, snapshot, value);
                         _circuitBreaker.RecordSuccess();
                     }
                 }
@@ -1367,6 +1394,7 @@ namespace IPC.EdgeGateway
                 State = state,
                 Message = message,
                 Snapshot = snapshot.Clone(),
+                SourceValues = BuildSourceValues(rule, snapshot),
                 Value = value,
                 Threshold = threshold,
                 Timestamp = now
@@ -1392,6 +1420,140 @@ namespace IPC.EdgeGateway
 
             int qos = ClampQos(rule.PublishQos);
             _mqttPublisher(cloudTopic, ruleEvent.Payload, qos);
+        }
+
+        private List<EdgeRuleRuntimeSourceValue> BuildSourceValues(EdgeRuleConfig rule, TagValueSnapshot triggerSnapshot)
+        {
+            List<EdgeRuleRuntimeSourceValue> values = new List<EdgeRuleRuntimeSourceValue>();
+            AddSourceValue(values, "trigger", triggerSnapshot);
+            if (rule == null)
+                return values;
+
+            AddConfiguredSourceValue(
+                values,
+                "source",
+                rule.SourcePointCode,
+                rule.SourceDeviceName,
+                rule.SourceGroupName,
+                rule.SourceTagName,
+                triggerSnapshot);
+            AddConfiguredSourceValue(
+                values,
+                "related",
+                rule.RelatedPointCode,
+                rule.RelatedDeviceName,
+                rule.RelatedGroupName,
+                rule.RelatedTagName,
+                triggerSnapshot);
+            AddConfiguredSourceValue(
+                values,
+                "context",
+                rule.ContextPointCode,
+                rule.ContextDeviceName,
+                rule.ContextGroupName,
+                rule.ContextTagName,
+                triggerSnapshot);
+
+            if (rule.Conditions != null)
+            {
+                for (int i = 0; i < rule.Conditions.Count; i++)
+                {
+                    EdgeRuleConditionConfig condition = rule.Conditions[i];
+                    if (condition == null)
+                        continue;
+
+                    AddConfiguredSourceValue(
+                        values,
+                        "condition",
+                        condition.SourcePointCode,
+                        condition.SourceDeviceName,
+                        condition.SourceGroupName,
+                        condition.SourceTagName,
+                        triggerSnapshot);
+                }
+            }
+
+            AddModelInputSourceValues(values, rule, triggerSnapshot);
+            return values;
+        }
+
+        private void AddConfiguredSourceValue(
+            List<EdgeRuleRuntimeSourceValue> values,
+            string role,
+            string pointCode,
+            string deviceName,
+            string groupName,
+            string tagName,
+            TagValueSnapshot triggerSnapshot)
+        {
+            if (!HasConfiguredSource(pointCode, deviceName, groupName, tagName))
+                return;
+
+            TagValueSnapshot snapshot;
+            if (triggerSnapshot != null && MatchesSource(pointCode, deviceName, groupName, tagName, triggerSnapshot))
+            {
+                snapshot = triggerSnapshot;
+            }
+            else if (!TryGetSnapshotBySource(pointCode, deviceName, groupName, tagName, out snapshot))
+            {
+                return;
+            }
+
+            AddSourceValue(values, role, snapshot);
+        }
+
+        private void AddModelInputSourceValues(List<EdgeRuleRuntimeSourceValue> values, EdgeRuleConfig rule, TagValueSnapshot triggerSnapshot)
+        {
+            if (rule == null)
+                return;
+
+            List<string> inputTags = SplitModelInputTags(rule.ModelInputTags);
+            for (int i = 0; i < inputTags.Count; i++)
+            {
+                string token = inputTags[i];
+                TagValueSnapshot inputSnapshot;
+                if (triggerSnapshot != null && MatchesSnapshotToken(triggerSnapshot, token))
+                {
+                    inputSnapshot = triggerSnapshot;
+                }
+                else if (!TryGetSnapshotByToken(token, out inputSnapshot))
+                {
+                    continue;
+                }
+
+                AddSourceValue(values, "modelInput", inputSnapshot);
+            }
+        }
+
+        private static void AddSourceValue(List<EdgeRuleRuntimeSourceValue> values, string role, TagValueSnapshot snapshot)
+        {
+            if (values == null || snapshot == null)
+                return;
+
+            string key = BuildSourceValueKey(snapshot);
+            if (values.Any(item => item != null && string.Equals(BuildSourceValueKey(item.Snapshot), key, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            values.Add(new EdgeRuleRuntimeSourceValue
+            {
+                Role = role ?? string.Empty,
+                Snapshot = snapshot.Clone()
+            });
+        }
+
+        private static string BuildSourceValueKey(TagValueSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(snapshot.DeviceName) || !string.IsNullOrWhiteSpace(snapshot.TagName))
+                return "path:" + BuildPathKey(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+
+            string pointCode = GetPointCode(snapshot);
+            if (!string.IsNullOrWhiteSpace(pointCode))
+                return "point:" + pointCode.Trim();
+
+            return "tag:" + NullToEmpty(snapshot.TagName).Trim();
         }
 
         private static bool CanPublishActiveEvent(EdgeRuleConfig rule, EdgeRuleState state, DateTime now)
@@ -2001,14 +2163,43 @@ namespace IPC.EdgeGateway
 
         private static bool MatchesSource(string sourcePointCode, string sourceDeviceName, string sourceGroupName, string sourceTagName, TagValueSnapshot snapshot)
         {
+            if (snapshot == null)
+                return false;
+
+            bool hasPathScope = HasPathScope(sourceDeviceName, sourceGroupName, sourceTagName);
+            if (hasPathScope)
+                return MatchesConfiguredSourceFields(sourceDeviceName, sourceGroupName, sourceTagName, snapshot);
+
             string configuredPointCode = NullToEmpty(sourcePointCode).Trim();
             if (!string.IsNullOrWhiteSpace(configuredPointCode))
-                return string.Equals(configuredPointCode, GetPointCode(snapshot), StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(configuredPointCode, NullToEmpty(snapshot.PointCode).Trim(), StringComparison.OrdinalIgnoreCase);
+            {
+                if (string.Equals(configuredPointCode, GetPointCode(snapshot), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(configuredPointCode, NullToEmpty(snapshot.PointCode).Trim(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
 
-            return string.Equals(NullToEmpty(sourceDeviceName).Trim(), NullToEmpty(snapshot.DeviceName).Trim(), StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(NullToEmpty(sourceGroupName).Trim(), NullToEmpty(snapshot.GroupName).Trim(), StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(NullToEmpty(sourceTagName).Trim(), NullToEmpty(snapshot.TagName).Trim(), StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        private static bool HasPathScope(string deviceName, string groupName, string tagName)
+        {
+            return !string.IsNullOrWhiteSpace(deviceName) ||
+                   !string.IsNullOrWhiteSpace(groupName) ||
+                   !string.IsNullOrWhiteSpace(tagName);
+        }
+
+        private static bool MatchesConfiguredSourceFields(string sourceDeviceName, string sourceGroupName, string sourceTagName, TagValueSnapshot snapshot)
+        {
+            return MatchesConfiguredField(sourceDeviceName, snapshot.DeviceName) &&
+                   MatchesConfiguredField(sourceGroupName, snapshot.GroupName) &&
+                   MatchesConfiguredField(sourceTagName, snapshot.TagName);
+        }
+
+        private static bool MatchesConfiguredField(string configured, string actual)
+        {
+            string expected = NullToEmpty(configured).Trim();
+            return string.IsNullOrWhiteSpace(expected) ||
+                   string.Equals(expected, NullToEmpty(actual).Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool HasConfiguredSource(string pointCode, string deviceName, string groupName, string tagName)
@@ -2061,29 +2252,12 @@ namespace IPC.EdgeGateway
             if (condition == null)
                 return false;
 
-            lock (_syncRoot)
-            {
-                string pointCode = NullToEmpty(condition.SourcePointCode).Trim();
-                TagValueSnapshot? pointSnapshot;
-                if (!string.IsNullOrWhiteSpace(pointCode) &&
-                    _snapshotsByPoint.TryGetValue(pointCode, out pointSnapshot) &&
-                    pointSnapshot != null)
-                {
-                    snapshot = pointSnapshot.Clone();
-                    return true;
-                }
-
-                string pathKey = BuildPathKey(condition.SourceDeviceName, condition.SourceGroupName, condition.SourceTagName);
-                TagValueSnapshot? pathSnapshot;
-                if (_snapshotsByPath.TryGetValue(pathKey, out pathSnapshot) &&
-                    pathSnapshot != null)
-                {
-                    snapshot = pathSnapshot.Clone();
-                    return true;
-                }
-            }
-
-            return false;
+            return TryGetSnapshotBySource(
+                condition.SourcePointCode,
+                condition.SourceDeviceName,
+                condition.SourceGroupName,
+                condition.SourceTagName,
+                out snapshot);
         }
 
         private bool TryGetRuleSnapshot(EdgeRuleConfig rule, out TagValueSnapshot snapshot)
@@ -2143,6 +2317,29 @@ namespace IPC.EdgeGateway
             snapshot = new TagValueSnapshot();
             lock (_syncRoot)
             {
+                bool hasPathScope = HasPathScope(deviceName, groupName, tagName);
+                if (hasPathScope)
+                {
+                    string pathKey = BuildPathKey(deviceName, groupName, tagName);
+                    TagValueSnapshot? pathSnapshot;
+                    if (_snapshotsByPath.TryGetValue(pathKey, out pathSnapshot) &&
+                        pathSnapshot != null)
+                    {
+                        snapshot = pathSnapshot.Clone();
+                        return true;
+                    }
+
+                    TagValueSnapshot? scopedSnapshot = _snapshotsByPath.Values.FirstOrDefault(item =>
+                        item != null && MatchesConfiguredSourceFields(deviceName, groupName, tagName, item));
+                    if (scopedSnapshot != null)
+                    {
+                        snapshot = scopedSnapshot.Clone();
+                        return true;
+                    }
+
+                    return false;
+                }
+
                 string normalizedPointCode = NullToEmpty(pointCode).Trim();
                 TagValueSnapshot? pointSnapshot;
                 if (!string.IsNullOrWhiteSpace(normalizedPointCode) &&
@@ -2153,12 +2350,12 @@ namespace IPC.EdgeGateway
                     return true;
                 }
 
-                string pathKey = BuildPathKey(deviceName, groupName, tagName);
-                TagValueSnapshot? pathSnapshot;
-                if (_snapshotsByPath.TryGetValue(pathKey, out pathSnapshot) &&
-                    pathSnapshot != null)
+                string fallbackPathKey = BuildPathKey(deviceName, groupName, tagName);
+                TagValueSnapshot? fallbackPathSnapshot;
+                if (_snapshotsByPath.TryGetValue(fallbackPathKey, out fallbackPathSnapshot) &&
+                    fallbackPathSnapshot != null)
                 {
-                    snapshot = pathSnapshot.Clone();
+                    snapshot = fallbackPathSnapshot.Clone();
                     return true;
                 }
             }
@@ -2723,8 +2920,79 @@ namespace IPC.EdgeGateway
                    "\"source\":\"RuleEngine\"," +
                    "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
                    "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
-                   "\"timestamp\":\"" + JsonEscape(ruleEvent.Timestamp.ToString("o")) + "\"" +
+                   "\"timestamp\":\"" + JsonEscape(ruleEvent.Timestamp.ToString("o")) + "\"," +
+                   "\"sourceValues\":" + BuildSourceValuesPayload(ruleEvent.SourceValues) +
                    "}";
+        }
+
+        private static string BuildSourceValuesPayload(IList<EdgeRuleRuntimeSourceValue> sourceValues)
+        {
+            if (sourceValues == null || sourceValues.Count == 0)
+                return "[]";
+
+            StringBuilder builder = new StringBuilder();
+            builder.Append('[');
+            for (int i = 0; i < sourceValues.Count; i++)
+            {
+                EdgeRuleRuntimeSourceValue sourceValue = sourceValues[i];
+                if (sourceValue == null)
+                    continue;
+
+                if (builder.Length > 1)
+                    builder.Append(',');
+                builder.Append(BuildSourceValuePayload(sourceValue));
+            }
+
+            builder.Append(']');
+            return builder.ToString();
+        }
+
+        private static string BuildSourceValuePayload(EdgeRuleRuntimeSourceValue sourceValue)
+        {
+            TagValueSnapshot snapshot = sourceValue == null || sourceValue.Snapshot == null
+                ? new TagValueSnapshot()
+                : sourceValue.Snapshot;
+
+            return "{" +
+                   "\"role\":\"" + JsonEscape(sourceValue == null ? string.Empty : sourceValue.Role) + "\"," +
+                   "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
+                   "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
+                   "\"value\":" + FormatJsonValue(snapshot.Value) + "," +
+                   "\"valueText\":\"" + JsonEscape(snapshot.ValueText) + "\"," +
+                   "\"rawValue\":" + FormatJsonValue(snapshot.RawValue) + "," +
+                   "\"rawValueText\":\"" + JsonEscape(snapshot.RawValueText) + "\"," +
+                   "\"dataType\":\"" + JsonEscape(snapshot.DataType) + "\"," +
+                   "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
+                   "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
+                   "\"timestamp\":\"" + JsonEscape(snapshot.Timestamp == DateTime.MinValue ? string.Empty : snapshot.Timestamp.ToString("o")) + "\"" +
+                   "}";
+        }
+
+        private static string FormatJsonValue(object value)
+        {
+            if (value == null)
+                return "null";
+
+            if (value is bool boolean)
+                return boolean ? "true" : "false";
+            if (value is byte || value is sbyte || value is short || value is ushort ||
+                value is int || value is uint || value is long || value is ulong)
+                return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "0";
+            if (value is float floatValue)
+                return float.IsNaN(floatValue) || float.IsInfinity(floatValue)
+                    ? "null"
+                    : floatValue.ToString("R", CultureInfo.InvariantCulture);
+            if (value is double doubleValue)
+                return double.IsNaN(doubleValue) || double.IsInfinity(doubleValue)
+                    ? "null"
+                    : doubleValue.ToString("R", CultureInfo.InvariantCulture);
+            if (value is decimal decimalValue)
+                return decimalValue.ToString(CultureInfo.InvariantCulture);
+
+            string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            return "\"" + JsonEscape(text) + "\"";
         }
 
         private static EdgeRuleRuntimeEvent CloneEvent(EdgeRuleRuntimeEvent source)
@@ -2743,10 +3011,33 @@ namespace IPC.EdgeGateway
                 Topic = source.Topic,
                 Payload = source.Payload,
                 Snapshot = source.Snapshot.Clone(),
+                SourceValues = CloneSourceValues(source.SourceValues),
                 Value = source.Value,
                 Threshold = source.Threshold,
                 Timestamp = source.Timestamp
             };
+        }
+
+        private static List<EdgeRuleRuntimeSourceValue> CloneSourceValues(IList<EdgeRuleRuntimeSourceValue> source)
+        {
+            List<EdgeRuleRuntimeSourceValue> clone = new List<EdgeRuleRuntimeSourceValue>();
+            if (source == null)
+                return clone;
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                EdgeRuleRuntimeSourceValue sourceValue = source[i];
+                if (sourceValue == null)
+                    continue;
+
+                clone.Add(new EdgeRuleRuntimeSourceValue
+                {
+                    Role = sourceValue.Role,
+                    Snapshot = sourceValue.Snapshot == null ? new TagValueSnapshot() : sourceValue.Snapshot.Clone()
+                });
+            }
+
+            return clone;
         }
 
         private static EdgeRuleRuntimeRuleStatus CloneRuleStatus(EdgeRuleRuntimeRuleStatus source)

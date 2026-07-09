@@ -13,7 +13,9 @@ export const protocolOptions = [
   { label: 'Mitsubishi 1E', value: 'MitsubishiMc1E', category: 'network' },
   { label: 'Mitsubishi Serial', value: 'MitsubishiSerial', category: 'serial' },
   { label: 'Mitsubishi QL Serial', value: 'MitsubishiQlSerial', category: 'serial' },
+  { label: 'CANopen', value: 'CanOpen', category: 'serial' },
   { label: 'Omron FINS', value: 'OmronFins', category: 'network' },
+  { label: 'BACnet/IP', value: 'BacnetIp', category: 'network' },
   { label: 'OPC UA', value: 'OpcUa', category: 'network' },
   { label: 'OPC DA', value: 'OpcDa', category: 'opc' },
   { label: 'Plugin Driver', value: 'Plugin', category: 'plugin' }
@@ -98,7 +100,7 @@ export function normalizeDevice(device: DeviceConfig): DeviceConfig {
 export function applyProtocolDefaults(device: DeviceConfig, protocol: string) {
   device.protocol = protocol
   device.connection = { ...createDefaultConnection(protocol), ...(device.connection ?? {}), protocol }
-  applyProtocolDefaultsToConnection(device.connection, protocol)
+  applyProtocolDefaultsToConnection(device.connection, protocol, true)
 }
 
 export function protocolLabel(protocol: string) {
@@ -106,47 +108,61 @@ export function protocolLabel(protocol: string) {
 }
 
 export function isSerialProtocol(protocol: string) {
-  return ['ModbusRtu', 'MitsubishiSerial', 'MitsubishiQlSerial', 'Dlt6452007', 'Cjt1882004'].includes(protocol)
+  return ['ModbusRtu', 'MitsubishiSerial', 'MitsubishiQlSerial', 'CanOpen', 'Dlt6452007', 'Cjt1882004'].includes(protocol)
 }
 
 export function isNetworkProtocol(protocol: string) {
-  return ['ModbusTcp', 'SiemensS7', 'RockwellCip', 'MitsubishiMc', 'MitsubishiMc1E', 'OmronFins', 'OpcUa'].includes(protocol)
+  return ['ModbusTcp', 'SiemensS7', 'RockwellCip', 'MitsubishiMc', 'MitsubishiMc1E', 'OmronFins', 'BacnetIp', 'OpcUa'].includes(protocol)
 }
 
-function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: string) {
+export function defaultPortForProtocolTransport(protocol: string, transport = 'Tcp') {
+  if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') {
+    return transport.toLowerCase() === 'udp' ? 5000 : 5001
+  }
+  if (protocol === 'BacnetIp') return 47808
+  return undefined
+}
+
+function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: string, overwriteNetwork = false) {
   connection.protocol = protocol
   if (protocol === 'VirtualPlc') {
     connection.host = connection.host || 'default'
     connection.port = 0
     return
   }
-  if (protocol === 'ModbusTcp') setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp')
+  if (protocol === 'ModbusTcp') setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
   else if (protocol === 'SiemensS7') {
-    setNetworkDefaults(connection, '127.0.0.1', 102, 'Tcp')
+    setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
     connection.rack = connection.rack ?? 0
     connection.slot = connection.slot || 1
-  } else if (protocol === 'RockwellCip') setNetworkDefaults(connection, '127.0.0.1', 44818, 'Tcp')
-  else if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') setNetworkDefaults(connection, '127.0.0.1', 5000, 'Tcp')
-  else if (protocol === 'OmronFins') setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp')
-  else if (protocol === 'OpcUa') setNetworkDefaults(connection, 'opc.tcp://127.0.0.1', 4840, 'Tcp')
+  } else if (protocol === 'RockwellCip') setNetworkDefaults(connection, '127.0.0.1', 44818, 'Tcp', overwriteNetwork)
+  else if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') setNetworkDefaults(connection, '127.0.0.1', defaultPortForProtocolTransport(protocol, 'Tcp') ?? 5001, 'Tcp', overwriteNetwork)
+  else if (protocol === 'OmronFins') setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp', overwriteNetwork)
+  else if (protocol === 'BacnetIp') setNetworkDefaults(connection, '127.0.0.1', 47808, 'Udp', overwriteNetwork)
+  else if (protocol === 'OpcUa') setNetworkDefaults(connection, 'opc.tcp://127.0.0.1', 49320, 'Tcp', overwriteNetwork)
   else if (protocol === 'OpcDa') {
     connection.host = connection.host || 'localhost'
-    connection.opcDaServerProgId = connection.opcDaServerProgId || 'Matrikon.OPC.Simulation.1'
+    connection.opcDaServerProgId = overwriteNetwork ? 'Kepware.KEPServerEX.V6' : connection.opcDaServerProgId || 'Kepware.KEPServerEX.V6'
     connection.opcDaGroupName = connection.opcDaGroupName || 'IPC'
   } else if (isSerialProtocol(protocol)) {
-    connection.host = connection.host || 'COM1'
-    connection.port = connection.port || 9600
-    connection.dataBits = connection.dataBits || 8
-    connection.serialParity = connection.serialParity || 'None'
-    connection.serialStopBits = connection.serialStopBits || 'One'
+    connection.host = overwriteNetwork ? 'COM1' : connection.host || 'COM1'
+    connection.port = overwriteNetwork ? (protocol === 'CanOpen' ? 115200 : 9600) : connection.port || (protocol === 'CanOpen' ? 115200 : 9600)
+    connection.dataBits = overwriteNetwork ? 8 : connection.dataBits || 8
+    connection.serialParity = overwriteNetwork ? 'None' : connection.serialParity || 'None'
+    connection.serialStopBits = overwriteNetwork ? 'One' : connection.serialStopBits || 'One'
+    if (protocol === 'CanOpen') {
+      connection.driverOptionsJson = overwriteNetwork
+        ? '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32}'
+        : connection.driverOptionsJson || '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32}'
+    }
   } else if (protocol === 'Plugin') {
     connection.driverId = connection.driverId || ''
     connection.driverOptionsJson = connection.driverOptionsJson || '{}'
   }
 }
 
-function setNetworkDefaults(connection: PlcConnection, host: string, port: number, transport: string) {
-  connection.host = connection.host || host
-  connection.port = connection.port || port
-  connection.transport = connection.transport || transport
+function setNetworkDefaults(connection: PlcConnection, host: string, port: number, transport: string, overwrite = false) {
+  connection.host = overwrite ? host : connection.host || host
+  connection.port = overwrite ? port : connection.port || port
+  connection.transport = overwrite ? transport : connection.transport || transport
 }

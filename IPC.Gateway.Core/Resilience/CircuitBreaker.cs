@@ -110,6 +110,20 @@ public sealed class CircuitBreaker
         }
     }
 
+    public void Reset()
+    {
+        lock (_syncRoot)
+        {
+            _state = "Closed";
+            _consecutiveFailures = 0;
+            _consecutiveSuccesses = 0;
+            _openedUtc = DateTime.MinValue;
+            _nextRetryUtc = DateTime.MinValue;
+            _lastFailureUtc = DateTime.MinValue;
+            _lastFailureMessage = string.Empty;
+        }
+    }
+
     public CircuitBreakerStatus Snapshot()
     {
         lock (_syncRoot)

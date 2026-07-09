@@ -28,8 +28,10 @@ export function tagConfigKey(device: DeviceConfig, groupId: string, tag: TagConf
 export function resolveDeviceTone(device: DeviceConfig, runtime?: DeviceRuntimeStatus): TopologyTone {
   if (!device.enabled) return 'disabled'
   if (!runtime) return 'warn'
-  if (runtime.lastError) return 'bad'
-  return runtime.isConnected ? 'good' : 'bad'
+  const status = normalizeKey(runtime.status)
+  if (runtime.isConnected || status === 'online') return 'good'
+  if (runtime.lastError || status === 'error') return 'bad'
+  return 'bad'
 }
 
 export function resolveTagTone(tag: TagConfig, snapshot?: TagValueSnapshot): TopologyTone {

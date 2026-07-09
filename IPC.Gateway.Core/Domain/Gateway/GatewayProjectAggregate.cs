@@ -389,6 +389,7 @@ public sealed class GatewayProjectAggregate
         target.Source = input.Source;
         target.Precision = input.Precision;
         target.Scaling = input.Scaling;
+        target.Cleaning = input.Cleaning;
         target.Alarm = input.Alarm;
         target.Description = input.Description;
         target.DeviceId = deviceId;

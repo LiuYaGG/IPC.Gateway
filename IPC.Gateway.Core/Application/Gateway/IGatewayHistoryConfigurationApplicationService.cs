@@ -23,4 +23,5 @@ public interface IGatewayHistoryConfigurationApplicationService
 {
     LocalHistoryOptions GetHistoryOptions();
     LocalHistoryOptions UpdateHistoryOptions(LocalHistoryOptions options);
+    Task<LocalHistoryOptions> UpdateHistoryOptionsAsync(LocalHistoryOptions options);
 }

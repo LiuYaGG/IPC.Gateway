@@ -57,26 +57,18 @@ namespace IPC.Runtime.Engine
                 return new RuntimeSchedulerHealth(Unhealthy, "Scheduler queue is full and no polling workers are available.");
 
             List<string> reasons = new List<string>();
-            if (queue.RejectedCount > 0)
-                reasons.Add(queue.RejectedCount + " poll task(s) were rejected");
             if (queue.BackpressureActive)
                 reasons.Add("polling queue backpressure is active (" + queue.PendingCount + "/" + queue.QueueLimit + ")");
-            if (queue.BackpressureThrottledCount > 0)
-                reasons.Add(queue.BackpressureThrottledCount + " poll admission(s) were delayed by backpressure");
-            if (queue.RateLimitedCount > 0)
-                reasons.Add(queue.RateLimitedCount + " poll admission(s) were rate limited");
             if (IsQueueNearLimit(queue))
                 reasons.Add("polling queue is near capacity (" + queue.PendingCount + "/" + queue.QueueLimit + ")");
             if (queue.PendingCount > 0 && queue.AvailableWorkers <= 0)
                 reasons.Add("all polling workers are busy with " + queue.PendingCount + " task(s) pending");
-            if (timeout.PollTimeoutCount > 0)
-                reasons.Add(timeout.PollTimeoutCount + " poll timeout(s) occurred");
-            if (timeout.ReadTimeoutCount > 0)
-                reasons.Add(timeout.ReadTimeoutCount + " tag read timeout(s) occurred");
-            if (status.TotalSlow > 0)
-                reasons.Add(status.TotalSlow + " slow poll task(s) observed");
-            if (status.TotalFailed > 0)
-                reasons.Add(status.TotalFailed + " poll task failure(s) observed");
+            int timeoutWindowSeconds = timeout.TimeoutWindowSeconds <= 0 ? 300 : timeout.TimeoutWindowSeconds;
+            string timeoutWindowText = FormatWindow(timeoutWindowSeconds);
+            if (timeout.RecentPollTimeoutCount > 0)
+                reasons.Add(timeout.RecentPollTimeoutCount + " poll timeout(s) occurred in the last " + timeoutWindowText);
+            if (timeout.RecentReadTimeoutCount > 0)
+                reasons.Add(timeout.RecentReadTimeoutCount + " tag read timeout(s) occurred in the last " + timeoutWindowText);
 
             if (reasons.Count > 0)
                 return new RuntimeSchedulerHealth(Degraded, string.Join("; ", reasons.ToArray()) + ".");
@@ -101,6 +93,13 @@ namespace IPC.Runtime.Engine
 
             double utilization = queue.PendingCount * 100D / queue.QueueLimit;
             return utilization >= 80D;
+        }
+
+        private static string FormatWindow(int seconds)
+        {
+            if (seconds > 0 && seconds % 60 == 0)
+                return (seconds / 60) + " minute(s)";
+            return seconds + " second(s)";
         }
     }
 }

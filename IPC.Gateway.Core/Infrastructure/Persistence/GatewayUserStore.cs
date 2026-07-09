@@ -50,6 +50,12 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         return result.Success ? result.User : null;
     }
 
+    public async Task<GatewayUserInfo?> ValidatePasswordAsync(string username, string password)
+    {
+        GatewayUserAuthenticationResult result = await AuthenticateAsync(username, password, new GatewayAccountLockoutOptions { Enabled = false });
+        return result.Success ? result.User : null;
+    }
+
     public GatewayUserAuthenticationResult Authenticate(string username, string password, GatewayAccountLockoutOptions? lockoutOptions)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -95,6 +101,51 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         return GatewayUserAuthenticationResult.Ok(user);
     }
 
+    public async Task<GatewayUserAuthenticationResult> AuthenticateAsync(string username, string password, GatewayAccountLockoutOptions? lockoutOptions)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return GatewayUserAuthenticationResult.Fail("账号或密码错误。");
+
+        GatewayAccountLockoutOptions options = lockoutOptions ?? new GatewayAccountLockoutOptions();
+        using SqlSugar.ISqlSugarClient db = _factory.Create();
+        string normalizedUsername = username.Trim();
+        GatewayUserEntity? entity = await db.Queryable<GatewayUserEntity>()
+            .Where(item => item.Username.ToLower() == normalizedUsername.ToLower())
+            .FirstAsync();
+
+        if (entity == null || !entity.Enabled)
+            return GatewayUserAuthenticationResult.Fail("账号或密码错误。");
+
+        DateTime nowUtc = DateTime.UtcNow;
+        if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value > nowUtc)
+            return GatewayUserAuthenticationResult.LockedOut(ToLocalTime(entity.LockoutEndUtc.Value));
+        if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value <= nowUtc)
+        {
+            entity.FailedLoginCount = 0;
+            entity.LockoutEndUtc = null;
+        }
+
+        if (!VerifyPassword(password, entity.PasswordSalt, entity.PasswordHash))
+        {
+            if (options.Enabled)
+                await RegisterFailedLoginAsync(db, entity, options, nowUtc);
+            if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value > nowUtc)
+                return GatewayUserAuthenticationResult.LockedOut(ToLocalTime(entity.LockoutEndUtc.Value));
+            return GatewayUserAuthenticationResult.Fail("账号或密码错误。");
+        }
+
+        entity.LastLoginUtc = nowUtc;
+        if (options.ResetFailedCountOnSuccess)
+        {
+            entity.FailedLoginCount = 0;
+            entity.LockoutEndUtc = null;
+        }
+        await db.Updateable(entity).ExecuteCommandAsync();
+
+        GatewayUserInfo user = ToInfo(entity, includePassword: false);
+        return GatewayUserAuthenticationResult.Ok(user);
+    }
+
     public GatewayUserInfo? FindByUsername(string username)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -108,12 +159,35 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         return entity == null ? null : ToInfo(entity, includePassword: true);
     }
 
+    public async Task<GatewayUserInfo?> FindByUsernameAsync(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return null;
+
+        using SqlSugar.ISqlSugarClient db = _factory.Create();
+        GatewayUserEntity? entity = await db.Queryable<GatewayUserEntity>()
+            .Where(item => item.Username.ToLower() == username.Trim().ToLower())
+            .FirstAsync();
+
+        return entity == null ? null : ToInfo(entity, includePassword: true);
+    }
+
     public IList<GatewayUserInfo> GetUsers()
     {
         using SqlSugar.ISqlSugarClient db = _factory.Create();
         return db.Queryable<GatewayUserEntity>()
             .OrderBy(item => item.Username)
             .ToList()
+            .Select(item => ToInfo(item, includePassword: false))
+            .ToList();
+    }
+
+    public async Task<IList<GatewayUserInfo>> GetUsersAsync()
+    {
+        using SqlSugar.ISqlSugarClient db = _factory.Create();
+        return (await db.Queryable<GatewayUserEntity>()
+            .OrderBy(item => item.Username)
+            .ToListAsync())
             .Select(item => ToInfo(item, includePassword: false))
             .ToList();
     }
@@ -184,6 +258,72 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         return saved;
     }
 
+    public async Task<GatewayUserInfo> UpsertUserAsync(string username, string displayName, string role, bool enabled, string password)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("请输入账号。", nameof(username));
+
+        string normalizedUsername = username.Trim();
+        bool updatePassword = !string.IsNullOrWhiteSpace(password);
+        string salt = string.Empty;
+        string hash = string.Empty;
+        if (updatePassword)
+        {
+            GatewayPasswordPolicyValidator.Validate(normalizedUsername, password, _securityOptions.Password);
+            CreatePasswordHash(password, out salt, out hash);
+        }
+
+        using SqlSugar.ISqlSugarClient db = _factory.Create();
+        string normalizedRole = await NormalizeRoleAsync(role, db);
+        GatewayUserEntity? existing = await db.Queryable<GatewayUserEntity>()
+            .Where(item => item.Username.ToLower() == normalizedUsername.ToLower())
+            .FirstAsync();
+
+        if (existing == null)
+        {
+            if (!updatePassword)
+                throw new ArgumentException("新增人员时必须填写密码。", nameof(password));
+
+            await db.Insertable(new GatewayUserEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Username = normalizedUsername,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedUsername : displayName.Trim(),
+                Role = normalizedRole,
+                Enabled = enabled,
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                PasswordChangedUtc = DateTime.UtcNow,
+                FailedLoginCount = 0,
+                CreatedUtc = DateTime.UtcNow
+            }).ExecuteCommandAsync();
+        }
+        else
+        {
+            existing.DisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedUsername : displayName.Trim();
+            existing.Role = normalizedRole;
+            existing.Enabled = enabled;
+            if (updatePassword)
+            {
+                existing.PasswordHash = hash;
+                existing.PasswordSalt = salt;
+                existing.PasswordChangedUtc = DateTime.UtcNow;
+                existing.FailedLoginCount = 0;
+                existing.LockoutEndUtc = null;
+            }
+
+            await db.Updateable(existing).ExecuteCommandAsync();
+        }
+
+        GatewayUserInfo? saved = await FindByUsernameAsync(normalizedUsername);
+        if (saved == null)
+            throw new InvalidOperationException("User was saved but could not be loaded.");
+
+        saved.PasswordHash = string.Empty;
+        saved.PasswordSalt = string.Empty;
+        return saved;
+    }
+
     public void DeleteUser(string username)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -194,6 +334,18 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         db.Deleteable<GatewayUserEntity>()
             .Where(item => item.Username.ToLower() == normalizedUsername.ToLower() && item.Username.ToLower() != "admin")
             .ExecuteCommand();
+    }
+
+    public async Task DeleteUserAsync(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return;
+
+        using SqlSugar.ISqlSugarClient db = _factory.Create();
+        string normalizedUsername = username.Trim();
+        await db.Deleteable<GatewayUserEntity>()
+            .Where(item => item.Username.ToLower() == normalizedUsername.ToLower() && item.Username.ToLower() != "admin")
+            .ExecuteCommandAsync();
     }
 
     private void EnsureSchema()
@@ -256,6 +408,23 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         db.Updateable(entity).ExecuteCommand();
     }
 
+    private static async Task RegisterFailedLoginAsync(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime nowUtc)
+    {
+        entity.LastFailedLoginUtc = nowUtc;
+        entity.FailedLoginCount++;
+        if (options.Enabled)
+        {
+            int maxAttempts = Math.Max(1, options.MaxFailedAttempts);
+            if (entity.FailedLoginCount >= maxAttempts)
+            {
+                int minutes = Math.Max(1, Math.Min(1440, options.LockoutMinutes));
+                entity.LockoutEndUtc = nowUtc.AddMinutes(minutes);
+            }
+        }
+
+        await db.Updateable(entity).ExecuteCommandAsync();
+    }
+
     private static DateTime ToLocalTime(DateTime? value)
     {
         if (!value.HasValue || value.Value == DateTime.MinValue)
@@ -277,6 +446,19 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         GatewayRoleEntity entity = db.Queryable<GatewayRoleEntity>()
             .Where(item => item.Name.ToLower() == requested.ToLower())
             .First();
+        if (entity == null)
+            throw new ArgumentException("选择的角色不存在。", nameof(role));
+        if (!entity.Enabled)
+            throw new ArgumentException("选择的角色已停用。", nameof(role));
+        return entity.Name;
+    }
+
+    private static async Task<string> NormalizeRoleAsync(string role, SqlSugar.ISqlSugarClient db)
+    {
+        string requested = string.IsNullOrWhiteSpace(role) ? "Viewer" : role.Trim();
+        GatewayRoleEntity? entity = await db.Queryable<GatewayRoleEntity>()
+            .Where(item => item.Name.ToLower() == requested.ToLower())
+            .FirstAsync();
         if (entity == null)
             throw new ArgumentException("选择的角色不存在。", nameof(role));
         if (!entity.Enabled)

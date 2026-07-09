@@ -24,7 +24,6 @@ export interface GatewayStatus {
   mqtt: MqttRuntimeStatus
   opcUa: OpcUaServerRuntimeStatus
   history: HistoryRuntimeStatus
-  ruleEngine: RuleEngineRuntimeStatus
   flowRuleEngine: RuleEngineRuntimeStatus
   scheduler: RuntimeSchedulerStatus
   system: SystemResourceStatus
@@ -428,6 +427,9 @@ export interface RuntimePollingQueueStatus {
 export interface RuntimeTimeoutStats {
   pollTimeoutCount: number
   readTimeoutCount: number
+  recentPollTimeoutCount: number
+  recentReadTimeoutCount: number
+  timeoutWindowSeconds: number
   lastTimeoutTime: string
   lastTimeoutDeviceName: string
   lastTimeoutMessage: string
@@ -1016,6 +1018,15 @@ export interface OpcUaServerConfig {
   namespaceUri: string
   certificateStorePath: string
   autoAcceptUntrustedCertificates: boolean
+  allowAnonymous: boolean
+  usernamePasswordEnabled: boolean
+  username: string
+  password: string
+  passwordConfigured: boolean
+  securityPolicy: string
+  allowSecurityPolicyNone: boolean
+  enableBasic256SignAndEncrypt: boolean
+  enableBasic256Sha256SignAndEncrypt: boolean
   minimumSamplingIntervalMs: number
   publishDiagnostics: boolean
 }

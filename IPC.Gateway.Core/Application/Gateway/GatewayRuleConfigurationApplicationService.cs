@@ -40,6 +40,14 @@ public sealed class GatewayRuleConfigurationApplicationService : IGatewayRuleCon
         return result;
     }
 
+    public async Task<EdgeRuleConfig> AddRuleAsync(EdgeRuleConfig input)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        EdgeRuleConfig result = aggregate.AddRule(input);
+        await _gateway.ReloadAsync(aggregate.Project);
+        return result;
+    }
+
     public EdgeRuleConfig UpdateRule(string ruleId, EdgeRuleConfig input)
     {
         GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
@@ -48,11 +56,27 @@ public sealed class GatewayRuleConfigurationApplicationService : IGatewayRuleCon
         return result;
     }
 
+    public async Task<EdgeRuleConfig> UpdateRuleAsync(string ruleId, EdgeRuleConfig input)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        EdgeRuleConfig result = aggregate.UpdateRule(ruleId, input);
+        await _gateway.ReloadAsync(aggregate.Project);
+        return result;
+    }
+
     public EdgeRuleConfig DeleteRule(string ruleId)
     {
         GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
         EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
         _gateway.Reload(aggregate.Project);
+        return result;
+    }
+
+    public async Task<EdgeRuleConfig> DeleteRuleAsync(string ruleId)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
+        await _gateway.ReloadAsync(aggregate.Project);
         return result;
     }
 
@@ -66,6 +90,14 @@ public sealed class GatewayRuleConfigurationApplicationService : IGatewayRuleCon
         return result;
     }
 
+    public async Task<FlowRuleDefinition> AddFlowRuleAsync(FlowRuleDefinition input)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        FlowRuleDefinition result = aggregate.AddFlowRule(input);
+        await _gateway.ReloadAsync(aggregate.Project);
+        return result;
+    }
+
     public FlowRuleDefinition UpdateFlowRule(string ruleId, FlowRuleDefinition input)
     {
         GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
@@ -74,11 +106,27 @@ public sealed class GatewayRuleConfigurationApplicationService : IGatewayRuleCon
         return result;
     }
 
+    public async Task<FlowRuleDefinition> UpdateFlowRuleAsync(string ruleId, FlowRuleDefinition input)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        FlowRuleDefinition result = aggregate.UpdateFlowRule(ruleId, input);
+        await _gateway.ReloadAsync(aggregate.Project);
+        return result;
+    }
+
     public FlowRuleDefinition DeleteFlowRule(string ruleId)
     {
         GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
         FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
         _gateway.Reload(aggregate.Project);
+        return result;
+    }
+
+    public async Task<FlowRuleDefinition> DeleteFlowRuleAsync(string ruleId)
+    {
+        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
+        FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
+        await _gateway.ReloadAsync(aggregate.Project);
         return result;
     }
 }

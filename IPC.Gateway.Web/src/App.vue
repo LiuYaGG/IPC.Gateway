@@ -82,10 +82,6 @@
             <el-icon><Share /></el-icon>
             <span>流程规则</span>
           </el-menu-item>
-          <el-menu-item v-if="canAccessView('rules')" index="rules">
-            <el-icon><Operation /></el-icon>
-            <span>规则引擎</span>
-          </el-menu-item>
           <el-menu-item v-if="canAccessView('history')" index="history">
             <el-icon><Document /></el-icon>
             <span>历史库</span>
@@ -151,15 +147,9 @@
         <div class="top-actions">
           <div class="refresh-state">
             <el-switch v-model="autoRefresh" size="small" />
-            <span>{{ autoRefresh ? '实时刷新' : '手动刷新' }}</span>
+            <span>{{ autoRefresh ? '实时推送' : '手动刷新' }}</span>
             <small>{{ lastRefreshLabel }}</small>
           </div>
-          <el-select v-model="refreshIntervalMs" class="interval-select" size="small">
-            <el-option label="2s" :value="2000" />
-            <el-option label="3s" :value="3000" />
-            <el-option label="5s" :value="5000" />
-            <el-option label="10s" :value="10000" />
-          </el-select>
           <el-button :icon="Refresh" :loading="loading" circle @click="refresh({ silent: false })" />
           <el-tooltip content="修改密码" placement="bottom">
             <el-button :icon="Lock" circle aria-label="修改密码" @click="passwordDialogVisible = true" />
@@ -200,13 +190,6 @@
           :runtime-tags="status?.tags ?? []"
           @changed="handleDevicesChanged"
           @editing-state="deviceEditing = $event"
-        />
-        <RulesView
-          v-else-if="activeView === 'rules'"
-          :project="project"
-          :status="status?.ruleEngine"
-          @changed="handleRulesChanged"
-          @editing-state="rulesEditing = $event"
         />
         <FlowRulesView
           v-else-if="activeView === 'flowRules'"
@@ -262,7 +245,6 @@ import { ElMessage } from 'element-plus'
 import { Box, Connection, Cpu, DataLine, Document, Expand, Fold, Lock, Monitor, Operation, Promotion, Refresh, Share, SwitchButton, Tickets, User, UserFilled } from '@element-plus/icons-vue'
 import {
   loadSync,
-  loadStatus,
   loadReadyHealth,
   loadCurrentUser,
   login,
@@ -304,7 +286,6 @@ import OpcUaView from './components/OpcUaView.vue'
 import PermissionsView from './components/PermissionsView.vue'
 import ProjectView from './components/ProjectView.vue'
 import RolesView from './components/RolesView.vue'
-import RulesView from './components/RulesView.vue'
 import SecurityView from './components/SecurityView.vue'
 import UsersView from './components/UsersView.vue'
 import { formatDateTime } from './utils/format'
@@ -317,7 +298,6 @@ const sidebarCollapsed = ref(localStorage.getItem('ipc.gateway.sidebarCollapsed'
 const sidebarDefaultOpeneds: string[] = []
 const loading = ref(false)
 const autoRefresh = ref(true)
-const refreshIntervalMs = ref(3000)
 const lastRefreshTime = ref('')
 const sync = ref<SyncPayload | null>(null)
 const health = ref<GatewayHealthResponse | null>(null)
@@ -332,16 +312,12 @@ const selectedError = ref<RuntimeErrorDetail | null>(null)
 const errorDrawerVisible = ref(false)
 const passwordDialogVisible = ref(false)
 const deviceEditing = ref(false)
-const rulesEditing = ref(false)
 const flowRulesEditing = ref(false)
 const currentPermissions = ref<string[]>([])
 const loginForm = reactive({ username: '', password: '' })
 const captchaRef = ref<InstanceType<typeof LoginCaptcha> | null>(null)
-let refreshTimer: number | undefined
 let refreshController: AbortController | undefined
 let runtimeEvents: EventSource | undefined
-let lastRuntimeReconcileTime = 0
-const runtimeEventsConnected = ref(false)
 
 const status = computed(() => sync.value ? sanitizeStatus(sync.value.status, project.value ?? sync.value.project) : null)
 const permissionSet = computed(() => createPermissionSet(currentPermissions.value))
@@ -352,7 +328,6 @@ const pageTitle = computed(() => ({
   topology: '设备拓扑',
   dashboard: '运行总览',
   devices: '设备管理',
-  rules: '规则引擎',
   flowRules: '流程规则',
   mqtt: 'MQTT',
   opcUa: 'OPC UA Server',
@@ -372,7 +347,6 @@ const viewPermissions: Record<string, string[]> = {
   dashboard: [PERMISSIONS.dashboardView],
   devices: [PERMISSIONS.devicesView],
   flowRules: [PERMISSIONS.flowRulesView],
-  rules: [PERMISSIONS.rulesView],
   mqtt: [PERMISSIONS.mqttView],
   opcUa: [PERMISSIONS.opcUaView],
   history: [PERMISSIONS.historyView],
@@ -384,7 +358,7 @@ const viewPermissions: Record<string, string[]> = {
   roles: [PERMISSIONS.rolesView],
   permissions: [PERMISSIONS.permissionsView]
 }
-const viewOrder = ['bigScreen', 'topology', 'dashboard', 'devices', 'flowRules', 'rules', 'history', 'mqtt', 'opcUa', 'project', 'audit', 'security', 'maintenance', 'users', 'roles', 'permissions']
+const viewOrder = ['bigScreen', 'topology', 'dashboard', 'devices', 'flowRules', 'history', 'mqtt', 'opcUa', 'project', 'audit', 'security', 'maintenance', 'users', 'roles', 'permissions']
 
 provide(PermissionContextKey, {
   permissions: currentPermissions,
@@ -394,20 +368,30 @@ provide(PermissionContextKey, {
 })
 
 onMounted(() => {
+  window.addEventListener('keydown', handleLoginEnter, true)
   if (authenticated.value) initializeAuthenticatedSession()
   syncAutoRefresh()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleLoginEnter, true)
   stopRuntimeEvents()
-  stopAutoRefresh()
   refreshController?.abort()
 })
 
-watch([authenticated, autoRefresh, refreshIntervalMs], syncAutoRefresh)
+watch([authenticated, autoRefresh], syncAutoRefresh)
 watch(currentPermissions, ensureActiveViewAllowed)
 
+function handleLoginEnter(event: KeyboardEvent) {
+  if (authenticated.value || event.key !== 'Enter' || event.isComposing) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  void handleLogin()
+}
+
 async function handleLogin() {
+  if (loading.value) return
   if (!captchaRef.value?.validate()) return
 
   loading.value = true
@@ -427,7 +411,6 @@ async function handleLogin() {
 
 async function handleLogout() {
   stopRuntimeEvents()
-  stopAutoRefresh()
   refreshController?.abort()
   await logout().catch(() => undefined)
   localStorage.removeItem('ipc.gateway.authenticated')
@@ -453,36 +436,6 @@ async function refresh(options: { silent: boolean }) {
   } catch (error) {
     if (isAbortError(error)) return
     if (!options.silent) ElMessage.error(error instanceof Error ? error.message : '加载失败')
-    if (error instanceof Error && error.message.includes('登录已过期')) {
-      localStorage.removeItem('ipc.gateway.authenticated')
-      currentPermissions.value = []
-      authenticated.value = false
-    }
-  } finally {
-    if (refreshController === controller) refreshController = undefined
-    if (!options.silent) loading.value = false
-  }
-}
-
-async function refreshRuntime(options: { silent: boolean; preserveTags?: boolean }) {
-  if (refreshController) return
-
-  const controller = new AbortController()
-  refreshController = controller
-  if (!options.silent) loading.value = true
-  try {
-    const [statusData, healthData] = await Promise.all([
-      loadStatus(controller.signal),
-      loadReadyHealth(controller.signal).catch(error => {
-        if (isAbortError(error)) throw error
-        return null
-      })
-    ])
-    if (controller.signal.aborted || refreshController !== controller || !sync.value) return
-    applyRuntimeStatus(statusData, healthData, { preserveTags: !!options.preserveTags })
-  } catch (error) {
-    if (isAbortError(error)) return
-    if (!options.silent) ElMessage.error(error instanceof Error ? error.message : '鍔犺浇澶辫触')
     if (error instanceof Error && error.message.includes('登录已过期')) {
       localStorage.removeItem('ipc.gateway.authenticated')
       currentPermissions.value = []
@@ -541,7 +494,6 @@ function isAbortError(error: unknown) {
 function applySync(data: SyncPayload, options: { silent: boolean }, healthData: GatewayHealthResponse | null) {
   const preserveProjectConfig = shouldPreserveActiveConfigDraft('project', options) || (options.silent && (
     (activeView.value === 'devices' && deviceEditing.value) ||
-    (activeView.value === 'rules' && rulesEditing.value) ||
     (activeView.value === 'flowRules' && flowRulesEditing.value)
   ))
   const preserveMqttConfig = shouldPreserveActiveConfigDraft('mqtt', options)
@@ -564,42 +516,13 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
     history.value = structuredClone(data.history)
   }
   storageHealth.value = structuredClone(data.storageHealth)
-  lastRuntimeReconcileTime = Date.now()
   pushTrend(data)
-}
-
-function applyRuntimeStatus(
-  statusData: GatewayStatus,
-  healthData: GatewayHealthResponse | null,
-  options: { preserveTags?: boolean } = {}
-) {
-  if (!sync.value) return
-
-  const nextStatus = options.preserveTags
-    ? { ...statusData, tags: sync.value.status.tags }
-    : statusData
-
-  const nextSync: SyncPayload = {
-    ...sync.value,
-    status: nextStatus
-  }
-  sync.value = nextSync
-  health.value = healthData
-  lastRefreshTime.value = new Date().toISOString()
-  lastRuntimeReconcileTime = Date.now()
-  pushTrend(nextSync)
 }
 
 function startRuntimeEvents() {
   if (runtimeEvents || typeof EventSource === 'undefined') return
 
   runtimeEvents = new EventSource('/api/config/status/events', { withCredentials: true })
-  runtimeEvents.onopen = () => {
-    runtimeEventsConnected.value = true
-  }
-  runtimeEvents.onerror = () => {
-    runtimeEventsConnected.value = false
-  }
   runtimeEvents.addEventListener('tags', event => {
     const payload = parseRuntimeEvent<RuntimeTagsChangedEvent>(event)
     if (payload) applyRuntimeTags(payload)
@@ -617,7 +540,6 @@ function startRuntimeEvents() {
 function stopRuntimeEvents() {
   runtimeEvents?.close()
   runtimeEvents = undefined
-  runtimeEventsConnected.value = false
 }
 
 function parseRuntimeEvent<T>(event: Event): T | null {
@@ -808,9 +730,10 @@ function sanitizeStatus(source: GatewayStatus | null | undefined, currentProject
   if (!currentProject) return source
 
   const projectDevices = currentProject.devices ?? []
-  const deviceIds = new Set(projectDevices.map(device => normalizeKey(device.id)).filter(Boolean))
-  const deviceNames = new Set(projectDevices.map(device => normalizeKey(device.name)).filter(Boolean))
-  const tagScope = buildProjectTagScope(projectDevices)
+  const activeDevices = projectDevices.filter(isConfigEnabled)
+  const deviceIds = new Set(activeDevices.map(device => normalizeKey(device.id)).filter(Boolean))
+  const deviceNames = new Set(activeDevices.map(device => normalizeKey(device.name)).filter(Boolean))
+  const tagScope = buildProjectTagScope(activeDevices)
   const devices = filterRuntimeDevices(source.devices ?? [], deviceIds, deviceNames)
   const tags = filterRuntimeTags(source.tags ?? [], tagScope.tagIds, tagScope.tagPaths)
   const goodTagCount = tags.filter(tag => normalizeKey(tag.quality) === 'good').length
@@ -818,17 +741,14 @@ function sanitizeStatus(source: GatewayStatus | null | undefined, currentProject
     const quality = normalizeKey(tag.quality)
     return !!quality && quality !== 'good' && quality !== 'unknown'
   }).length
-  const recentErrors = (source.recentErrors ?? []).filter(error => {
-    const deviceName = normalizeKey(error.deviceName)
-    return !deviceName || deviceNames.has(deviceName)
-  })
+  const recentErrors = (source.recentErrors ?? []).filter(error => isRuntimeErrorInScope(error, deviceNames, tagScope.tagPaths))
 
   return {
     ...source,
-    deviceCount: projectDevices.length,
+    deviceCount: activeDevices.length,
     groupCount: tagScope.groupCount,
     tagCount: tagScope.tagCount,
-    enabledDeviceCount: projectDevices.filter(device => device.enabled).length,
+    enabledDeviceCount: activeDevices.length,
     onlineDeviceCount: devices.filter(device => device.isConnected).length,
     goodTagCount,
     badTagCount,
@@ -855,14 +775,19 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
   let tagCount = 0
 
   for (const device of devices) {
+    if (!isConfigEnabled(device)) continue
+
     for (const tag of device.tags ?? []) {
+      if (!isConfigEnabled(tag)) continue
       tagCount += 1
       addTagScope(tagIds, tagPaths, device.id, device.name, '', '', tag.id, tag.name)
     }
 
     for (const group of device.groups ?? []) {
+      if (!isConfigEnabled(group)) continue
       groupCount += 1
       for (const tag of group.tags ?? []) {
+        if (!isConfigEnabled(tag)) continue
         tagCount += 1
         addTagScope(tagIds, tagPaths, device.id, device.name, group.id, group.name, tag.id, tag.name)
       }
@@ -898,6 +823,17 @@ function filterRuntimeTags(tags: TagValueSnapshot[], tagIds: Set<string>, tagPat
   })
 }
 
+function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceNames: Set<string>, tagPaths: Set<string>) {
+  const deviceName = normalizeKey(error.deviceName)
+  if (!deviceName) return true
+  if (!deviceNames.has(deviceName)) return false
+
+  const tagName = normalizeKey(error.tagName)
+  if (!tagName) return true
+
+  return tagPaths.has(tagPathKey(error.deviceName, error.groupName, error.tagName))
+}
+
 function tagPathKey(device: string | null | undefined, group: string | null | undefined, tag: string | null | undefined) {
   return [device, group, tag].map(normalizeKey).join('/')
 }
@@ -910,31 +846,15 @@ function normalizeKey(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase()
 }
 
+function isConfigEnabled(item: { enabled?: boolean } | null | undefined) {
+  return item?.enabled !== false
+}
+
 function syncAutoRefresh() {
-  stopAutoRefresh()
   stopRuntimeEvents()
   if (!authenticated.value || !autoRefresh.value) return
 
-  if (typeof EventSource !== 'undefined') {
-    startRuntimeEvents()
-    refreshTimer = window.setInterval(() => {
-      const now = Date.now()
-      if (!runtimeEventsConnected.value || now - lastRuntimeReconcileTime > 30000) {
-        lastRuntimeReconcileTime = now
-        refreshRuntime({ silent: true, preserveTags: runtimeEventsConnected.value })
-      }
-    }, Math.max(refreshIntervalMs.value, 10000))
-    return
-  }
-
-  refreshTimer = window.setInterval(() => refreshRuntime({ silent: true }), refreshIntervalMs.value)
-}
-
-function stopAutoRefresh() {
-  if (refreshTimer !== undefined) {
-    window.clearInterval(refreshTimer)
-    refreshTimer = undefined
-  }
+  startRuntimeEvents()
 }
 
 function toggleSidebar() {

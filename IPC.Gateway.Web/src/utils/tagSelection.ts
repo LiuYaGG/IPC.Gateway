@@ -48,21 +48,27 @@ export function findTagSelection(project: ProjectConfig | null | undefined, sour
   const deviceName = normalize(source.sourceDeviceName)
   const groupName = normalize(source.sourceGroupName)
   const tagName = normalize(source.sourceTagName)
+  const selections = buildTagSelections(project)
+  const hasPathScope = !!(deviceName || groupName || tagName)
 
-  return buildTagSelections(project).find(item =>
-    (!!pointCode && normalize(item.pointCode) === pointCode) ||
-    (
-      normalize(item.deviceName) === deviceName &&
-      normalize(item.groupName) === groupName &&
-      normalize(item.tagName) === tagName
+  if (hasPathScope) {
+    const pathMatch = selections.find(item =>
+      matchesConfiguredText(deviceName, item.deviceName) &&
+      matchesConfiguredText(groupName, item.groupName) &&
+      matchesConfiguredText(tagName, item.tagName)
     )
-  )
+    if (pathMatch) return pathMatch
+  }
+
+  return pointCode
+    ? selections.find(item => normalize(item.pointCode) === pointCode)
+    : undefined
 }
 
 function toTagSelection(device: DeviceConfig, groupId: string, groupName: string, tag: TagConfig): TagSelection {
   const groupKey = groupId || DIRECT_TAG_GROUP_KEY
   const groupLabel = groupName || '直属标签'
-  const pointCode = tag.pointCode || tag.address || tag.name
+  const pointCode = tag.pointCode || ''
   return {
     key: [device.id || device.name, groupKey, tag.id || tag.name].join('::'),
     deviceId: device.id,
@@ -81,4 +87,8 @@ function toTagSelection(device: DeviceConfig, groupId: string, groupName: string
 
 function normalize(value?: string) {
   return (value ?? '').trim().toLowerCase()
+}
+
+function matchesConfiguredText(configured: string, actual?: string) {
+  return !configured || normalize(actual) === configured
 }

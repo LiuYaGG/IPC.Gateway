@@ -44,7 +44,7 @@ public static class GatewayWatchdogEndpoints
             return Results.Ok(ApiResult.Ok(store.Get()));
         });
 
-        group.MapPut("/config", (HttpContext context, ClaimsPrincipal user, [FromBody] GatewayWatchdogOptions options, GatewayWatchdogConfigurationStore store, IGatewayAuditLogStore auditStore) =>
+        group.MapPut("/config", async (HttpContext context, ClaimsPrincipal user, [FromBody] GatewayWatchdogOptions options, GatewayWatchdogConfigurationStore store, IGatewayAuditLogStore auditStore) =>
         {
             if (!GatewayAuthEndpoints.CanEditWatchdog(user))
                 return Results.Json(ApiResult.Fail("当前用户没有保存看门狗配置的权限。"), statusCode: StatusCodes.Status403Forbidden);
@@ -52,12 +52,12 @@ public static class GatewayWatchdogEndpoints
             try
             {
                 GatewayWatchdogOptions saved = store.Save(options);
-                GatewayAuthEndpoints.WriteSecurityAudit(context, auditStore, "maintenance.watchdog.save", "success", "watchdog", string.Empty, string.Empty, string.Empty);
+                await GatewayAuthEndpoints.WriteSecurityAuditAsync(context, auditStore, "maintenance.watchdog.save", "success", "watchdog", string.Empty, string.Empty, string.Empty);
                 return Results.Ok(ApiResult.Ok(saved));
             }
             catch (Exception ex)
             {
-                GatewayAuthEndpoints.WriteSecurityAudit(context, auditStore, "maintenance.watchdog.save", "failed", "watchdog", string.Empty, string.Empty, ex.Message);
+                await GatewayAuthEndpoints.WriteSecurityAuditAsync(context, auditStore, "maintenance.watchdog.save", "failed", "watchdog", string.Empty, string.Empty, ex.Message);
                 return Results.BadRequest(ApiResult.Fail(ex.Message));
             }
         });

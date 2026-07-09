@@ -321,7 +321,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
         private static void Require(byte[] data, int minLength)
         {
             if (data == null || data.Length < minLength)
-                throw new InvalidOperationException("PLC 返回的数据长度不足�?");
+                throw new InvalidOperationException("PLC 返回的数据长度不足。");
         }
     }
 }

@@ -51,6 +51,17 @@ public sealed class GatewayAuthService
         return GatewayLoginResult.Ok(user, token, DateTimeOffset.UtcNow.Add(_tokenLifetime));
     }
 
+    public async Task<GatewayLoginResult> LoginAsync(string username, string password)
+    {
+        GatewayUserAuthenticationResult authentication = await _users.AuthenticateAsync(username, password);
+        if (!authentication.Success || authentication.User == null)
+            return GatewayLoginResult.Fail(authentication.ErrorMessage, authentication.Locked, authentication.LockoutEndTime);
+
+        GatewayUserInfo user = authentication.User;
+        string token = CreateToken(user);
+        return GatewayLoginResult.Ok(user, token, DateTimeOffset.UtcNow.Add(_tokenLifetime));
+    }
+
     public bool TryValidateToken(string token, out ClaimsPrincipal principal)
     {
         principal = new ClaimsPrincipal(new ClaimsIdentity());
@@ -102,6 +113,56 @@ public sealed class GatewayAuthService
         return true;
     }
 
+    public async Task<GatewayTokenValidationResult> ValidateTokenAsync(string token)
+    {
+        ClaimsPrincipal empty = new ClaimsPrincipal(new ClaimsIdentity());
+        if (string.IsNullOrWhiteSpace(token))
+            return GatewayTokenValidationResult.Fail(empty);
+
+        string[] parts = token.Split('.');
+        if (parts.Length != 2)
+            return GatewayTokenValidationResult.Fail(empty);
+
+        string payloadText;
+        try
+        {
+            payloadText = Encoding.UTF8.GetString(Base64UrlDecode(parts[0]));
+        }
+        catch
+        {
+            return GatewayTokenValidationResult.Fail(empty);
+        }
+
+        string expectedSignature = Sign(parts[0]);
+        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedSignature), Encoding.UTF8.GetBytes(parts[1])))
+            return GatewayTokenValidationResult.Fail(empty);
+
+        string[] fields = payloadText.Split('|');
+        if (fields.Length < 4)
+            return GatewayTokenValidationResult.Fail(empty);
+
+        if (!long.TryParse(fields[2], out long exp))
+            return GatewayTokenValidationResult.Fail(empty);
+        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
+            return GatewayTokenValidationResult.Fail(empty);
+
+        GatewayUserInfo? user = await _users.FindByUsernameAsync(fields[0]);
+        if (user == null || !user.Enabled)
+            return GatewayTokenValidationResult.Fail(empty);
+
+        ClaimsIdentity identity = new ClaimsIdentity("GatewayCookie");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id));
+        identity.AddClaim(new Claim(ClaimTypes.Name, user.Username));
+        identity.AddClaim(new Claim(ClaimTypes.Role, user.Role));
+        identity.AddClaim(new Claim("displayName", user.DisplayName));
+        foreach (string permission in await ResolvePermissionsAsync(user.Role))
+        {
+            identity.AddClaim(new Claim("permission", permission));
+        }
+
+        return GatewayTokenValidationResult.Ok(new ClaimsPrincipal(identity));
+    }
+
     public GatewayUserInfo? GetCurrentUser(ClaimsPrincipal principal)
     {
         string username = principal?.Identity?.Name ?? string.Empty;
@@ -113,9 +174,28 @@ public sealed class GatewayAuthService
         return user;
     }
 
+    public async Task<GatewayUserInfo?> GetCurrentUserAsync(ClaimsPrincipal principal)
+    {
+        string username = principal?.Identity?.Name ?? string.Empty;
+        GatewayUserInfo? user = await _users.FindByUsernameAsync(username);
+        if (user == null)
+            return null;
+        user.PasswordHash = string.Empty;
+        user.PasswordSalt = string.Empty;
+        return user;
+    }
+
     private IReadOnlyList<string> ResolvePermissions(string roleName)
     {
         GatewayRoleInfo? role = _roles.FindByName(roleName);
+        if (role == null || !role.Enabled)
+            return GatewayPermissions.GetDefaultPermissionsForRole(roleName);
+        return GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions);
+    }
+
+    private async Task<IReadOnlyList<string>> ResolvePermissionsAsync(string roleName)
+    {
+        GatewayRoleInfo? role = await _roles.FindByNameAsync(roleName);
         if (role == null || !role.Enabled)
             return GatewayPermissions.GetDefaultPermissionsForRole(roleName);
         return GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions);
@@ -214,6 +294,30 @@ public sealed class GatewayLoginResult
             ErrorMessage = message ?? string.Empty,
             Locked = locked,
             LockoutEndTime = lockoutEndTime
+        };
+    }
+}
+
+public sealed class GatewayTokenValidationResult
+{
+    public bool Success { get; set; }
+    public ClaimsPrincipal Principal { get; set; } = new ClaimsPrincipal(new ClaimsIdentity());
+
+    public static GatewayTokenValidationResult Ok(ClaimsPrincipal principal)
+    {
+        return new GatewayTokenValidationResult
+        {
+            Success = true,
+            Principal = principal ?? new ClaimsPrincipal(new ClaimsIdentity())
+        };
+    }
+
+    public static GatewayTokenValidationResult Fail(ClaimsPrincipal principal)
+    {
+        return new GatewayTokenValidationResult
+        {
+            Success = false,
+            Principal = principal ?? new ClaimsPrincipal(new ClaimsIdentity())
         };
     }
 }

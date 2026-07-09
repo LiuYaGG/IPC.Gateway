@@ -33,9 +33,19 @@ public sealed class GatewayRoleApplicationService : IGatewayRoleApplicationServi
         return _roles.GetRoles();
     }
 
+    public Task<IList<GatewayRoleInfo>> GetRolesAsync()
+    {
+        return _roles.GetRolesAsync();
+    }
+
     public GatewayRoleInfo? FindByName(string roleName)
     {
         return _roles.FindByName(roleName);
+    }
+
+    public Task<GatewayRoleInfo?> FindByNameAsync(string roleName)
+    {
+        return _roles.FindByNameAsync(roleName);
     }
 
     public GatewayRoleInfo SaveRole(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions)
@@ -43,9 +53,19 @@ public sealed class GatewayRoleApplicationService : IGatewayRoleApplicationServi
         return _roles.UpsertRole(roleName, displayName, description, enabled, GatewayPermissions.Normalize(permissions));
     }
 
+    public Task<GatewayRoleInfo> SaveRoleAsync(string roleName, string displayName, string description, bool enabled, IEnumerable<string> permissions)
+    {
+        return _roles.UpsertRoleAsync(roleName, displayName, description, enabled, GatewayPermissions.Normalize(permissions));
+    }
+
     public void DeleteRole(string roleName)
     {
         _roles.DeleteRole(roleName);
+    }
+
+    public Task DeleteRoleAsync(string roleName)
+    {
+        return _roles.DeleteRoleAsync(roleName);
     }
 
     public IReadOnlyList<GatewayPermissionInfo> GetPermissionCatalog()

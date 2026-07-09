@@ -36,4 +36,10 @@ public sealed class GatewayMqttConfigurationApplicationService : IGatewayMqttCon
         _gateway.UpdateMqttOptions(options);
         return _gateway.CurrentMqttOptions;
     }
+
+    public async Task<MqttGatewayOptions> UpdateMqttOptionsAsync(MqttGatewayOptions options)
+    {
+        await _gateway.UpdateMqttOptionsAsync(options);
+        return _gateway.CurrentMqttOptions;
+    }
 }
