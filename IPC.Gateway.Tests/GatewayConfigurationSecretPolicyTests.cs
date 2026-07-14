@@ -16,7 +16,6 @@ public sealed class GatewayConfigurationSecretPolicyTests
         ProjectConfigurationDto sanitized = GatewayConfigurationSecretPolicy.SanitizeProject(project);
 
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.Devices[0].Connection.Password);
-        Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.Devices[0].Connection.CertificatePassword);
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.Rules[0].Actions[0].EmailPassword);
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.FlowRules[0].Nodes[0].EmailPassword);
     }
@@ -35,8 +34,7 @@ public sealed class GatewayConfigurationSecretPolicyTests
                     Name = "Press",
                     Connection = new PlcConnectionDto
                     {
-                        Password = GatewayConfigurationSecretPolicy.RedactedSecret,
-                        CertificatePassword = "new-device-cert"
+                        Password = GatewayConfigurationSecretPolicy.RedactedSecret
                     }
                 }
             },
@@ -77,7 +75,6 @@ public sealed class GatewayConfigurationSecretPolicyTests
         GatewayConfigurationSecretPolicy.PreserveProjectSecrets(command, current);
 
         Assert.Equal("device-password", command.Devices[0].Connection.Password);
-        Assert.Equal("new-device-cert", command.Devices[0].Connection.CertificatePassword);
         Assert.Equal("rule-email-password", command.Rules[0].Actions[0].EmailPassword);
         Assert.Equal("flow-email-password", command.FlowRules[0].Nodes[0].EmailPassword);
     }
@@ -150,8 +147,7 @@ public sealed class GatewayConfigurationSecretPolicyTests
                     Name = "Press",
                     Connection = new PlcConnectionDto
                     {
-                        Password = "device-password",
-                        CertificatePassword = "device-cert-password"
+                        Password = "device-password"
                     }
                 }
             },

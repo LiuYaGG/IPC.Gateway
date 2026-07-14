@@ -50,4 +50,15 @@ public sealed class DeviceRuntimeStateStatusDebounceTests
 
         Assert.Equal("Disabled", state.ApplyStatusSample("Disabled", now.AddMilliseconds(100), 2, 2000, 1, 0));
     }
+
+    [Fact]
+    public void ForceStatus_PreservesDegradedState()
+    {
+        DeviceRuntimeState state = new DeviceRuntimeState(
+            new DeviceConfig { Name = "PLC-UDP", Enabled = true },
+            new CircuitBreakerOptions());
+
+        Assert.Equal("Degraded", state.ForceStatus("Degraded", DateTime.UtcNow));
+        Assert.Equal("Degraded", state.StableStatus);
+    }
 }

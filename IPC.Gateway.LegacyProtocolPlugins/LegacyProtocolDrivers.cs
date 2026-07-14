@@ -189,7 +189,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         }
     }
 
-    public abstract class LegacyProtocolDriver : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider
+    public abstract class LegacyProtocolDriver : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider, IPlcTagDefinitionValidator
     {
         protected LegacyProtocolDriver(string driverId, string displayName, PlcProtocol protocol)
         {
@@ -225,6 +225,16 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         public virtual PlcClientCapabilities GetCapabilities()
         {
             return PlcClientCapabilityCatalog.ForProtocol(Protocol);
+        }
+
+        public virtual PlcTagValidationResult ValidateTag(
+            PlcConnectionOptions options,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            return PlcProtocolTagValidator.Validate(Protocol, address, dataType, elementCount, elementOffset);
         }
     }
 }

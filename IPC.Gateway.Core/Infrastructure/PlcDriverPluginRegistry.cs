@@ -376,6 +376,86 @@ namespace IPC.Plc.Communication.Infrastructure
             return true;
         }
 
+        public static bool TryValidateTag(
+            PlcConnectionOptions options,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset,
+            out PlcTagValidationResult result)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+            return TryValidateTag(options, options.Protocol, address, dataType, elementCount, elementOffset, out result);
+        }
+
+        public static bool TryValidateTag(
+            PlcConnectionOptions options,
+            PlcProtocol protocol,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset,
+            out PlcTagValidationResult result)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            LoadDefaultPlugins();
+            PluginRegistration? registration;
+            lock (SyncRoot)
+            {
+                if (!string.IsNullOrWhiteSpace(options.DriverId))
+                    Plugins.TryGetValue(options.DriverId.Trim(), out registration);
+                else
+                    registration = FindDriverByProtocol(protocol);
+            }
+
+            if (registration?.Plugin is not IPlcTagDefinitionValidator validator)
+            {
+                result = PlcTagValidationResult.Invalid((address ?? string.Empty).Trim(), "协议驱动未提供标签校验能力。");
+                return false;
+            }
+
+            result = validator.ValidateTag(options, address, dataType, elementCount, elementOffset);
+            return true;
+        }
+
+        public static bool TryGetCapabilities(PlcConnectionOptions options, out PlcClientCapabilities capabilities)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+            return TryGetCapabilities(options, options.Protocol, out capabilities);
+        }
+
+        public static bool TryGetCapabilities(
+            PlcConnectionOptions options,
+            PlcProtocol protocol,
+            out PlcClientCapabilities capabilities)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            LoadDefaultPlugins();
+            PluginRegistration? registration;
+            lock (SyncRoot)
+            {
+                if (!string.IsNullOrWhiteSpace(options.DriverId))
+                    Plugins.TryGetValue(options.DriverId.Trim(), out registration);
+                else
+                    registration = FindDriverByProtocol(protocol);
+            }
+
+            if (registration == null)
+            {
+                capabilities = PlcClientCapabilityCatalog.ForProtocol(options.Protocol);
+                return false;
+            }
+
+            capabilities = registration.Capabilities.Clone();
+            return true;
+        }
+
         private static void Register(IProtocolDriver? plugin, string assemblyPath, bool allowReplace, bool builtIn, PlcDriverPluginManifest? manifest, PluginLoadSession? session)
         {
             if (plugin == null)
@@ -413,6 +493,17 @@ namespace IPC.Plc.Communication.Infrastructure
                 if (registration == null || registration.Plugin == null)
                     continue;
                 if (registration.Plugin.Protocol == options.Protocol && registration.Plugin.Supports(options))
+                    return registration;
+            }
+
+            return null;
+        }
+
+        private static PluginRegistration? FindDriverByProtocol(PlcProtocol protocol)
+        {
+            foreach (PluginRegistration registration in Plugins.Values)
+            {
+                if (registration?.Plugin?.Protocol == protocol)
                     return registration;
             }
 

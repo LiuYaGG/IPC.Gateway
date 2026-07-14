@@ -1,8 +1,0 @@
-﻿2026-06-20 21:01:13.166 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 21:01:36.444 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 21:26:44.814 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 21:27:25.508 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 21:56:33.161 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 22:26:24.576 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 22:59:37.091 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500
-2026-06-20 23:28:58.514 [ERROR] Edge rule action failed: Threshold rule/WebhookCall InvalidOperationException: Webhook returned HTTP 500

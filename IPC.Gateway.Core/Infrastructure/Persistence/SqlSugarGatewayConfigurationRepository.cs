@@ -676,7 +676,6 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 continue;
 
             device.Connection.Password = _secretProtector.Protect(device.Connection.Password);
-            device.Connection.CertificatePassword = _secretProtector.Protect(device.Connection.CertificatePassword);
         }
 
         foreach (EdgeRuleConfig rule in project.Rules ?? new List<EdgeRuleConfig>())
@@ -700,7 +699,6 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 continue;
 
             device.Connection.Password = _secretProtector.Unprotect(device.Connection.Password);
-            device.Connection.CertificatePassword = _secretProtector.Unprotect(device.Connection.CertificatePassword);
         }
 
         foreach (EdgeRuleConfig rule in project.Rules ?? new List<EdgeRuleConfig>())

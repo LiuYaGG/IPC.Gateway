@@ -87,6 +87,8 @@ namespace IPC.Plc.Communication.CanOpen
                 }
                 catch (Exception ex)
                 {
+                    if (IsCommunicationException(ex))
+                        throw;
                     results.Add(PlcBatchReadResult.FromFailure(
                         request,
                         ex.Message,

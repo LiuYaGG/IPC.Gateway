@@ -39,6 +39,11 @@ namespace IPC.Runtime.Values
             Status = "Unknown";
             LastTaskStatus = string.Empty;
             LastError = string.Empty;
+            DeviceState = "Unknown";
+            ChannelKey = string.Empty;
+            ChannelStatus = "Unknown";
+            ChannelLastError = string.Empty;
+            RecoveryState = "Idle";
             ProtocolCircuitBreaker = new CircuitBreakerStatus { Name = "ProtocolDriver", Enabled = true };
         }
 
@@ -68,5 +73,17 @@ namespace IPC.Runtime.Values
         public long TimeoutCount { get; set; }
         public string LastError { get; set; }
         public CircuitBreakerStatus ProtocolCircuitBreaker { get; set; }
+        public string DeviceState { get; set; }
+        public bool TransportConnected { get; set; }
+        public bool IsIsolated { get; set; }
+        public string RecoveryState { get; set; }
+        public DateTime IsolatedSinceTime { get; set; }
+        public DateTime NextRecoveryProbeTime { get; set; }
+        public string ChannelKey { get; set; }
+        public string ChannelStatus { get; set; }
+        public int ChannelConsecutiveFailures { get; set; }
+        public DateTime ChannelLastSuccessTime { get; set; }
+        public DateTime ChannelLastFailureTime { get; set; }
+        public string ChannelLastError { get; set; }
     }
 }

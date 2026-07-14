@@ -35,6 +35,12 @@
         "resolved": "10.0.8",
         "contentHash": "21nbDV60SRPWGIivsyl6lqBeEJNG1sginhhfWgRrr3Ais7aQ12To25OAHQxgoiJkjqy1aQ6RxpZBGYuTi7Ge6A=="
       },
+      "NModbus": {
+        "type": "Direct",
+        "requested": "[3.0.83, )",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
+      },
       "OPCFoundation.NetStandard.Opc.Ua": {
         "type": "Direct",
         "requested": "[1.5.378.145, )",

@@ -98,6 +98,8 @@ namespace IPC.Runtime.Configuration
                 config.Name = "IPC Gateway";
             if (config.Devices == null)
                 config.Devices = new System.Collections.Generic.List<DeviceConfig>();
+            if (config.Channels == null)
+                config.Channels = new System.Collections.Generic.List<ChannelConfig>();
             if (config.Rules == null)
                 config.Rules = new System.Collections.Generic.List<EdgeRuleConfig>();
             if (config.FlowRules == null)
@@ -114,6 +116,8 @@ namespace IPC.Runtime.Configuration
                 if (device.Connection == null)
                     device.Connection = new IPC.Plc.Communication.Core.PlcConnectionOptions();
                 device.Connection.Protocol = device.Protocol;
+                if (device.Protocol == IPC.Plc.Communication.Core.PlcProtocol.ModbusTcp)
+                    device.Connection.Transport = IPC.Plc.Communication.Core.NetworkTransport.Tcp;
                 if (device.DefaultScanRateMs <= 0)
                     device.DefaultScanRateMs = 1000;
                 if (device.FailureRetryDelayMs <= 0)
@@ -141,6 +145,8 @@ namespace IPC.Runtime.Configuration
                     NormalizeTags(device, group, group.Tags);
                 }
             }
+
+            ProjectChannelNormalizer.Normalize(config);
 
             NormalizeRules(config.Rules);
             NormalizeFlowRules(config.FlowRules);

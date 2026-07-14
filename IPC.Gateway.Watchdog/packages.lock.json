@@ -231,6 +231,11 @@
         "resolved": "13.0.4",
         "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
       },
+      "NModbus": {
+        "type": "Transitive",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
+      },
       "Npgsql": {
         "type": "Transitive",
         "resolved": "5.0.18",
@@ -462,6 +467,7 @@
           "Microsoft.Data.SqlClient": "[7.0.1, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.8, )",
+          "NModbus": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "SqlSugarCore": "[5.1.4.214, )",

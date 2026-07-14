@@ -111,7 +111,10 @@ internal static class GatewayConfigurationSecurity
             return SanitizeProject(project);
 
         if (CanViewDeviceModel(user))
+        {
+            filtered.Channels = project.Channels;
             filtered.Devices = SanitizeDevices(project.Devices);
+        }
         if (GatewayAuthEndpoints.CanViewFlowRules(user))
             filtered.FlowRules = SanitizeFlowRules(project.FlowRules);
 
@@ -174,7 +177,5 @@ internal static class GatewayConfigurationSecurity
     {
         if (!string.IsNullOrEmpty(connection.Password))
             connection.Password = RedactedSecret;
-        if (!string.IsNullOrEmpty(connection.CertificatePassword))
-            connection.CertificatePassword = RedactedSecret;
     }
 }

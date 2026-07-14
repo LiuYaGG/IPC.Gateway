@@ -621,7 +621,20 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             LastTaskDurationMs = source.LastTaskDurationMs,
             SlowPollCount = source.SlowPollCount,
             TimeoutCount = source.TimeoutCount,
-            LastError = source.LastError ?? string.Empty
+            LastError = source.LastError ?? string.Empty,
+            DeviceState = source.DeviceState ?? string.Empty,
+            TransportConnected = source.TransportConnected,
+            IsIsolated = source.IsIsolated,
+            RecoveryState = source.RecoveryState ?? string.Empty,
+            IsolatedSinceTime = source.IsolatedSinceTime,
+            NextRecoveryProbeTime = source.NextRecoveryProbeTime,
+            ChannelKey = source.ChannelKey ?? string.Empty,
+            ChannelStatus = source.ChannelStatus ?? string.Empty,
+            ChannelConsecutiveFailures = source.ChannelConsecutiveFailures,
+            ChannelLastSuccessTime = source.ChannelLastSuccessTime,
+            ChannelLastFailureTime = source.ChannelLastFailureTime,
+            ChannelLastError = source.ChannelLastError ?? string.Empty,
+            ProtocolCircuitBreaker = source.ProtocolCircuitBreaker
         };
     }
 

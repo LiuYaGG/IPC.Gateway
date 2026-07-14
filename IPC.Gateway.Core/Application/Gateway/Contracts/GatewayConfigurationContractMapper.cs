@@ -80,9 +80,24 @@ public static class GatewayConfigurationContractMapper
         {
             ProjectId = project.ProjectId,
             Name = project.Name,
+            Channels = project.Channels.Select(ToDto).ToList(),
             Devices = project.Devices.Select(ToDto).ToList(),
             Rules = project.Rules.Select(ToDto).ToList(),
             FlowRules = project.FlowRules.Select(ToDto).ToList()
+        };
+    }
+
+    public static ChannelConfigurationDto ToDto(ChannelConfig channel)
+    {
+        return new ChannelConfigurationDto
+        {
+            Id = channel.Id,
+            Name = channel.Name,
+            Enabled = channel.Enabled,
+            Protocol = channel.Protocol.ToString(),
+            DriverId = channel.DriverId,
+            MaxConcurrentDevicePolls = channel.MaxConcurrentDevicePolls,
+            SchedulingWeight = channel.SchedulingWeight
         };
     }
 
@@ -91,6 +106,7 @@ public static class GatewayConfigurationContractMapper
         return new DeviceConfigurationDto
         {
             Id = device.Id,
+            ChannelId = device.ChannelId,
             Name = device.Name,
             Enabled = device.Enabled,
             Protocol = device.Protocol.ToString(),
@@ -178,11 +194,9 @@ public static class GatewayConfigurationContractMapper
             SerialStopBits = options.SerialStopBits.ToString(),
             Username = options.Username ?? string.Empty,
             Password = options.Password ?? string.Empty,
-            CertificatePath = options.CertificatePath ?? string.Empty,
-            CertificatePassword = options.CertificatePassword ?? string.Empty,
-            CertificateThumbprint = options.CertificateThumbprint ?? string.Empty,
-            TrustStorePath = options.TrustStorePath ?? string.Empty,
-            ValidateServerCertificate = options.ValidateServerCertificate,
+            OpcUaSecurityPolicy = options.OpcUaSecurityPolicy ?? "None",
+            OpcUaMessageSecurityMode = options.OpcUaMessageSecurityMode ?? "None",
+            OpcUaAutoTrustServerCertificate = options.OpcUaAutoTrustServerCertificate,
             OpcDaServerProgId = options.OpcDaServerProgId,
             OpcDaGroupName = options.OpcDaGroupName,
             DriverId = options.DriverId,
@@ -822,7 +836,19 @@ public static class GatewayConfigurationContractMapper
             SlowPollCount = status.SlowPollCount,
             TimeoutCount = status.TimeoutCount,
             LastError = status.LastError,
-            ProtocolCircuitBreaker = ToDto(status.ProtocolCircuitBreaker)
+            ProtocolCircuitBreaker = ToDto(status.ProtocolCircuitBreaker),
+            DeviceState = status.DeviceState,
+            TransportConnected = status.TransportConnected,
+            IsIsolated = status.IsIsolated,
+            RecoveryState = status.RecoveryState,
+            IsolatedSinceTime = status.IsolatedSinceTime,
+            NextRecoveryProbeTime = status.NextRecoveryProbeTime,
+            ChannelKey = status.ChannelKey,
+            ChannelStatus = status.ChannelStatus,
+            ChannelConsecutiveFailures = status.ChannelConsecutiveFailures,
+            ChannelLastSuccessTime = status.ChannelLastSuccessTime,
+            ChannelLastFailureTime = status.ChannelLastFailureTime,
+            ChannelLastError = status.ChannelLastError
         };
     }
 
@@ -867,6 +893,7 @@ public static class GatewayConfigurationContractMapper
         return new RuntimePollingQueueStatusDto
         {
             PendingCount = status.PendingCount,
+            RecoveryPendingCount = status.RecoveryPendingCount,
             RunningCount = status.RunningCount,
             QueueLimit = status.QueueLimit,
             HighWatermark = status.HighWatermark,
@@ -991,7 +1018,12 @@ public static class GatewayConfigurationContractMapper
             CleaningMessage = snapshot.CleaningMessage ?? string.Empty,
             Quality = snapshot.Quality.ToString(),
             Timestamp = snapshot.Timestamp,
-            ErrorMessage = snapshot.ErrorMessage ?? string.Empty
+            ErrorMessage = snapshot.ErrorMessage ?? string.Empty,
+            TagState = snapshot.TagState ?? string.Empty,
+            IsTagIsolated = snapshot.IsTagIsolated,
+            IsStaticValidationError = snapshot.IsStaticValidationError,
+            TagConsecutiveFailures = snapshot.TagConsecutiveFailures,
+            NextTagRecoveryProbeTime = snapshot.NextTagRecoveryProbeTime
         };
     }
 
@@ -1266,9 +1298,24 @@ public static class GatewayConfigurationContractMapper
         {
             ProjectId = EmptyToNewId(dto.ProjectId),
             Name = dto.Name,
+            Channels = dto.Channels.Select(ToConfig).ToList(),
             Devices = dto.Devices.Select(ToConfig).ToList(),
             Rules = dto.Rules.Select(ToConfig).ToList(),
             FlowRules = dto.FlowRules.Select(ToConfig).ToList()
+        };
+    }
+
+    public static ChannelConfig ToConfig(ChannelConfigurationDto dto)
+    {
+        return new ChannelConfig
+        {
+            Id = EmptyToNewId(dto.Id),
+            Name = dto.Name,
+            Enabled = dto.Enabled,
+            Protocol = ParseEnum(dto.Protocol, PlcProtocol.ModbusTcp),
+            DriverId = dto.DriverId,
+            MaxConcurrentDevicePolls = dto.MaxConcurrentDevicePolls,
+            SchedulingWeight = dto.SchedulingWeight
         };
     }
 
@@ -1277,6 +1324,7 @@ public static class GatewayConfigurationContractMapper
         return new DeviceConfig
         {
             Id = EmptyToNewId(dto.Id),
+            ChannelId = dto.ChannelId,
             Name = dto.Name,
             Enabled = dto.Enabled,
             Protocol = ParseEnum(dto.Protocol, PlcProtocol.ModbusTcp),
@@ -1352,11 +1400,9 @@ public static class GatewayConfigurationContractMapper
             SerialStopBits = ParseEnum(dto.SerialStopBits, StopBits.One),
             Username = dto.Username,
             Password = dto.Password,
-            CertificatePath = dto.CertificatePath,
-            CertificatePassword = dto.CertificatePassword,
-            CertificateThumbprint = dto.CertificateThumbprint,
-            TrustStorePath = dto.TrustStorePath,
-            ValidateServerCertificate = dto.ValidateServerCertificate,
+            OpcUaSecurityPolicy = dto.OpcUaSecurityPolicy,
+            OpcUaMessageSecurityMode = dto.OpcUaMessageSecurityMode,
+            OpcUaAutoTrustServerCertificate = dto.OpcUaAutoTrustServerCertificate,
             OpcDaServerProgId = dto.OpcDaServerProgId,
             OpcDaGroupName = dto.OpcDaGroupName,
             DriverId = dto.DriverId,

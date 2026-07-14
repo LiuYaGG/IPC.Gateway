@@ -40,10 +40,21 @@ namespace IPC.Runtime.Configuration
             {
                 ProjectId = source.ProjectId,
                 Name = source.Name,
+                Channels = new List<ChannelConfig>(),
                 Devices = new List<DeviceConfig>(),
                 Rules = new List<EdgeRuleConfig>(),
                 FlowRules = new List<FlowRuleDefinition>()
             };
+
+            if (source.Channels != null)
+            {
+                for (int i = 0; i < source.Channels.Count; i++)
+                {
+                    ChannelConfig? channel = CloneChannel(source.Channels[i]);
+                    if (channel != null)
+                        target.Channels.Add(channel);
+                }
+            }
 
             if (source.Devices != null)
             {
@@ -76,6 +87,23 @@ namespace IPC.Runtime.Configuration
             }
 
             return target;
+        }
+
+        public static ChannelConfig? CloneChannel(ChannelConfig? source)
+        {
+            if (source == null)
+                return null;
+
+            return new ChannelConfig
+            {
+                Id = source.Id,
+                Name = source.Name,
+                Enabled = source.Enabled,
+                Protocol = source.Protocol,
+                DriverId = source.DriverId,
+                MaxConcurrentDevicePolls = source.MaxConcurrentDevicePolls,
+                SchedulingWeight = source.SchedulingWeight
+            };
         }
 
         public static FlowRuleDefinition? CloneFlowRule(FlowRuleDefinition? source)
@@ -528,6 +556,7 @@ namespace IPC.Runtime.Configuration
             DeviceConfig target = new DeviceConfig
             {
                 Id = source.Id,
+                ChannelId = source.ChannelId,
                 Name = source.Name,
                 Enabled = source.Enabled,
                 Protocol = source.Protocol,
@@ -653,11 +682,9 @@ namespace IPC.Runtime.Configuration
                 SerialStopBits = source.SerialStopBits,
                 Username = source.Username,
                 Password = source.Password,
-                CertificatePath = source.CertificatePath,
-                CertificatePassword = source.CertificatePassword,
-                CertificateThumbprint = source.CertificateThumbprint,
-                TrustStorePath = source.TrustStorePath,
-                ValidateServerCertificate = source.ValidateServerCertificate,
+                OpcUaSecurityPolicy = source.OpcUaSecurityPolicy,
+                OpcUaMessageSecurityMode = source.OpcUaMessageSecurityMode,
+                OpcUaAutoTrustServerCertificate = source.OpcUaAutoTrustServerCertificate,
                 OpcDaServerProgId = source.OpcDaServerProgId,
                 OpcDaGroupName = source.OpcDaGroupName,
                 DriverId = source.DriverId,

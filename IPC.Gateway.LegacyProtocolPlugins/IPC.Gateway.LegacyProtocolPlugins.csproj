@@ -16,9 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="NModbus.Serial" Version="3.0.83" />
     <PackageReference Include="Opc.UaFx.Client" Version="2.53.1" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
-    <PackageReference Include="Talk.BACnet" Version="1.0.2" />
+    <PackageReference Include="BACnet" Version="3.0.2" />
   </ItemGroup>
 
   <ItemGroup>

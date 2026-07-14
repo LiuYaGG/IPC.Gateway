@@ -21,6 +21,13 @@ namespace IPC.Gateway.Core.Application.Gateway;
 
 public interface IGatewayDeviceConfigurationApplicationService
 {
+    IList<ChannelConfig> GetChannels();
+    ChannelConfig AddChannel(ChannelConfig channel);
+    Task<ChannelConfig> AddChannelAsync(ChannelConfig channel);
+    ChannelConfig UpdateChannel(string channelId, ChannelConfig input);
+    Task<ChannelConfig> UpdateChannelAsync(string channelId, ChannelConfig input);
+    ChannelConfig DeleteChannel(string channelId);
+    Task<ChannelConfig> DeleteChannelAsync(string channelId);
     IList<DeviceConfig> GetDevices();
     DeviceConfig AddDevice(DeviceConfig device);
     Task<DeviceConfig> AddDeviceAsync(DeviceConfig device);

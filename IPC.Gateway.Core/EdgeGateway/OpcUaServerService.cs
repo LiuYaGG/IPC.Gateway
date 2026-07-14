@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System.IO;
+using System.Collections.Generic;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
 using IPC.Runtime.Values;
@@ -79,9 +80,7 @@ namespace IPC.EdgeGateway
 
                     _server = new OpcUaGatewayServer(_runtime, _projectProvider, _options, _status);
                     _application = new ApplicationInstance(configuration, s_telemetry);
-                    bool certificateOk = _application.CheckApplicationInstanceCertificatesAsync(false, null, CancellationToken.None).AsTask().GetAwaiter().GetResult();
-                    if (!certificateOk)
-                        throw new InvalidOperationException("OPC UA Server application certificate could not be created or validated.");
+                    bool certificateRenewed = EnsureApplicationCertificate(_application, configuration);
 
                     _application.StartAsync(_server).GetAwaiter().GetResult();
 
@@ -94,7 +93,9 @@ namespace IPC.EdgeGateway
                     _status.StartedTime = DateTime.Now;
                     _status.LastReloadTime = _status.StartedTime;
                     _status.LastError = string.Empty;
-                    _status.LastMessage = "OPC UA Server started.";
+                    _status.LastMessage = certificateRenewed
+                        ? "OPC UA Server started after replacing an invalid application certificate."
+                        : "OPC UA Server started.";
                 }
                 catch (Exception ex)
                 {
@@ -198,7 +199,7 @@ namespace IPC.EdgeGateway
         private static ApplicationConfiguration CreateApplicationConfiguration(OpcUaServerOptions options)
         {
             OpcUaServerOptions normalized = OpcUaServerOptions.Normalize(options);
-            string pkiRoot = Path.GetFullPath(normalized.CertificateStorePath);
+            string pkiRoot = ResolveCertificateStorePath(normalized.CertificateStorePath);
             Directory.CreateDirectory(pkiRoot);
 
             return new ApplicationConfiguration
@@ -268,6 +269,116 @@ namespace IPC.EdgeGateway
                 },
                 DisableHiResClock = true
             };
+        }
+
+        private static string ResolveCertificateStorePath(string configuredPath)
+        {
+            string path = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine("Data", "OpcUa", "pki")
+                : configuredPath.Trim();
+            return Path.IsPathRooted(path)
+                ? Path.GetFullPath(path)
+                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
+        }
+
+        private static bool EnsureApplicationCertificate(
+            ApplicationInstance application,
+            ApplicationConfiguration configuration)
+        {
+            try
+            {
+                if (CheckApplicationCertificate(application))
+                    return false;
+            }
+            catch (Exception ex) when (IsApplicationCertificateFailure(ex))
+            {
+                if (!ArchiveApplicationCertificate(configuration))
+                    throw;
+
+                if (!CheckApplicationCertificate(application))
+                    throw new InvalidOperationException("OPC UA Server application certificate could not be recreated after archiving the invalid certificate.");
+                return true;
+            }
+
+            if (!ArchiveApplicationCertificate(configuration))
+                throw new InvalidOperationException("OPC UA Server application certificate could not be created or validated, and no existing certificate was available to archive.");
+            if (!CheckApplicationCertificate(application))
+                throw new InvalidOperationException("OPC UA Server application certificate could not be recreated after archiving the invalid certificate.");
+            return true;
+        }
+
+        private static bool CheckApplicationCertificate(ApplicationInstance application)
+        {
+            return application
+                .CheckApplicationInstanceCertificatesAsync(false, null, CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+
+        private static bool IsApplicationCertificateFailure(Exception exception)
+        {
+            Exception root = exception.GetBaseException();
+            return root is ServiceResultException &&
+                   root.Message.IndexOf("certificate", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ArchiveApplicationCertificate(ApplicationConfiguration configuration)
+        {
+            string ownStorePath = configuration.SecurityConfiguration.ApplicationCertificate.StorePath;
+            if (string.IsNullOrWhiteSpace(ownStorePath))
+                return false;
+
+            string ownCertificateDirectory = Path.Combine(ownStorePath, "certs");
+            HashSet<string> ownCertificateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Directory.Exists(ownCertificateDirectory))
+            {
+                foreach (string certificateFile in Directory.EnumerateFiles(ownCertificateDirectory, "*", SearchOption.TopDirectoryOnly))
+                    ownCertificateNames.Add(Path.GetFileName(certificateFile));
+            }
+
+            string[] storeDirectories =
+            {
+                ownCertificateDirectory,
+                Path.Combine(ownStorePath, "private")
+            };
+            string pkiRoot = Directory.GetParent(ownStorePath)?.FullName ?? ownStorePath;
+            string archiveRoot = Path.Combine(
+                pkiRoot,
+                "archive",
+                DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N"));
+            bool archived = false;
+
+            foreach (string storeDirectory in storeDirectories)
+            {
+                if (!Directory.Exists(storeDirectory))
+                    continue;
+
+                string targetDirectory = Path.Combine(archiveRoot, Path.GetFileName(storeDirectory));
+                foreach (string file in Directory.EnumerateFiles(storeDirectory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    Directory.CreateDirectory(targetDirectory);
+                    File.Move(file, Path.Combine(targetDirectory, Path.GetFileName(file)));
+                    archived = true;
+                }
+            }
+
+            string trustedCertificateDirectory = Path.Combine(pkiRoot, "trusted", "certs");
+            if (Directory.Exists(trustedCertificateDirectory) && ownCertificateNames.Count > 0)
+            {
+                string trustedArchiveDirectory = Path.Combine(archiveRoot, "trusted");
+                foreach (string trustedFile in Directory.EnumerateFiles(trustedCertificateDirectory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    if (!ownCertificateNames.Contains(Path.GetFileName(trustedFile)))
+                        continue;
+
+                    Directory.CreateDirectory(trustedArchiveDirectory);
+                    File.Move(trustedFile, Path.Combine(trustedArchiveDirectory, Path.GetFileName(trustedFile)));
+                    archived = true;
+                }
+            }
+
+            return archived;
         }
 
         private static ServerSecurityPolicyCollection CreateSecurityPolicies(OpcUaServerOptions options)

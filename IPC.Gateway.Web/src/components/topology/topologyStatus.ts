@@ -29,6 +29,7 @@ export function resolveDeviceTone(device: DeviceConfig, runtime?: DeviceRuntimeS
   if (!device.enabled) return 'disabled'
   if (!runtime) return 'warn'
   const status = normalizeKey(runtime.status)
+  if (status === 'degraded') return 'warn'
   if (runtime.isConnected || status === 'online') return 'good'
   if (runtime.lastError || status === 'error') return 'bad'
   return 'bad'

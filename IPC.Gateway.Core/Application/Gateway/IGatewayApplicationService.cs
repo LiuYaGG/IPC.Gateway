@@ -43,6 +43,13 @@ public interface IGatewayApplicationService : IDisposable
     ProjectConfigurationDto SaveProject(SaveProjectConfigurationCommand command);
     Task<ProjectConfigurationDto> SaveProjectAsync(SaveProjectConfigurationCommand command) => Task.FromResult(SaveProject(command));
     ProjectValidationResultDto ValidateProject(ValidateProjectConfigurationCommand command);
+    IList<ChannelConfigurationDto> GetChannels() => new List<ChannelConfigurationDto>();
+    ChannelConfigurationDto AddChannel(SaveChannelConfigurationCommand command) => throw new NotSupportedException();
+    Task<ChannelConfigurationDto> AddChannelAsync(SaveChannelConfigurationCommand command) => Task.FromResult(AddChannel(command));
+    ChannelConfigurationDto UpdateChannel(string channelId, SaveChannelConfigurationCommand command) => throw new NotSupportedException();
+    Task<ChannelConfigurationDto> UpdateChannelAsync(string channelId, SaveChannelConfigurationCommand command) => Task.FromResult(UpdateChannel(channelId, command));
+    ChannelConfigurationDto DeleteChannel(string channelId) => throw new NotSupportedException();
+    Task<ChannelConfigurationDto> DeleteChannelAsync(string channelId) => Task.FromResult(DeleteChannel(channelId));
     IList<DeviceConfigurationDto> GetDevices();
     DeviceConfigurationDto AddDevice(SaveDeviceConfigurationCommand command);
     Task<DeviceConfigurationDto> AddDeviceAsync(SaveDeviceConfigurationCommand command) => Task.FromResult(AddDevice(command));

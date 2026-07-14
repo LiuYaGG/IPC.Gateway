@@ -21,6 +21,8 @@ using System.IO;
 using System.IO.Ports;
 using IPC.Plc.Communication.Core;
 using IPC.Plc.Communication.ModbusTcp;
+using NModbus;
+using NModbus.Serial;
 
 namespace IPC.Plc.Communication.ModbusRtu
 {
@@ -35,13 +37,14 @@ namespace IPC.Plc.Communication.ModbusRtu
     
     public sealed class ModbusRtuClient : IPlcClient, IPlcBatchReadClient
     {
-        private const int MaxReadCoils = 2000;
-        private const int MaxWriteCoils = 1968;
-        private const int MaxReadRegisters = 125;
-        private const int MaxWriteRegisters = 123;
+        private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
+        private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;
+        private const int MaxReadRegisters = NModbusMasterAdapter.MaxReadRegisters;
+        private const int MaxWriteRegisters = NModbusMasterAdapter.MaxWriteRegisters;
 
         private readonly PlcConnectionOptions _options;
         private SerialPort _serialPort;
+        private NModbusMasterAdapter _adapter;
 
         public ModbusRtuClient(PlcConnectionOptions options)
         {
@@ -52,7 +55,7 @@ namespace IPC.Plc.Communication.ModbusRtu
 
         public bool IsConnected
         {
-            get { return _serialPort != null && _serialPort.IsOpen; }
+            get { return _serialPort != null && _serialPort.IsOpen && _adapter != null; }
         }
 
         public PlcProtocol Protocol
@@ -74,19 +77,43 @@ namespace IPC.Plc.Communication.ModbusRtu
                 IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapParity(_options.SerialParity),
                 dataBits,
                 IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapStopBits(_options.SerialStopBits));
-            _serialPort.ReadTimeout = _options.TimeoutMilliseconds;
-            _serialPort.WriteTimeout = _options.TimeoutMilliseconds;
-            _serialPort.Open();
+            try
+            {
+                _serialPort.ReadTimeout = _options.TimeoutMilliseconds;
+                _serialPort.WriteTimeout = _options.TimeoutMilliseconds;
+                _serialPort.Open();
+
+                IModbusMaster master = new ModbusFactory().CreateRtuMaster(new SerialPortAdapter(_serialPort));
+                _adapter = new NModbusMasterAdapter(master, GetSlaveId(), _options.TimeoutMilliseconds);
+            }
+            catch
+            {
+                Disconnect();
+                throw;
+            }
         }
 
         public void Disconnect()
         {
+            if (_adapter != null)
+            {
+                _adapter.Dispose();
+                _adapter = null;
+            }
+
             if (_serialPort != null)
             {
-                if (_serialPort.IsOpen)
-                    _serialPort.Close();
-                _serialPort.Dispose();
+                SerialPort serialPort = _serialPort;
                 _serialPort = null;
+                try
+                {
+                    if (serialPort.IsOpen)
+                        serialPort.Close();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                serialPort.Dispose();
             }
         }
 
@@ -187,6 +214,8 @@ namespace IPC.Plc.Communication.ModbusRtu
 
         private bool[] ReadBits(ModbusArea area, int startAddress, int count)
         {
+            return GetAdapter().ReadBits(area == ModbusArea.DiscreteInput, startAddress, count);
+#if false
             if (area != ModbusArea.Coil && area != ModbusArea.DiscreteInput)
                 throw new NotSupportedException("当前地址不是 Modbus 位区域。");
 
@@ -208,10 +237,13 @@ namespace IPC.Plc.Communication.ModbusRtu
                 copied += segmentCount;
             }
             return result;
+#endif
         }
 
         private byte[] ReadRegisters(ModbusArea area, int startAddress, int registerCount)
         {
+            return GetAdapter().ReadRegisters(area == ModbusArea.InputRegister, startAddress, registerCount);
+#if false
             if (area != ModbusArea.HoldingRegister && area != ModbusArea.InputRegister)
                 throw new NotSupportedException("当前地址不是 Modbus 寄存器区域。");
 
@@ -233,10 +265,14 @@ namespace IPC.Plc.Communication.ModbusRtu
                 copied += segmentCount;
             }
             return stream.ToArray();
+#endif
         }
 
         private void WriteBits(int startAddress, bool[] values)
         {
+            GetAdapter().WriteBits(startAddress, values);
+            return;
+#if false
             int written = 0;
             while (written < values.Length)
             {
@@ -266,10 +302,14 @@ namespace IPC.Plc.Communication.ModbusRtu
 
                 written += segmentCount;
             }
+#endif
         }
 
         private void WriteRegisters(int startAddress, byte[] data)
         {
+            GetAdapter().WriteRegisters(startAddress, data);
+            return;
+#if false
             if (data.Length % 2 != 0)
             {
                 byte[] padded = new byte[data.Length + 1];
@@ -304,6 +344,7 @@ namespace IPC.Plc.Communication.ModbusRtu
 
                 written += segmentRegisters;
             }
+#endif
         }
 
         private byte[] SendRequest(byte expectedFunction, byte[] pdu)
@@ -390,6 +431,14 @@ namespace IPC.Plc.Communication.ModbusRtu
         {
             if (!IsConnected)
                 Connect();
+        }
+
+        private NModbusMasterAdapter GetAdapter()
+        {
+            EnsureConnected();
+            if (_adapter == null)
+                throw new IOException("Modbus RTU adapter is not connected.");
+            return _adapter;
         }
 
         private byte GetSlaveId()

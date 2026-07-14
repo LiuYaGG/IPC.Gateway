@@ -106,26 +106,18 @@
             autocomplete="new-password"
           />
         </el-form-item>
-        <el-form-item label="客户端证书">
-          <el-input v-model="device.connection.certificatePath" placeholder="Data/Certificates/device-client.pfx" />
+        <el-form-item label="安全策略">
+          <el-select v-model="device.connection.opcUaSecurityPolicy">
+            <el-option v-for="item in opcUaSecurityPolicies" :key="item" :label="item" :value="item" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="证书密码">
-          <el-input
-            v-model="device.connection.certificatePassword"
-            type="password"
-            show-password
-            name="opcua-certificate-secret"
-            autocomplete="new-password"
-          />
+        <el-form-item label="消息安全模式">
+          <el-select v-model="device.connection.opcUaMessageSecurityMode">
+            <el-option v-for="item in opcUaMessageSecurityModes" :key="item" :label="item" :value="item" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="证书指纹">
-          <el-input v-model="device.connection.certificateThumbprint" placeholder="可选，用于校验证书" />
-        </el-form-item>
-        <el-form-item label="信任库路径">
-          <el-input v-model="device.connection.trustStorePath" placeholder="Data/Certificates/trust" />
-        </el-form-item>
-        <el-form-item label="校验服务端证书">
-          <el-switch v-model="device.connection.validateServerCertificate" />
+        <el-form-item label="自动信任证书">
+          <el-switch v-model="device.connection.opcUaAutoTrustServerCertificate" />
         </el-form-item>
       </div>
 
@@ -261,6 +253,8 @@ const props = defineProps<{
 }>()
 
 const connectionParameters = computed(() => (props.parameters ?? []).filter(parameter => parameter.key))
+const opcUaSecurityPolicies = ['None', 'Basic128Rsa15', 'Basic256', 'Basic256Sha256', 'Aes128_Sha256_RsaOaep', 'Aes256_Sha256_RsaPss']
+const opcUaMessageSecurityModes = ['None', 'Sign', 'SignAndEncrypt']
 
 const networkHostLabel = computed(() => {
   if (props.protocol === 'OpcUa') return 'Endpoint'
@@ -275,7 +269,7 @@ const networkHostPlaceholder = computed(() => {
 })
 
 const networkPortLabel = computed(() => props.protocol === 'OmronFins' ? 'FINS端口' : props.protocol === 'BacnetIp' ? 'BACnet/IP 端口' : '端口')
-const transportLocked = computed(() => props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa' || props.protocol === 'BacnetIp')
+const transportLocked = computed(() => props.protocol === 'ModbusTcp' || props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa' || props.protocol === 'BacnetIp')
 const serialHostLabel = computed(() => props.protocol === 'CanOpen' ? 'CAN适配器串口' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '采集串口' : '串口')
 const serialPortLabel = computed(() => props.protocol === 'CanOpen' ? '适配器波特率' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '表计波特率' : '波特率')
 watch(
@@ -283,6 +277,24 @@ watch(
   ([protocol, transport]) => {
     const port = defaultPortForProtocolTransport(protocol, transport)
     if (port !== undefined) props.device.connection.port = port
+  }
+)
+
+watch(
+  () => props.device.connection.opcUaSecurityPolicy,
+  policy => {
+    if (props.protocol !== 'OpcUa') return
+    if (!policy || policy === 'None') props.device.connection.opcUaMessageSecurityMode = 'None'
+    else if (props.device.connection.opcUaMessageSecurityMode === 'None') props.device.connection.opcUaMessageSecurityMode = 'SignAndEncrypt'
+  }
+)
+
+watch(
+  () => props.device.connection.opcUaMessageSecurityMode,
+  mode => {
+    if (props.protocol !== 'OpcUa') return
+    if (!mode || mode === 'None') props.device.connection.opcUaSecurityPolicy = 'None'
+    else if (props.device.connection.opcUaSecurityPolicy === 'None') props.device.connection.opcUaSecurityPolicy = 'Basic256Sha256'
   }
 )
 

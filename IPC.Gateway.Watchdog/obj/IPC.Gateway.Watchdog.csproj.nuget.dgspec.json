@@ -75,6 +75,10 @@
               "target": "Package",
               "version": "[10.0.8, )"
             },
+            "NModbus": {
+              "target": "Package",
+              "version": "[3.0.83, )"
+            },
             "OPCFoundation.NetStandard.Opc.Ua": {
               "target": "Package",
               "version": "[1.5.378.145, )"

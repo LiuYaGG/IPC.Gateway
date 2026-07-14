@@ -90,7 +90,6 @@ public sealed class GatewaySecretProtectionTests : IDisposable
             .Payload;
 
         Assert.DoesNotContain("Device#12345", projectPayload);
-        Assert.DoesNotContain("DeviceCert#12345", projectPayload);
         Assert.DoesNotContain("Mqtt#12345", mqttPayload);
         Assert.DoesNotContain("MqttCert#12345", mqttPayload);
         Assert.Contains(GatewaySecretProtector.Prefix, projectPayload);
@@ -100,7 +99,9 @@ public sealed class GatewaySecretProtectionTests : IDisposable
         MqttGatewayOptions loadedMqtt = repository.LoadOrCreateMqtt(new MqttGatewayOptions());
 
         Assert.Equal("Device#12345", loadedProject.Devices[0].Connection.Password);
-        Assert.Equal("DeviceCert#12345", loadedProject.Devices[0].Connection.CertificatePassword);
+        Assert.Equal("Basic256Sha256", loadedProject.Devices[0].Connection.OpcUaSecurityPolicy);
+        Assert.Equal("SignAndEncrypt", loadedProject.Devices[0].Connection.OpcUaMessageSecurityMode);
+        Assert.True(loadedProject.Devices[0].Connection.OpcUaAutoTrustServerCertificate);
         Assert.Equal("Mqtt#12345", loadedMqtt.Password);
         Assert.Equal("MqttCert#12345", loadedMqtt.ClientCertificatePassword);
     }
@@ -192,8 +193,9 @@ public sealed class GatewaySecretProtectionTests : IDisposable
                 Port = 4840,
                 Username = "operator",
                 Password = "Device#12345",
-                CertificatePath = "Data/Certificates/device-client.pfx",
-                CertificatePassword = "DeviceCert#12345"
+                OpcUaSecurityPolicy = "Basic256Sha256",
+                OpcUaMessageSecurityMode = "SignAndEncrypt",
+                OpcUaAutoTrustServerCertificate = true
             }
         };
         device.Tags.Add(new TagConfig

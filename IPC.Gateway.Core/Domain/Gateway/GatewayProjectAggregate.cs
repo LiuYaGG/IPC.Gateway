@@ -29,6 +29,8 @@ public sealed class GatewayProjectAggregate
 
     public ProjectConfig Project { get; }
 
+    public int ChannelCount => Project.Channels.Count;
+
     public int DeviceCount => Project.Devices.Count;
 
     public int GroupCount => Project.Devices.Sum(device => device.Groups.Count);
@@ -49,6 +51,46 @@ public sealed class GatewayProjectAggregate
         return tags;
     }
 
+    public ChannelConfig AddChannel(ChannelConfig channel)
+    {
+        if (channel == null)
+            throw new ArgumentNullException(nameof(channel));
+        if (string.IsNullOrWhiteSpace(channel.Id))
+            channel.Id = Guid.NewGuid().ToString("N");
+        Project.Channels.Add(channel);
+        ProjectConfigStore.Normalize(Project);
+        return channel;
+    }
+
+    public ChannelConfig UpdateChannel(string channelId, ChannelConfig input)
+    {
+        ChannelConfig channel = Require(FindChannel(channelId), "Channel was not found.");
+        bool hasDevices = Project.Devices.Any(device =>
+            string.Equals(device.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
+        if (hasDevices && (channel.Protocol != input.Protocol ||
+            !string.Equals(channel.DriverId, input.DriverId, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("A channel with devices cannot change its protocol driver.");
+
+        channel.Name = input.Name;
+        channel.Enabled = input.Enabled;
+        channel.Protocol = input.Protocol;
+        channel.DriverId = input.DriverId;
+        channel.MaxConcurrentDevicePolls = input.MaxConcurrentDevicePolls;
+        channel.SchedulingWeight = input.SchedulingWeight;
+        ProjectConfigStore.Normalize(Project);
+        return channel;
+    }
+
+    public ChannelConfig DeleteChannel(string channelId)
+    {
+        ChannelConfig channel = Require(FindChannel(channelId), "Channel was not found.");
+        if (Project.Devices.Any(device => string.Equals(device.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Delete or move the devices in the channel first.");
+        Project.Channels.Remove(channel);
+        ProjectConfigStore.Normalize(Project);
+        return channel;
+    }
+
     public DeviceConfig AddDevice(DeviceConfig device)
     {
         if (device == null)
@@ -67,6 +109,7 @@ public sealed class GatewayProjectAggregate
     public DeviceConfig UpdateDevice(string deviceId, DeviceConfig input)
     {
         DeviceConfig device = Require(FindDevice(deviceId), "Device was not found.");
+        device.ChannelId = input.ChannelId;
         device.Name = input.Name;
         device.Enabled = input.Enabled;
         device.Protocol = input.Protocol;
@@ -271,6 +314,13 @@ public sealed class GatewayProjectAggregate
         return Project.Devices.FirstOrDefault(device =>
             string.Equals(device.Id, idOrName, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(device.Name, idOrName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public ChannelConfig? FindChannel(string idOrName)
+    {
+        return Project.Channels.FirstOrDefault(channel =>
+            string.Equals(channel.Id, idOrName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(channel.Name, idOrName, StringComparison.OrdinalIgnoreCase));
     }
 
     public DeviceConfig? FindDeviceByGroup(string groupId)

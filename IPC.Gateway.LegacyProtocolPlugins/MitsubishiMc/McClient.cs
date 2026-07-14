@@ -43,7 +43,6 @@ namespace IPC.Plc.Communication.MitsubishiMc
         private NetworkStream _stream;
         private UdpClient _udpClient;
         private IPEndPoint _udpRemoteEndPoint;
-        private bool _udpCommunicationConfirmed;
 
         public McClient(PlcConnectionOptions options)
         {
@@ -60,7 +59,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             get
             {
                 if (_options.Transport == NetworkTransport.Udp)
-                    return _udpClient != null && _udpCommunicationConfirmed;
+                    return _udpClient != null;
                 return _tcpClient != null && _tcpClient.Connected && _stream != null;
             }
         }
@@ -82,7 +81,6 @@ namespace IPC.Plc.Communication.MitsubishiMc
                     throw new InvalidOperationException("PLC 地址验证失败: " + _options.Host);
 
                 _udpRemoteEndPoint = new IPEndPoint(addresses[0], _options.Port);
-                _udpCommunicationConfirmed = false;
                 _udpClient = new UdpClient();
                 _udpClient.Client.ReceiveTimeout = _options.TimeoutMilliseconds;
                 _udpClient.Client.SendTimeout = _options.TimeoutMilliseconds;
@@ -116,7 +114,6 @@ namespace IPC.Plc.Communication.MitsubishiMc
                     throw new InvalidOperationException("PLC address resolution failed: " + _options.Host);
 
                 _udpRemoteEndPoint = new IPEndPoint(addresses[0], _options.Port);
-                _udpCommunicationConfirmed = false;
                 _udpClient = new UdpClient();
                 _udpClient.Client.ReceiveTimeout = _options.TimeoutMilliseconds;
                 _udpClient.Client.SendTimeout = _options.TimeoutMilliseconds;
@@ -143,7 +140,6 @@ namespace IPC.Plc.Communication.MitsubishiMc
             _tcpClient = null;
             _udpClient = null;
             _udpRemoteEndPoint = null;
-            _udpCommunicationConfirmed = false;
         }
 
         public ValueTask DisconnectAsync(CancellationToken cancellationToken)
@@ -632,7 +628,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private byte[] ReadWords(McAddress address, int points)
         {
-            byte[] response = Send(BuildRequest(0x0401, 0x0000, address, points, null));
+            byte[] response = Send(BuildRequest(0x0401, 0x0000, address, points, null), true);
             return response;
         }
 
@@ -641,12 +637,12 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int points,
             CancellationToken cancellationToken)
         {
-            return await SendAsync(BuildRequest(0x0401, 0x0000, address, points, null), cancellationToken).ConfigureAwait(false);
+            return await SendAsync(BuildRequest(0x0401, 0x0000, address, points, null), true, cancellationToken).ConfigureAwait(false);
         }
 
         private void WriteWords(McAddress address, byte[] data, int points)
         {
-            Send(BuildRequest(0x1401, 0x0000, address, points, data));
+            Send(BuildRequest(0x1401, 0x0000, address, points, data), false);
         }
 
         private async ValueTask WriteWordsAsync(
@@ -655,12 +651,12 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int points,
             CancellationToken cancellationToken)
         {
-            await SendAsync(BuildRequest(0x1401, 0x0000, address, points, data), cancellationToken).ConfigureAwait(false);
+            await SendAsync(BuildRequest(0x1401, 0x0000, address, points, data), false, cancellationToken).ConfigureAwait(false);
         }
 
         private byte[] ReadBits(McAddress address, int points)
         {
-            return Send(BuildRequest(0x0401, 0x0001, address, points, null));
+            return Send(BuildRequest(0x0401, 0x0001, address, points, null), true);
         }
 
         private async ValueTask<byte[]> ReadBitsAsync(
@@ -668,12 +664,12 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int points,
             CancellationToken cancellationToken)
         {
-            return await SendAsync(BuildRequest(0x0401, 0x0001, address, points, null), cancellationToken).ConfigureAwait(false);
+            return await SendAsync(BuildRequest(0x0401, 0x0001, address, points, null), true, cancellationToken).ConfigureAwait(false);
         }
 
         private void WriteBits(McAddress address, byte[] packedBits, int points)
         {
-            Send(BuildRequest(0x1401, 0x0001, address, points, packedBits));
+            Send(BuildRequest(0x1401, 0x0001, address, points, packedBits), false);
         }
 
         private async ValueTask WriteBitsAsync(
@@ -682,7 +678,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int points,
             CancellationToken cancellationToken)
         {
-            await SendAsync(BuildRequest(0x1401, 0x0001, address, points, packedBits), cancellationToken).ConfigureAwait(false);
+            await SendAsync(BuildRequest(0x1401, 0x0001, address, points, packedBits), false, cancellationToken).ConfigureAwait(false);
         }
 
         private byte[] BuildRequest(ushort command, ushort subcommand, McAddress address, int points, byte[] data)
@@ -708,7 +704,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             return frame.ToArray();
         }
 
-        private byte[] Send(byte[] request)
+        private byte[] Send(byte[] request, bool allowUdpReadRetry)
         {
             try
             {
@@ -718,19 +714,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             byte[] response;
             if (_options.Transport == NetworkTransport.Udp)
             {
-                try
-                {
-                    DrainPendingUdpResponses();
-                    _udpClient.Send(request, request.Length);
-                    IPEndPoint remote = null;
-                    response = _udpClient.Receive(ref remote);
-                    ValidateUdpRemoteEndPoint(remote);
-                }
-                catch
-                {
-                    _udpCommunicationConfirmed = false;
-                    throw;
-                }
+                response = SendUdp(request, allowUdpReadRetry);
             }
             else
             {
@@ -760,23 +744,19 @@ namespace IPC.Plc.Communication.MitsubishiMc
             if (endCode != 0)
                 throw new InvalidOperationException("MC 读取失败: 0x" + endCode.ToString("X4"));
 
-            if (_options.Transport == NetworkTransport.Udp)
-                _udpCommunicationConfirmed = true;
-
             byte[] result = new byte[data.Length - 2];
             Buffer.BlockCopy(data, 2, result, 0, result.Length);
             return result;
             }
             catch
             {
-                if (_options.Transport == NetworkTransport.Udp)
-                    _udpCommunicationConfirmed = false;
                 throw;
             }
         }
 
         private async ValueTask<byte[]> SendAsync(
             byte[] request,
+            bool allowUdpReadRetry,
             CancellationToken cancellationToken)
         {
             try
@@ -787,25 +767,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 byte[] response;
                 if (_options.Transport == NetworkTransport.Udp)
                 {
-                    try
-                    {
-                        DrainPendingUdpResponses();
-                        using CancellationTokenSource udpTimeout = CreateUdpOperationCancellationTokenSource(cancellationToken);
-                        await _udpClient.SendAsync(request, request.Length).WaitAsync(udpTimeout.Token).ConfigureAwait(false);
-                        UdpReceiveResult receiveResult = await _udpClient.ReceiveAsync(udpTimeout.Token).ConfigureAwait(false);
-                        response = receiveResult.Buffer;
-                        ValidateUdpRemoteEndPoint(receiveResult.RemoteEndPoint);
-                    }
-                    catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        _udpCommunicationConfirmed = false;
-                        throw new TimeoutException("Mitsubishi MC UDP request timed out.", ex);
-                    }
-                    catch
-                    {
-                        _udpCommunicationConfirmed = false;
-                        throw;
-                    }
+                    response = await SendUdpAsync(request, allowUdpReadRetry, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -835,19 +797,92 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 if (endCode != 0)
                     throw new InvalidOperationException("MC request failed: 0x" + endCode.ToString("X4"));
 
-                if (_options.Transport == NetworkTransport.Udp)
-                    _udpCommunicationConfirmed = true;
-
                 byte[] result = new byte[data.Length - 2];
                 Buffer.BlockCopy(data, 2, result, 0, result.Length);
                 return result;
             }
             catch
             {
-                if (_options.Transport == NetworkTransport.Udp)
-                    _udpCommunicationConfirmed = false;
                 throw;
             }
+        }
+
+        private byte[] SendUdp(byte[] request, bool allowReadRetry)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    DrainPendingUdpResponses();
+                    _udpClient.Send(request, request.Length);
+                    IPEndPoint remote = null;
+                    byte[] response = _udpClient.Receive(ref remote);
+                    ValidateUdpRemoteEndPoint(remote);
+                    return response;
+                }
+                catch (Exception ex) when (IsRetryableUdpReadFailure(ex))
+                {
+                    if (!allowReadRetry || attempt >= 1)
+                        throw new TimeoutException("Mitsubishi MC UDP request timed out.", ex);
+
+                    Thread.Sleep(Random.Shared.Next(25, 101));
+                }
+                catch
+                {
+                    throw;
+                }
+            }
+        }
+
+        private async ValueTask<byte[]> SendUdpAsync(
+            byte[] request,
+            bool allowReadRetry,
+            CancellationToken cancellationToken)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    DrainPendingUdpResponses();
+                    using CancellationTokenSource udpTimeout = CreateUdpOperationCancellationTokenSource(cancellationToken);
+                    await _udpClient.SendAsync(request, request.Length).WaitAsync(udpTimeout.Token).ConfigureAwait(false);
+                    UdpReceiveResult receiveResult = await _udpClient.ReceiveAsync(udpTimeout.Token).ConfigureAwait(false);
+                    ValidateUdpRemoteEndPoint(receiveResult.RemoteEndPoint);
+                    return receiveResult.Buffer;
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    if (!allowReadRetry || attempt >= 1)
+                        throw new TimeoutException("Mitsubishi MC UDP request timed out.", ex);
+
+                    await Task.Delay(Random.Shared.Next(25, 101), cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (IsRetryableUdpReadFailure(ex))
+                {
+                    if (!allowReadRetry || attempt >= 1)
+                        throw new TimeoutException("Mitsubishi MC UDP request timed out.", ex);
+
+                    await Task.Delay(Random.Shared.Next(25, 101), cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    throw;
+                }
+            }
+        }
+
+        private static bool IsRetryableUdpReadFailure(Exception exception)
+        {
+            if (exception is TimeoutException)
+                return true;
+            if (exception is not SocketException socketException)
+                return false;
+
+            return socketException.SocketErrorCode == SocketError.TimedOut ||
+                   socketException.SocketErrorCode == SocketError.WouldBlock ||
+                   socketException.SocketErrorCode == SocketError.ConnectionReset ||
+                   socketException.SocketErrorCode == SocketError.NetworkReset ||
+                   socketException.SocketErrorCode == SocketError.HostUnreachable;
         }
 
         private CancellationTokenSource CreateUdpOperationCancellationTokenSource(CancellationToken cancellationToken)

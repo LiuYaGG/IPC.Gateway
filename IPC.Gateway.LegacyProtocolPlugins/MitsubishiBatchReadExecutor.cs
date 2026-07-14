@@ -272,6 +272,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
@@ -327,6 +329,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && endIndex - startIndex > 1)
                 {
                     await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);

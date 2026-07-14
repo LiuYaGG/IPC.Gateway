@@ -31,7 +31,7 @@
       </div>
       <div class="mqtt-status-actions">
         <el-button v-if="canEditOpcUa" type="success" :icon="Check" @click="emit('persist-opcua')">保存</el-button>
-        <span v-if="status?.lastError" class="error-text">{{ status.lastError }}</span>
+        <span v-if="status?.lastError" class="error-text" :title="status.lastError">{{ status.lastError }}</span>
       </div>
     </section>
 

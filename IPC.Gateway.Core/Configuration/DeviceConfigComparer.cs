@@ -66,6 +66,7 @@ public static class DeviceConfigComparer
         DeviceRuntimeReuseProjection projection = new DeviceRuntimeReuseProjection
         {
             Id = normalized.Id ?? string.Empty,
+            ChannelId = normalized.ChannelId ?? string.Empty,
             Protocol = normalized.Protocol,
             Enabled = includeEnabled ? normalized.Enabled : null,
             Connection = NormalizeConnection(normalized.Protocol, normalized.Connection),
@@ -87,6 +88,7 @@ public static class DeviceConfigComparer
 
         DeviceUpdateProjection projection = new DeviceUpdateProjection
         {
+            ChannelId = device.ChannelId ?? string.Empty,
             Name = device.Name ?? string.Empty,
             Enabled = device.Enabled,
             Protocol = protocol,
@@ -116,11 +118,9 @@ public static class DeviceConfigComparer
             SerialStopBits = source.SerialStopBits,
             Username = source.Username ?? string.Empty,
             Password = source.Password ?? string.Empty,
-            CertificatePath = source.CertificatePath ?? string.Empty,
-            CertificatePassword = source.CertificatePassword ?? string.Empty,
-            CertificateThumbprint = source.CertificateThumbprint ?? string.Empty,
-            TrustStorePath = source.TrustStorePath ?? string.Empty,
-            ValidateServerCertificate = source.ValidateServerCertificate,
+            OpcUaSecurityPolicy = source.OpcUaSecurityPolicy ?? "None",
+            OpcUaMessageSecurityMode = source.OpcUaMessageSecurityMode ?? "None",
+            OpcUaAutoTrustServerCertificate = source.OpcUaAutoTrustServerCertificate,
             OpcDaServerProgId = source.OpcDaServerProgId ?? string.Empty,
             OpcDaGroupName = source.OpcDaGroupName ?? string.Empty,
             DriverId = source.DriverId ?? string.Empty,
@@ -138,6 +138,7 @@ public static class DeviceConfigComparer
 
     private sealed class DeviceUpdateProjection
     {
+        public string ChannelId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public bool Enabled { get; set; }
         public PlcProtocol Protocol { get; set; }
@@ -150,6 +151,7 @@ public static class DeviceConfigComparer
     private sealed class DeviceRuntimeReuseProjection
     {
         public string Id { get; set; } = string.Empty;
+        public string ChannelId { get; set; } = string.Empty;
         public PlcProtocol Protocol { get; set; }
         public bool? Enabled { get; set; }
         public PlcConnectionOptions Connection { get; set; } = new PlcConnectionOptions();

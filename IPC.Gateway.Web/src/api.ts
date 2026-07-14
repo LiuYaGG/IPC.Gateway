@@ -299,6 +299,18 @@ export interface DeviceRuntimeStatus {
   timeoutCount: number
   lastError: string
   protocolCircuitBreaker: CircuitBreakerStatus
+  deviceState: string
+  transportConnected: boolean
+  isIsolated: boolean
+  recoveryState: string
+  isolatedSinceTime: string
+  nextRecoveryProbeTime: string
+  channelKey: string
+  channelStatus: string
+  channelConsecutiveFailures: number
+  channelLastSuccessTime: string
+  channelLastFailureTime: string
+  channelLastError: string
 }
 
 export interface TagValueSnapshot {
@@ -325,6 +337,11 @@ export interface TagValueSnapshot {
   quality: string
   timestamp: string
   errorMessage: string
+  tagState: string
+  isTagIsolated: boolean
+  isStaticValidationError: boolean
+  tagConsecutiveFailures: number
+  nextTagRecoveryProbeTime: string
 }
 
 export interface RuntimeErrorDetail {
@@ -409,6 +426,7 @@ export interface RuntimeSchedulerStatus {
 
 export interface RuntimePollingQueueStatus {
   pendingCount: number
+  recoveryPendingCount: number
   runningCount: number
   queueLimit: number
   highWatermark: number
@@ -454,9 +472,20 @@ export interface RuntimePollingTaskStatus {
 export interface ProjectConfig {
   projectId: string
   name: string
+  channels: ChannelConfig[]
   devices: DeviceConfig[]
   rules: EdgeRuleConfig[]
   flowRules: FlowRuleDefinition[]
+}
+
+export interface ChannelConfig {
+  id: string
+  name: string
+  enabled: boolean
+  protocol: string
+  driverId: string
+  maxConcurrentDevicePolls: number
+  schedulingWeight: number
 }
 
 export interface EdgeRuleConfig {
@@ -762,6 +791,7 @@ export interface FlowRuleEdge {
 
 export interface DeviceConfig {
   id: string
+  channelId: string
   name: string
   enabled: boolean
   protocol: string
@@ -787,11 +817,9 @@ export interface PlcConnection {
   serialStopBits: string
   username: string
   password: string
-  certificatePath: string
-  certificatePassword: string
-  certificateThumbprint: string
-  trustStorePath: string
-  validateServerCertificate: boolean
+  opcUaSecurityPolicy: string
+  opcUaMessageSecurityMode: string
+  opcUaAutoTrustServerCertificate: boolean
   opcDaServerProgId: string
   opcDaGroupName: string
   driverId: string
@@ -824,7 +852,24 @@ export interface GatewayProtocolCatalogItem {
   builtIn: boolean
   signatureStatus: string
   signatureError: string
+  capabilities: GatewayProtocolCapabilities
   parameters: GatewayConnectionParameterDefinition[]
+}
+
+export interface GatewayProtocolCapabilities {
+  asyncKind: string
+  preferredReadMode: string
+  supportsRead: boolean
+  supportsWrite: boolean
+  supportsNativeAsync: boolean
+  supportsBatchRead: boolean
+  supportsSubscription: boolean
+  supportsAddressValidation: boolean
+  supportsConcurrentRequests: boolean
+  requiresSerializedAccess: boolean
+  maxBatchItems: number
+  maxSubscriptionItems: number
+  notes: string
 }
 
 export interface GroupConfig {
@@ -1494,6 +1539,7 @@ export interface GatewayProtocolDriverInfo {
   signer: string
   loadContextId: string
   builtIn: boolean
+  capabilities: GatewayProtocolCapabilities
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -1922,6 +1968,38 @@ export async function saveProject(project: ProjectConfig) {
 export async function loadDevices() {
   const result = await request<ApiResult<DeviceConfig[]>>('/api/config/devices')
   if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '设备加载失败')
+  return result.data
+}
+
+export async function loadChannels() {
+  const result = await request<ApiResult<ChannelConfig[]>>('/api/config/channels')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '通道加载失败')
+  return result.data
+}
+
+export async function createChannel(channel: ChannelConfig) {
+  const result = await request<ApiResult<ChannelConfig>>('/api/config/channels', {
+    method: 'POST',
+    body: JSON.stringify(channel)
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '通道新增失败')
+  return result.data
+}
+
+export async function updateChannel(channelId: string, channel: ChannelConfig) {
+  const result = await request<ApiResult<ChannelConfig>>(`/api/config/channels/${encodeURIComponent(channelId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(channel)
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '通道更新失败')
+  return result.data
+}
+
+export async function deleteChannel(channelId: string) {
+  const result = await request<ApiResult<ChannelConfig>>(`/api/config/channels/${encodeURIComponent(channelId)}`, {
+    method: 'DELETE'
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '通道删除失败')
   return result.data
 }
 

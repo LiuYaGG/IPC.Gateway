@@ -54,12 +54,20 @@ namespace IPC.Plc.Communication.Bacnet
                 _driverOptions.MaxPayload,
                 _driverOptions.LocalEndpointIp);
 
-            BacnetClient client = new BacnetClient(transport, TimeSpan.FromMilliseconds(timeout), _driverOptions.Retries);
-            client.WritePriority = (byte)_driverOptions.WritePriority;
-            client.Start();
+            BacnetClient client = new BacnetClient(transport, timeout, _driverOptions.Retries);
+            try
+            {
+                client.WritePriority = (uint)_driverOptions.WritePriority;
+                client.Start();
 
-            _address = new BacnetAddress(BacnetAddressTypes.IP, endpoint, 0);
-            _client = client;
+                _address = new BacnetAddress(BacnetAddressTypes.IP, endpoint, 0);
+                _client = client;
+            }
+            catch
+            {
+                client.Dispose();
+                throw;
+            }
         }
 
         public void Disconnect()
@@ -75,9 +83,10 @@ namespace IPC.Plc.Communication.Bacnet
         {
             EnsureConnected();
             BacnetTagAddress tagAddress = BacnetTagAddress.Parse(address);
-            IList<BacnetValue> values = tagAddress.HasArrayIndex
-                ? new List<BacnetValue> { _client.ReadPropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId, tagAddress.ArrayIndex) }
-                : _client.ReadPropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId);
+            IList<BacnetValue> values;
+            uint arrayIndex = tagAddress.HasArrayIndex ? tagAddress.ArrayIndex : uint.MaxValue;
+            if (!_client.ReadPropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId, out values, 0, arrayIndex))
+                throw new TimeoutException("BACnet read property request timed out.");
 
             object value = ConvertReadValues(values, dataType, elementCount);
             return new PlcReadResult(0, dataType.ToString(), value);
@@ -113,7 +122,14 @@ namespace IPC.Plc.Communication.Bacnet
             EnsureConnected();
             BacnetTagAddress tagAddress = BacnetTagAddress.Parse(address);
             BacnetValue value = CreateWriteValue(tagAddress, dataType, valueText);
-            _client.WritePropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId, value);
+            if (!_client.WritePropertyRequest(
+                _address,
+                tagAddress.ObjectId,
+                tagAddress.PropertyId,
+                new[] { value },
+                0,
+                (byte)_driverOptions.WritePriority))
+                throw new TimeoutException("BACnet write property request timed out.");
         }
 
         public void Dispose()
@@ -185,7 +201,9 @@ namespace IPC.Plc.Communication.Bacnet
             try
             {
                 IList<BacnetReadAccessSpecification> specifications = BuildReadAccessSpecifications(items);
-                IList<BacnetReadAccessResult> response = _client.ReadPropertyMultipleRequest(_address, specifications);
+                IList<BacnetReadAccessResult> response;
+                if (!_client.ReadPropertyMultipleRequest(_address, specifications, out response))
+                    throw new TimeoutException("BACnet read property multiple request timed out.");
                 ApplyBatchResponse(items, response, results);
             }
             catch (Exception ex)

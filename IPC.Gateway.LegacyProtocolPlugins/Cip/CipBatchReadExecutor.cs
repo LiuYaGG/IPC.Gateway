@@ -194,11 +194,7 @@ namespace IPC.Plc.Communication.Cip
             catch (Exception ex)
             {
                 if (IsCommunicationException(ex))
-                {
-                    for (int i = 0; i < batch.Count; i++)
-                        batch[i].SetFailure(ex.Message, true);
-                    return;
-                }
+                    throw;
 
                 for (int i = 0; i < batch.Count; i++)
                     ExecuteSingleOperation(batch[i], context);
@@ -214,6 +210,8 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
+                if (IsCommunicationException(ex))
+                    throw;
                 operation.SetFailure(ex.Message, IsCommunicationException(ex));
             }
         }
@@ -240,11 +238,7 @@ namespace IPC.Plc.Communication.Cip
             catch (Exception ex)
             {
                 if (IsCommunicationException(ex))
-                {
-                    for (int i = 0; i < batch.Count; i++)
-                        batch[i].SetFailure(ex.Message, true);
-                    return;
-                }
+                    throw;
 
                 for (int i = 0; i < batch.Count; i++)
                     await ExecuteSingleOperationAsync(batch[i], context, cancellationToken).ConfigureAwait(false);
@@ -263,6 +257,8 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
+                if (IsCommunicationException(ex))
+                    throw;
                 operation.SetFailure(ex.Message, IsCommunicationException(ex));
             }
         }

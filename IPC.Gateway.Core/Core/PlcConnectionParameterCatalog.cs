@@ -15,7 +15,10 @@ namespace IPC.Plc.Communication.Core
                         Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms")
                     };
                 case PlcProtocol.ModbusTcp:
-                    return Network("127.0.0.1", "502", true);
+                    return Network("127.0.0.1", "502", false, new[]
+                    {
+                        Number("rack", "Unit ID", "1", 1, 247, string.Empty)
+                    });
                 case PlcProtocol.SiemensS7:
                     return Network("127.0.0.1", "502", false, new[]
                     {
@@ -57,6 +60,10 @@ namespace IPC.Plc.Communication.Core
                         Number("driverOptions.maxBatchItems", "Max Batch Items", "32", 1, 256, string.Empty)
                     };
                 case PlcProtocol.ModbusRtu:
+                    return Serial(new[]
+                    {
+                        Number("rack", "Slave ID", "1", 1, 247, string.Empty)
+                    });
                 case PlcProtocol.MitsubishiSerial:
                 case PlcProtocol.MitsubishiQlSerial:
                 case PlcProtocol.Dlt6452007:
@@ -71,11 +78,22 @@ namespace IPC.Plc.Communication.Core
                         Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms"),
                         Text("username", "用户名", string.Empty, string.Empty),
                         Password("password", "密码"),
-                        Text("certificatePath", "客户端证书", string.Empty, "Data/Certificates/device-client.pfx"),
-                        Password("certificatePassword", "证书密码"),
-                        Text("certificateThumbprint", "证书指纹", string.Empty, "可选，用于校验证书"),
-                        Text("trustStorePath", "信任库路径", string.Empty, "Data/Certificates/trust"),
-                        Switch("validateServerCertificate", "校验服务端证书", "true")
+                        Select("opcUaSecurityPolicy", "安全策略", "None", new[]
+                        {
+                            "None",
+                            "Basic128Rsa15",
+                            "Basic256",
+                            "Basic256Sha256",
+                            "Aes128_Sha256_RsaOaep",
+                            "Aes256_Sha256_RsaPss"
+                        }, false),
+                        Select("opcUaMessageSecurityMode", "消息安全模式", "None", new[]
+                        {
+                            "None",
+                            "Sign",
+                            "SignAndEncrypt"
+                        }, false),
+                        Switch("opcUaAutoTrustServerCertificate", "自动信任证书", "false")
                     };
                 case PlcProtocol.OpcDa:
                     return new List<PlcConnectionParameterDefinition>
@@ -118,7 +136,12 @@ namespace IPC.Plc.Communication.Core
 
         private static List<PlcConnectionParameterDefinition> Serial()
         {
-            return new List<PlcConnectionParameterDefinition>
+            return Serial(new PlcConnectionParameterDefinition[0]);
+        }
+
+        private static List<PlcConnectionParameterDefinition> Serial(IEnumerable<PlcConnectionParameterDefinition> extra)
+        {
+            List<PlcConnectionParameterDefinition> items = new List<PlcConnectionParameterDefinition>
             {
                 Text("host", "串口", "COM1", "COM1"),
                 Number("port", "波特率", "9600", 1200, 921600, string.Empty),
@@ -128,6 +151,8 @@ namespace IPC.Plc.Communication.Core
                 Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms"),
                 Select("wordOrder", "字序", "HighWordFirst", new[] { "HighWordFirst", "LowWordFirst" }, false)
             };
+            items.AddRange(extra);
+            return items;
         }
 
         private static PlcConnectionParameterDefinition Text(string key, string label, string defaultValue, string placeholder)

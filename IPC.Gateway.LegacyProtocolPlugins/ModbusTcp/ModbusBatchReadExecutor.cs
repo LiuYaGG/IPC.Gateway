@@ -146,6 +146,8 @@ namespace IPC.Plc.Communication.ModbusTcp
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);

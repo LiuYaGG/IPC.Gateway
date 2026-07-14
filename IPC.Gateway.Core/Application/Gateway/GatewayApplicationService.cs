@@ -154,6 +154,24 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
     }
 
     public ProjectValidationResultDto ValidateProject(ValidateProjectConfigurationCommand command) => GatewayConfigurationContractMapper.ToDto(_projects.ValidateProject(GatewayConfigurationContractMapper.ToConfig(command)));
+    public IList<ChannelConfigurationDto> GetChannels() => _devices.GetChannels().Select(GatewayConfigurationContractMapper.ToDto).ToList();
+
+    public ChannelConfigurationDto AddChannel(SaveChannelConfigurationCommand command) =>
+        GatewayConfigurationContractMapper.ToDto(_devices.AddChannel(GatewayConfigurationContractMapper.ToConfig(command ?? new SaveChannelConfigurationCommand())));
+
+    public async Task<ChannelConfigurationDto> AddChannelAsync(SaveChannelConfigurationCommand command) =>
+        GatewayConfigurationContractMapper.ToDto(await _devices.AddChannelAsync(GatewayConfigurationContractMapper.ToConfig(command ?? new SaveChannelConfigurationCommand())));
+
+    public ChannelConfigurationDto UpdateChannel(string channelId, SaveChannelConfigurationCommand command) =>
+        GatewayConfigurationContractMapper.ToDto(_devices.UpdateChannel(channelId, GatewayConfigurationContractMapper.ToConfig(command ?? new SaveChannelConfigurationCommand())));
+
+    public async Task<ChannelConfigurationDto> UpdateChannelAsync(string channelId, SaveChannelConfigurationCommand command) =>
+        GatewayConfigurationContractMapper.ToDto(await _devices.UpdateChannelAsync(channelId, GatewayConfigurationContractMapper.ToConfig(command ?? new SaveChannelConfigurationCommand())));
+
+    public ChannelConfigurationDto DeleteChannel(string channelId) => GatewayConfigurationContractMapper.ToDto(_devices.DeleteChannel(channelId));
+
+    public async Task<ChannelConfigurationDto> DeleteChannelAsync(string channelId) => GatewayConfigurationContractMapper.ToDto(await _devices.DeleteChannelAsync(channelId));
+
     public IList<DeviceConfigurationDto> GetDevices() => GatewayConfigurationSecretPolicy.SanitizeDevices(_devices.GetDevices().Select(GatewayConfigurationContractMapper.ToDto));
 
     public DeviceConfigurationDto AddDevice(SaveDeviceConfigurationCommand command)
@@ -208,7 +226,6 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
     public async Task<WriteTagResultDto> WriteTagAsync(WriteTagCommand command)
     {
         command ??= new WriteTagCommand();
-        int timeout = command.TimeoutMilliseconds <= 0 ? 10000 : Math.Min(command.TimeoutMilliseconds, 30000);
         WriteTagRequest request = new WriteTagRequest
         {
             DeviceName = command.DeviceName ?? string.Empty,
@@ -218,23 +235,10 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
             ValueText = command.ValueText ?? string.Empty
         };
 
-        Task<WriteTagResultDto> writeTask = Task.Run(() => GatewayConfigurationContractMapper.ToDto(_gateway.Runtime.WriteTag(request)));
-        Task completed = await Task.WhenAny(writeTask, Task.Delay(timeout));
-        if (completed != writeTask)
-        {
-            return new WriteTagResultDto
-            {
-                Success = false,
-                DeviceName = request.DeviceName,
-                GroupName = request.GroupName,
-                TagName = request.TagName,
-                DataType = request.DataType,
-                Timestamp = DateTime.Now,
-                ErrorMessage = "标签写入超时。"
-            };
-        }
-
-        return await writeTask;
+        // RuntimeEngine owns the device-operation timeout. Do not return while the
+        // serialized device write is still running, otherwise a reported timeout
+        // can be followed by a late successful PLC write.
+        return await Task.Run(() => GatewayConfigurationContractMapper.ToDto(_gateway.Runtime.WriteTag(request)));
     }
     public IList<EdgeRuleConfigurationDto> GetRules() => GatewayConfigurationSecretPolicy.SanitizeRules(_rules.GetRules().Select(GatewayConfigurationContractMapper.ToDto));
 

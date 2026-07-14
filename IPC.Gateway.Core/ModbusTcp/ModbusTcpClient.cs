@@ -22,6 +22,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
+using NModbus;
 
 namespace IPC.Plc.Communication.ModbusTcp
 {
@@ -36,14 +37,15 @@ namespace IPC.Plc.Communication.ModbusTcp
     
     public sealed class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
-        private const int MaxReadCoils = 2000;
-        private const int MaxWriteCoils = 1968;
-        private const int MaxReadRegisters = 125;
-        private const int MaxWriteRegisters = 123;
+        private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
+        private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;
+        private const int MaxReadRegisters = NModbusMasterAdapter.MaxReadRegisters;
+        private const int MaxWriteRegisters = NModbusMasterAdapter.MaxWriteRegisters;
 
         private readonly PlcConnectionOptions _options;
         private TcpClient? _tcpClient;
         private NetworkStream? _stream;
+        private NModbusMasterAdapter? _adapter;
         private ushort _transactionId;
 
         public ModbusTcpClient(PlcConnectionOptions options)
@@ -55,7 +57,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         public bool IsConnected
         {
-            get { return _tcpClient != null && _tcpClient.Connected && _stream != null; }
+            get { return _tcpClient != null && _tcpClient.Connected && _adapter != null; }
         }
 
         public PlcProtocol Protocol
@@ -69,12 +71,21 @@ namespace IPC.Plc.Communication.ModbusTcp
 
             int port = _options.Port <= 0 ? 502 : _options.Port;
             _tcpClient = new TcpClient();
-            _tcpClient.ReceiveTimeout = _options.TimeoutMilliseconds;
-            _tcpClient.SendTimeout = _options.TimeoutMilliseconds;
-            _tcpClient.Connect(_options.Host, port);
-            _stream = _tcpClient.GetStream();
-            _stream.ReadTimeout = _options.TimeoutMilliseconds;
-            _stream.WriteTimeout = _options.TimeoutMilliseconds;
+            try
+            {
+                _tcpClient.ReceiveTimeout = _options.TimeoutMilliseconds;
+                _tcpClient.SendTimeout = _options.TimeoutMilliseconds;
+                _tcpClient.Connect(_options.Host, port);
+                _stream = _tcpClient.GetStream();
+                _stream.ReadTimeout = _options.TimeoutMilliseconds;
+                _stream.WriteTimeout = _options.TimeoutMilliseconds;
+                _adapter = CreateAdapter(_tcpClient);
+            }
+            catch
+            {
+                Disconnect();
+                throw;
+            }
         }
 
         public async ValueTask ConnectAsync(CancellationToken cancellationToken)
@@ -94,18 +105,26 @@ namespace IPC.Plc.Communication.ModbusTcp
                 stream.WriteTimeout = _options.TimeoutMilliseconds;
                 _tcpClient = client;
                 _stream = stream;
+                _adapter = CreateAdapter(client);
             }
             catch
             {
                 client.Close();
                 _tcpClient = null;
                 _stream = null;
+                _adapter = null;
                 throw;
             }
         }
 
         public void Disconnect()
         {
+            if (_adapter != null)
+            {
+                _adapter.Dispose();
+                _adapter = null;
+            }
+
             if (_stream != null)
             {
                 _stream.Close();
@@ -434,6 +453,8 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         private bool[] ReadBits(ModbusArea area, int startAddress, int count)
         {
+            return GetAdapter().ReadBits(area == ModbusArea.DiscreteInput, startAddress, count);
+#if false
             if (area != ModbusArea.Coil && area != ModbusArea.DiscreteInput)
                 throw new NotSupportedException("当前地址不是 Modbus 位区域。");
 
@@ -455,6 +476,7 @@ namespace IPC.Plc.Communication.ModbusTcp
                 copied += segmentCount;
             }
             return result;
+#endif
         }
 
         private async ValueTask<bool[]> ReadBitsAsync(
@@ -463,6 +485,12 @@ namespace IPC.Plc.Communication.ModbusTcp
             int count,
             CancellationToken cancellationToken)
         {
+            return await GetAdapter().ReadBitsAsync(
+                area == ModbusArea.DiscreteInput,
+                startAddress,
+                count,
+                cancellationToken).ConfigureAwait(false);
+#if false
             if (area != ModbusArea.Coil && area != ModbusArea.DiscreteInput)
                 throw new NotSupportedException("Current address is not a Modbus bit area.");
 
@@ -485,10 +513,13 @@ namespace IPC.Plc.Communication.ModbusTcp
                 copied += segmentCount;
             }
             return result;
+#endif
         }
 
         private byte[] ReadRegisters(ModbusArea area, int startAddress, int registerCount)
         {
+            return GetAdapter().ReadRegisters(area == ModbusArea.InputRegister, startAddress, registerCount);
+#if false
             if (area != ModbusArea.HoldingRegister && area != ModbusArea.InputRegister)
                 throw new NotSupportedException("当前地址不是 Modbus 寄存器区域。");
 
@@ -510,6 +541,7 @@ namespace IPC.Plc.Communication.ModbusTcp
                 copied += segmentCount;
             }
             return stream.ToArray();
+#endif
         }
 
         private async ValueTask<byte[]> ReadRegistersAsync(
@@ -518,6 +550,12 @@ namespace IPC.Plc.Communication.ModbusTcp
             int registerCount,
             CancellationToken cancellationToken)
         {
+            return await GetAdapter().ReadRegistersAsync(
+                area == ModbusArea.InputRegister,
+                startAddress,
+                registerCount,
+                cancellationToken).ConfigureAwait(false);
+#if false
             if (area != ModbusArea.HoldingRegister && area != ModbusArea.InputRegister)
                 throw new NotSupportedException("Current address is not a Modbus register area.");
 
@@ -540,10 +578,14 @@ namespace IPC.Plc.Communication.ModbusTcp
                 copied += segmentCount;
             }
             return stream.ToArray();
+#endif
         }
 
         private void WriteBits(int startAddress, bool[] values)
         {
+            GetAdapter().WriteBits(startAddress, values);
+            return;
+#if false
             int written = 0;
             while (written < values.Length)
             {
@@ -573,6 +615,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
                 written += segmentCount;
             }
+#endif
         }
 
         private async ValueTask WriteBitsAsync(
@@ -580,6 +623,9 @@ namespace IPC.Plc.Communication.ModbusTcp
             bool[] values,
             CancellationToken cancellationToken)
         {
+            await GetAdapter().WriteBitsAsync(startAddress, values, cancellationToken).ConfigureAwait(false);
+            return;
+#if false
             int written = 0;
             while (written < values.Length)
             {
@@ -610,10 +656,14 @@ namespace IPC.Plc.Communication.ModbusTcp
 
                 written += segmentCount;
             }
+#endif
         }
 
         private void WriteRegisters(int startAddress, byte[] data)
         {
+            GetAdapter().WriteRegisters(startAddress, data);
+            return;
+#if false
             if (data.Length % 2 != 0)
             {
                 byte[] padded = new byte[data.Length + 1];
@@ -648,6 +698,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
                 written += segmentRegisters;
             }
+#endif
         }
 
         private async ValueTask WriteRegistersAsync(
@@ -655,6 +706,9 @@ namespace IPC.Plc.Communication.ModbusTcp
             byte[] data,
             CancellationToken cancellationToken)
         {
+            await GetAdapter().WriteRegistersAsync(startAddress, data, cancellationToken).ConfigureAwait(false);
+            return;
+#if false
             if (data.Length % 2 != 0)
             {
                 byte[] padded = new byte[data.Length + 1];
@@ -690,6 +744,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
                 written += segmentRegisters;
             }
+#endif
         }
 
         private byte[] SendRequest(byte expectedFunction, byte[] pdu)
@@ -831,14 +886,26 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         private void EnsureConnected()
         {
-            if (!IsConnected || _stream == null)
+            if (!IsConnected || _adapter == null)
                 Connect();
         }
 
         private async ValueTask EnsureConnectedAsync(CancellationToken cancellationToken)
         {
-            if (!IsConnected || _stream == null)
+            if (!IsConnected || _adapter == null)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        private NModbusMasterAdapter CreateAdapter(TcpClient client)
+        {
+            IModbusMaster master = new ModbusFactory().CreateMaster(client);
+            return new NModbusMasterAdapter(master, GetUnitId(), _options.TimeoutMilliseconds);
+        }
+
+        private NModbusMasterAdapter GetAdapter()
+        {
+            EnsureConnected();
+            return _adapter ?? throw new IOException("Modbus TCP adapter is not connected.");
         }
 
         private NetworkStream GetConnectedStream()

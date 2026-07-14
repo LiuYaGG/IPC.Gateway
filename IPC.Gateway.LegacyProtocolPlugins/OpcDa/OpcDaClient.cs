@@ -400,6 +400,8 @@ namespace IPC.Plc.Communication.OpcDa
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && pending.Count > 1)
                 {
                     RetryPendingItemsBySplitting(pending, ordered);

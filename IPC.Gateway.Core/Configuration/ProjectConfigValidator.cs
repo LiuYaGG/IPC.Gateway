@@ -18,6 +18,7 @@
 using System;
 using System.Collections.Generic;
 using IPC.Plc.Communication.Core;
+using IPC.Runtime.Engine;
 
 namespace IPC.Runtime.Configuration
 {
@@ -45,6 +46,8 @@ namespace IPC.Runtime.Configuration
                 result.AddWarning("项目ID为空，运行时会自动补齐。");
             if (string.IsNullOrWhiteSpace(config.Name))
                 result.AddWarning("项目名称为空。");
+
+            ProjectChannelValidator.Validate(config, result);
 
             if (config.Devices == null || config.Devices.Count == 0)
             {
@@ -187,6 +190,10 @@ namespace IPC.Runtime.Configuration
             {
                 result.AddError(prefix + "地址不能为空。");
             }
+
+            string staticValidationError = CompiledDeviceReadPlan.ValidateTagDefinition(device, tag);
+            if (!string.IsNullOrWhiteSpace(staticValidationError))
+                result.AddError(prefix + "静态地址校验失败：" + staticValidationError);
         }
     }
 }

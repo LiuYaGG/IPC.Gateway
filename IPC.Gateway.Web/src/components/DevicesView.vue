@@ -7,9 +7,11 @@
         </template>
       </el-input>
       <el-tag type="info">{{ filteredDevices.length }} / {{ devices.length }}</el-tag>
+      <el-tag type="info">{{ filteredChannels.length }} 个通道</el-tag>
       <el-button :icon="Refresh" @click="emit('changed')">刷新</el-button>
+      <el-button v-if="canCreateDevice" :icon="SetUp" @click="openCreateChannel">新增通道</el-button>
       <el-button v-if="canCreateDevice" :icon="Collection" @click="openTemplateDrawer">设备模板</el-button>
-      <el-button v-if="canCreateDevice" type="primary" :icon="Plus" @click="openCreate">新增设备</el-button>
+      <el-button v-if="canCreateDevice" type="primary" :icon="Plus" @click="openCreate()">新增设备</el-button>
     </div>
 
     <div class="device-manager">
@@ -63,6 +65,9 @@
               <small>{{ detailSubtitle }}</small>
             </div>
             <div class="card-actions">
+              <el-button v-if="selectedNode.type === 'channel' && selectedChannel && canCreateDevice" size="small" type="primary" :icon="Plus" @click="openCreate(selectedChannel)">新增设备</el-button>
+              <el-button v-if="selectedNode.type === 'channel' && selectedChannel && canEditDevice" size="small" @click="openEditChannel(selectedChannel)">编辑通道</el-button>
+              <el-button v-if="selectedNode.type === 'channel' && selectedChannel && canDeleteDevice" size="small" type="danger" @click="removeChannel(selectedChannel)">删除通道</el-button>
               <el-button v-if="selectedNode.type === 'device' && selectedDevice && canCreateGroup" size="small" @click="openCreateGroup(selectedDevice)">新增分组</el-button>
               <el-button v-if="selectedDevice && canCreateTag" size="small" type="primary" @click="openCreateTag(selectedDevice, selectedGroup)">新增标签</el-button>
               <el-button v-if="selectedDevice" size="small" :icon="Download" @click="exportSelectedTags">导出点位</el-button>
@@ -79,7 +84,7 @@
               <el-button v-if="selectedGroup && canDeleteGroup" size="small" type="danger" @click="removeGroup(selectedGroup)">删除分组</el-button>
               <el-button v-if="selectedDevice && canEditDevice" size="small" @click="openEdit(selectedDevice)">编辑设备</el-button>
               <el-button v-if="selectedDevice && canDeleteDevice" size="small" type="danger" @click="removeDevice(selectedDevice)">删除设备</el-button>
-              <el-button v-if="!selectedDevice && canCreateDevice" size="small" type="primary" :icon="Plus" @click="openCreate">新增设备</el-button>
+              <el-button v-if="selectedNode.type === 'root' && canCreateDevice" size="small" type="primary" :icon="Plus" @click="openCreate()">新增设备</el-button>
             </div>
           </div>
         </template>
@@ -87,6 +92,9 @@
         <div v-if="selectedNode.type === 'root'" class="device-overview">
           <el-table :data="pagedFilteredDevices" row-key="id" height="520">
             <el-table-column prop="name" label="设备名称" min-width="170" fixed />
+            <el-table-column label="通道" min-width="160">
+              <template #default="{ row }">{{ channelName(row.channelId) }}</template>
+            </el-table-column>
             <el-table-column label="协议" width="150">
               <template #default="{ row }">{{ protocolLabel(row.protocol) }}</template>
             </el-table-column>
@@ -95,7 +103,7 @@
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag :type="deviceRuntime(row)?.isConnected ? 'success' : row.enabled ? 'warning' : 'info'">
+                <el-tag :type="deviceStatusType(row)">
                   {{ deviceRuntime(row)?.status || (row.enabled ? '未连接' : '停用') }}
                 </el-tag>
               </template>
@@ -121,7 +129,7 @@
             </el-table-column>
             <template #empty>
               <el-empty :description="deviceEmptyText">
-                <el-button v-if="canCreateDevice" type="primary" :icon="Plus" @click="openCreate">新增设备</el-button>
+                <el-button v-if="canCreateDevice" type="primary" :icon="Plus" @click="openCreate()">新增设备</el-button>
               </el-empty>
             </template>
           </el-table>
@@ -136,25 +144,66 @@
           />
         </div>
 
-        <div v-else class="device-detail">
-          <div v-if="selectedDevice" class="device-summary">
+        <div v-else-if="selectedNode.type === 'channel' && selectedChannel" class="channel-detail">
+          <div class="device-summary channel-summary">
             <div>
-              <span>协议</span>
-              <strong>{{ protocolLabel(selectedDevice.protocol) }}</strong>
-            </div>
-            <div>
-              <span>连接</span>
-              <strong>{{ connectionSummary(selectedDevice) }}</strong>
+              <span>协议驱动</span>
+              <strong>{{ protocolLabel(selectedChannel.protocol) }}</strong>
             </div>
             <div>
               <span>状态</span>
-              <el-tag :type="deviceRuntime(selectedDevice)?.isConnected ? 'success' : selectedDevice.enabled ? 'warning' : 'info'">
+              <el-tag :type="selectedChannel.enabled ? 'success' : 'info'">{{ selectedChannel.enabled ? '启用' : '停用' }}</el-tag>
+            </div>
+            <div>
+              <span>设备数量</span>
+              <strong>{{ selectedChannelDevices.length }}</strong>
+            </div>
+            <div>
+              <span>并发上限</span>
+              <strong>{{ selectedChannel.maxConcurrentDevicePolls }}</strong>
+            </div>
+          </div>
+          <el-table :data="selectedChannelDevices" row-key="id" height="500" class="channel-device-table">
+            <el-table-column prop="name" label="设备名称" min-width="180" />
+            <el-table-column label="连接" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ connectionSummary(row) }}</template>
+            </el-table-column>
+            <el-table-column prop="defaultScanRateMs" label="周期(ms)" width="110" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="deviceStatusType(row)">{{ deviceRuntime(row)?.status || (row.enabled ? '未连接' : '停用') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button text type="primary" @click="selectTreeNode(findDeviceNode(row))">查看</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="当前通道还没有设备" />
+            </template>
+          </el-table>
+        </div>
+
+        <div v-else class="device-detail">
+          <div v-if="selectedDevice" class="device-summary">
+            <div>
+              <span>状态</span>
+              <el-tag :type="deviceStatusType(selectedDevice)">
                 {{ deviceRuntime(selectedDevice)?.status || (selectedDevice.enabled ? '未连接' : '停用') }}
               </el-tag>
             </div>
             <div>
               <span>点位健康率</span>
               <strong>{{ deviceTagHealth(selectedDevice).label }}</strong>
+            </div>
+            <div>
+              <span>通道状态</span>
+              <strong>{{ deviceRuntime(selectedDevice)?.channelStatus || 'Unknown' }}</strong>
+            </div>
+            <div>
+              <span>隔离/恢复</span>
+              <strong>{{ deviceRecoveryText(selectedDevice) }}</strong>
             </div>
           </div>
 
@@ -265,6 +314,21 @@
       </template>
     </el-drawer>
 
+    <el-drawer v-model="channelDrawerVisible" :title="editingChannelId ? '编辑通道' : '新增通道'" size="620px">
+      <ChannelForm
+        v-if="channelForm"
+        :model="channelForm"
+        :driver-options="channelDriverOptions"
+        :driver-locked="Boolean(editingChannelId && channelDeviceCount(editingChannelId))"
+      />
+      <template #footer>
+        <div class="drawer-footer">
+          <el-button @click="channelDrawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="channelSaving" @click="saveChannel">保存</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
     <el-drawer v-model="drawerVisible" :title="editingId ? '编辑设备' : '新增设备'" size="640px">
       <el-form v-if="form" label-width="130px" :model="form" class="device-form">
         <el-divider content-position="left">基础信息</el-divider>
@@ -272,15 +336,25 @@
           <el-input v-model="form.name" placeholder="例如：锅炉房PLC" />
         </el-form-item>
         <div class="form-grid">
-          <el-form-item label="协议" required>
-            <el-select :model-value="selectedProtocolValue" filterable :loading="protocolCatalogLoading" @change="changeProtocol">
-              <el-option v-for="item in availableProtocolOptions" :key="item.value" :label="item.label" :value="item.value" />
+          <el-form-item label="通道" required>
+            <el-select v-model="form.channelId" filterable @change="changeDeviceChannel">
+              <el-option v-for="channel in channels" :key="channel.id" :label="channel.name" :value="channel.id" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="协议驱动">
+            <el-input :model-value="protocolLabel(form.protocol)" disabled />
           </el-form-item>
           <el-form-item label="启用">
             <el-switch v-model="form.enabled" />
           </el-form-item>
         </div>
+        <el-alert
+          v-if="selectedProtocolCapabilityText"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="selectedProtocolCapabilityText"
+        />
         <div class="form-grid">
           <el-form-item label="采集周期(ms)">
             <el-input-number v-model="form.defaultScanRateMs" :min="100" :max="3600000" />
@@ -372,13 +446,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElLoading, ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
-import { Collection, CollectionTag, Connection, Delete, Download, Edit, Folder, FolderAdd, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { Collection, CollectionTag, Connection, Delete, Download, Edit, Folder, FolderAdd, Plus, Refresh, Search, SetUp, Upload } from '@element-plus/icons-vue'
 import {
   applyDeviceTemplate,
+  createChannel,
   createDeviceTag,
   createDevice,
   createGroup,
   createGroupTag,
+  deleteChannel,
   deleteDevice,
   deleteGroup as deleteGroupRequest,
   deleteTag as deleteTagRequest,
@@ -386,10 +462,12 @@ import {
   importTagsCsv,
   loadDeviceTemplates,
   loadProtocolCatalog,
+  updateChannel,
   updateGroup,
   updateTag,
   updateDevice,
   writeTag,
+  type ChannelConfig,
   type DeviceConfig,
   type DeviceRuntimeStatus,
   type GatewayConnectionParameterDefinition,
@@ -401,6 +479,7 @@ import {
   type TagValueSnapshot
 } from '../api'
 import DeviceConnectionFields from './DeviceConnectionFields.vue'
+import ChannelForm from './ChannelForm.vue'
 import DeviceGroupForm from './DeviceGroupForm.vue'
 import DeviceTagForm from './DeviceTagForm.vue'
 import {
@@ -414,12 +493,13 @@ import { cloneGroup, cloneTag, createGroupDraft, createTagDraft, normalizeGroup,
 import { formatDateTime } from '../utils/format'
 import { PERMISSIONS, usePermissions } from '../utils/permissions'
 
-type TreeNodeType = 'root' | 'device' | 'group'
+type TreeNodeType = 'root' | 'channel' | 'device' | 'group'
 
 interface DeviceTreeNode {
   key: string
   type: TreeNodeType
   label: string
+  channel?: ChannelConfig
   device?: DeviceConfig
   group?: GroupConfig
   children?: DeviceTreeNode[]
@@ -473,6 +553,10 @@ const deviceNameFilter = ref('')
 const devicePage = ref(1)
 const devicePageSize = ref(100)
 const selectedNodeKey = ref('root')
+const channelDrawerVisible = ref(false)
+const channelSaving = ref(false)
+const editingChannelId = ref('')
+const channelForm = ref<ChannelConfig | null>(null)
 const drawerVisible = ref(false)
 const saving = ref(false)
 const deletingDeviceId = ref('')
@@ -521,10 +605,12 @@ let filterTimer: number | undefined
 let protocolCatalogLoadPromise: Promise<void> | null = null
 
 const editingActive = computed(() =>
+  channelDrawerVisible.value ||
   drawerVisible.value ||
   groupDrawerVisible.value ||
   tagDrawerVisible.value ||
   writeDrawerVisible.value ||
+  channelSaving.value ||
   saving.value ||
   Boolean(deletingDeviceId.value) ||
   groupSaving.value ||
@@ -553,17 +639,36 @@ const availableProtocolOptions = computed(() => {
     item
   }))
 })
+const channelDriverOptions = computed(() => protocolCatalog.value.map(item => ({
+  label: item.displayName || protocolLabel(item.protocol),
+  value: `${item.protocol}::${item.builtIn ? '' : item.driverId || ''}`,
+  protocol: item.protocol,
+  driverId: item.builtIn ? '' : item.driverId || ''
+})))
 const selectedProtocolItem = computed(() => {
   if (!form.value) return null
   return findProtocolCatalogItem(form.value.protocol, form.value.connection?.driverId)
 })
 const selectedProtocolParameters = computed(() => selectedProtocolItem.value?.parameters ?? [])
+const selectedProtocolCapabilityText = computed(() => {
+  const capabilities = selectedProtocolItem.value?.capabilities
+  if (!capabilities) return ''
+
+  const features = [capabilities.supportsWrite ? '读写' : '只读']
+  if (capabilities.supportsSubscription) features.push('订阅')
+  if (capabilities.supportsBatchRead) features.push(`批读上限 ${capabilities.maxBatchItems}`)
+  if (capabilities.supportsAddressValidation) features.push('地址预校验')
+  features.push(capabilities.requiresSerializedAccess ? '通道串行' : '可并发请求')
+  return `采集模式：${capabilities.preferredReadMode}；${features.join(' · ')}`
+})
 const selectedProtocolValue = computed(() => {
   if (!form.value) return ''
   const item = selectedProtocolItem.value
   return item ? protocolSelectionValue(item) : form.value.protocol
 })
 
+const channels = computed(() => (props.project?.channels ?? []).map(channel => ({ ...channel })))
+const channelMap = computed(() => new Map(channels.value.map(channel => [normalizeKey(channel.id), channel])))
 const devices = computed(() => (props.project?.devices ?? []).map(cloneDevice))
 const runtimeMap = computed(() => {
   const map = new Map<string, DeviceRuntimeStatus>()
@@ -587,26 +692,32 @@ const runtimeTagMap = computed(() => {
 const filteredDevices = computed(() => {
   const keyword = deviceNameFilter.value.trim().toLowerCase()
   if (!keyword) return devices.value
-  return devices.value.filter(device => device.name.toLowerCase().includes(keyword))
+  return devices.value.filter(device => {
+    const channel = channelMap.value.get(normalizeKey(device.channelId))
+    return device.name.toLowerCase().includes(keyword) || channel?.name.toLowerCase().includes(keyword)
+  })
 })
+
+const filteredChannels = computed(() => channels.value.filter(channel => {
+  const keyword = deviceNameFilter.value.trim().toLowerCase()
+  if (!keyword) return true
+  return channel.name.toLowerCase().includes(keyword) ||
+    filteredDevices.value.some(device => normalizeKey(device.channelId) === normalizeKey(channel.id))
+}))
 
 const treeData = computed<DeviceTreeNode[]>(() => [
   {
     key: 'root',
     type: 'root',
-    label: '全部设备',
-    children: filteredDevices.value.map(device => ({
-      key: deviceNodeKey(device),
-      type: 'device',
-      label: device.name || '未命名设备',
-      device,
-      children: (device.groups ?? []).map(group => ({
-        key: groupNodeKey(device, group),
-        type: 'group',
-        label: group.name || '未命名分组',
-        device,
-        group
-      }))
+    label: '全部通道',
+    children: filteredChannels.value.map(channel => ({
+      key: channelNodeKey(channel),
+      type: 'channel',
+      label: channel.name || '未命名通道',
+      channel,
+      children: filteredDevices.value
+        .filter(device => normalizeKey(device.channelId) === normalizeKey(channel.id))
+        .map(device => createDeviceTreeNode(channel, device))
     }))
   }
 ])
@@ -615,6 +726,7 @@ const totalGroupCount = computed(() => filteredDevices.value.reduce((sum, device
 const totalTagCount = computed(() => filteredDevices.value.reduce((sum, device) => sum + countDeviceTags(device), 0))
 
 const selectedNode = computed<DeviceTreeNode>(() => findNode(treeData.value[0], selectedNodeKey.value) ?? treeData.value[0])
+const selectedChannel = computed(() => selectedNode.value.channel)
 const selectedDevice = computed(() => selectedNode.value.type === 'device' || selectedNode.value.type === 'group' ? selectedNode.value.device : undefined)
 const selectedGroup = computed(() => selectedNode.value.type === 'group' ? selectedNode.value.group : undefined)
 const selectedTags = computed<TagConfig[]>(() => {
@@ -644,14 +756,19 @@ const visibleTagRows = computed<TagVirtualRow[]>(() => {
   })
 })
 const pagedFilteredDevices = computed(() => paginate(filteredDevices.value, devicePage.value, devicePageSize.value))
+const selectedChannelDevices = computed(() => selectedChannel.value
+  ? filteredDevices.value.filter(device => normalizeKey(device.channelId) === normalizeKey(selectedChannel.value?.id))
+  : [])
 
 const detailTitle = computed(() => {
+  if (selectedNode.value.type === 'channel') return selectedChannel.value?.name || '通道详情'
   if (selectedNode.value.type === 'device') return selectedDevice.value?.name || '设备详情'
   if (selectedNode.value.type === 'group') return selectedGroup.value?.name || '分组标签'
   return '设备概览'
 })
 
 const detailSubtitle = computed(() => {
+  if (selectedNode.value.type === 'channel') return `${selectedChannelDevices.value.length} 台设备 / ${protocolLabel(selectedChannel.value?.protocol || '')}`
   if (selectedNode.value.type === 'device') return '设备直属标签'
   if (selectedNode.value.type === 'group') return `${selectedDevice.value?.name || ''} / 分组标签`
   return '全部设备运行与配置摘要'
@@ -695,7 +812,17 @@ onBeforeUnmount(() => {
 const contextActions = computed<ContextAction[]>(() => {
   const node = contextMenu.node
   if (!node || node.type === 'root') {
-    return canCreateDevice.value ? [{ key: 'add-device', label: '新增设备', icon: Plus }] : []
+    return canCreateDevice.value ? [
+      { key: 'add-channel', label: '新增通道', icon: SetUp },
+      { key: 'add-device', label: '新增设备', icon: Plus }
+    ] : []
+  }
+  if (node.type === 'channel') {
+    return [
+      canCreateDevice.value ? { key: 'add-device', label: '新增设备', icon: Plus } : null,
+      canEditDevice.value ? { key: 'edit-channel', label: '编辑通道', icon: Edit } : null,
+      canDeleteDevice.value ? { key: 'delete-channel', label: '删除通道', icon: Delete } : null
+    ].filter(Boolean) as ContextAction[]
   }
   if (node.type === 'device') {
     return [
@@ -740,7 +867,10 @@ function runContextAction(action: string) {
   closeContextMenu()
   if (!node) return
 
-  if (action === 'add-device') void openCreate()
+  if (action === 'add-channel') void openCreateChannel()
+  else if (action === 'add-device') void openCreate(node.channel)
+  else if (action === 'edit-channel' && node.channel) void openEditChannel(node.channel)
+  else if (action === 'delete-channel' && node.channel) void removeChannel(node.channel)
   else if (action === 'edit-device' && node.device) void openEdit(node.device)
   else if (action === 'delete-device' && node.device) removeDevice(node.device)
   else if (action === 'add-group' && node.device) openCreateGroup(node.device)
@@ -854,6 +984,7 @@ function readDriverOptionsJson(json: string) {
 }
 
 function treeNodeIcon(node: DeviceTreeNode) {
+  if (node.type === 'channel') return SetUp
   if (node.type === 'device') return Connection
   if (node.type === 'group') return Folder
   return Collection
@@ -885,11 +1016,9 @@ function toggleTreeNode(node: DeviceTreeNode) {
 
 function expandSelectedNodePath(key: string) {
   const next = new Set(expandedTreeKeys.value)
+  const path = findNodePath(treeData.value[0], key)
+  for (const node of path?.slice(0, -1) ?? []) next.add(node.key)
   next.add('root')
-  if (key.startsWith('group:')) {
-    const separator = key.lastIndexOf(':')
-    if (separator > 'group:'.length) next.add(`device:${key.slice('group:'.length, separator)}`)
-  }
   expandedTreeKeys.value = next
 }
 
@@ -907,18 +1036,32 @@ function clampPage(page: number, total: number, pageSize: number) {
 
 function treeStatusType(node: DeviceTreeNode) {
   if (node.type === 'root') return filteredDevices.value.some(device => deviceRuntime(device)?.isConnected) ? 'success' : 'info'
+  if (node.type === 'channel') {
+    if (!node.channel?.enabled) return 'info'
+    const devices = node.children?.map(child => child.device).filter(Boolean) as DeviceConfig[]
+    if (devices.some(device => String(deviceRuntime(device)?.status || '').toLowerCase() === 'degraded')) return 'warning'
+    return devices.some(device => deviceRuntime(device)?.isConnected) ? 'success' : 'warning'
+  }
   if (node.type === 'group') return node.group?.enabled ? 'success' : 'info'
-  return deviceRuntime(node.device)?.isConnected ? 'success' : node.device?.enabled ? 'warning' : 'info'
+  return deviceStatusType(node.device)
+}
+
+function deviceStatusType(device?: DeviceConfig) {
+  const runtime = deviceRuntime(device)
+  if (String(runtime?.status || '').toLowerCase() === 'degraded') return 'warning'
+  return runtime?.isConnected ? 'success' : device?.enabled ? 'warning' : 'info'
 }
 
 function treeStatusText(node: DeviceTreeNode) {
   if (node.type === 'root') return `${filteredDevices.value.length} 设备`
+  if (node.type === 'channel') return node.channel?.enabled ? `${node.children?.length ?? 0} 设备` : '停用'
   if (node.type === 'group') return node.group?.enabled ? '启用' : '停用'
   return deviceRuntime(node.device)?.status || (node.device?.enabled ? '未连接' : '停用')
 }
 
 function treeTagCount(node: DeviceTreeNode) {
   if (node.type === 'root') return totalTagCount.value
+  if (node.type === 'channel') return (node.children ?? []).reduce((sum, child) => sum + (child.device ? countDeviceTags(child.device) : 0), 0)
   if (node.type === 'group') return node.group?.tags?.length ?? 0
   return node.device ? countDeviceTags(node.device) : 0
 }
@@ -933,8 +1076,53 @@ function findNode(node: DeviceTreeNode | undefined, key: string): DeviceTreeNode
   return undefined
 }
 
+function findNodePath(node: DeviceTreeNode | undefined, key: string, path: DeviceTreeNode[] = []): DeviceTreeNode[] | undefined {
+  if (!node) return undefined
+  const nextPath = [...path, node]
+  if (node.key === key) return nextPath
+  for (const child of node.children ?? []) {
+    const found = findNodePath(child, key, nextPath)
+    if (found) return found
+  }
+  return undefined
+}
+
+function createDeviceTreeNode(channel: ChannelConfig, device: DeviceConfig): DeviceTreeNode {
+  return {
+    key: deviceNodeKey(device),
+    type: 'device',
+    label: device.name || '未命名设备',
+    channel,
+    device,
+    children: (device.groups ?? []).map(group => ({
+      key: groupNodeKey(device, group),
+      type: 'group',
+      label: group.name || '未命名分组',
+      channel,
+      device,
+      group
+    }))
+  }
+}
+
+function channelNodeKey(channel: ChannelConfig) {
+  return `channel:${channel.id || channel.name}`
+}
+
 function deviceNodeKey(device: DeviceConfig) {
   return `device:${device.id || device.name}`
+}
+
+function findDeviceNode(device: DeviceConfig) {
+  return findNode(treeData.value[0], deviceNodeKey(device)) ?? treeData.value[0]
+}
+
+function channelName(channelId: string) {
+  return channelMap.value.get(normalizeKey(channelId))?.name || '-'
+}
+
+function channelDeviceCount(channelId: string) {
+  return devices.value.filter(device => normalizeKey(device.channelId) === normalizeKey(channelId)).length
 }
 
 function groupNodeKey(device: DeviceConfig, group: GroupConfig) {
@@ -944,6 +1132,14 @@ function groupNodeKey(device: DeviceConfig, group: GroupConfig) {
 function deviceRuntime(device?: DeviceConfig) {
   if (!device) return undefined
   return runtimeMap.value.get((device.id || '').toLowerCase()) ?? runtimeMap.value.get((device.name || '').toLowerCase())
+}
+
+function deviceRecoveryText(device?: DeviceConfig) {
+  const runtime = deviceRuntime(device)
+  if (!runtime) return '-'
+  if (runtime.isIsolated) return `已隔离 · ${runtime.recoveryState || 'Waiting'}`
+  if (runtime.recoveryState && runtime.recoveryState !== 'Idle') return runtime.recoveryState
+  return '正常'
 }
 
 function tagSnapshot(tag: TagConfig) {
@@ -1036,7 +1232,10 @@ function tagQualityType(tag: TagConfig) {
 }
 
 function tagQualityText(tag: TagConfig) {
-  const quality = tagSnapshot(tag)?.quality || 'Unknown'
+  const snapshot = tagSnapshot(tag)
+  if (snapshot?.isStaticValidationError) return '静态校验失败'
+  if (snapshot?.isTagIsolated) return '已隔离'
+  const quality = snapshot?.quality || 'Unknown'
   const labels: Record<string, string> = {
     good: '正常',
     unknown: '无数据',
@@ -1111,7 +1310,11 @@ async function submitWriteTag() {
       ElMessage.error(writeError.value)
       return
     }
-    ElMessage.success(result.currentValueText ? `写入成功，当前值 ${result.currentValueText}` : '写入成功')
+    if (normalizeKey(result.quality) === 'readerror' || result.errorMessage) {
+      ElMessage.warning('写入已确认，但当前值回读失败，请稍后刷新确认当前值')
+    } else {
+      ElMessage.success(result.currentValueText ? `写入成功，当前值 ${result.currentValueText}` : '写入成功')
+    }
     writeDrawerVisible.value = false
     emit('changed')
   } catch (error) {
@@ -1252,21 +1455,91 @@ async function handleImportTags(uploadFile: UploadFile) {
   }
 }
 
-async function openCreate() {
+async function openCreateChannel() {
+  if (!canCreateDevice.value) return
+  await ensureProtocolCatalogLoaded()
+  const driver = channelDriverOptions.value.find(item => item.protocol === 'ModbusTcp') ?? channelDriverOptions.value[0]
+  if (!driver) {
+    ElMessage.warning('没有可用的协议驱动')
+    return
+  }
+  editingChannelId.value = ''
+  channelForm.value = {
+    id: '',
+    name: `${protocolLabel(driver.protocol)} 通道`,
+    enabled: true,
+    protocol: driver.protocol,
+    driverId: driver.driverId,
+    maxConcurrentDevicePolls: 4,
+    schedulingWeight: 1
+  }
+  channelDrawerVisible.value = true
+}
+
+async function openEditChannel(channel: ChannelConfig) {
+  if (!canEditDevice.value) return
+  await ensureProtocolCatalogLoaded()
+  editingChannelId.value = channel.id
+  channelForm.value = { ...channel }
+  channelDrawerVisible.value = true
+}
+
+async function saveChannel() {
+  if (!channelForm.value) return
+  const payload = { ...channelForm.value, name: channelForm.value.name.trim() }
+  if (!payload.name) {
+    ElMessage.warning('请输入通道名称')
+    return
+  }
+
+  channelSaving.value = true
+  try {
+    const saved = editingChannelId.value
+      ? await updateChannel(editingChannelId.value, payload)
+      : await createChannel(payload)
+    selectedNodeKey.value = channelNodeKey(saved)
+    channelDrawerVisible.value = false
+    ElMessage.success(editingChannelId.value ? '通道已更新' : '通道已新增')
+    emit('changed')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '通道保存失败')
+  } finally {
+    channelSaving.value = false
+  }
+}
+
+async function removeChannel(channel: ChannelConfig) {
+  if (channelDeviceCount(channel.id) > 0) {
+    ElMessage.warning('请先删除设备或将设备移动到其他通道')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除通道“${channel.name}”？`, '删除通道', { type: 'warning' })
+    await deleteChannel(channel.id)
+    selectedNodeKey.value = 'root'
+    ElMessage.success('通道已删除')
+    emit('changed')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close')
+      ElMessage.error(error instanceof Error ? error.message : '通道删除失败')
+  }
+}
+
+async function openCreate(preferredChannel?: ChannelConfig) {
   if (!canCreateDevice.value) {
     ElMessage.warning('当前用户没有新增设备权限')
     return
   }
   await ensureProtocolCatalogLoaded()
-  editingId.value = ''
-  form.value = createDeviceDraft()
-  const defaultProtocol = availableProtocolOptions.value.find(option => option.item.protocol === 'ModbusTcp')?.item ??
-    availableProtocolOptions.value[0]?.item
-  if (!defaultProtocol) {
-    ElMessage.warning('没有可用协议，请确认驱动插件已加载')
+  const channel = preferredChannel ?? selectedChannel.value ?? channels.value[0]
+  if (!channel) {
+    ElMessage.info('请先新增通道')
+    await openCreateChannel()
     return
   }
-  applyCatalogProtocol(form.value, defaultProtocol)
+  editingId.value = ''
+  form.value = createDeviceDraft()
+  applyChannelToDevice(form.value, channel)
   drawerVisible.value = true
 }
 
@@ -1293,6 +1566,26 @@ function changeProtocol(protocol: string) {
   applyProtocolDefaults(form.value, protocol)
 }
 
+function changeDeviceChannel(channelId: string) {
+  if (!form.value) return
+  const channel = channelMap.value.get(normalizeKey(channelId))
+  if (channel) applyChannelToDevice(form.value, channel)
+}
+
+function applyChannelToDevice(device: DeviceConfig, channel: ChannelConfig) {
+  const sameDriver = device.protocol === channel.protocol &&
+    normalizeKey(device.connection?.driverId) === normalizeKey(channel.driverId)
+  if (!sameDriver) {
+    const catalogItem = findProtocolCatalogItem(channel.protocol, channel.driverId)
+    if (catalogItem) applyCatalogProtocol(device, catalogItem)
+    else applyProtocolDefaults(device, channel.protocol)
+  }
+  device.channelId = channel.id
+  device.protocol = channel.protocol
+  device.connection.protocol = channel.protocol
+  device.connection.driverId = channel.driverId || ''
+}
+
 async function saveDevice() {
   if (!form.value) return
   if (!canSaveCurrentDevice.value) {
@@ -1300,6 +1593,12 @@ async function saveDevice() {
     return
   }
   const payload = normalizeDevice(cloneDevice(form.value))
+  const channel = channelMap.value.get(normalizeKey(payload.channelId))
+  if (!channel) {
+    ElMessage.warning('请选择通道')
+    return
+  }
+  applyChannelToDevice(payload, channel)
   payload.connection.protocol = payload.protocol
   if (!payload.name.trim()) {
     ElMessage.warning('请输入设备名称')

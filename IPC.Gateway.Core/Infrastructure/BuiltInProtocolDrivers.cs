@@ -25,7 +25,7 @@ using IPC.Plc.Communication.VirtualPlc;
 
 namespace IPC.Plc.Communication.Infrastructure
 {
-    public abstract class ProtocolDriverBase : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider
+    public abstract class ProtocolDriverBase : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider, IPlcTagDefinitionValidator
     {
         protected ProtocolDriverBase(string driverId, string displayName, PlcProtocol protocol)
         {
@@ -57,6 +57,16 @@ namespace IPC.Plc.Communication.Infrastructure
         public virtual PlcClientCapabilities GetCapabilities()
         {
             return PlcClientCapabilityCatalog.ForProtocol(Protocol);
+        }
+
+        public virtual PlcTagValidationResult ValidateTag(
+            PlcConnectionOptions options,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            return PlcProtocolTagValidator.Validate(Protocol, address, dataType, elementCount, elementOffset);
         }
     }
 

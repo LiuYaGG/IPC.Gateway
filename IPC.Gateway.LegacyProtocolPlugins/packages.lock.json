@@ -2,6 +2,28 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "BACnet": {
+        "type": "Direct",
+        "requested": "[3.0.2, )",
+        "resolved": "3.0.2",
+        "contentHash": "v9LzuZ++X4jZG0WMuofUSnp2fGfos/wjzdmZGc7VLXZnzNg+Jq1qJ4eYEjGtmMr+aNU5qchMcqVj1r7noB0NBw==",
+        "dependencies": {
+          "Common.Logging": "3.4.1",
+          "PacketDotNet": "0.19.3",
+          "SharpPcap": "4.5.0",
+          "System.IO.Ports": "5.0.1"
+        }
+      },
+      "NModbus.Serial": {
+        "type": "Direct",
+        "requested": "[3.0.83, )",
+        "resolved": "3.0.83",
+        "contentHash": "IU4/gDTx8Y49iEIs9Lbl9Xc4yJ6ioqJR8GB3rKHHtdX0cAimdy2o1pYfJYdV5NUdE3XRjwJHPYGQ7qyJKtKI3w==",
+        "dependencies": {
+          "NModbus": "3.0.83",
+          "System.IO.Ports": "7.0.0"
+        }
+      },
       "Opc.UaFx.Client": {
         "type": "Direct",
         "requested": "[2.53.1, )",
@@ -21,19 +43,6 @@
         "contentHash": "UT9dTPqoEjG5AuPu2NA29hBlNyW2bGIVv/CoV2I2IjIRRnAzbXHVRdVZG5NKfuWTLmpQZfAaEAWV9MSn3VDrtg==",
         "dependencies": {
           "runtime.native.System.IO.Ports": "10.0.0"
-        }
-      },
-      "Talk.BACnet": {
-        "type": "Direct",
-        "requested": "[1.0.2, )",
-        "resolved": "1.0.2",
-        "contentHash": "O5TWODz4sYEMBZfVwULuuvY95e9tiFTvIqT8aN1VXTJyap4swstohQoMUsELtuG5EP+bYBSayEzeenpsV86EAA==",
-        "dependencies": {
-          "Common.Logging": "3.4.1",
-          "Common.Logging.Core": "3.4.1",
-          "PacketDotNet": "0.19.3",
-          "SharpPcap": "4.5.0",
-          "System.IO.Ports": "4.5.0"
         }
       },
       "BitFaster.Caching": {
@@ -256,6 +265,11 @@
         "type": "Transitive",
         "resolved": "13.0.4",
         "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
+      "NModbus": {
+        "type": "Transitive",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
       },
       "Npgsql": {
         "type": "Transitive",
@@ -641,6 +655,7 @@
           "Microsoft.Data.SqlClient": "[7.0.1, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.8, )",
+          "NModbus": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "SqlSugarCore": "[5.1.4.214, )",

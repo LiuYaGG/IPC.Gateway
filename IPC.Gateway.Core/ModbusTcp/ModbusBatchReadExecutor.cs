@@ -156,6 +156,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 }
 
                 ExecuteSegment(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results);
+                if (HasConnectionFailure(results))
+                    return;
             }
         }
 
@@ -191,6 +193,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 }
 
                 await ExecuteSegmentAsync(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results, cancellationToken).ConfigureAwait(false);
+                if (HasConnectionFailure(results))
+                    return;
             }
         }
 
@@ -275,6 +279,17 @@ namespace IPC.Plc.Communication.ModbusTcp
                 for (int i = startIndex; i < endIndex; i++)
                     results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
             }
+        }
+
+        private static bool HasConnectionFailure(PlcBatchReadResult[] results)
+        {
+            for (int index = 0; index < results.Length; index++)
+            {
+                PlcBatchReadResult result = results[index];
+                if (result != null && PlcBatchReadResult.IsConnectionFailureScope(result.FailureScope))
+                    return true;
+            }
+            return false;
         }
 
         private static void RetrySegmentBySplitting(

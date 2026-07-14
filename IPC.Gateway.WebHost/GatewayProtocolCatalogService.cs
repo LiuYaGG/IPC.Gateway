@@ -29,7 +29,28 @@ public sealed class GatewayProtocolCatalogService
             BuiltIn = driver.BuiltIn,
             SignatureStatus = driver.SignatureStatus,
             SignatureError = driver.SignatureError,
+            Capabilities = ToCapabilities(driver.Capabilities),
             Parameters = driver.ConnectionParameters.Select(ToParameter).ToList()
+        };
+    }
+
+    private static GatewayProtocolCapabilities ToCapabilities(PlcClientCapabilities capabilities)
+    {
+        return new GatewayProtocolCapabilities
+        {
+            AsyncKind = capabilities.AsyncKind.ToString(),
+            PreferredReadMode = capabilities.PreferredReadMode.ToString(),
+            SupportsRead = capabilities.SupportsRead,
+            SupportsWrite = capabilities.SupportsWrite,
+            SupportsNativeAsync = capabilities.SupportsNativeAsync,
+            SupportsBatchRead = capabilities.SupportsBatchRead,
+            SupportsSubscription = capabilities.SupportsSubscription,
+            SupportsAddressValidation = capabilities.SupportsAddressValidation,
+            SupportsConcurrentRequests = capabilities.SupportsConcurrentRequests,
+            RequiresSerializedAccess = capabilities.RequiresSerializedAccess,
+            MaxBatchItems = capabilities.MaxBatchItems,
+            MaxSubscriptionItems = capabilities.MaxSubscriptionItems,
+            Notes = capabilities.Notes
         };
     }
 

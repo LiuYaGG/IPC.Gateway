@@ -264,3 +264,4 @@ F:\IPC\IPC.Gateway\IPC.Gateway.Maintenance\obj\Debug\net10.0\refint\IPC.Gateway.
 F:\IPC\IPC.Gateway\IPC.Gateway.Maintenance\obj\Debug\net10.0\IPC.Gateway.Maintenance.pdb
 F:\IPC\IPC.Gateway\IPC.Gateway.Maintenance\obj\Debug\net10.0\IPC.Gateway.Maintenance.genruntimeconfig.cache
 F:\IPC\IPC.Gateway\IPC.Gateway.Maintenance\obj\Debug\net10.0\ref\IPC.Gateway.Maintenance.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.Maintenance\bin\Debug\net10.0\NModbus.dll

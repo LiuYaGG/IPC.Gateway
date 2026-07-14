@@ -64,12 +64,16 @@ namespace IPC.Runtime.Engine
             SubscriptionFingerprint = string.Empty;
             LastSubscriptionError = string.Empty;
             NextSubscriptionRetryUtc = DateTime.MinValue;
+            ReadPlan = CompiledDeviceReadPlan.Compile(config);
+            DeviceState = config == null || !config.Enabled ? "Disabled" : "Offline";
+            RecoveryState = "Idle";
         }
 
         public DeviceConfig Config { get; private set; }
         public object SyncRoot { get; private set; }
         public DeviceActor Actor { get; private set; }
         public CircuitBreaker ProtocolCircuitBreaker { get; private set; }
+        public CompiledDeviceReadPlan ReadPlan { get; private set; }
         public IPlcClient? Client { get; set; }
         public IPlcSubscription? Subscription { get; set; }
         public string SubscriptionFingerprint { get; set; }
@@ -109,6 +113,12 @@ namespace IPC.Runtime.Engine
         public int PendingStatusCount { get; private set; }
         public DateTime PendingStatusSinceUtc { get; private set; }
         public DateTime StableStatusChangedUtc { get; private set; }
+        public string DeviceState { get; set; }
+        public bool IsIsolated { get; set; }
+        public string RecoveryState { get; set; }
+        public DateTime IsolatedSinceUtc { get; set; }
+        public DateTime NextRecoveryProbeUtc { get; set; }
+        public string LastKnownGoodTagId { get; set; } = string.Empty;
 
         public DeviceRuntimeConfigTransition ReuseConfig(DeviceConfig config)
         {
@@ -118,6 +128,7 @@ namespace IPC.Runtime.Engine
             bool wasEnabled = Config != null && Config.Enabled;
             bool isEnabled = config.Enabled;
             Config = config;
+            ReadPlan = CompiledDeviceReadPlan.Compile(config);
             IsQueued = false;
             if (!IsPolling && string.Equals(LastTaskStatus, "Queued", StringComparison.OrdinalIgnoreCase))
                 LastTaskStatus = "Idle";
@@ -156,6 +167,12 @@ namespace IPC.Runtime.Engine
             PendingRecoveryFailureCount = 0;
             PendingRecoveryConnectionError = string.Empty;
             ProtocolCircuitBreaker.Reset();
+            DeviceState = string.Equals(status, "Disabled", StringComparison.OrdinalIgnoreCase) ? "Disabled" : "Offline";
+            IsIsolated = false;
+            RecoveryState = "Idle";
+            IsolatedSinceUtc = DateTime.MinValue;
+            NextRecoveryProbeUtc = DateTime.MinValue;
+            LastKnownGoodTagId = string.Empty;
             ForceStatus(status, nowUtc);
         }
 
@@ -263,6 +280,8 @@ namespace IPC.Runtime.Engine
                 return "Disabled";
             if (string.Equals(status, "Online", StringComparison.OrdinalIgnoreCase))
                 return "Online";
+            if (string.Equals(status, "Degraded", StringComparison.OrdinalIgnoreCase))
+                return "Degraded";
             if (string.Equals(status, "Error", StringComparison.OrdinalIgnoreCase))
                 return "Error";
             return "Offline";

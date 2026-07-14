@@ -21,11 +21,52 @@
           "IPC.Gateway.Tests.dll": {}
         }
       },
+      "BACnet/3.0.2": {
+        "dependencies": {
+          "Common.Logging": "3.4.1",
+          "PacketDotNet": "0.19.3",
+          "SharpPcap": "4.5.0",
+          "System.IO.Ports": "10.0.0"
+        },
+        "runtime": {
+          "lib/netstandard2.0/BACnet.dll": {
+            "assemblyVersion": "3.0.2.0",
+            "fileVersion": "3.0.2.0"
+          }
+        }
+      },
       "BitFaster.Caching/2.6.0": {
         "runtime": {
           "lib/net10.0/BitFaster.Caching.dll": {
             "assemblyVersion": "2.6.0.0",
             "fileVersion": "2.6.0.0"
+          }
+        }
+      },
+      "Common.Logging/3.4.1": {
+        "dependencies": {
+          "Common.Logging.Core": "3.4.1"
+        },
+        "runtime": {
+          "lib/netstandard1.3/Common.Logging.dll": {
+            "assemblyVersion": "3.4.1.0",
+            "fileVersion": "3.4.0.0"
+          }
+        }
+      },
+      "Common.Logging.Core/3.4.1": {
+        "runtime": {
+          "lib/netstandard1.0/Common.Logging.Core.dll": {
+            "assemblyVersion": "3.4.1.0",
+            "fileVersion": "3.4.0.0"
+          }
+        }
+      },
+      "log4net/2.0.8": {
+        "runtime": {
+          "lib/netstandard1.3/log4net.dll": {
+            "assemblyVersion": "2.0.8.0",
+            "fileVersion": "2.0.8.0"
           }
         }
       },
@@ -648,6 +689,26 @@
           }
         }
       },
+      "NModbus/3.0.83": {
+        "runtime": {
+          "lib/net6.0/NModbus.dll": {
+            "assemblyVersion": "3.0.83.0",
+            "fileVersion": "3.0.83.0"
+          }
+        }
+      },
+      "NModbus.Serial/3.0.83": {
+        "dependencies": {
+          "NModbus": "3.0.83",
+          "System.IO.Ports": "10.0.0"
+        },
+        "runtime": {
+          "lib/net6.0/NModbus.Serial.dll": {
+            "assemblyVersion": "3.0.83.0",
+            "fileVersion": "3.0.83.0"
+          }
+        }
+      },
       "Npgsql/5.0.18": {
         "runtime": {
           "lib/net5.0/Npgsql.dll": {
@@ -792,6 +853,17 @@
           "lib/netstandard2.0/Oscar.Data.SqlClient.dll": {
             "assemblyVersion": "4.0.4.0",
             "fileVersion": "4.0.4.0"
+          }
+        }
+      },
+      "PacketDotNet/0.19.3": {
+        "dependencies": {
+          "log4net": "2.0.8"
+        },
+        "runtime": {
+          "lib/netstandard2.0/PacketDotNet.dll": {
+            "assemblyVersion": "0.19.3.0",
+            "fileVersion": "0.19.3.0"
           }
         }
       },
@@ -964,6 +1036,17 @@
             "rid": "osx-x64",
             "assetType": "native",
             "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "SharpPcap/4.5.0": {
+        "dependencies": {
+          "PacketDotNet": "0.19.3"
+        },
+        "runtime": {
+          "lib/netstandard2.0/SharpPcap.dll": {
+            "assemblyVersion": "4.5.0.0",
+            "fileVersion": "4.5.0.0"
           }
         }
       },
@@ -1437,6 +1520,7 @@
           "IPC.Gateway.DataProcessing": "1.0.0",
           "IPC.Gateway.Mqtt": "1.0.0",
           "Microsoft.Data.SqlClient": "7.0.1",
+          "NModbus": "3.0.83",
           "OPCFoundation.NetStandard.Opc.Ua": "1.5.378.145",
           "SQLitePCLRaw.bundle_e_sqlite3": "3.0.3",
           "SqlSugarCore": "5.1.4.214"
@@ -1481,7 +1565,9 @@
       },
       "IPC.Gateway.LegacyProtocolPlugins/1.0.0": {
         "dependencies": {
+          "BACnet": "3.0.2",
           "IPC.Gateway.Core": "1.0.0",
+          "NModbus.Serial": "3.0.83",
           "Opc.UaFx.Client": "2.53.1",
           "System.IO.Ports": "10.0.0"
         },
@@ -1535,12 +1621,40 @@
       "serviceable": false,
       "sha512": ""
     },
+    "BACnet/3.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-v9LzuZ++X4jZG0WMuofUSnp2fGfos/wjzdmZGc7VLXZnzNg+Jq1qJ4eYEjGtmMr+aNU5qchMcqVj1r7noB0NBw==",
+      "path": "bacnet/3.0.2",
+      "hashPath": "bacnet.3.0.2.nupkg.sha512"
+    },
     "BitFaster.Caching/2.6.0": {
       "type": "package",
       "serviceable": true,
       "sha512": "sha512-iF2dMiGpaya8Umwi0OfsGKtq3aMVgHVsBChwQL+NhShEsRorcoTinGf9FFNBnBMwJW2Vm0FqhtOaEBY0+74p6g==",
       "path": "bitfaster.caching/2.6.0",
       "hashPath": "bitfaster.caching.2.6.0.nupkg.sha512"
+    },
+    "Common.Logging/3.4.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-5eZ/vgEOqzLg4PypZqnJ+wMhhgHyckicbZY4iDxqQ4FtOz0CpdYZ0xQ78aszMzeAJZiLLb5VdR9tPfunVQLz6g==",
+      "path": "common.logging/3.4.1",
+      "hashPath": "common.logging.3.4.1.nupkg.sha512"
+    },
+    "Common.Logging.Core/3.4.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wLHldZHvxsSD6Ahonfj00/SkfHfKqO+YT6jsUwVm8Rch1REL9IArHAcSLXxYxYfu5/4ydGtmXvOtaH3AkVPu0A==",
+      "path": "common.logging.core/3.4.1",
+      "hashPath": "common.logging.core.3.4.1.nupkg.sha512"
+    },
+    "log4net/2.0.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-N41MQGHZImiCfn0cUuSBjZxrcNfIQCuCgQP0rpgB3J/NWponEh3lc1LxJEuIsPAR9Oc1jVvfkNNFCY1C5hf9LA==",
+      "path": "log4net/2.0.8",
+      "hashPath": "log4net.2.0.8.nupkg.sha512"
     },
     "Microsoft.Bcl.Cryptography/9.0.13": {
       "type": "package",
@@ -1710,6 +1824,20 @@
       "path": "newtonsoft.json/13.0.4",
       "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
     },
+    "NModbus/3.0.83": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ==",
+      "path": "nmodbus/3.0.83",
+      "hashPath": "nmodbus.3.0.83.nupkg.sha512"
+    },
+    "NModbus.Serial/3.0.83": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-IU4/gDTx8Y49iEIs9Lbl9Xc4yJ6ioqJR8GB3rKHHtdX0cAimdy2o1pYfJYdV5NUdE3XRjwJHPYGQ7qyJKtKI3w==",
+      "path": "nmodbus.serial/3.0.83",
+      "hashPath": "nmodbus.serial.3.0.83.nupkg.sha512"
+    },
     "Npgsql/5.0.18": {
       "type": "package",
       "serviceable": true,
@@ -1800,6 +1928,13 @@
       "sha512": "sha512-VJ3xVvRjxrPi/mMPT5EqYiMZor0MjFu83mw1qvUveBFWJSudGh9BOKZq7RkhqeNCcL1ud0uK0/TVkw+xTa4q4g==",
       "path": "oscar.data.sqlclient/4.0.4",
       "hashPath": "oscar.data.sqlclient.4.0.4.nupkg.sha512"
+    },
+    "PacketDotNet/0.19.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-i7phQmaidpAaSA5SPW5g9B4VYxlyZWp0Z+ILvMNGoEzJI8RRQlpXADQNFs++KiYdJd1pxK9luGKepEQU5EC/1w==",
+      "path": "packetdotnet/0.19.3",
+      "hashPath": "packetdotnet.0.19.3.nupkg.sha512"
     },
     "Portable.BouncyCastle/1.9.0": {
       "type": "package",
@@ -1926,6 +2061,13 @@
       "sha512": "sha512-kggkJk7S8OcoOLa9OyrP2zQ/eStiKHOytWVK8lJuRckzcz52eUgDo66+d9n2KciukcNmeAbmSHEY6fh2n394Jg==",
       "path": "runtime.osx-x64.runtime.native.system.io.ports/10.0.0",
       "hashPath": "runtime.osx-x64.runtime.native.system.io.ports.10.0.0.nupkg.sha512"
+    },
+    "SharpPcap/4.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-z8Wa5XBwmygHSgUgSZEMlVXu1pNIo1qiYhYJfHdYcaEbAl6r46VzXMHsIQKhcbBADe/hT3BRA4FwF8i9qIzu5g==",
+      "path": "sharppcap/4.5.0",
+      "hashPath": "sharppcap.4.5.0.nupkg.sha512"
     },
     "SourceGear.sqlite3/3.50.4.5": {
       "type": "package",

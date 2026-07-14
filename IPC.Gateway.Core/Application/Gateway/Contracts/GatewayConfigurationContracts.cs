@@ -60,14 +60,27 @@ public class ProjectConfigurationDto
 {
     public string ProjectId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public IList<ChannelConfigurationDto> Channels { get; set; } = new List<ChannelConfigurationDto>();
     public IList<DeviceConfigurationDto> Devices { get; set; } = new List<DeviceConfigurationDto>();
     public IList<EdgeRuleConfigurationDto> Rules { get; set; } = new List<EdgeRuleConfigurationDto>();
     public IList<FlowRuleDefinitionDto> FlowRules { get; set; } = new List<FlowRuleDefinitionDto>();
 }
 
+public class ChannelConfigurationDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+    public string Protocol { get; set; } = "ModbusTcp";
+    public string DriverId { get; set; } = string.Empty;
+    public int MaxConcurrentDevicePolls { get; set; } = 4;
+    public int SchedulingWeight { get; set; } = 1;
+}
+
 public class DeviceConfigurationDto
 {
     public string Id { get; set; } = string.Empty;
+    public string ChannelId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
     public string Protocol { get; set; } = "ModbusTcp";
@@ -135,11 +148,9 @@ public sealed class PlcConnectionDto
     public string SerialStopBits { get; set; } = "One";
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public string CertificatePath { get; set; } = string.Empty;
-    public string CertificatePassword { get; set; } = string.Empty;
-    public string CertificateThumbprint { get; set; } = string.Empty;
-    public string TrustStorePath { get; set; } = string.Empty;
-    public bool ValidateServerCertificate { get; set; } = true;
+    public string OpcUaSecurityPolicy { get; set; } = "None";
+    public string OpcUaMessageSecurityMode { get; set; } = "None";
+    public bool OpcUaAutoTrustServerCertificate { get; set; }
     public string OpcDaServerProgId { get; set; } = string.Empty;
     public string OpcDaGroupName { get; set; } = string.Empty;
     public string DriverId { get; set; } = string.Empty;
@@ -691,6 +702,18 @@ public sealed class DeviceRuntimeStatusDto
     public long TimeoutCount { get; set; }
     public string LastError { get; set; } = string.Empty;
     public CircuitBreakerStatusDto ProtocolCircuitBreaker { get; set; } = new CircuitBreakerStatusDto();
+    public string DeviceState { get; set; } = string.Empty;
+    public bool TransportConnected { get; set; }
+    public bool IsIsolated { get; set; }
+    public string RecoveryState { get; set; } = string.Empty;
+    public DateTime IsolatedSinceTime { get; set; }
+    public DateTime NextRecoveryProbeTime { get; set; }
+    public string ChannelKey { get; set; } = string.Empty;
+    public string ChannelStatus { get; set; } = string.Empty;
+    public int ChannelConsecutiveFailures { get; set; }
+    public DateTime ChannelLastSuccessTime { get; set; }
+    public DateTime ChannelLastFailureTime { get; set; }
+    public string ChannelLastError { get; set; } = string.Empty;
 }
 
 public sealed class RuntimeSchedulerStatusDto
@@ -723,6 +746,7 @@ public sealed class RuntimeSchedulerStatusDto
 public sealed class RuntimePollingQueueStatusDto
 {
     public int PendingCount { get; set; }
+    public int RecoveryPendingCount { get; set; }
     public int RunningCount { get; set; }
     public int QueueLimit { get; set; }
     public int HighWatermark { get; set; }
@@ -821,6 +845,11 @@ public sealed class TagValueSnapshotDto
     public string Quality { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
     public string ErrorMessage { get; set; } = string.Empty;
+    public string TagState { get; set; } = string.Empty;
+    public bool IsTagIsolated { get; set; }
+    public bool IsStaticValidationError { get; set; }
+    public int TagConsecutiveFailures { get; set; }
+    public DateTime NextTagRecoveryProbeTime { get; set; }
 }
 
 public sealed class MqttRuntimeStatusDto
@@ -1092,6 +1121,10 @@ public sealed class ValidateProjectConfigurationCommand : ProjectConfigurationDt
 }
 
 public sealed class SaveDeviceConfigurationCommand : DeviceConfigurationDto
+{
+}
+
+public sealed class SaveChannelConfigurationCommand : ChannelConfigurationDto
 {
 }
 

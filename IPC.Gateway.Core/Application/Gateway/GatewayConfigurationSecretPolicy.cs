@@ -169,8 +169,6 @@ internal static class GatewayConfigurationSecretPolicy
         PlcConnectionDto? currentConnection = current?.Connection;
         if (IsRedactedSecret(device.Connection.Password))
             device.Connection.Password = currentConnection?.Password ?? string.Empty;
-        if (IsRedactedSecret(device.Connection.CertificatePassword))
-            device.Connection.CertificatePassword = currentConnection?.CertificatePassword ?? string.Empty;
     }
 
     private static void PreserveRuleSecrets(EdgeRuleConfigurationDto rule, EdgeRuleConfigurationDto? current)
@@ -203,8 +201,6 @@ internal static class GatewayConfigurationSecretPolicy
     {
         if (!string.IsNullOrEmpty(connection.Password))
             connection.Password = RedactedSecret;
-        if (!string.IsNullOrEmpty(connection.CertificatePassword))
-            connection.CertificatePassword = RedactedSecret;
     }
 
     private static bool IsRedactedSecret(string? value)

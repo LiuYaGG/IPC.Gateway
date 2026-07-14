@@ -17,8 +17,6 @@
 //----------------------------------------------------------------*/
 using System.Security.Cryptography.X509Certificates;
 using IPC.Gateway.Core.Gateway;
-using IPC.Plc.Communication.Core;
-using IPC.Runtime.Configuration;
 
 namespace IPC.Gateway.WebHost;
 
@@ -45,7 +43,6 @@ public sealed class GatewayCertificateManager
         if (_securityOptions.Certificates.IncludeTlsCertificate)
             AddTlsCertificate(inventory);
         AddMqttClientCertificate(inventory);
-        AddDeviceCertificates(inventory);
         if (_securityOptions.Certificates.IncludeOpcUaCertificateStore)
             AddCertificateDirectory(inventory, "OPC UA", _configuration["Gateway:OpcUa:CertificateStorePath"]);
 
@@ -69,27 +66,6 @@ public sealed class GatewayCertificateManager
         catch (Exception ex)
         {
             inventory.Certificates.Add(GatewayCertificateInfo.Error("MQTT 客户端", string.Empty, ex.Message));
-        }
-    }
-
-    private void AddDeviceCertificates(GatewayCertificateInventory inventory)
-    {
-        try
-        {
-            ProjectConfig project = _gateway.CurrentProject;
-            foreach (DeviceConfig device in project.Devices ?? new List<DeviceConfig>())
-            {
-                PlcConnectionOptions? connection = device.Connection;
-                if (connection == null || string.IsNullOrWhiteSpace(connection.CertificatePath))
-                    continue;
-
-                string source = string.IsNullOrWhiteSpace(device.Name) ? "设备证书" : "设备证书：" + device.Name;
-                AddCertificateFile(inventory, source, ResolvePath(connection.CertificatePath), connection.CertificatePassword);
-            }
-        }
-        catch (Exception ex)
-        {
-            inventory.Certificates.Add(GatewayCertificateInfo.Error("设备证书", string.Empty, ex.Message));
         }
     }
 
@@ -118,7 +94,12 @@ public sealed class GatewayCertificateManager
         foreach (string extension in extensions)
         {
             foreach (string file in Directory.EnumerateFiles(path, extension, SearchOption.AllDirectories))
+            {
+                string relativePath = Path.GetRelativePath(path, file);
+                if (relativePath.StartsWith("archive" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 AddCertificateFile(inventory, source, file, string.Empty);
+            }
         }
     }
 

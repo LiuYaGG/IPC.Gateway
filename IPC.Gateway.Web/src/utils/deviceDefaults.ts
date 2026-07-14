@@ -41,11 +41,9 @@ export function createDefaultConnection(protocol = 'ModbusTcp'): PlcConnection {
     serialStopBits: 'One',
     username: '',
     password: '',
-    certificatePath: '',
-    certificatePassword: '',
-    certificateThumbprint: '',
-    trustStorePath: '',
-    validateServerCertificate: true,
+    opcUaSecurityPolicy: 'None',
+    opcUaMessageSecurityMode: 'None',
+    opcUaAutoTrustServerCertificate: false,
     opcDaServerProgId: '',
     opcDaGroupName: 'IPC',
     driverId: '',
@@ -58,6 +56,7 @@ export function createDefaultConnection(protocol = 'ModbusTcp'): PlcConnection {
 export function createDeviceDraft(): DeviceConfig {
   return {
     id: '',
+    channelId: '',
     name: '',
     enabled: true,
     protocol: 'ModbusTcp',
@@ -85,6 +84,7 @@ export function cloneDevice(device: DeviceConfig): DeviceConfig {
 export function normalizeDevice(device: DeviceConfig): DeviceConfig {
   const protocol = device.protocol || device.connection?.protocol || 'ModbusTcp'
   device.id = device.id || ''
+  device.channelId = device.channelId || ''
   device.name = device.name || ''
   device.enabled = device.enabled ?? true
   device.protocol = protocol
@@ -130,7 +130,10 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
     connection.port = 0
     return
   }
-  if (protocol === 'ModbusTcp') setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
+  if (protocol === 'ModbusTcp') {
+    setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
+    connection.transport = 'Tcp'
+  }
   else if (protocol === 'SiemensS7') {
     setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
     connection.rack = connection.rack ?? 0

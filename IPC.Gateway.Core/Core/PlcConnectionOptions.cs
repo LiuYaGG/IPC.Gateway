@@ -58,11 +58,9 @@ namespace IPC.Plc.Communication.Core
             SerialStopBits = StopBits.One;
             Username = string.Empty;
             Password = string.Empty;
-            CertificatePath = string.Empty;
-            CertificatePassword = string.Empty;
-            CertificateThumbprint = string.Empty;
-            TrustStorePath = string.Empty;
-            ValidateServerCertificate = true;
+            OpcUaSecurityPolicy = "None";
+            OpcUaMessageSecurityMode = "None";
+            OpcUaAutoTrustServerCertificate = false;
             OpcDaServerProgId = string.Empty;
             OpcDaGroupName = "IPC";
             DriverId = string.Empty;
@@ -82,11 +80,9 @@ namespace IPC.Plc.Communication.Core
         public StopBits SerialStopBits { get; set; }
         public string Username { get; set; }
         public string Password { get; set; }
-        public string CertificatePath { get; set; }
-        public string CertificatePassword { get; set; }
-        public string CertificateThumbprint { get; set; }
-        public string TrustStorePath { get; set; }
-        public bool ValidateServerCertificate { get; set; }
+        public string OpcUaSecurityPolicy { get; set; }
+        public string OpcUaMessageSecurityMode { get; set; }
+        public bool OpcUaAutoTrustServerCertificate { get; set; }
         public string OpcDaServerProgId { get; set; }
         public string OpcDaGroupName { get; set; }
         public string DriverId { get; set; }

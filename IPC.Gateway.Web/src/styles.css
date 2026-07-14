@@ -1074,6 +1074,11 @@ h2 {
   gap: 14px;
 }
 
+.channel-detail {
+  display: grid;
+  gap: 18px;
+}
+
 .device-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

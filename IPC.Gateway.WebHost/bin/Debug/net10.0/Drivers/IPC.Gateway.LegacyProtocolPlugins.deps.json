@@ -8,12 +8,27 @@
     ".NETCoreApp,Version=v10.0": {
       "IPC.Gateway.LegacyProtocolPlugins/1.0.0": {
         "dependencies": {
+          "BACnet": "3.0.2",
+          "NModbus.Serial": "3.0.83",
           "Opc.UaFx.Client": "2.53.1",
-          "System.IO.Ports": "10.0.0",
-          "Talk.BACnet": "1.0.2"
+          "System.IO.Ports": "10.0.0"
         },
         "runtime": {
           "IPC.Gateway.LegacyProtocolPlugins.dll": {}
+        }
+      },
+      "BACnet/3.0.2": {
+        "dependencies": {
+          "Common.Logging": "3.4.1",
+          "PacketDotNet": "0.19.3",
+          "SharpPcap": "4.5.0",
+          "System.IO.Ports": "10.0.0"
+        },
+        "runtime": {
+          "lib/netstandard2.0/BACnet.dll": {
+            "assemblyVersion": "3.0.2.0",
+            "fileVersion": "3.0.2.0"
+          }
         }
       },
       "Common.Logging/3.4.1": {
@@ -77,6 +92,26 @@
           "lib/net6.0/Newtonsoft.Json.dll": {
             "assemblyVersion": "13.0.0.0",
             "fileVersion": "13.0.4.30916"
+          }
+        }
+      },
+      "NModbus/3.0.83": {
+        "runtime": {
+          "lib/net6.0/NModbus.dll": {
+            "assemblyVersion": "3.0.83.0",
+            "fileVersion": "3.0.83.0"
+          }
+        }
+      },
+      "NModbus.Serial/3.0.83": {
+        "dependencies": {
+          "NModbus": "3.0.83",
+          "System.IO.Ports": "10.0.0"
+        },
+        "runtime": {
+          "lib/net6.0/NModbus.Serial.dll": {
+            "assemblyVersion": "3.0.83.0",
+            "fileVersion": "3.0.83.0"
           }
         }
       },
@@ -547,21 +582,6 @@
           }
         }
       },
-      "Talk.BACnet/1.0.2": {
-        "dependencies": {
-          "Common.Logging": "3.4.1",
-          "Common.Logging.Core": "3.4.1",
-          "PacketDotNet": "0.19.3",
-          "SharpPcap": "4.5.0",
-          "System.IO.Ports": "10.0.0"
-        },
-        "runtime": {
-          "lib/netstandard2.0/BACnet.dll": {
-            "assemblyVersion": "1.0.2.0",
-            "fileVersion": "1.0.2.0"
-          }
-        }
-      },
       "IPC.Gateway.DataProcessing/1.0.0": {
         "runtime": {
           "IPC.Gateway.DataProcessing.dll": {
@@ -585,6 +605,13 @@
       "type": "project",
       "serviceable": false,
       "sha512": ""
+    },
+    "BACnet/3.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-v9LzuZ++X4jZG0WMuofUSnp2fGfos/wjzdmZGc7VLXZnzNg+Jq1qJ4eYEjGtmMr+aNU5qchMcqVj1r7noB0NBw==",
+      "path": "bacnet/3.0.2",
+      "hashPath": "bacnet.3.0.2.nupkg.sha512"
     },
     "Common.Logging/3.4.1": {
       "type": "package",
@@ -634,6 +661,20 @@
       "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
       "path": "newtonsoft.json/13.0.4",
       "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
+    },
+    "NModbus/3.0.83": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ==",
+      "path": "nmodbus/3.0.83",
+      "hashPath": "nmodbus.3.0.83.nupkg.sha512"
+    },
+    "NModbus.Serial/3.0.83": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-IU4/gDTx8Y49iEIs9Lbl9Xc4yJ6ioqJR8GB3rKHHtdX0cAimdy2o1pYfJYdV5NUdE3XRjwJHPYGQ7qyJKtKI3w==",
+      "path": "nmodbus.serial/3.0.83",
+      "hashPath": "nmodbus.serial.3.0.83.nupkg.sha512"
     },
     "Opc.UaFx.Client/2.53.1": {
       "type": "package",
@@ -844,13 +885,6 @@
       "sha512": "sha512-Wc9Hgg4Cmqi416zvEgq2sW1YYCGuhwWzspDclJWlFZqY6EGhFUPZU+kVpl5z9kAgrSOQP7/Uiik+PtSQtmq+5A==",
       "path": "system.servicemodel.primitives/4.5.3",
       "hashPath": "system.servicemodel.primitives.4.5.3.nupkg.sha512"
-    },
-    "Talk.BACnet/1.0.2": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-O5TWODz4sYEMBZfVwULuuvY95e9tiFTvIqT8aN1VXTJyap4swstohQoMUsELtuG5EP+bYBSayEzeenpsV86EAA==",
-      "path": "talk.bacnet/1.0.2",
-      "hashPath": "talk.bacnet.1.0.2.nupkg.sha512"
     },
     "IPC.Gateway.DataProcessing/1.0.0": {
       "type": "project",

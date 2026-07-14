@@ -66,6 +66,7 @@ namespace IPC.Runtime.Values
     public sealed class RuntimePollingQueueStatus
     {
         public int PendingCount { get; set; }
+        public int RecoveryPendingCount { get; set; }
         public int RunningCount { get; set; }
         public int QueueLimit { get; set; }
         public int HighWatermark { get; set; }

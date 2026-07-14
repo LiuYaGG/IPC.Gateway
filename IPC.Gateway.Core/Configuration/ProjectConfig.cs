@@ -35,6 +35,7 @@ namespace IPC.Runtime.Configuration
         {
             ProjectId = Guid.NewGuid().ToString("N");
             Name = "IPC Project";
+            Channels = new List<ChannelConfig>();
             Devices = new List<DeviceConfig>();
             Rules = new List<EdgeRuleConfig>();
             FlowRules = new List<FlowRuleDefinition>();
@@ -42,6 +43,7 @@ namespace IPC.Runtime.Configuration
 
         public string ProjectId { get; set; }
         public string Name { get; set; }
+        public List<ChannelConfig> Channels { get; set; }
         public List<DeviceConfig> Devices { get; set; }
         public List<EdgeRuleConfig> Rules { get; set; }
         public List<FlowRuleDefinition> FlowRules { get; set; }

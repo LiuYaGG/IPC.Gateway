@@ -35,6 +35,17 @@
         "resolved": "3.1.4",
         "contentHash": "5mj99LvCqrq3CNi06xYdyIAXOEh+5b33F2nErCzI5zWiDdLHXiPXEWFSUAF8zlIv0ZWqjZNCwHTQeAPYbF3pCg=="
       },
+      "BACnet": {
+        "type": "Transitive",
+        "resolved": "3.0.2",
+        "contentHash": "v9LzuZ++X4jZG0WMuofUSnp2fGfos/wjzdmZGc7VLXZnzNg+Jq1qJ4eYEjGtmMr+aNU5qchMcqVj1r7noB0NBw==",
+        "dependencies": {
+          "Common.Logging": "3.4.1",
+          "PacketDotNet": "0.19.3",
+          "SharpPcap": "4.5.0",
+          "System.IO.Ports": "5.0.1"
+        }
+      },
       "BitFaster.Caching": {
         "type": "Transitive",
         "resolved": "2.6.0",
@@ -228,6 +239,20 @@
         "type": "Transitive",
         "resolved": "13.0.4",
         "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
+      "NModbus": {
+        "type": "Transitive",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
+      },
+      "NModbus.Serial": {
+        "type": "Transitive",
+        "resolved": "3.0.83",
+        "contentHash": "IU4/gDTx8Y49iEIs9Lbl9Xc4yJ6ioqJR8GB3rKHHtdX0cAimdy2o1pYfJYdV5NUdE3XRjwJHPYGQ7qyJKtKI3w==",
+        "dependencies": {
+          "NModbus": "3.0.83",
+          "System.IO.Ports": "7.0.0"
+        }
       },
       "Npgsql": {
         "type": "Transitive",
@@ -624,18 +649,6 @@
         "resolved": "10.0.9",
         "contentHash": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g=="
       },
-      "Talk.BACnet": {
-        "type": "Transitive",
-        "resolved": "1.0.2",
-        "contentHash": "O5TWODz4sYEMBZfVwULuuvY95e9tiFTvIqT8aN1VXTJyap4swstohQoMUsELtuG5EP+bYBSayEzeenpsV86EAA==",
-        "dependencies": {
-          "Common.Logging": "3.4.1",
-          "Common.Logging.Core": "3.4.1",
-          "PacketDotNet": "0.19.3",
-          "SharpPcap": "4.5.0",
-          "System.IO.Ports": "4.5.0"
-        }
-      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -682,6 +695,7 @@
           "IPC.Gateway.DataProcessing": "[1.0.0, )",
           "IPC.Gateway.Mqtt": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.1, )",
+          "NModbus": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "SqlSugarCore": "[5.1.4.214, )",
@@ -707,10 +721,11 @@
       "ipc.gateway.legacyprotocolplugins": {
         "type": "Project",
         "dependencies": {
+          "BACnet": "[3.0.2, )",
           "IPC.Gateway.Core": "[1.0.0, )",
+          "NModbus.Serial": "[3.0.83, )",
           "Opc.UaFx.Client": "[2.53.1, )",
-          "System.IO.Ports": "[10.0.0, )",
-          "Talk.BACnet": "[1.0.2, )"
+          "System.IO.Ports": "[10.0.0, )"
         }
       },
       "ipc.gateway.mqtt": {

@@ -166,3 +166,5 @@ F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\log4net.d
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\PacketDotNet.dll
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\SharpPcap.dll
 F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\BACnet.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\NModbus.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LegacyProtocolPlugins\bin\Debug\net10.0\NModbus.Serial.dll

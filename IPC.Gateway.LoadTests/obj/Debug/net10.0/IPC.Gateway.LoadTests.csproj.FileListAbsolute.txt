@@ -250,3 +250,4 @@ F:\IPC\IPC.Gateway\IPC.Gateway.LoadTests\obj\Debug\net10.0\refint\IPC.Gateway.Lo
 F:\IPC\IPC.Gateway\IPC.Gateway.LoadTests\obj\Debug\net10.0\IPC.Gateway.LoadTests.pdb
 F:\IPC\IPC.Gateway\IPC.Gateway.LoadTests\obj\Debug\net10.0\IPC.Gateway.LoadTests.genruntimeconfig.cache
 F:\IPC\IPC.Gateway\IPC.Gateway.LoadTests\obj\Debug\net10.0\ref\IPC.Gateway.LoadTests.dll
+F:\IPC\IPC.Gateway\IPC.Gateway.LoadTests\bin\Debug\net10.0\NModbus.dll

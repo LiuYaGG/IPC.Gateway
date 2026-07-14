@@ -233,6 +233,9 @@
         <el-table :data="drivers" empty-text="暂无协议驱动" height="240">
           <el-table-column prop="driverId" label="驱动" min-width="160" show-overflow-tooltip />
           <el-table-column prop="protocol" label="协议" width="110" />
+          <el-table-column label="能力" min-width="190" show-overflow-tooltip>
+            <template #default="{ row }">{{ driverCapabilityText(row) }}</template>
+          </el-table-column>
           <el-table-column label="签名" width="120">
             <template #default="{ row }">
               <el-tag :type="driverSignatureType(row.signatureStatus)" effect="light">{{ row.signatureStatus || '-' }}</el-tag>
@@ -445,6 +448,16 @@ const watchdogConfig = ref<GatewayWatchdogConfig | null>(null)
 const license = ref<GatewayLicenseStatus | null>(null)
 const compatibility = ref<GatewayCompatibilityMatrix | null>(null)
 const drivers = ref<GatewayProtocolDriverInfo[]>([])
+
+function driverCapabilityText(driver: GatewayProtocolDriverInfo) {
+  const capabilities = driver.capabilities
+  if (!capabilities) return '-'
+  const features = [capabilities.supportsWrite ? '读写' : '只读']
+  if (capabilities.supportsSubscription) features.push('订阅')
+  if (capabilities.supportsBatchRead) features.push(`批读 ${capabilities.maxBatchItems}`)
+  if (capabilities.supportsAddressValidation) features.push('地址校验')
+  return `${capabilities.preferredReadMode} · ${features.join(' · ')}`
+}
 
 const canUpload = computed(() => hasPermission(PERMISSIONS.maintenancePackagesUpload))
 const canPrepare = computed(() => hasPermission(PERMISSIONS.maintenanceUpdatePrepare))

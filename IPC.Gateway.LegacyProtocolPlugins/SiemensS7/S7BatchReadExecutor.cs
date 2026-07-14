@@ -220,6 +220,8 @@ namespace IPC.Plc.Communication.SiemensS7
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
@@ -266,6 +268,8 @@ namespace IPC.Plc.Communication.SiemensS7
             catch (Exception ex)
             {
                 bool communicationError = IsCommunicationException(ex);
+                if (communicationError)
+                    throw;
                 if (!communicationError && endIndex - startIndex > 1)
                 {
                     await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);

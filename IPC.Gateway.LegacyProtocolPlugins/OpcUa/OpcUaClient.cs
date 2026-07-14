@@ -68,8 +68,10 @@ namespace IPC.Plc.Communication.OpcUa
             if (IsConnected)
                 return;
 
-            _client = new OpcClient(BuildEndpoint());
+            _client = new OpcClient(BuildEndpoint(), BuildSecurityPolicy());
             _client.OperationTimeout = Math.Max(1000, _options.TimeoutMilliseconds);
+            if (_options.OpcUaAutoTrustServerCertificate)
+                _client.CertificateValidationFailed += AcceptServerCertificate;
 
             if (!string.IsNullOrWhiteSpace(_options.Username))
                 _client.Security.UserIdentity = new OpcClientIdentity(_options.Username, _options.Password ?? string.Empty);
@@ -232,6 +234,8 @@ namespace IPC.Plc.Communication.OpcUa
                 }
 
                 PlcReadFailureScope failureScope = ClassifyBatchReadExceptionScope(ex, sessionConnected, count);
+                if (failureScope == PlcReadFailureScope.Transport)
+                    throw new PlcCommunicationException(ex.Message, ex);
                 MarkPendingChunkFailure(pending, ordered, offset, count, ex.Message, failureScope);
                 return;
             }
@@ -458,14 +462,12 @@ namespace IPC.Plc.Communication.OpcUa
 
         private static ValueTask RunSynchronousAsync(Action action, CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return new ValueTask(Task.Run(action, cancellationToken));
+            return PlcClientInvoker.InvokeSynchronousAsync(action, cancellationToken);
         }
 
         private static ValueTask<T> RunSynchronousAsync<T>(Func<T> action, CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return new ValueTask<T>(Task.Run(action, cancellationToken));
+            return PlcClientInvoker.InvokeSynchronousAsync(action, cancellationToken);
         }
 
         private string BuildEndpoint()
@@ -479,6 +481,66 @@ namespace IPC.Plc.Communication.OpcUa
                 return BuildEndpointFromUri(host, port);
 
             return BuildEndpointFromUri("opc.tcp://" + host, port);
+        }
+
+        private OpcSecurityPolicy BuildSecurityPolicy()
+        {
+            OpcSecurityMode mode = ParseSecurityMode(_options.OpcUaMessageSecurityMode);
+            OpcSecurityAlgorithm algorithm = ParseSecurityAlgorithm(_options.OpcUaSecurityPolicy);
+            if (mode == OpcSecurityMode.None && algorithm != OpcSecurityAlgorithm.None)
+                throw new ArgumentException("OPC UA message security mode None requires security policy None.");
+            if (mode != OpcSecurityMode.None && algorithm == OpcSecurityAlgorithm.None)
+                throw new ArgumentException("OPC UA Sign or SignAndEncrypt requires a secure security policy.");
+
+            return new OpcSecurityPolicy(mode, algorithm);
+        }
+
+        private static OpcSecurityMode ParseSecurityMode(string value)
+        {
+            string normalized = NormalizeSecurityName(value);
+            if (normalized == "NONE")
+                return OpcSecurityMode.None;
+            if (normalized == "SIGN")
+                return OpcSecurityMode.Sign;
+            if (normalized == "SIGNANDENCRYPT")
+                return OpcSecurityMode.SignAndEncrypt;
+            throw new ArgumentException("Unsupported OPC UA message security mode: " + (value ?? string.Empty));
+        }
+
+        private static OpcSecurityAlgorithm ParseSecurityAlgorithm(string value)
+        {
+            string normalized = NormalizeSecurityName(value);
+            if (normalized == "NONE")
+                return OpcSecurityAlgorithm.None;
+            if (normalized == "BASIC128RSA15")
+                return OpcSecurityAlgorithm.Basic128Rsa15;
+            if (normalized == "BASIC256")
+                return OpcSecurityAlgorithm.Basic256;
+            if (normalized == "BASIC256SHA256")
+                return OpcSecurityAlgorithm.Basic256Sha256;
+            if (normalized == "AES128SHA256RSAOAEP")
+                return OpcSecurityAlgorithm.Aes128_Sha256_RsaOaep;
+            if (normalized == "AES256SHA256RSAPSS")
+                return OpcSecurityAlgorithm.Aes256_Sha256_RsaPss;
+            throw new ArgumentException("Unsupported OPC UA security policy: " + (value ?? string.Empty));
+        }
+
+        private static string NormalizeSecurityName(string value)
+        {
+            string text = (value ?? "None").Trim();
+            int separator = text.LastIndexOf('#');
+            if (separator >= 0 && separator + 1 < text.Length)
+                text = text.Substring(separator + 1);
+            return text.Replace("_", string.Empty)
+                       .Replace("-", string.Empty)
+                       .Replace(" ", string.Empty)
+                       .ToUpperInvariant();
+        }
+
+        private static void AcceptServerCertificate(object sender, OpcCertificateValidationFailedEventArgs eventArgs)
+        {
+            if (eventArgs != null)
+                eventArgs.Accept = true;
         }
 
         private static string BuildEndpointFromUri(string endpoint, int port)

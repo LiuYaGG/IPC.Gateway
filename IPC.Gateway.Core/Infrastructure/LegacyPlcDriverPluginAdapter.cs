@@ -21,7 +21,7 @@ using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.Infrastructure
 {
-    internal sealed class LegacyPlcDriverPluginAdapter : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider
+    internal sealed class LegacyPlcDriverPluginAdapter : IProtocolDriver, IProtocolDriverMetadata, IPlcClientCapabilityProvider, IPlcTagDefinitionValidator
     {
         private readonly IPlcDriverPlugin _plugin;
 
@@ -72,6 +72,19 @@ namespace IPC.Plc.Communication.Infrastructure
             return provider == null
                 ? PlcClientCapabilityCatalog.ForProtocol(PlcProtocol.Plugin)
                 : PlcClientCapabilityCatalog.Normalize(provider.GetCapabilities(), PlcProtocol.Plugin);
+        }
+
+        public PlcTagValidationResult ValidateTag(
+            PlcConnectionOptions options,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            IPlcTagDefinitionValidator? validator = _plugin as IPlcTagDefinitionValidator;
+            return validator == null
+                ? PlcProtocolTagValidator.Validate(PlcProtocol.Plugin, address, dataType, elementCount, elementOffset)
+                : validator.ValidateTag(options, address, dataType, elementCount, elementOffset);
         }
     }
 }

@@ -30,6 +30,56 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
     }
 
+    public IList<ChannelConfig> GetChannels() => _gateway.CurrentProject.Channels;
+
+    public ChannelConfig AddChannel(ChannelConfig channel)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.AddChannel(channel);
+        Save(aggregate);
+        return result;
+    }
+
+    public async Task<ChannelConfig> AddChannelAsync(ChannelConfig channel)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.AddChannel(channel);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
+    public ChannelConfig UpdateChannel(string channelId, ChannelConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.UpdateChannel(channelId, input);
+        Save(aggregate);
+        return result;
+    }
+
+    public async Task<ChannelConfig> UpdateChannelAsync(string channelId, ChannelConfig input)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.UpdateChannel(channelId, input);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
+    public ChannelConfig DeleteChannel(string channelId)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.DeleteChannel(channelId);
+        Save(aggregate);
+        return result;
+    }
+
+    public async Task<ChannelConfig> DeleteChannelAsync(string channelId)
+    {
+        GatewayProjectAggregate aggregate = LoadAggregate();
+        ChannelConfig result = aggregate.DeleteChannel(channelId);
+        await SaveAsync(aggregate);
+        return result;
+    }
+
     public IList<DeviceConfig> GetDevices() => _gateway.CurrentProject.Devices;
 
     public DeviceConfig AddDevice(DeviceConfig device)

@@ -35,6 +35,8 @@ namespace IPC.Plc.Communication.Metering
                 }
                 catch (Exception ex)
                 {
+                    if (IsCommunicationException(ex))
+                        throw;
                     ordered[i] = PlcBatchReadResult.FromFailure(request, ex.Message, IsCommunicationException(ex));
                 }
             }
@@ -72,6 +74,8 @@ namespace IPC.Plc.Communication.Metering
                 }
                 catch (Exception ex)
                 {
+                    if (IsCommunicationException(ex))
+                        throw;
                     ordered[i] = PlcBatchReadResult.FromFailure(request, ex.Message, IsCommunicationException(ex));
                 }
             }

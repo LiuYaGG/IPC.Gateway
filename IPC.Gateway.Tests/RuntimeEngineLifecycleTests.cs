@@ -531,7 +531,7 @@ public sealed class RuntimeEngineLifecycleTests
         Assert.False(onlineObserved);
         Assert.NotNull(deviceStatus);
         Assert.False(deviceStatus!.IsConnected);
-        Assert.Equal("Error", deviceStatus.Status);
+        Assert.Equal("Degraded", deviceStatus.Status);
     }
 
     [Fact]
@@ -578,7 +578,7 @@ public sealed class RuntimeEngineLifecycleTests
     }
 
     [Fact]
-    public void Start_KeepsConnectedDeviceOnlineWhenBatchReadFailuresAreTagLevel()
+    public void Start_DoesNotMarkDeviceOnlineWhenOnlyTagLevelFailuresAreObserved()
     {
         string driverId = "test.tag-level-failure." + Guid.NewGuid().ToString("N");
         TagLevelFailureTestDriver driver = new TagLevelFailureTestDriver(driverId);
@@ -608,8 +608,9 @@ public sealed class RuntimeEngineLifecycleTests
 
         Assert.True(failuresObserved);
         Assert.NotNull(deviceStatus);
-        Assert.True(deviceStatus!.IsConnected);
-        Assert.Equal("Online", deviceStatus.Status);
+        Assert.False(deviceStatus!.IsConnected);
+        Assert.True(deviceStatus.TransportConnected);
+        Assert.NotEqual("Online", deviceStatus.Status);
         Assert.Equal(string.Empty, deviceStatus.LastError);
         Assert.False(deviceStatus.ProtocolCircuitBreaker.IsOpen);
         Assert.True(snapshotFound);
@@ -618,7 +619,7 @@ public sealed class RuntimeEngineLifecycleTests
     }
 
     [Fact]
-    public void Start_KeepsConnectedDeviceOnlineWhenBatchReadFailuresAreBatchLevel()
+    public void Start_DoesNotMarkDeviceOnlineWhenOnlyBatchLevelFailuresAreObserved()
     {
         string driverId = "test.batch-level-failure." + Guid.NewGuid().ToString("N");
         ScopedBatchFailureTestDriver driver = new ScopedBatchFailureTestDriver(driverId, PlcReadFailureScope.Batch);
@@ -646,8 +647,9 @@ public sealed class RuntimeEngineLifecycleTests
 
         Assert.True(failuresObserved);
         Assert.NotNull(deviceStatus);
-        Assert.True(deviceStatus!.IsConnected);
-        Assert.Equal("Online", deviceStatus.Status);
+        Assert.False(deviceStatus!.IsConnected);
+        Assert.True(deviceStatus.TransportConnected);
+        Assert.NotEqual("Online", deviceStatus.Status);
         Assert.Equal(string.Empty, deviceStatus.LastError);
         Assert.Equal(0, disposeCountBeforeStop);
         Assert.False(deviceStatus.ProtocolCircuitBreaker.IsOpen);
@@ -741,7 +743,7 @@ public sealed class RuntimeEngineLifecycleTests
     }
 
     [Fact]
-    public void WriteTag_KeepsConnectedDeviceOnlineWhenWriteFailureIsTagLevel()
+    public void WriteTag_DoesNotPromoteConnectedDeviceWithoutSuccessfulRead()
     {
         string driverId = "test.tag-level-write-failure." + Guid.NewGuid().ToString("N");
         TagLevelFailureTestDriver driver = new TagLevelFailureTestDriver(driverId);
@@ -760,7 +762,7 @@ public sealed class RuntimeEngineLifecycleTests
         bool onlineObserved = SpinWait.SpinUntil(() =>
         {
             DeviceRuntimeStatus? status = engine.GetDeviceStatuses().FirstOrDefault(item => item.DeviceName == "OpcUaWriteStyleDevice");
-            return status != null && status.IsConnected;
+            return status != null && status.TransportConnected;
         }, TimeSpan.FromSeconds(2));
         WriteTagResponse response = engine.WriteTag(new WriteTagRequest
         {
@@ -777,8 +779,9 @@ public sealed class RuntimeEngineLifecycleTests
         Assert.False(response.Success);
         Assert.Contains("BadNodeIdUnknown", response.ErrorMessage, StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(deviceStatus);
-        Assert.True(deviceStatus!.IsConnected);
-        Assert.Equal("Online", deviceStatus.Status);
+        Assert.False(deviceStatus!.IsConnected);
+        Assert.True(deviceStatus.TransportConnected);
+        Assert.NotEqual("Online", deviceStatus.Status);
         Assert.Equal(string.Empty, deviceStatus.LastError);
         Assert.False(deviceStatus.ProtocolCircuitBreaker.IsOpen);
     }

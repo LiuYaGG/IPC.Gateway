@@ -35,6 +35,7 @@ namespace IPC.Runtime.Configuration
         public DeviceConfig()
         {
             Id = Guid.NewGuid().ToString("N");
+            ChannelId = string.Empty;
             Name = "Device";
             Enabled = true;
             Protocol = PlcProtocol.ModbusTcp;
@@ -47,6 +48,7 @@ namespace IPC.Runtime.Configuration
         }
 
         public string Id { get; set; }
+        public string ChannelId { get; set; }
         public string Name { get; set; }
         public bool Enabled { get; set; }
         public PlcProtocol Protocol { get; set; }

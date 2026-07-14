@@ -7,6 +7,11 @@ namespace IPC.Plc.Communication.Core
 {
     public static class PlcClientInvoker
     {
+        private static readonly BoundedSynchronousIoExecutor SynchronousExecutor =
+            new BoundedSynchronousIoExecutor(
+                Math.Clamp(Environment.ProcessorCount, 4, 16),
+                1024);
+
         public static PlcClientCapabilities GetCapabilities(IPlcClient client)
         {
             ArgumentNullException.ThrowIfNull(client);
@@ -15,10 +20,33 @@ namespace IPC.Plc.Communication.Core
                 ? PlcClientCapabilityCatalog.Normalize(provider.GetCapabilities(), client.Protocol)
                 : PlcClientCapabilityCatalog.ForProtocol(client.Protocol);
 
-            if (client is IPlcBatchReadClient || client is IAsyncPlcBatchReadClient)
-                capabilities.SupportsBatchRead = true;
-            if (client is IAsyncPlcSubscriptionClient)
-                capabilities.SupportsSubscription = true;
+            bool supportsAsync = client is IAsyncPlcClient;
+            bool supportsBatch = client is IPlcBatchReadClient || client is IAsyncPlcBatchReadClient;
+            bool supportsSubscription = client is IAsyncPlcSubscriptionClient;
+            bool declaredSubscription = capabilities.SupportsSubscription;
+
+            capabilities.SupportsNativeAsync = supportsAsync && capabilities.AsyncKind == PlcClientAsyncKind.NativeIo;
+            if (!supportsAsync && capabilities.AsyncKind == PlcClientAsyncKind.NativeIo)
+                capabilities.AsyncKind = PlcClientAsyncKind.DedicatedThread;
+
+            capabilities.SupportsBatchRead = supportsBatch;
+            capabilities.SupportsSubscription = supportsSubscription;
+            if (!supportsBatch)
+                capabilities.MaxBatchItems = 0;
+            else if (capabilities.MaxBatchItems <= 0)
+                capabilities.MaxBatchItems = 128;
+            if (!supportsSubscription)
+                capabilities.MaxSubscriptionItems = 0;
+            else if (capabilities.MaxSubscriptionItems <= 0)
+                capabilities.MaxSubscriptionItems = 1000;
+
+            if (supportsSubscription && !declaredSubscription)
+                capabilities.PreferredReadMode = PlcPreferredReadMode.Subscription;
+
+            if (capabilities.PreferredReadMode == PlcPreferredReadMode.Subscription && !supportsSubscription)
+                capabilities.PreferredReadMode = supportsBatch ? PlcPreferredReadMode.Batch : PlcPreferredReadMode.Single;
+            if (capabilities.PreferredReadMode == PlcPreferredReadMode.Batch && !supportsBatch)
+                capabilities.PreferredReadMode = PlcPreferredReadMode.Single;
 
             return capabilities;
         }
@@ -55,19 +83,18 @@ namespace IPC.Plc.Communication.Core
             if (client is IAsyncPlcClient asyncClient)
                 return asyncClient.ConnectAsync(cancellationToken);
 
-            client.Connect();
-            return ValueTask.CompletedTask;
+            return InvokeSynchronousAsync(client.Connect, cancellationToken);
         }
 
         public static ValueTask DisconnectAsync(IPlcClient client, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(client);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (client is IAsyncPlcClient asyncClient)
                 return asyncClient.DisconnectAsync(cancellationToken);
 
-            client.Disconnect();
-            return ValueTask.CompletedTask;
+            return InvokeSynchronousAsync(client.Disconnect, cancellationToken);
         }
 
         public static ValueTask<PlcReadResult> ReadAsync(
@@ -84,8 +111,9 @@ namespace IPC.Plc.Communication.Core
             if (client is IAsyncPlcClient asyncClient)
                 return asyncClient.ReadAsync(address, dataType, elementCount, elementOffset, cancellationToken);
 
-            PlcReadResult result = client.Read(address, dataType, elementCount, elementOffset);
-            return new ValueTask<PlcReadResult>(result);
+            return InvokeSynchronousAsync(
+                () => client.Read(address, dataType, elementCount, elementOffset),
+                cancellationToken);
         }
 
         public static ValueTask WriteAsync(
@@ -102,8 +130,9 @@ namespace IPC.Plc.Communication.Core
             if (client is IAsyncPlcClient asyncClient)
                 return asyncClient.WriteAsync(address, dataType, valueText, elementOffset, cancellationToken);
 
-            client.Write(address, dataType, valueText, elementOffset);
-            return ValueTask.CompletedTask;
+            return InvokeSynchronousAsync(
+                () => client.Write(address, dataType, valueText, elementOffset),
+                cancellationToken);
         }
 
         public static ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
@@ -119,9 +148,54 @@ namespace IPC.Plc.Communication.Core
                 return asyncBatchClient.ReadManyAsync(requests, cancellationToken);
 
             if (client is IPlcBatchReadClient batchClient)
-                return new ValueTask<IList<PlcBatchReadResult>>(batchClient.ReadMany(requests));
+                return InvokeSynchronousAsync(() => batchClient.ReadMany(requests), cancellationToken);
 
             throw new NotSupportedException($"PLC client '{client.Protocol}' does not support batch read.");
+        }
+
+        public static async ValueTask InvokeSynchronousAsync(
+            Action operation,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+            cancellationToken.ThrowIfCancellationRequested();
+            Task operationTask = SynchronousExecutor.InvokeAsync(operation, cancellationToken).AsTask();
+            try
+            {
+                await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                ObserveLateFault(operationTask);
+                throw;
+            }
+        }
+
+        public static async ValueTask<T> InvokeSynchronousAsync<T>(
+            Func<T> operation,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+            cancellationToken.ThrowIfCancellationRequested();
+            Task<T> operationTask = SynchronousExecutor.InvokeAsync(operation, cancellationToken).AsTask();
+            try
+            {
+                return await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                ObserveLateFault(operationTask);
+                throw;
+            }
+        }
+
+        private static void ObserveLateFault(Task operationTask)
+        {
+            _ = operationTask.ContinueWith(
+                completed => _ = completed.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
 
         public static ValueTask<IPlcSubscription> SubscribeAsync(

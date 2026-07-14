@@ -350,6 +350,14 @@
           }
         }
       },
+      "NModbus/3.0.83": {
+        "runtime": {
+          "lib/net6.0/NModbus.dll": {
+            "assemblyVersion": "3.0.83.0",
+            "fileVersion": "3.0.83.0"
+          }
+        }
+      },
       "Npgsql/5.0.18": {
         "runtime": {
           "lib/net5.0/Npgsql.dll": {
@@ -842,6 +850,7 @@
           "Microsoft.Data.SqlClient": "7.0.1",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
+          "NModbus": "3.0.83",
           "OPCFoundation.NetStandard.Opc.Ua": "1.5.378.145",
           "SQLitePCLRaw.bundle_e_sqlite3": "3.0.3",
           "SqlSugarCore": "5.1.4.214"
@@ -1058,6 +1067,13 @@
       "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
       "path": "newtonsoft.json/13.0.4",
       "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
+    },
+    "NModbus/3.0.83": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ==",
+      "path": "nmodbus/3.0.83",
+      "hashPath": "nmodbus.3.0.83.nupkg.sha512"
     },
     "Npgsql/5.0.18": {
       "type": "package",

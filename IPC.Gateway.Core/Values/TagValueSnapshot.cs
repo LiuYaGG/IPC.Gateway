@@ -57,6 +57,7 @@ namespace IPC.Runtime.Values
             Quality = TagQuality.Unknown;
             Timestamp = DateTime.MinValue;
             ErrorMessage = string.Empty;
+            TagState = "Unknown";
         }
 
         public string DeviceId { get; set; }
@@ -85,6 +86,11 @@ namespace IPC.Runtime.Values
         public TagQuality Quality { get; set; }
         public DateTime Timestamp { get; set; }
         public string ErrorMessage { get; set; }
+        public string TagState { get; set; }
+        public bool IsTagIsolated { get; set; }
+        public bool IsStaticValidationError { get; set; }
+        public int TagConsecutiveFailures { get; set; }
+        public DateTime NextTagRecoveryProbeTime { get; set; }
 
         public TagValueSnapshot Clone()
         {

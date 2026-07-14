@@ -64,6 +64,67 @@ public sealed class OpcUaServerServiceTests
     }
 
     [Fact]
+    public void Start_WhenApplicationUriChanges_ArchivesInvalidCertificateAndRecovers()
+    {
+        string certificateDirectory = Path.Combine(Path.GetTempPath(), "ipc-gateway-opcua-renew-test-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            using RuntimeEngine runtime = new RuntimeEngine();
+            using (OpcUaServerService initial = new OpcUaServerService(runtime, CreateProject, new OpcUaServerOptions
+            {
+                Enabled = true,
+                ApplicationName = "IPC Gateway OPC UA Renewal Test",
+                ApplicationUri = "urn:ipc-gateway:opcua:before",
+                Host = "localhost",
+                Port = FindFreeTcpPort(),
+                EndpointPath = "IPC.Gateway.Tests.Renewal",
+                CertificateStorePath = certificateDirectory
+            }))
+            {
+                initial.Start();
+                Assert.True(initial.GetStatus().IsRunning, initial.GetStatus().LastError);
+            }
+
+            using OpcUaServerService changed = new OpcUaServerService(runtime, CreateProject, new OpcUaServerOptions
+            {
+                Enabled = true,
+                ApplicationName = "IPC Gateway OPC UA Renewal Test",
+                ApplicationUri = "urn:ipc-gateway:opcua:after",
+                Host = "localhost",
+                Port = FindFreeTcpPort(),
+                EndpointPath = "IPC.Gateway.Tests.Renewal",
+                CertificateStorePath = certificateDirectory
+            });
+
+            changed.Start();
+            OpcUaServerStatus status = changed.GetStatus();
+
+            Assert.True(status.IsRunning, status.LastError);
+            Assert.Contains("replacing an invalid application certificate", status.LastMessage, StringComparison.OrdinalIgnoreCase);
+            Assert.NotEmpty(Directory.GetFiles(Path.Combine(certificateDirectory, "archive"), "*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(certificateDirectory))
+                Directory.Delete(certificateDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CertificateStorePath_WhenRelative_UsesApplicationBaseDirectory()
+    {
+        MethodInfo? method = typeof(OpcUaServerService).GetMethod("ResolveCertificateStorePath", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        string resolved = Assert.IsType<string>(method!.Invoke(null, new object[] { "Data/OpcUa/pki" }));
+
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Data/OpcUa/pki")),
+            resolved);
+    }
+
+    [Fact]
     public void SecurityPolicies_WhenBasic256Selected_PublishOnlyBasic256()
     {
         OpcUaServerOptions options = new OpcUaServerOptions
