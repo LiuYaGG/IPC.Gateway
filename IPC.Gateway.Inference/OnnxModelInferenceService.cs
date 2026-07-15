@@ -42,25 +42,46 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
             return ModelInferenceResult.Failed("Model features are empty.");
 
         int timeoutMilliseconds = NormalizeTimeout(request.TimeoutMilliseconds);
+        RunOptions runOptions = new RunOptions();
         try
         {
             Task<ModelInferenceResult> task = Task.Factory.StartNew(
-                () => RunCore(request),
+                () => RunCore(request, runOptions),
                 CancellationToken.None,
                 TaskCreationOptions.DenyChildAttach,
                 TaskScheduler.Default);
 
             if (!task.Wait(timeoutMilliseconds))
+            {
+                runOptions.Terminate = true;
+                try
+                {
+                    task.Wait(Math.Min(1000, timeoutMilliseconds));
+                }
+                catch
+                {
+                }
+
+                if (!task.IsCompleted)
+                    _ = task.ContinueWith(_ => runOptions.Dispose(), TaskScheduler.Default);
+                else
+                    runOptions.Dispose();
                 return ModelInferenceResult.Failed("ONNX inference timed out after " + timeoutMilliseconds + " ms.");
-            return task.GetAwaiter().GetResult();
+            }
+
+            ModelInferenceResult result = task.GetAwaiter().GetResult();
+            runOptions.Dispose();
+            return result;
         }
         catch (AggregateException ex)
         {
+            runOptions.Dispose();
             Exception inner = ex.Flatten().InnerExceptions.FirstOrDefault() ?? ex;
             return ModelInferenceResult.Failed(inner.Message);
         }
         catch (Exception ex)
         {
+            runOptions.Dispose();
             return ModelInferenceResult.Failed(ex.Message);
         }
     }
@@ -80,7 +101,7 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
         _sessions.Clear();
     }
 
-    private ModelInferenceResult RunCore(ModelInferenceRequest request)
+    private ModelInferenceResult RunCore(ModelInferenceRequest request, RunOptions runOptions)
     {
         string modelPath = ResolveModelPath(request.ModelPath);
         if (!File.Exists(modelPath))
@@ -88,7 +109,7 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
 
         InferenceSession session = GetSession(modelPath);
         List<NamedOnnxValue> inputs = BuildInputs(session, request);
-        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = session.Run(inputs);
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = session.Run(inputs, session.OutputNames, runOptions);
         DisposableNamedOnnxValue? selected = SelectOutput(results, request.OutputName);
         if (selected == null)
             return ModelInferenceResult.Failed("ONNX output was not found.");

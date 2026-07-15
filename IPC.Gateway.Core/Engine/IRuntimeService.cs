@@ -43,7 +43,11 @@ namespace IPC.Runtime.Engine
         void Start(ProjectConfig config);
         void Stop();
 
-        bool TryGetSnapshot(string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot);
+        bool TryGetSnapshotById(string channelId, string deviceId, string groupId, string tagId, out TagValueSnapshot? snapshot)
+        {
+            snapshot = null;
+            return false;
+        }
         IList<TagValueSnapshot> GetSnapshots();
         void RestoreSnapshots(IList<TagValueSnapshot> snapshots);
         IList<DeviceRuntimeStatus> GetDeviceStatuses();
@@ -52,8 +56,8 @@ namespace IPC.Runtime.Engine
         ReadTagResponse ReadCached(ReadTagRequest request);
         ReadTagsResponse ReadCached(ReadTagsRequest request);
         ReadTagsResponse QueryCached(ReadTagRequest request);
-        ReadTagsResponse ReadTagByDeviceCached(string deviceName, string tagName);
-        ReadTagsResponse ReadGroupCached(string deviceName, string groupName);
+        ReadTagsResponse ReadTagByDeviceCached(string channelId, string deviceId, string tagId);
+        ReadTagsResponse ReadGroupCached(string channelId, string deviceId, string groupId);
         WriteTagResponse WriteTag(WriteTagRequest request);
     }
 }

@@ -1,4 +1,5 @@
 using IPC.Gateway.Core.Application.Gateway.Contracts;
+using IPC.Gateway.Core.Application.Gateway;
 using System.Security.Claims;
 
 namespace IPC.Gateway.WebHost;
@@ -63,6 +64,8 @@ internal static class GatewayConfigurationSecurity
         {
             if (!string.IsNullOrEmpty(action.EmailPassword))
                 action.EmailPassword = RedactedSecret;
+            action.WebhookUrl = WebhookSecretProtector.SanitizeUrl(action.WebhookUrl);
+            action.WebhookHeaders = WebhookSecretProtector.SanitizeHeaders(action.WebhookHeaders);
         }
 
         return rule;
@@ -83,6 +86,8 @@ internal static class GatewayConfigurationSecurity
         {
             if (!string.IsNullOrEmpty(node.EmailPassword))
                 node.EmailPassword = RedactedSecret;
+            node.WebhookUrl = WebhookSecretProtector.SanitizeUrl(node.WebhookUrl);
+            node.WebhookHeaders = WebhookSecretProtector.SanitizeHeaders(node.WebhookHeaders);
         }
 
         return rule;

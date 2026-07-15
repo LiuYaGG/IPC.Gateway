@@ -31,6 +31,7 @@ namespace IPC.Runtime.Configuration
                 return false;
 
             List<FlowRuleNode> nodes = MaterializeNodes(definition.Nodes);
+            FlowRuleGraphMap graph = new FlowRuleGraphMap(definition);
             if (nodes.Any(IsSequenceNode))
                 return false;
 
@@ -43,14 +44,22 @@ namespace IPC.Runtime.Configuration
             if (nodes.Count(IsTagNode) != 1 || nodes.Count(IsRuleNode) != 1)
                 return false;
 
+            if (!graph.IsReachable(tagNode.Id, conditionNode.Id))
+                return false;
+
+            HashSet<string> ancestors = graph.GetAncestorIds(conditionNode.Id);
+            HashSet<string> descendants = graph.GetDescendantIds(conditionNode.Id);
+            if (!ancestors.Contains(tagNode.Id))
+                return false;
+
             EdgeRuleConditionType conditionType = ResolveConditionType(conditionNode);
-            FlowRuleNode? durationNode = nodes.FirstOrDefault(IsDurationNode);
-            FlowRuleNode? mqttNode = nodes.FirstOrDefault(IsMqttNode);
-            List<EdgeRuleActionConfig> actions = BuildActions(nodes);
-            FlowRuleNode? transformNode = nodes.FirstOrDefault(IsTransformNode);
-            FlowRuleNode? qualityNode = nodes.FirstOrDefault(IsQualityGateNode);
-            FlowRuleNode? lifecycleNode = nodes.FirstOrDefault(IsAlarmLifecycleNode);
-            FlowRuleNode? actionPolicyNode = nodes.FirstOrDefault(IsActionPolicyNode);
+            FlowRuleNode? durationNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsDurationNode(node));
+            FlowRuleNode? mqttNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsMqttNode(node));
+            List<EdgeRuleActionConfig> actions = BuildActions(nodes.Where(node => descendants.Contains(node.Id)).ToList());
+            FlowRuleNode? transformNode = nodes.FirstOrDefault(node => ancestors.Contains(node.Id) && IsTransformNode(node));
+            FlowRuleNode? qualityNode = nodes.FirstOrDefault(node => ancestors.Contains(node.Id) && IsQualityGateNode(node));
+            FlowRuleNode? lifecycleNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsAlarmLifecycleNode(node));
+            FlowRuleNode? actionPolicyNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsActionPolicyNode(node));
             string id = string.IsNullOrWhiteSpace(definition.CompiledRuleId)
                 ? Guid.NewGuid().ToString("N")
                 : definition.CompiledRuleId;
@@ -61,6 +70,11 @@ namespace IPC.Runtime.Configuration
                 Name = string.IsNullOrWhiteSpace(definition.Name) ? "Flow Rule" : definition.Name,
                 Enabled = definition.Enabled,
                 ConditionType = conditionType,
+                SourceChannelId = FirstText(conditionNode.ChannelId, tagNode.ChannelId),
+                SourceChannelName = FirstText(conditionNode.ChannelName, tagNode.ChannelName),
+                SourceDeviceId = FirstText(conditionNode.DeviceId, tagNode.DeviceId),
+                SourceGroupId = FirstText(conditionNode.GroupId, tagNode.GroupId),
+                SourceTagId = FirstText(conditionNode.TagId, tagNode.TagId),
                 SourcePointCode = FirstText(conditionNode.PointCode, tagNode.PointCode),
                 SourceDeviceName = FirstText(conditionNode.DeviceName, tagNode.DeviceName),
                 SourceGroupName = FirstText(conditionNode.GroupName, tagNode.GroupName),
@@ -73,9 +87,9 @@ namespace IPC.Runtime.Configuration
                 Operator = ParseEnum(conditionNode.Operator, EdgeRuleComparisonOperator.GreaterThan),
                 CompareValue = conditionNode.CompareValue,
                 LogicalOperator = ParseEnum(conditionNode.LogicalOperator, EdgeRuleLogicalOperator.And),
-                DurationSeconds = durationNode == null || durationNode.DurationSeconds <= 0
+                DurationSeconds = durationNode == null
                     ? Math.Max(0, conditionNode.DurationSeconds)
-                    : durationNode.DurationSeconds,
+                    : Math.Max(0, durationNode.DurationSeconds),
                 PublishToMqtt = mqttNode == null ? conditionNode.PublishToMqtt : mqttNode.PublishToMqtt,
                 PublishOnClear = mqttNode == null ? conditionNode.PublishOnClear : mqttNode.PublishOnClear,
                 PublishTopicTemplate = FirstText(mqttNode == null ? string.Empty : mqttNode.TopicTemplate, conditionNode.TopicTemplate, "ipc/rule/{pointCode}/{ruleName}"),
@@ -104,6 +118,11 @@ namespace IPC.Runtime.Configuration
                 StateExpectedValue = conditionNode.StateExpectedValue,
                 StateClearValue = conditionNode.StateClearValue,
                 StateTimeoutSeconds = conditionNode.StateTimeoutSeconds,
+                RelatedChannelId = conditionNode.RelatedChannelId,
+                RelatedChannelName = conditionNode.RelatedChannelName,
+                RelatedDeviceId = conditionNode.RelatedDeviceId,
+                RelatedGroupId = conditionNode.RelatedGroupId,
+                RelatedTagId = conditionNode.RelatedTagId,
                 RelatedDeviceName = conditionNode.RelatedDeviceName,
                 RelatedGroupName = conditionNode.RelatedGroupName,
                 RelatedTagName = conditionNode.RelatedTagName,
@@ -115,6 +134,11 @@ namespace IPC.Runtime.Configuration
                 ContextName = conditionNode.ContextName,
                 ContextExpectedValue = conditionNode.ContextExpectedValue,
                 ContextOperator = ParseEnum(conditionNode.ContextOperator, EdgeRuleComparisonOperator.Equal),
+                ContextChannelId = conditionNode.ContextChannelId,
+                ContextChannelName = conditionNode.ContextChannelName,
+                ContextDeviceId = conditionNode.ContextDeviceId,
+                ContextGroupId = conditionNode.ContextGroupId,
+                ContextTagId = conditionNode.ContextTagId,
                 ContextDeviceName = conditionNode.ContextDeviceName,
                 ContextGroupName = conditionNode.ContextGroupName,
                 ContextTagName = conditionNode.ContextTagName,
@@ -166,6 +190,14 @@ namespace IPC.Runtime.Configuration
 
             if (project.Rules == null)
                 project.Rules = new List<EdgeRuleConfig>();
+
+            if (string.Equals(definition.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase))
+            {
+                RemoveRule(project, previousCompiledRuleId);
+                definition.Mode = FlowRuleModes.Flow;
+                definition.CompiledRuleId = string.Empty;
+                return;
+            }
 
             EdgeRuleConfig? compiledRule;
             bool compiled = TryCompile(definition, out compiledRule);

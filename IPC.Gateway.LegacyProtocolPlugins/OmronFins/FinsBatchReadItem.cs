@@ -15,9 +15,9 @@ namespace IPC.Plc.Communication.OmronFins
         public int PointCount { get; private set; }
         public int ValueCount { get; private set; }
 
-        public static FinsBatchReadItem Create(int index, PlcBatchReadRequest request)
+        public static FinsBatchReadItem Create(int index, PlcBatchReadRequest request, FinsDriverOptions options)
         {
-            FinsAddress address = FinsAddress.Parse(request.Address, request.DataType);
+            FinsAddress address = FinsAddress.Parse(request.Address, request.DataType, options);
             return FinsDataCodec.IsBitType(request.DataType)
                 ? CreateBitItem(index, request, address)
                 : CreateWordItem(index, request, address);
@@ -28,7 +28,10 @@ namespace IPC.Plc.Communication.OmronFins
             int elementCount = Math.Max(1, request.ElementCount);
             int valueCount = PlcDataTypeHelper.IsArray(request.DataType) ? elementCount : 1;
             FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(request.DataType) ? request.ElementOffset : 0);
-            int startPoint = start.WordAddress * 16 + start.BitIndex;
+            start.EnsureRange(valueCount, true);
+            int startPoint = start.Area.BitAddressUsesWordIndex
+                ? start.WordAddress
+                : start.WordAddress * 16 + start.BitIndex;
             return Create(index, request, start.Area, FinsBatchReadKind.Bit, start.Area.BitCode, startPoint, valueCount, valueCount);
         }
 
@@ -45,6 +48,7 @@ namespace IPC.Plc.Communication.OmronFins
                 : 0;
             FinsAddress start = address.OffsetWords(wordOffset);
             int wordCount = FinsDataCodec.GetWordCount(request.DataType, valueCount);
+            start.EnsureRange(wordCount, false);
             return Create(index, request, start.Area, FinsBatchReadKind.Word, start.Area.WordCode, start.WordAddress, wordCount, valueCount);
         }
 

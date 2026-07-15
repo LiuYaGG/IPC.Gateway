@@ -25,7 +25,7 @@ namespace IPC.Runtime.Engine
         public RuntimeSchedulerOptions()
         {
             IsolationStrategy = "SemaphoreLimitedPerDeviceQueue";
-            MaxConcurrentDevicePolls = Math.Max(2, Math.Min(8, Environment.ProcessorCount));
+            MaxConcurrentDevicePolls = Math.Max(16, Math.Min(64, Environment.ProcessorCount * 8));
             SchedulerIntervalMs = 100;
             DevicePollQueueLimit = 1024;
             BackpressureEnabled = true;

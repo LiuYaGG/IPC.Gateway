@@ -18,6 +18,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO;
@@ -50,8 +51,10 @@ namespace IPC.Runtime.Engine
     {
         private readonly object _syncRoot;
         private readonly Dictionary<string, DeviceRuntimeState> _deviceStatesById;
-        private readonly Dictionary<string, TagValueSnapshot> _snapshotsByPath;
-        private readonly Dictionary<string, DateTime> _nextReadUtcByTagId;
+        private readonly ConcurrentDictionary<string, TagValueSnapshot> _snapshotsByPath;
+        private readonly ConcurrentDictionary<string, DateTime> _nextReadUtcByTagId;
+        private readonly Dictionary<string, string> _channelNamesById;
+        private readonly Dictionary<string, int> _devicePollStaggerOffsetMsByKey;
         private readonly object _queueSyncRoot;
         private readonly Queue<DeviceRuntimeState> _pendingHighPriorityDevicePolls;
         private readonly Queue<DeviceRuntimeState> _pendingRecoveryDevicePolls;
@@ -139,8 +142,10 @@ namespace IPC.Runtime.Engine
             RuntimeSchedulerOptions options = (schedulerOptions ?? new RuntimeSchedulerOptions()).Normalize();
             _syncRoot = new object();
             _deviceStatesById = new Dictionary<string, DeviceRuntimeState>();
-            _snapshotsByPath = new Dictionary<string, TagValueSnapshot>();
-            _nextReadUtcByTagId = new Dictionary<string, DateTime>();
+            _snapshotsByPath = new ConcurrentDictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+            _nextReadUtcByTagId = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            _channelNamesById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _devicePollStaggerOffsetMsByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             _queueSyncRoot = new object();
             _pendingHighPriorityDevicePolls = new Queue<DeviceRuntimeState>();
             _pendingRecoveryDevicePolls = new Queue<DeviceRuntimeState>();
@@ -179,6 +184,9 @@ namespace IPC.Runtime.Engine
             _recentPollTimeoutUtc = new Queue<DateTime>();
             _recentReadTimeoutUtc = new Queue<DateTime>();
             _devicePollSemaphore = new Semaphore(_maxConcurrentDevicePolls, _maxConcurrentDevicePolls);
+            ThreadPool.GetMinThreads(out int minimumWorkers, out int minimumIoWorkers);
+            if (minimumWorkers < _maxConcurrentDevicePolls)
+                ThreadPool.SetMinThreads(_maxConcurrentDevicePolls, minimumIoWorkers);
             _lastTimeoutDeviceName = string.Empty;
             _lastTimeoutMessage = string.Empty;
             _lastBackpressureMessage = string.Empty;
@@ -211,6 +219,8 @@ namespace IPC.Runtime.Engine
             {
                 _configuredChannelScheduler.Configure(runtimeConfig);
                 _config = runtimeConfig;
+                RebuildChannelNameCacheNoLock(runtimeConfig);
+                RebuildDevicePollStaggerCacheNoLock(runtimeConfig);
                 _index = new TagRuntimeIndex(runtimeConfig);
                 _snapshotsByPath.Clear();
                 _nextReadUtcByTagId.Clear();
@@ -260,6 +270,8 @@ namespace IPC.Runtime.Engine
                 previousDeviceStatesById = new Dictionary<string, DeviceRuntimeState>(_deviceStatesById, StringComparer.OrdinalIgnoreCase);
 
                 _config = runtimeConfig;
+                RebuildChannelNameCacheNoLock(runtimeConfig);
+                RebuildDevicePollStaggerCacheNoLock(runtimeConfig);
                 _index = new TagRuntimeIndex(runtimeConfig);
                 _snapshotsByPath.Clear();
                 _nextReadUtcByTagId.Clear();
@@ -323,20 +335,14 @@ namespace IPC.Runtime.Engine
             ClearTagValueChangedQueue();
         }
 
-        public bool TryGetSnapshot(string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
+        public bool TryGetSnapshotById(string channelId, string deviceId, string groupId, string tagId, out TagValueSnapshot? snapshot)
         {
-            lock (_syncRoot)
-            {
-                return _snapshotStore.TryGet(_snapshotsByPath, deviceName, groupName, tagName, out snapshot);
-            }
+            return _snapshotStore.TryGetById(_snapshotsByPath, channelId, deviceId, groupId, tagId, out snapshot);
         }
 
         public IList<TagValueSnapshot> GetSnapshots()
         {
-            lock (_syncRoot)
-            {
-                return _snapshotStore.GetAll(_snapshotsByPath);
-            }
+            return _snapshotStore.GetAll(_snapshotsByPath);
         }
 
         public void RestoreSnapshots(IList<TagValueSnapshot> snapshots)
@@ -346,29 +352,13 @@ namespace IPC.Runtime.Engine
 
             lock (_syncRoot)
             {
-                Dictionary<string, string> pathByTagId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (KeyValuePair<string, TagValueSnapshot> pair in _snapshotsByPath)
-                {
-                    TagValueSnapshot current = pair.Value;
-                    if (current != null && !string.IsNullOrWhiteSpace(current.TagId))
-                        pathByTagId[current.TagId] = pair.Key;
-                }
-
                 for (int i = 0; i < snapshots.Count; i++)
                 {
                     TagValueSnapshot persisted = snapshots[i];
                     if (persisted == null)
                         continue;
 
-                    string key = string.Empty;
-                    if (!string.IsNullOrWhiteSpace(persisted.TagId))
-                    {
-                        string? restoredKey;
-                        if (pathByTagId.TryGetValue(persisted.TagId, out restoredKey))
-                            key = restoredKey ?? string.Empty;
-                    }
-                    if (string.IsNullOrWhiteSpace(key))
-                        key = TagPath.Build(persisted.DeviceName, persisted.GroupName, persisted.TagName);
+                    string key = TagPath.BuildIdentity(persisted.ChannelId, persisted.DeviceId, persisted.GroupId, persisted.TagId);
 
                     TagValueSnapshot? current;
                     if (!_snapshotsByPath.TryGetValue(key, out current) || current == null)
@@ -522,6 +512,7 @@ namespace IPC.Runtime.Engine
                 if (state == null)
                     continue;
 
+                DeviceConfig? deviceConfig = state.Config;
                 string message;
                 DateTime timestamp;
                 string deviceName;
@@ -554,6 +545,9 @@ namespace IPC.Runtime.Engine
                     errors.Add(new RuntimeErrorDetail
                     {
                         Category = "DeviceConnection",
+                        ChannelId = deviceConfig == null ? string.Empty : deviceConfig.ChannelId,
+                        ChannelName = deviceConfig == null ? string.Empty : GetChannelName(deviceConfig.ChannelId),
+                        DeviceId = deviceConfig == null ? string.Empty : deviceConfig.Id,
                         DeviceName = deviceName,
                         Message = message,
                         Suggestion = SuggestDeviceConnectionCause(message),
@@ -574,8 +568,13 @@ namespace IPC.Runtime.Engine
                     errors.Add(new RuntimeErrorDetail
                     {
                         Category = "TagRead",
+                        ChannelId = snapshot.ChannelId,
+                        ChannelName = snapshot.ChannelName,
+                        DeviceId = snapshot.DeviceId,
                         DeviceName = snapshot.DeviceName,
+                        GroupId = snapshot.GroupId,
                         GroupName = snapshot.GroupName,
+                        TagId = snapshot.TagId,
                         TagName = snapshot.TagName,
                         Message = snapshot.ErrorMessage,
                         Suggestion = SuggestTagReadCause(snapshot.ErrorMessage),
@@ -588,8 +587,13 @@ namespace IPC.Runtime.Engine
                     errors.Add(new RuntimeErrorDetail
                     {
                         Category = "DeviceConnection",
+                        ChannelId = snapshot.ChannelId,
+                        ChannelName = snapshot.ChannelName,
+                        DeviceId = snapshot.DeviceId,
                         DeviceName = snapshot.DeviceName,
+                        GroupId = snapshot.GroupId,
                         GroupName = snapshot.GroupName,
+                        TagId = snapshot.TagId,
                         TagName = snapshot.TagName,
                         Message = snapshot.ErrorMessage,
                         Suggestion = SuggestDeviceConnectionCause(snapshot.ErrorMessage),
@@ -617,11 +621,15 @@ namespace IPC.Runtime.Engine
                 throw new ArgumentNullException("request");
 
             TagValueSnapshot? snapshot;
-            if (!TryGetSnapshot(request.DeviceName, request.GroupName, request.TagName, out snapshot) || snapshot == null)
+            if (!TryGetSnapshotById(request.ChannelId, request.DeviceId, request.GroupId, request.TagId, out snapshot) || snapshot == null)
             {
                 return new ReadTagResponse
                 {
                     Success = false,
+                    ChannelId = request.ChannelId,
+                    DeviceId = request.DeviceId,
+                    GroupId = request.GroupId,
+                    TagId = request.TagId,
                     DeviceName = request.DeviceName,
                     GroupName = request.GroupName,
                     TagName = request.TagName,
@@ -644,7 +652,7 @@ namespace IPC.Runtime.Engine
             if (request.Tags == null || request.Tags.Count == 0)
             {
                 response.Success = false;
-                response.Results.Add(CreateErrorResponse(string.Empty, string.Empty, string.Empty, "No tags were requested."));
+                response.Results.Add(CreateErrorResponse(string.Empty, string.Empty, string.Empty, string.Empty, "No tags were requested."));
                 return response;
             }
 
@@ -653,6 +661,11 @@ namespace IPC.Runtime.Engine
                 TagPathDto? path = request.Tags[i];
                 ReadTagRequest itemRequest = new ReadTagRequest
                 {
+                    ChannelId = path == null ? string.Empty : path.ChannelId,
+                    DeviceId = path == null ? string.Empty : path.DeviceId,
+                    GroupId = path == null ? string.Empty : path.GroupId,
+                    TagId = path == null ? string.Empty : path.TagId,
+                    ChannelName = path == null ? string.Empty : path.ChannelName,
                     DeviceName = path == null ? string.Empty : path.DeviceName,
                     GroupName = path == null ? string.Empty : path.GroupName,
                     TagName = path == null ? string.Empty : path.TagName
@@ -672,58 +685,48 @@ namespace IPC.Runtime.Engine
             if (request == null)
                 throw new ArgumentNullException("request");
 
-            bool hasDevice = !string.IsNullOrWhiteSpace(request.DeviceName);
-            bool hasGroup = !string.IsNullOrWhiteSpace(request.GroupName);
-            bool hasTag = !string.IsNullOrWhiteSpace(request.TagName);
+            bool hasChannel = !string.IsNullOrWhiteSpace(request.ChannelId);
+            bool hasDevice = !string.IsNullOrWhiteSpace(request.DeviceId);
+            bool hasGroup = !string.IsNullOrWhiteSpace(request.GroupId);
+            bool hasTag = !string.IsNullOrWhiteSpace(request.TagId);
 
-            if (!hasDevice)
-                return CreateErrorResponseList(request.DeviceName, request.GroupName, request.TagName, "DeviceName is required.");
+            if (!hasChannel || !hasDevice)
+                return CreateErrorResponseList(request.ChannelId, request.DeviceId, request.GroupId, request.TagId, "ChannelId and DeviceId are required.");
 
             if (hasGroup && hasTag)
                 return CreateResponseList(ReadCached(request));
 
             if (!hasGroup && hasTag)
-                return ReadTagByDeviceCached(request.DeviceName, request.TagName);
+                return ReadTagByDeviceCached(request.ChannelId, request.DeviceId, request.TagId);
 
             if (hasGroup && !hasTag)
-                return ReadGroupCached(request.DeviceName, request.GroupName);
+                return ReadGroupCached(request.ChannelId, request.DeviceId, request.GroupId);
 
-            return CreateErrorResponseList(request.DeviceName, request.GroupName, request.TagName, "GroupName or TagName is required.");
+            return CreateErrorResponseList(request.ChannelId, request.DeviceId, request.GroupId, request.TagId, "GroupId or TagId is required.");
         }
 
-        public ReadTagsResponse ReadTagByDeviceCached(string deviceName, string tagName)
+        public ReadTagsResponse ReadTagByDeviceCached(string channelId, string deviceId, string tagId)
         {
-            string normalizedDeviceName = TagPath.Normalize(deviceName);
-            string normalizedTagName = TagPath.Normalize(tagName);
+            if (TryGetSnapshotById(channelId, deviceId, string.Empty, tagId, out TagValueSnapshot? snapshot) && snapshot != null)
+                return CreateResponseList(ReadTagResponse.FromSnapshot(snapshot.Clone()));
 
-            lock (_syncRoot)
-            {
-                foreach (TagValueSnapshot snapshot in _snapshotsByPath.Values)
-                {
-                    if (TagPath.Normalize(snapshot.DeviceName) == normalizedDeviceName &&
-                        string.IsNullOrEmpty(TagPath.Normalize(snapshot.GroupName)) &&
-                        TagPath.Normalize(snapshot.TagName) == normalizedTagName)
-                    {
-                        return CreateResponseList(ReadTagResponse.FromSnapshot(snapshot.Clone()));
-                    }
-                }
-            }
-
-            return CreateErrorResponseList(deviceName, string.Empty, tagName, "Device-level tag was not found under the device.");
+            return CreateErrorResponseList(channelId, deviceId, string.Empty, tagId, "Device-level tag was not found under the device.");
         }
 
-        public ReadTagsResponse ReadGroupCached(string deviceName, string groupName)
+        public ReadTagsResponse ReadGroupCached(string channelId, string deviceId, string groupId)
         {
             ReadTagsResponse response = new ReadTagsResponse();
-            string normalizedDeviceName = TagPath.Normalize(deviceName);
-            string normalizedGroupName = TagPath.Normalize(groupName);
+            string normalizedChannelId = TagPath.Normalize(channelId);
+            string normalizedDeviceId = TagPath.Normalize(deviceId);
+            string normalizedGroupId = TagPath.Normalize(groupId);
 
             lock (_syncRoot)
             {
                 foreach (TagValueSnapshot snapshot in _snapshotsByPath.Values)
                 {
-                    if (TagPath.Normalize(snapshot.DeviceName) == normalizedDeviceName &&
-                        TagPath.Normalize(snapshot.GroupName) == normalizedGroupName)
+                    if (TagPath.Normalize(snapshot.ChannelId) == normalizedChannelId &&
+                        TagPath.Normalize(snapshot.DeviceId) == normalizedDeviceId &&
+                        TagPath.Normalize(snapshot.GroupId) == normalizedGroupId)
                     {
                         response.Results.Add(ReadTagResponse.FromSnapshot(snapshot.Clone()));
                     }
@@ -733,7 +736,7 @@ namespace IPC.Runtime.Engine
             if (response.Results.Count == 0)
             {
                 response.Success = false;
-                response.Results.Add(CreateErrorResponse(deviceName, groupName, string.Empty, "Group was not found under the device, or it contains no tags."));
+                response.Results.Add(CreateErrorResponse(channelId, deviceId, groupId, string.Empty, "Group was not found under the device, or it contains no tags."));
                 return response;
             }
 
@@ -826,12 +829,17 @@ namespace IPC.Runtime.Engine
 
                     TagValueSnapshot? snapshot;
                     ReadTagResponse? currentValue = null;
-                    if (TryGetSnapshot(device.Name, group == null ? string.Empty : group.Name, tag.Name, out snapshot) && snapshot != null)
+                    if (TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id, out snapshot) && snapshot != null)
                         currentValue = ReadTagResponse.FromSnapshot(snapshot);
 
                         return new WriteTagResponse
                         {
                             Success = true,
+                            ChannelId = device.ChannelId,
+                            ChannelName = GetChannelName(device.ChannelId),
+                            DeviceId = device.Id,
+                            GroupId = group == null ? string.Empty : group.Id,
+                            TagId = tag.Id,
                             DeviceName = device.Name,
                             GroupName = group == null ? string.Empty : group.Name,
                             TagName = tag.Name,
@@ -1004,7 +1012,7 @@ namespace IPC.Runtime.Engine
             });
         }
 
-        private static Dictionary<string, TagValueSnapshot> BuildSnapshotLookupByTagIdNoLock(Dictionary<string, TagValueSnapshot> snapshots)
+        private static Dictionary<string, TagValueSnapshot> BuildSnapshotLookupByTagIdNoLock(IDictionary<string, TagValueSnapshot> snapshots)
         {
             Dictionary<string, TagValueSnapshot> result = new Dictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
             foreach (TagValueSnapshot snapshot in snapshots.Values)
@@ -1082,7 +1090,7 @@ namespace IPC.Runtime.Engine
                 if (previous != null && parentEnabled && tag.Enabled && CanRead(tag) && CanRestoreConfiguredSnapshot(previous))
                     snapshot = MergeRestoredSnapshot(snapshot, previous);
 
-                string path = TagPath.Build(device.Name, group == null ? string.Empty : group.Name, tag.Name);
+                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id);
                 _snapshotsByPath[path] = snapshot;
 
                 DateTime nextReadUtc;
@@ -1191,7 +1199,7 @@ namespace IPC.Runtime.Engine
                     return byTagId;
             }
 
-            string path = TagPath.Build(device.Name, group == null ? string.Empty : group.Name, tag.Name);
+            string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id);
             TagValueSnapshot? byPath;
             return previousSnapshots.TryGetValue(path, out byPath) ? byPath : null;
         }
@@ -1246,7 +1254,7 @@ namespace IPC.Runtime.Engine
                         if (tag.Scaling == null)
                             tag.Scaling = ScalingConfig.Default();
 
-                        string path = TagPath.Build(device.Name, group.Name, tag.Name);
+                        string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group.Id, tag.Id);
                         _snapshotsByPath[path] = CanRead(tag)
                             ? CreateSnapshot(device, group, tag, TagQuality.Unknown, "Waiting for first scan.")
                             : CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only.");
@@ -1327,7 +1335,7 @@ namespace IPC.Runtime.Engine
                 if (tag.Scaling == null)
                     tag.Scaling = ScalingConfig.Default();
 
-                string path = TagPath.Build(device.Name, string.Empty, tag.Name);
+                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, string.Empty, tag.Id);
                 _snapshotsByPath[path] = CanRead(tag)
                     ? CreateSnapshot(device, null, tag, TagQuality.Unknown, "Waiting for first scan.")
                     : CreateSnapshot(device, null, tag, TagQuality.AccessDenied, "Tag is write-only.");
@@ -1569,7 +1577,9 @@ namespace IPC.Runtime.Engine
 
                 Interlocked.Increment(ref _runningPollTaskCount);
                 Interlocked.Increment(ref _totalPollTasksStarted);
-                _ = RunQueuedDevicePollAsync(deviceState, configuredChannelLease, runtimeGeneration);
+                // Do not execute synchronously-completing drivers on the scheduler thread.
+                // A fast ValueTask chain can otherwise monopolize admission and serialize all devices.
+                _ = Task.Run(() => RunQueuedDevicePollAsync(deviceState, configuredChannelLease, runtimeGeneration));
             }
         }
 
@@ -2389,6 +2399,9 @@ namespace IPC.Runtime.Engine
             _runtimeEvents.Add(new RuntimeErrorDetail
             {
                 Category = "DeviceConnectionFailure",
+                ChannelId = device == null ? string.Empty : device.ChannelId ?? string.Empty,
+                ChannelName = device == null ? string.Empty : GetChannelName(device.ChannelId ?? string.Empty),
+                DeviceId = device == null ? string.Empty : device.Id ?? string.Empty,
                 DeviceName = device == null ? string.Empty : device.Name ?? string.Empty,
                 Message = message,
                 Suggestion = SuggestDeviceConnectionCause(deviceState == null ? string.Empty : deviceState.LastConnectionError),
@@ -2409,6 +2422,9 @@ namespace IPC.Runtime.Engine
             _runtimeEvents.Add(new RuntimeErrorDetail
             {
                 Category = "DeviceConnectionRecovered",
+                ChannelId = device == null ? string.Empty : device.ChannelId ?? string.Empty,
+                ChannelName = device == null ? string.Empty : GetChannelName(device.ChannelId ?? string.Empty),
+                DeviceId = device == null ? string.Empty : device.Id ?? string.Empty,
                 DeviceName = device == null ? string.Empty : device.Name ?? string.Empty,
                 Message = message,
                 Suggestion = "Device connection is back online. Review the previous failure event if the device keeps flapping.",
@@ -2468,7 +2484,9 @@ namespace IPC.Runtime.Engine
             group = null;
             tag = null;
 
-            if (string.IsNullOrWhiteSpace(request.DeviceName) || string.IsNullOrWhiteSpace(request.TagName))
+            if (string.IsNullOrWhiteSpace(request.ChannelId) ||
+                string.IsNullOrWhiteSpace(request.DeviceId) ||
+                string.IsNullOrWhiteSpace(request.TagId))
                 return false;
 
             ProjectConfig? config;
@@ -2480,22 +2498,25 @@ namespace IPC.Runtime.Engine
             if (config == null || config.Devices == null)
                 return false;
 
-            string deviceName = TagPath.Normalize(request.DeviceName);
-            string groupName = TagPath.Normalize(request.GroupName);
-            string tagName = TagPath.Normalize(request.TagName);
-            bool hasGroup = !string.IsNullOrWhiteSpace(request.GroupName);
+            string channelId = TagPath.Normalize(request.ChannelId);
+            string deviceId = TagPath.Normalize(request.DeviceId);
+            string groupId = TagPath.Normalize(request.GroupId);
+            string tagId = TagPath.Normalize(request.TagId);
+            bool hasGroup = !string.IsNullOrWhiteSpace(request.GroupId);
 
             for (int d = 0; d < config.Devices.Count; d++)
             {
                 DeviceConfig candidateDevice = config.Devices[d];
-                if (candidateDevice == null || TagPath.Normalize(candidateDevice.Name) != deviceName)
+                if (candidateDevice == null ||
+                    TagPath.Normalize(candidateDevice.ChannelId) != channelId ||
+                    TagPath.Normalize(candidateDevice.Id) != deviceId)
                     continue;
 
                 device = candidateDevice;
 
                 if (!hasGroup)
                 {
-                    tag = FindTag(candidateDevice.Tags, tagName);
+                    tag = FindTagById(candidateDevice.Tags, tagId);
                     return tag != null;
                 }
 
@@ -2505,11 +2526,11 @@ namespace IPC.Runtime.Engine
                 for (int g = 0; g < candidateDevice.Groups.Count; g++)
                 {
                     GroupConfig candidateGroup = candidateDevice.Groups[g];
-                    if (candidateGroup == null || TagPath.Normalize(candidateGroup.Name) != groupName)
+                    if (candidateGroup == null || TagPath.Normalize(candidateGroup.Id) != groupId)
                         continue;
 
                     group = candidateGroup;
-                    tag = FindTag(candidateGroup.Tags, tagName);
+                    tag = FindTagById(candidateGroup.Tags, tagId);
                     return tag != null;
                 }
 
@@ -2519,7 +2540,7 @@ namespace IPC.Runtime.Engine
             return false;
         }
 
-        private static TagConfig? FindTag(List<TagConfig>? tags, string normalizedTagName)
+        private static TagConfig? FindTagById(List<TagConfig>? tags, string normalizedTagId)
         {
             if (tags == null)
                 return null;
@@ -2527,7 +2548,7 @@ namespace IPC.Runtime.Engine
             for (int i = 0; i < tags.Count; i++)
             {
                 TagConfig tag = tags[i];
-                if (tag != null && TagPath.Normalize(tag.Name) == normalizedTagName)
+                if (tag != null && TagPath.Normalize(tag.Id) == normalizedTagId)
                     return tag;
             }
 
@@ -2800,9 +2821,9 @@ namespace IPC.Runtime.Engine
                 if (!IsCurrentGeneration(runtimeGeneration))
                     return false;
 
-                PlcReadFailureScope failureScope = IsCommunicationException(ex)
-                    ? PlcReadFailureScope.Transport
-                    : PlcReadFailureScope.Batch;
+                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Batch);
                 bool timeout = LooksLikeTimeout(ex);
                 return await RecordBatchReadExceptionAsync(deviceState, batchReads, now, ex.Message, failureScope, timeout, cancellationToken).ConfigureAwait(false);
             }
@@ -2812,13 +2833,15 @@ namespace IPC.Runtime.Engine
 
             bool stillConnected = true;
             bool connectionDropped = false;
+            bool anyReadSucceeded = false;
             for (int i = 0; i < batchReads.Count; i++)
             {
                 PendingTagRead read = batchReads[i];
                 PlcBatchReadResult? result = results != null && i < results.Count ? results[i] : null;
                 if (result != null && result.Success && result.Result != null)
                 {
-                    ApplyReadSuccess(deviceState, read.Group, read.Tag, result.Result);
+                    ApplyReadSuccess(deviceState, read.Group, read.Tag, result.Result, false);
+                    anyReadSucceeded = true;
                     if (subscriptionFallback)
                         ScheduleNextSubscriptionFallback(device, read.Group, read.Tag, now);
                     else
@@ -2850,6 +2873,9 @@ namespace IPC.Runtime.Engine
                 if (!keepConnected)
                     stillConnected = false;
             }
+
+            if (anyReadSucceeded)
+                RecordDeviceCommunicationSuccess(deviceState);
 
             return stillConnected;
         }
@@ -2998,7 +3024,12 @@ namespace IPC.Runtime.Engine
             }
         }
 
-        private void ApplyReadSuccess(DeviceRuntimeState deviceState, GroupConfig? group, TagConfig tag, PlcReadResult result)
+        private void ApplyReadSuccess(
+            DeviceRuntimeState deviceState,
+            GroupConfig? group,
+            TagConfig tag,
+            PlcReadResult result,
+            bool recordDeviceSuccess = true)
         {
             DeviceConfig device = deviceState.Config;
             object rawValue = result.Value;
@@ -3007,7 +3038,8 @@ namespace IPC.Runtime.Engine
             CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
             compiledRead.Runtime.RecordSuccess();
             deviceState.LastKnownGoodTagId = tag.Id ?? string.Empty;
-            RecordDeviceCommunicationSuccess(deviceState);
+            if (recordDeviceSuccess)
+                RecordDeviceCommunicationSuccess(deviceState);
 
             TagValueSnapshot snapshot = CreateSnapshot(device, group, tag, TagQuality.Good, string.Empty);
             snapshot.RawValue = rawValue;
@@ -3018,7 +3050,7 @@ namespace IPC.Runtime.Engine
             ApplyTagRuntimeState(snapshot, compiledRead.Runtime);
 
             TagValueSnapshot? previousSnapshot;
-            TryGetSnapshot(device.Name, group == null ? string.Empty : group.Name, tag.Name, out previousSnapshot);
+            TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id ?? string.Empty, out previousSnapshot);
             TagDataCleaner.Clean(snapshot, tag, previousSnapshot);
 
             UpdateSnapshot(snapshot);
@@ -3094,8 +3126,7 @@ namespace IPC.Runtime.Engine
         {
             if (tag == null || nextProbeUtc == DateTime.MinValue || nextProbeUtc == DateTime.MaxValue)
                 return;
-            lock (_syncRoot)
-                _nextReadUtcByTagId[tag.Id] = nextProbeUtc;
+            _nextReadUtcByTagId[tag.Id] = nextProbeUtc;
         }
 
         private static void ApplyTagRuntimeState(TagValueSnapshot snapshot, TagRuntimeState runtime)
@@ -3344,13 +3375,14 @@ namespace IPC.Runtime.Engine
                 return "DLT645:" + tag.MeterAddress.Trim() + ":" + tag.MeterDataIdentifier.Trim();
             }
 
-            if (device.Protocol == PlcProtocol.Cjt1882004)
+            if (device.Protocol == PlcProtocol.Cjt1882004 || device.Protocol == PlcProtocol.Cjt1882018)
             {
                 if (string.IsNullOrWhiteSpace(tag.MeterAddress) || string.IsNullOrWhiteSpace(tag.MeterDataIdentifier))
                     return string.Empty;
+                string prefix = device.Protocol == PlcProtocol.Cjt1882018 ? "CJ188-2018:" : "CJ188:";
                 if (!string.IsNullOrWhiteSpace(tag.MeterType))
-                    return "CJ188:" + tag.MeterType.Trim() + ":" + tag.MeterAddress.Trim() + ":" + tag.MeterDataIdentifier.Trim();
-                return "CJ188:" + tag.MeterAddress.Trim() + ":" + tag.MeterDataIdentifier.Trim();
+                    return prefix + tag.MeterType.Trim() + ":" + tag.MeterAddress.Trim() + ":" + tag.MeterDataIdentifier.Trim();
+                return prefix + tag.MeterAddress.Trim() + ":" + tag.MeterDataIdentifier.Trim();
             }
 
             return string.Empty;
@@ -3367,12 +3399,8 @@ namespace IPC.Runtime.Engine
 
         private bool IsDue(TagConfig tag, DateTime now)
         {
-            DateTime next;
-            lock (_syncRoot)
-            {
-                if (!_nextReadUtcByTagId.TryGetValue(tag.Id, out next))
-                    return true;
-            }
+            if (!_nextReadUtcByTagId.TryGetValue(tag.Id, out DateTime next))
+                return true;
 
             return now >= next;
         }
@@ -4008,33 +4036,88 @@ namespace IPC.Runtime.Engine
         private bool TryGetDevicePollStaggerOffsetMs(DeviceConfig device, int periodMs, out int offsetMs)
         {
             offsetMs = 0;
-            ProjectConfig? config;
             lock (_syncRoot)
             {
-                config = _config;
+                ProjectConfig? config = _config;
+                if (config == null || config.Devices == null || config.Devices.Count <= 1)
+                    return false;
+
+                string key = BuildDevicePollStaggerKey(device, periodMs);
+                if (!_devicePollStaggerOffsetMsByKey.TryGetValue(key, out offsetMs))
+                {
+                    RebuildDevicePollStaggerCacheNoLock(config);
+                    if (!_devicePollStaggerOffsetMsByKey.TryGetValue(key, out offsetMs))
+                        return false;
+                }
+                return true;
             }
+        }
 
-            if (config == null || config.Devices == null || config.Devices.Count <= 1)
-                return false;
+        private void RebuildChannelNameCacheNoLock(ProjectConfig config)
+        {
+            _channelNamesById.Clear();
+            if (config?.Channels == null)
+                return;
 
-            int index = -1;
-            int count = 0;
+            for (int i = 0; i < config.Channels.Count; i++)
+            {
+                ChannelConfig channel = config.Channels[i];
+                if (channel != null && !string.IsNullOrWhiteSpace(channel.Id))
+                    _channelNamesById[channel.Id] = channel.Name ?? string.Empty;
+            }
+        }
+
+        private string GetChannelName(string channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+                return string.Empty;
+
+            lock (_syncRoot)
+            {
+                return _channelNamesById.TryGetValue(channelId, out string? name)
+                    ? name ?? string.Empty
+                    : string.Empty;
+            }
+        }
+
+        private void RebuildDevicePollStaggerCacheNoLock(ProjectConfig config)
+        {
+            _devicePollStaggerOffsetMsByKey.Clear();
+            if (config?.Devices == null || config.Devices.Count <= 1)
+                return;
+
+            Dictionary<string, List<(DeviceConfig Device, int PeriodMs)>> groups =
+                new Dictionary<string, List<(DeviceConfig, int)>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < config.Devices.Count; i++)
             {
                 DeviceConfig candidate = config.Devices[i];
-                if (!IsSameDevicePollStaggerGroup(device, candidate, periodMs))
+                if (candidate == null || !candidate.Enabled || !HasReadableTagsForStagger(candidate))
                     continue;
-
-                if (string.Equals(candidate.Id, device.Id, StringComparison.OrdinalIgnoreCase))
-                    index = count;
-                count++;
+                int periodMs = GetDevicePollStaggerPeriodMs(candidate);
+                string groupKey = candidate.Protocol + "|" + IsUdpTransport(candidate) + "|" + periodMs;
+                if (!groups.TryGetValue(groupKey, out List<(DeviceConfig Device, int PeriodMs)>? group))
+                {
+                    group = new List<(DeviceConfig, int)>();
+                    groups[groupKey] = group;
+                }
+                group.Add((candidate, periodMs));
             }
 
-            if (count <= 1 || index < 0)
-                return false;
+            foreach (List<(DeviceConfig Device, int PeriodMs)> group in groups.Values)
+            {
+                for (int index = 0; index < group.Count; index++)
+                {
+                    (DeviceConfig candidate, int periodMs) = group[index];
+                    _devicePollStaggerOffsetMsByKey[BuildDevicePollStaggerKey(candidate, periodMs)] =
+                        (int)((long)periodMs * index / group.Count);
+                }
+            }
+        }
 
-            offsetMs = (int)((long)periodMs * index / count);
-            return true;
+        private static string BuildDevicePollStaggerKey(DeviceConfig device, int periodMs)
+        {
+            string identity = !string.IsNullOrWhiteSpace(device?.Id) ? device.Id : device?.Name ?? string.Empty;
+            return identity + "|" + periodMs.ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool IsSameDevicePollStaggerGroup(DeviceConfig device, DeviceConfig candidate, int periodMs)
@@ -4124,12 +4207,8 @@ namespace IPC.Runtime.Engine
                 if (tag == null || !tag.Enabled || !CanRead(tag))
                     continue;
 
-                DateTime tagNext;
-                lock (_syncRoot)
-                {
-                    if (!_nextReadUtcByTagId.TryGetValue(tag.Id, out tagNext))
-                        tagNext = DateTime.UtcNow;
-                }
+                if (!_nextReadUtcByTagId.TryGetValue(tag.Id, out DateTime tagNext))
+                    tagNext = DateTime.UtcNow;
 
                 if (next == DateTime.MinValue || tagNext < next)
                     next = tagNext;
@@ -4145,19 +4224,13 @@ namespace IPC.Runtime.Engine
             if (!failed)
                 next = AlignDeviceReadDueTime(device, scanRate, next, now);
 
-            lock (_syncRoot)
-            {
-                _nextReadUtcByTagId[tag.Id] = next;
-            }
+            _nextReadUtcByTagId[tag.Id] = next;
         }
 
         private void ScheduleNextSubscriptionFallback(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now)
         {
             int interval = GetSubscriptionFallbackIntervalMs(device, group, tag);
-            lock (_syncRoot)
-            {
-                _nextReadUtcByTagId[tag.Id] = now.AddMilliseconds(interval);
-            }
+            _nextReadUtcByTagId[tag.Id] = now.AddMilliseconds(interval);
         }
 
         private static int GetSubscriptionFallbackIntervalMs(DeviceConfig device, GroupConfig? group, TagConfig tag)
@@ -4275,6 +4348,8 @@ namespace IPC.Runtime.Engine
         {
             return new TagValueSnapshot
             {
+                ChannelId = device.ChannelId,
+                ChannelName = GetChannelName(device.ChannelId),
                 DeviceId = device.Id,
                 DeviceProtocol = device.Protocol.ToString(),
                 GroupId = group == null ? string.Empty : group.Id,
@@ -4347,6 +4422,8 @@ namespace IPC.Runtime.Engine
 
             return new DeviceRuntimeStatus
             {
+                ChannelId = device == null ? string.Empty : device.ChannelId,
+                ChannelName = device == null ? string.Empty : GetChannelName(device.ChannelId),
                 DeviceId = device == null ? string.Empty : device.Id,
                 DeviceName = device == null ? string.Empty : device.Name,
                 Protocol = device == null ? string.Empty : device.Protocol.ToString(),
@@ -4400,6 +4477,8 @@ namespace IPC.Runtime.Engine
 
             return new DeviceRuntimeStatus
             {
+                ChannelId = device == null ? string.Empty : device.ChannelId,
+                ChannelName = device == null ? string.Empty : GetChannelName(device.ChannelId),
                 DeviceId = device == null ? string.Empty : device.Id,
                 DeviceName = device == null ? string.Empty : device.Name,
                 Protocol = device == null ? string.Empty : device.Protocol.ToString(),
@@ -4462,11 +4541,7 @@ namespace IPC.Runtime.Engine
         private void UpdateSnapshot(TagValueSnapshot snapshot)
         {
             TagValueSnapshot clone;
-            bool changed;
-            lock (_syncRoot)
-            {
-                changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone);
-            }
+            bool changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone);
 
             if (changed)
                 EnqueueTagValueChanged(clone, Interlocked.CompareExchange(ref _runtimeGeneration, 0, 0));
@@ -4559,22 +4634,23 @@ namespace IPC.Runtime.Engine
             return list;
         }
 
-        private static ReadTagsResponse CreateErrorResponseList(string deviceName, string groupName, string tagName, string errorMessage)
+        private static ReadTagsResponse CreateErrorResponseList(string channelId, string deviceId, string groupId, string tagId, string errorMessage)
         {
             ReadTagsResponse response = new ReadTagsResponse();
             response.Success = false;
-            response.Results.Add(CreateErrorResponse(deviceName, groupName, tagName, errorMessage));
+            response.Results.Add(CreateErrorResponse(channelId, deviceId, groupId, tagId, errorMessage));
             return response;
         }
 
-        private static ReadTagResponse CreateErrorResponse(string deviceName, string groupName, string tagName, string errorMessage)
+        private static ReadTagResponse CreateErrorResponse(string channelId, string deviceId, string groupId, string tagId, string errorMessage)
         {
             return new ReadTagResponse
             {
                 Success = false,
-                DeviceName = deviceName ?? string.Empty,
-                GroupName = groupName ?? string.Empty,
-                TagName = tagName ?? string.Empty,
+                ChannelId = channelId ?? string.Empty,
+                DeviceId = deviceId ?? string.Empty,
+                GroupId = groupId ?? string.Empty,
+                TagId = tagId ?? string.Empty,
                 Quality = TagQuality.NotFound.ToString(),
                 ErrorMessage = errorMessage ?? string.Empty
             };
@@ -4851,6 +4927,11 @@ namespace IPC.Runtime.Engine
             return new WriteTagResponse
             {
                 Success = false,
+                ChannelId = request == null ? string.Empty : request.ChannelId ?? string.Empty,
+                DeviceId = request == null ? string.Empty : request.DeviceId ?? string.Empty,
+                GroupId = request == null ? string.Empty : request.GroupId ?? string.Empty,
+                TagId = request == null ? string.Empty : request.TagId ?? string.Empty,
+                ChannelName = request == null ? string.Empty : request.ChannelName ?? string.Empty,
                 DeviceName = request == null ? string.Empty : request.DeviceName ?? string.Empty,
                 GroupName = request == null ? string.Empty : request.GroupName ?? string.Empty,
                 TagName = request == null ? string.Empty : request.TagName ?? string.Empty,
@@ -4861,7 +4942,7 @@ namespace IPC.Runtime.Engine
             };
         }
 
-        private static WriteTagResponse CreateWriteRefreshWarningResponse(
+        private WriteTagResponse CreateWriteRefreshWarningResponse(
             DeviceConfig device,
             GroupConfig? group,
             TagConfig tag,
@@ -4870,6 +4951,11 @@ namespace IPC.Runtime.Engine
             return new WriteTagResponse
             {
                 Success = true,
+                ChannelId = device.ChannelId,
+                ChannelName = GetChannelName(device.ChannelId),
+                DeviceId = device.Id,
+                GroupId = group == null ? string.Empty : group.Id,
+                TagId = tag.Id,
                 DeviceName = device.Name,
                 GroupName = group == null ? string.Empty : group.Name,
                 TagName = tag.Name,

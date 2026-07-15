@@ -71,7 +71,14 @@ public static class GatewayMigrations
             PostgreSqlAccountSecurityStateSchema,
             MySqlAccountSecurityStateSchema,
             SqlServerAccountSecurityStateSchema,
-            SqliteAccountSecurityStateSchema)
+            SqliteAccountSecurityStateSchema),
+        new DatabaseMigration(
+            "202607150001_runtime_channel_identity",
+            "Add channel and stable object identities to persisted runtime state.",
+            PostgreSqlRuntimeChannelIdentitySchema,
+            MySqlRuntimeChannelIdentitySchema,
+            SqlServerRuntimeChannelIdentitySchema,
+            SqliteRuntimeChannelIdentitySchema)
     };
 
     private const string PostgreSqlInitialSchema = @"
@@ -899,4 +906,60 @@ create index if not exists ix_gateway_audit_logs_outcome_time
 
 create index if not exists ix_gateway_audit_logs_user_time
     on gateway_audit_logs(username, timestamp_utc desc);";
+
+    private const string PostgreSqlRuntimeChannelIdentitySchema = @"
+alter table gateway_runtime_device_statuses add column if not exists channel_id text null;
+alter table gateway_runtime_device_statuses add column if not exists channel_name text null;
+alter table gateway_runtime_tag_snapshots add column if not exists channel_id text null;
+alter table gateway_runtime_tag_snapshots add column if not exists channel_name text null;
+alter table gateway_runtime_errors add column if not exists channel_id text null;
+alter table gateway_runtime_errors add column if not exists channel_name text null;
+alter table gateway_runtime_errors add column if not exists device_id text null;
+alter table gateway_runtime_errors add column if not exists group_id text null;
+alter table gateway_runtime_errors add column if not exists tag_id text null;";
+
+    private const string MySqlRuntimeChannelIdentitySchema = @"
+alter table gateway_runtime_device_statuses
+    add column channel_id varchar(64) null,
+    add column channel_name varchar(128) null;
+alter table gateway_runtime_tag_snapshots
+    add column channel_id varchar(64) null,
+    add column channel_name varchar(128) null;
+alter table gateway_runtime_errors
+    add column channel_id varchar(64) null,
+    add column channel_name varchar(128) null,
+    add column device_id varchar(64) null,
+    add column group_id varchar(64) null,
+    add column tag_id varchar(64) null;";
+
+    private const string SqlServerRuntimeChannelIdentitySchema = @"
+if col_length(N'gateway_runtime_device_statuses', N'channel_id') is null
+    alter table gateway_runtime_device_statuses add channel_id nvarchar(64) null;
+if col_length(N'gateway_runtime_device_statuses', N'channel_name') is null
+    alter table gateway_runtime_device_statuses add channel_name nvarchar(128) null;
+if col_length(N'gateway_runtime_tag_snapshots', N'channel_id') is null
+    alter table gateway_runtime_tag_snapshots add channel_id nvarchar(64) null;
+if col_length(N'gateway_runtime_tag_snapshots', N'channel_name') is null
+    alter table gateway_runtime_tag_snapshots add channel_name nvarchar(128) null;
+if col_length(N'gateway_runtime_errors', N'channel_id') is null
+    alter table gateway_runtime_errors add channel_id nvarchar(64) null;
+if col_length(N'gateway_runtime_errors', N'channel_name') is null
+    alter table gateway_runtime_errors add channel_name nvarchar(128) null;
+if col_length(N'gateway_runtime_errors', N'device_id') is null
+    alter table gateway_runtime_errors add device_id nvarchar(64) null;
+if col_length(N'gateway_runtime_errors', N'group_id') is null
+    alter table gateway_runtime_errors add group_id nvarchar(64) null;
+if col_length(N'gateway_runtime_errors', N'tag_id') is null
+    alter table gateway_runtime_errors add tag_id nvarchar(64) null;";
+
+    private const string SqliteRuntimeChannelIdentitySchema = @"
+alter table gateway_runtime_device_statuses add column channel_id text null;
+alter table gateway_runtime_device_statuses add column channel_name text null;
+alter table gateway_runtime_tag_snapshots add column channel_id text null;
+alter table gateway_runtime_tag_snapshots add column channel_name text null;
+alter table gateway_runtime_errors add column channel_id text null;
+alter table gateway_runtime_errors add column channel_name text null;
+alter table gateway_runtime_errors add column device_id text null;
+alter table gateway_runtime_errors add column group_id text null;
+alter table gateway_runtime_errors add column tag_id text null;";
 }

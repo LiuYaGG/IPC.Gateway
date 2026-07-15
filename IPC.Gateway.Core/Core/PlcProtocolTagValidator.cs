@@ -27,23 +27,49 @@ namespace IPC.Plc.Communication.Core
             {
                 switch (protocol)
                 {
+                    case PlcProtocol.EtherNetIp:
+                        if (!Regex.IsMatch(normalizedAddress, @"^@(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)(/(0[xX][0-9A-Fa-f]+|[0-9]+))?$") &&
+                            !Regex.IsMatch(normalizedAddress, @"^(InputAssembly|OutputAssembly|ConfigAssembly|Assembly):(0[xX][0-9A-Fa-f]+|[0-9]+)(:(0[xX][0-9A-Fa-f]+|[0-9]+))?$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(normalizedAddress, @"^(Input|Output):[0-9]+(\.[0-7])?$", RegexOptions.IgnoreCase))
+                            return Invalid("EtherNet/IP 地址应为对象属性、Assembly 或 Input/Output 周期 I/O 地址。");
+                        if (dataType == PlcDataType.String && elementOffset != 0)
+                            return Invalid("CIP 字符串属性不支持元素偏移。");
+                        break;
                     case PlcProtocol.RockwellCip:
-                        if (!IsValidCipPath(normalizedAddress))
-                            return Invalid("AB/CIP 标签路径格式无效。");
+                        if (normalizedAddress.StartsWith("@", StringComparison.Ordinal))
+                        {
+                            if (!Regex.IsMatch(normalizedAddress, @"^@(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)(/(0[xX][0-9A-Fa-f]+|[0-9]+))?$"))
+                                return Invalid("CIP 对象地址格式应为 @Class/Instance/Attribute[/Member]。");
+                            if (dataType == PlcDataType.String && elementOffset != 0)
+                                return Invalid("CIP 字符串属性不支持元素偏移。");
+                        }
+                        else if (!IsValidCipPath(normalizedAddress))
+                        {
+                            return Invalid("Rockwell 符号标签路径格式无效。");
+                        }
+                        break;
+                    case PlcProtocol.RockwellPccc:
+                        if (!Regex.IsMatch(normalizedAddress, @"^(ST|[NBFLOTICSR])\d+:\d+(\.[A-Z0-9]+)?(/\d+)?$", RegexOptions.IgnoreCase))
+                            return Invalid("AB/PCCC地址格式无效。");
                         break;
                     case PlcProtocol.ModbusTcp:
                     case PlcProtocol.ModbusRtu:
+                    case PlcProtocol.ModbusAscii:
                         _ = ModbusAddress.Parse(normalizedAddress, dataType);
                         break;
                     case PlcProtocol.Dlt6452007:
                         _ = Dlt645Address.Parse(normalizedAddress);
                         break;
                     case PlcProtocol.Cjt1882004:
+                    case PlcProtocol.Cjt1882018:
                         _ = Cjt188Address.Parse(normalizedAddress);
                         break;
                     case PlcProtocol.SiemensS7:
-                        if (!Regex.IsMatch(normalizedAddress, @"^(DB\d+\.DB[XBWDL]\d+(\.\d+)?|[MIQV][XBWDL]?\d+(\.\d+)?)$", RegexOptions.IgnoreCase))
+                        if (!Regex.IsMatch(normalizedAddress, @"^(DB\d+\.DB[XBWDL]\d+(\.\d+)?|[MIQVEA][XBWDL]?\d+(\.\d+)?)$", RegexOptions.IgnoreCase))
                             return Invalid("西门子地址格式无效。");
+                        if (Regex.IsMatch(normalizedAddress, @"(?:DBX|[MIQVEA]X?)[0-9]+\.[0-9]+$", RegexOptions.IgnoreCase) &&
+                            dataType != PlcDataType.Bool && dataType != PlcDataType.BoolArray)
+                            return Invalid("带 .bit 后缀的 S7 地址必须使用 Bool 或 BoolArray。");
                         break;
                     case PlcProtocol.MitsubishiMc:
                     case PlcProtocol.MitsubishiMc1E:
@@ -57,7 +83,10 @@ namespace IPC.Plc.Communication.Core
                             return Invalid("欧姆龙 FINS 地址格式无效。");
                         break;
                     case PlcProtocol.CanOpen:
-                        if (!Regex.IsMatch(normalizedAddress, @"^((0X)?[0-9A-F]{1,3}[:/])?(0X)?[0-9A-F]{1,4}[:/.](0X)?[0-9A-F]{1,2}$", RegexOptions.IgnoreCase))
+                        if (!Regex.IsMatch(normalizedAddress, @"^((0X)?[0-9A-F]{1,3}[:/])?(0X)?[0-9A-F]{1,4}[:/.](0X)?[0-9A-F]{1,2}$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(normalizedAddress, @"^(TPDO[1-4]|RPDO[1-4]):([1-9]|[1-9][0-9]|1[01][0-9]|12[0-7])(:[0-7](\.[0-7])?)?$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(normalizedAddress, @"^(Heartbeat|EMCY|NMT):([1-9]|[1-9][0-9]|1[01][0-9]|12[0-7])$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(normalizedAddress, @"^(SYNC|TIME)$", RegexOptions.IgnoreCase))
                             return Invalid("CANopen 对象字典地址格式无效。");
                         break;
                     case PlcProtocol.BacnetIp:
@@ -67,6 +96,23 @@ namespace IPC.Plc.Communication.Core
                     case PlcProtocol.OpcUa:
                         if (!Regex.IsMatch(normalizedAddress, @"^((ns=\d+|nsu=.+);)?[isgb]=.+$", RegexOptions.IgnoreCase))
                             return Invalid("OPC UA NodeId 格式无效。");
+                        break;
+                    case PlcProtocol.BeckhoffAds:
+                        if (!Regex.IsMatch(normalizedAddress, @"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]+(?:,[0-9]+)*\])*$"))
+                            return Invalid("ADS 标签地址应为 TwinCAT 符号路径，例如 MAIN.Counter 或 MAIN.Values[0]。");
+                        break;
+                    case PlcProtocol.Snmp:
+                        if (!Regex.IsMatch(normalizedAddress, @"^\.?[0-9]+(?:\.[0-9]+)+$"))
+                            return Invalid("SNMP 标签地址应为数字 OID，例如 1.3.6.1.2.1.1.3.0。");
+                        break;
+                    case PlcProtocol.MqttClient:
+                        string topic = normalizedAddress.Split('|')[0].Trim();
+                        if (topic.Length == 0 || topic.IndexOfAny(new[] { '#', '+' }) >= 0)
+                            return Invalid("MQTT 标签地址必须使用精确主题，不能包含 # 或 +。");
+                        break;
+                    case PlcProtocol.Dnp3:
+                        if (!Regex.IsMatch(normalizedAddress, @"^(Binary|DoubleBitBinary|Analog|Counter|FrozenCounter|BinaryOutput|AnalogOutput):[0-9]+$", RegexOptions.IgnoreCase))
+                            return Invalid("DNP3 地址格式应为 PointType:Index，例如 Analog:12。");
                         break;
                 }
             }

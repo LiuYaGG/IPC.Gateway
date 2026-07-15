@@ -28,17 +28,17 @@ public static class GatewayCommercialEndpoints
             return Execute(() => templates.Apply(templateId, request));
         });
 
-        group.MapGet("/tags/export", (ClaimsPrincipal user, GatewayTagBulkService tags, GatewayLicenseService licenses, string? deviceId) =>
+        group.MapGet("/tags/export", (ClaimsPrincipal user, GatewayTagBulkService tags, GatewayLicenseService licenses, string? channelId, string? deviceId) =>
         {
             if (!GatewayAuthEndpoints.CanViewDevices(user))
                 return Forbidden("Current user is not allowed to export tags.");
             if (!IsFeatureAllowed(licenses, "tag-bulk", out IResult? denied))
                 return denied;
-            byte[] payload = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(tags.ExportCsv(deviceId ?? string.Empty))).ToArray();
+            byte[] payload = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(tags.ExportCsv(channelId ?? string.Empty, deviceId ?? string.Empty))).ToArray();
             return Results.File(payload, "text/csv", "ipc-gateway-tags.csv");
         });
 
-        group.MapPost("/tags/import", async (ClaimsPrincipal user, HttpRequest request, GatewayTagBulkService tags, GatewayLicenseService licenses, string? deviceId) =>
+        group.MapPost("/tags/import", async (ClaimsPrincipal user, HttpRequest request, GatewayTagBulkService tags, GatewayLicenseService licenses, string? channelId, string? deviceId) =>
         {
             if (!GatewayAuthEndpoints.CanCreateTag(user) && !GatewayAuthEndpoints.CanEditTag(user))
                 return Forbidden("Current user is not allowed to import tags.");
@@ -46,7 +46,7 @@ public static class GatewayCommercialEndpoints
                 return denied;
             using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8);
             string csv = await reader.ReadToEndAsync();
-            return Execute(() => tags.ImportCsv(csv, deviceId ?? string.Empty));
+            return Execute(() => tags.ImportCsv(csv, channelId ?? string.Empty, deviceId ?? string.Empty));
         });
 
         group.MapGet("/project/backup", (ClaimsPrincipal user, GatewayProjectBackupService backups, GatewayLicenseService licenses) =>

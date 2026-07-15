@@ -796,17 +796,39 @@
               "target": "Package",
               "version": "[3.0.2, )"
             },
+            "Beckhoff.TwinCAT.Ads": {
+              "target": "Package",
+              "version": "[7.0.292, )"
+            },
+            "EEIP.NetStandard": {
+              "target": "Package",
+              "version": "[1.0.1, )"
+            },
+            "Lextm.SharpSnmpLib": {
+              "target": "Package",
+              "version": "[12.5.7, )"
+            },
             "NModbus.Serial": {
               "target": "Package",
               "version": "[3.0.83, )"
             },
-            "Opc.UaFx.Client": {
+            "OPCFoundation.NetStandard.Opc.Ua.Client": {
               "target": "Package",
-              "version": "[2.53.1, )"
+              "version": "[1.5.378.145, )"
             },
             "System.IO.Ports": {
               "target": "Package",
               "version": "[10.0.0, )"
+            },
+            "log4net": {
+              "target": "Package",
+              "version": "[3.3.0, )"
+            },
+            "opendnp3": {
+              "include": "None",
+              "target": "Package",
+              "version": "[3.1.2, )",
+              "generatePathProperty": true
             }
           },
           "imports": [

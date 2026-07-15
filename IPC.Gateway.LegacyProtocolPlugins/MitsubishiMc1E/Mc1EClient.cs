@@ -40,6 +40,7 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
         private const int MaxBitPoints = 160;
 
         private readonly PlcConnectionOptions _options;
+        private readonly int _maxBatchGapPoints;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private UdpClient _udpClient;
@@ -52,6 +53,7 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                 throw new ArgumentNullException("options");
 
             _options = options;
+            _maxBatchGapPoints = McDriverOptions.Parse(options).MaxBatchGapPoints;
             if (_options.Port <= 0)
                 _options.Port = 5000;
         }
@@ -216,6 +218,7 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                 },
                 MaxWordPoints = MaxWordPoints,
                 MaxBitPoints = MaxBitPoints,
+                MaxGapPoints = _maxBatchGapPoints,
                 GetTypeName = GetTypeName
             });
         }
@@ -242,6 +245,7 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                 },
                 MaxWordPoints = MaxWordPoints,
                 MaxBitPoints = MaxBitPoints,
+                MaxGapPoints = _maxBatchGapPoints,
                 GetTypeName = GetTypeName
             }, cancellationToken).ConfigureAwait(false);
         }
@@ -729,21 +733,21 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                 _stream.Write(request, 0, request.Length);
                 byte[] header = ReadExact(2);
                 if (header[0] != expectedResponse)
-                    throw new InvalidOperationException("MC 1E 响应帧类型错误 0x" + header[0].ToString("X2"));
+                    throw McProtocolErrors.Frame("MC 1E response frame type is invalid: 0x" + header[0].ToString("X2"));
                 if (header[1] == 0)
                     return ReadRemainingData(expectedResponse, request);
                 if (header[1] == 0x5B)
                 {
                     byte[] detail = ReadExact(2);
-                    throw new InvalidOperationException("MC 1E 确认错误: 0x" + detail[0].ToString("X2") + detail[1].ToString("X2"));
+                    throw McProtocolErrors.Mc1E(0x5B, (ushort)((detail[0] << 8) | detail[1]));
                 }
-                throw new InvalidOperationException("MC 1E 错误响应 0x" + header[1].ToString("X2"));
+                throw McProtocolErrors.Mc1E(header[1]);
             }
 
             if (response == null || response.Length < 2)
                 throw new InvalidOperationException("MC 1E 响应数据无效");
             if (response[0] != expectedResponse)
-                throw new InvalidOperationException("MC 1E 响应帧类型错误 0x" + response[0].ToString("X2"));
+                throw McProtocolErrors.Frame("MC 1E response frame type is invalid: 0x" + response[0].ToString("X2"));
             if (response[1] == 0)
             {
                 if (_options.Transport == NetworkTransport.Udp)
@@ -757,10 +761,10 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
             {
                 if (response.Length < 4)
                     throw new InvalidOperationException("MC 1E 错误响应数据无效");
-                throw new InvalidOperationException("MC 1E 确认错误 0x" + response[2].ToString("X2") + response[3].ToString("X2"));
+                throw McProtocolErrors.Mc1E(0x5B, (ushort)((response[2] << 8) | response[3]));
             }
 
-            throw new InvalidOperationException("MC 1E 错误响应 0x" + response[1].ToString("X2"));
+            throw McProtocolErrors.Mc1E(response[1]);
             }
             catch
             {
@@ -808,21 +812,21 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                     await _stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
                     byte[] header = await ReadExactAsync(2, cancellationToken).ConfigureAwait(false);
                     if (header[0] != expectedResponse)
-                        throw new InvalidOperationException("MC 1E response frame type is invalid: 0x" + header[0].ToString("X2"));
+                        throw McProtocolErrors.Frame("MC 1E response frame type is invalid: 0x" + header[0].ToString("X2"));
                     if (header[1] == 0)
                         return await ReadRemainingDataAsync(expectedResponse, request, cancellationToken).ConfigureAwait(false);
                     if (header[1] == 0x5B)
                     {
                         byte[] detail = await ReadExactAsync(2, cancellationToken).ConfigureAwait(false);
-                        throw new InvalidOperationException("MC 1E acknowledge error: 0x" + detail[0].ToString("X2") + detail[1].ToString("X2"));
+                        throw McProtocolErrors.Mc1E(0x5B, (ushort)((detail[0] << 8) | detail[1]));
                     }
-                    throw new InvalidOperationException("MC 1E error response 0x" + header[1].ToString("X2"));
+                    throw McProtocolErrors.Mc1E(header[1]);
                 }
 
                 if (response == null || response.Length < 2)
                     throw new InvalidOperationException("MC 1E response data is invalid.");
                 if (response[0] != expectedResponse)
-                    throw new InvalidOperationException("MC 1E response frame type is invalid: 0x" + response[0].ToString("X2"));
+                    throw McProtocolErrors.Frame("MC 1E response frame type is invalid: 0x" + response[0].ToString("X2"));
                 if (response[1] == 0)
                 {
                     if (_options.Transport == NetworkTransport.Udp)
@@ -836,10 +840,10 @@ namespace IPC.Plc.Communication.MitsubishiMc1E
                 {
                     if (response.Length < 4)
                         throw new InvalidOperationException("MC 1E error response data is invalid.");
-                    throw new InvalidOperationException("MC 1E acknowledge error 0x" + response[2].ToString("X2") + response[3].ToString("X2"));
+                    throw McProtocolErrors.Mc1E(0x5B, (ushort)((response[2] << 8) | response[3]));
                 }
 
-                throw new InvalidOperationException("MC 1E error response 0x" + response[1].ToString("X2"));
+                throw McProtocolErrors.Mc1E(response[1]);
             }
             catch
             {

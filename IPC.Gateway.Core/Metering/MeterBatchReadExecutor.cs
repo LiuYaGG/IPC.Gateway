@@ -22,6 +22,8 @@ namespace IPC.Plc.Communication.Metering
 
             PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
             Dictionary<string, RawReadState> rawReads = new Dictionary<string, RawReadState>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> countedTimeoutKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int consecutiveMeterTimeouts = 0;
 
             for (int i = 0; i < requests.Count; i++)
             {
@@ -31,7 +33,8 @@ namespace IPC.Plc.Communication.Metering
                     TAddress address = context.ParseAddress(request.Address);
                     string key = context.GetAddressKey(address);
                     RawReadState state = GetOrReadRawData(rawReads, key, address, context);
-                    ordered[i] = BuildResult(request, address, state, context);
+                    PlcReadFailureScope scope = GetMeterFailureScope(state, key, countedTimeoutKeys, ref consecutiveMeterTimeouts);
+                    ordered[i] = BuildResult(request, address, state, context, scope);
                 }
                 catch (Exception ex)
                 {
@@ -60,6 +63,8 @@ namespace IPC.Plc.Communication.Metering
 
             PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
             Dictionary<string, RawReadState> rawReads = new Dictionary<string, RawReadState>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> countedTimeoutKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int consecutiveMeterTimeouts = 0;
 
             for (int i = 0; i < requests.Count; i++)
             {
@@ -70,7 +75,8 @@ namespace IPC.Plc.Communication.Metering
                     TAddress address = context.ParseAddress(request.Address);
                     string key = context.GetAddressKey(address);
                     RawReadState state = await GetOrReadRawDataAsync(rawReads, key, address, context, cancellationToken).ConfigureAwait(false);
-                    ordered[i] = BuildResult(request, address, state, context);
+                    PlcReadFailureScope scope = GetMeterFailureScope(state, key, countedTimeoutKeys, ref consecutiveMeterTimeouts);
+                    ordered[i] = BuildResult(request, address, state, context, scope);
                 }
                 catch (Exception ex)
                 {
@@ -137,10 +143,11 @@ namespace IPC.Plc.Communication.Metering
             PlcBatchReadRequest request,
             TAddress address,
             RawReadState state,
-            MeterBatchReadContext<TAddress> context)
+            MeterBatchReadContext<TAddress> context,
+            PlcReadFailureScope failureScope)
         {
             if (!state.Success)
-                return PlcBatchReadResult.FromFailure(request, state.ErrorMessage, state.IsCommunicationError);
+                return PlcBatchReadResult.FromFailure(request, state.ErrorMessage, failureScope);
 
             object value = context.DecodeValue(address, state.Data, request.DataType);
             PlcReadResult result = new PlcReadResult(context.TypeCode, context.TypeName, value);
@@ -151,10 +158,11 @@ namespace IPC.Plc.Communication.Metering
             PlcBatchReadRequest request,
             TAddress address,
             RawReadState state,
-            MeterAsyncBatchReadContext<TAddress> context)
+            MeterAsyncBatchReadContext<TAddress> context,
+            PlcReadFailureScope failureScope)
         {
             if (!state.Success)
-                return PlcBatchReadResult.FromFailure(request, state.ErrorMessage, state.IsCommunicationError);
+                return PlcBatchReadResult.FromFailure(request, state.ErrorMessage, failureScope);
 
             object value = context.DecodeValue(address, state.Data, request.DataType);
             PlcReadResult result = new PlcReadResult(context.TypeCode, context.TypeName, value);
@@ -188,6 +196,30 @@ namespace IPC.Plc.Communication.Metering
             return false;
         }
 
+        private static PlcReadFailureScope GetMeterFailureScope(
+            RawReadState state,
+            string key,
+            HashSet<string> countedTimeoutKeys,
+            ref int consecutiveMeterTimeouts)
+        {
+            if (state.Success)
+            {
+                consecutiveMeterTimeouts = 0;
+                return PlcReadFailureScope.None;
+            }
+
+            if (!state.IsTimeout)
+                return state.FailureScope;
+
+            // A silent meter is isolated first. Three distinct silent meter addresses in a row
+            // indicate that the transparent gateway/channel itself is probably unavailable.
+            if (countedTimeoutKeys.Add(key))
+                consecutiveMeterTimeouts++;
+            return consecutiveMeterTimeouts >= 3
+                ? PlcReadFailureScope.Transport
+                : PlcReadFailureScope.Tag;
+        }
+
         private static PlcBatchReadRequest EnsureRequest(PlcBatchReadRequest? request)
         {
             return request ?? new PlcBatchReadRequest(string.Empty, PlcDataType.Int16, 1, 0);
@@ -195,16 +227,18 @@ namespace IPC.Plc.Communication.Metering
 
         private sealed class RawReadState
         {
-            private RawReadState(byte[] data, string errorMessage, bool isCommunicationError)
+            private RawReadState(byte[] data, string errorMessage, PlcReadFailureScope failureScope, bool isTimeout)
             {
                 Data = data;
                 ErrorMessage = errorMessage;
-                IsCommunicationError = isCommunicationError;
+                FailureScope = failureScope;
+                IsTimeout = isTimeout;
             }
 
             public byte[] Data { get; private set; }
             public string ErrorMessage { get; private set; }
-            public bool IsCommunicationError { get; private set; }
+            public PlcReadFailureScope FailureScope { get; private set; }
+            public bool IsTimeout { get; private set; }
 
             public bool Success
             {
@@ -213,13 +247,18 @@ namespace IPC.Plc.Communication.Metering
 
             public static RawReadState FromSuccess(byte[] data)
             {
-                return new RawReadState(data ?? Array.Empty<byte>(), string.Empty, false);
+                return new RawReadState(data ?? Array.Empty<byte>(), string.Empty, PlcReadFailureScope.None, false);
             }
 
             public static RawReadState FromFailure(Exception exception)
             {
                 string message = exception == null ? string.Empty : exception.Message;
-                return new RawReadState(Array.Empty<byte>(), message, exception != null && IsCommunicationException(exception));
+                bool timeout = exception is TimeoutException ||
+                    (exception?.InnerException is TimeoutException);
+                PlcReadFailureScope scope = timeout
+                    ? PlcReadFailureScope.Tag
+                    : PlcFailureClassifier.Classify(exception, PlcReadFailureScope.Tag);
+                return new RawReadState(Array.Empty<byte>(), message, scope, timeout);
             }
         }
     }

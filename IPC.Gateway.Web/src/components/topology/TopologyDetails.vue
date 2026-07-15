@@ -62,7 +62,7 @@ const tagType = computed(() => {
 const nodeTypeLabel = computed(() => {
   if (!props.node) return ''
   if (props.node.type === 'gateway') return '边缘网关'
-  if (props.node.type === 'protocol') return '协议汇聚'
+  if (props.node.type === 'channel') return '配置通道'
   if (props.node.type === 'device') return '采集设备'
   if (props.node.type === 'group') return '设备分组'
   if (props.node.type === 'tag') return '采集标签'

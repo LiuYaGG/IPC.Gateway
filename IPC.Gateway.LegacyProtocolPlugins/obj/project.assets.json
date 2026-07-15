@@ -17,6 +17,83 @@
           "lib/netstandard2.0/BACnet.dll": {}
         }
       },
+      "Beckhoff.TwinCAT.Ads/7.0.292": {
+        "type": "package",
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Server": "7.0.292",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "compile": {
+          "lib/net10.0/TwinCAT.Ads.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ServiceProcess.ServiceController": "10.0.9"
+        },
+        "compile": {
+          "lib/net10.0/TwinCAT.Ads.Abstractions.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Abstractions.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+        "type": "package",
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9"
+        },
+        "compile": {
+          "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+        "type": "package",
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "Beckhoff.TwinCAT.Ads.ConfigurationProviders": "7.0.292",
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.9",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "compile": {
+          "lib/net10.0/TwinCAT.Ads.Server.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Server.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "BitFaster.Caching/2.6.0": {
         "type": "package",
         "compile": {
@@ -25,7 +102,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/BitFaster.Caching.dll": {
             "related": ".xml"
           }
         }
@@ -59,13 +136,46 @@
           }
         }
       },
-      "log4net/2.0.8": {
+      "EEIP.NetStandard/1.0.1": {
         "type": "package",
         "compile": {
-          "lib/netstandard1.3/log4net.dll": {}
+          "lib/netstandard2.0/EEIP.NetStandard.dll": {
+            "related": ".xml"
+          }
         },
         "runtime": {
-          "lib/netstandard1.3/log4net.dll": {}
+          "lib/netstandard2.0/EEIP.NetStandard.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "Lextm.SharpSnmpLib/12.5.7": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/SharpSnmpLib.dll": {
+            "related": ".pdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SharpSnmpLib.dll": {
+            "related": ".pdb;.xml"
+          }
+        }
+      },
+      "log4net/3.3.0": {
+        "type": "package",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "4.5.0"
+        },
+        "compile": {
+          "lib/netstandard2.0/log4net.dll": {
+            "related": ".pdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/log4net.dll": {
+            "related": ".pdb;.xml"
+          }
         }
       },
       "Microsoft.Bcl.Cryptography/9.0.13": {
@@ -233,10 +343,30 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "Microsoft.Extensions.Configuration.Abstractions/10.0.8": {
+      "Microsoft.Extensions.Configuration/10.0.9": {
         "type": "package",
         "dependencies": {
-          "Microsoft.Extensions.Primitives": "10.0.8"
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Primitives": "10.0.9"
+        },
+        "compile": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        }
+      },
+      "Microsoft.Extensions.Configuration.Abstractions/10.0.9": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Extensions.Primitives": "10.0.9"
         },
         "compile": {
           "lib/net10.0/Microsoft.Extensions.Configuration.Abstractions.dll": {
@@ -244,12 +374,32 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.Abstractions.dll": {
             "related": ".xml"
           }
         },
         "build": {
           "buildTransitive/net8.0/_._": {}
+        }
+      },
+      "Microsoft.Extensions.Configuration.Binder/10.0.9": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9"
+        },
+        "compile": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.Binder.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.Binder.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/netstandard2.0/Microsoft.Extensions.Configuration.Binder.targets": {}
         }
       },
       "Microsoft.Extensions.DependencyInjection/10.0.8": {
@@ -263,7 +413,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.DependencyInjection.dll": {
             "related": ".xml"
           }
         },
@@ -271,7 +421,7 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.8": {
+      "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.9": {
         "type": "package",
         "compile": {
           "lib/net10.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll": {
@@ -279,7 +429,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll": {
             "related": ".xml"
           }
         },
@@ -300,7 +450,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.Logging.dll": {
             "related": ".xml"
           }
         },
@@ -308,10 +458,10 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "Microsoft.Extensions.Logging.Abstractions/10.0.8": {
+      "Microsoft.Extensions.Logging.Abstractions/10.0.9": {
         "type": "package",
         "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.9"
         },
         "compile": {
           "lib/net10.0/Microsoft.Extensions.Logging.Abstractions.dll": {
@@ -319,7 +469,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.Logging.Abstractions.dll": {
             "related": ".xml"
           }
         },
@@ -339,7 +489,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.Options.dll": {
             "related": ".xml"
           }
         },
@@ -347,7 +497,7 @@
           "buildTransitive/net8.0/Microsoft.Extensions.Options.targets": {}
         }
       },
-      "Microsoft.Extensions.Primitives/10.0.8": {
+      "Microsoft.Extensions.Primitives/10.0.9": {
         "type": "package",
         "compile": {
           "lib/net10.0/Microsoft.Extensions.Primitives.dll": {
@@ -355,7 +505,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Microsoft.Extensions.Primitives.dll": {
             "related": ".xml"
           }
         },
@@ -458,15 +608,6 @@
           }
         }
       },
-      "Microsoft.NETCore.Platforms/2.1.0": {
-        "type": "package",
-        "compile": {
-          "lib/netstandard1.0/_._": {}
-        },
-        "runtime": {
-          "lib/netstandard1.0/_._": {}
-        }
-      },
       "Microsoft.SqlServer.Server/1.0.0": {
         "type": "package",
         "compile": {
@@ -549,25 +690,6 @@
           }
         }
       },
-      "Opc.UaFx.Client/2.53.1": {
-        "type": "package",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.4",
-          "Portable.BouncyCastle": "1.9.0",
-          "System.Management": "6.0.2",
-          "System.ServiceModel.Primitives": "4.5.3"
-        },
-        "compile": {
-          "lib/netcoreapp3.1/Opc.UaFx.Client.dll": {
-            "related": ".deps.json;.xml"
-          }
-        },
-        "runtime": {
-          "lib/netcoreapp3.1/Opc.UaFx.Client.dll": {
-            "related": ".deps.json;.xml"
-          }
-        }
-      },
       "OPCFoundation.NetStandard.Opc.Ua/1.5.378.145": {
         "type": "package",
         "dependencies": {
@@ -594,7 +716,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Opc.Ua.Client.dll": {
             "related": ".xml"
           }
         }
@@ -610,7 +732,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Opc.Ua.Configuration.dll": {
             "related": ".xml"
           }
         }
@@ -629,7 +751,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Opc.Ua.Core.dll": {
             "related": ".xml"
           }
         }
@@ -680,7 +802,7 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Opc.Ua.Security.Certificates.dll": {
             "related": ".xml"
           }
         }
@@ -713,9 +835,15 @@
           }
         },
         "runtime": {
-          "lib/net10.0/_._": {
+          "lib/net10.0/Opc.Ua.Types.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "opendnp3/3.1.2": {
+        "type": "package",
+        "build": {
+          "build/_._": {}
         }
       },
       "Oracle.ManagedDataAccess.Core/23.8.0": {
@@ -751,19 +879,6 @@
         },
         "runtime": {
           "lib/netstandard2.0/PacketDotNet.dll": {}
-        }
-      },
-      "Portable.BouncyCastle/1.9.0": {
-        "type": "package",
-        "compile": {
-          "lib/netstandard2.0/BouncyCastle.Crypto.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/netstandard2.0/BouncyCastle.Crypto.dll": {
-            "related": ".xml"
-          }
         }
       },
       "runtime.android-arm.runtime.native.System.IO.Ports/10.0.0": {
@@ -2125,20 +2240,20 @@
           "SqlSugarCore": "5.1.4.93"
         }
       },
-      "System.CodeDom/6.0.0": {
+      "System.ComponentModel.Composition/10.0.9": {
         "type": "package",
         "compile": {
-          "lib/net6.0/System.CodeDom.dll": {
+          "lib/net10.0/System.ComponentModel.Composition.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net6.0/System.CodeDom.dll": {
+          "lib/net10.0/System.ComponentModel.Composition.dll": {
             "related": ".xml"
           }
         },
         "build": {
-          "buildTransitive/netcoreapp3.1/_._": {}
+          "buildTransitive/net8.0/_._": {}
         }
       },
       "System.Configuration.ConfigurationManager/9.0.13": {
@@ -2153,7 +2268,7 @@
           }
         },
         "runtime": {
-          "lib/net9.0/_._": {
+          "lib/net9.0/System.Configuration.ConfigurationManager.dll": {
             "related": ".xml"
           }
         },
@@ -2161,15 +2276,15 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "System.Diagnostics.EventLog/9.0.13": {
+      "System.Diagnostics.EventLog/10.0.9": {
         "type": "package",
         "compile": {
-          "lib/net9.0/System.Diagnostics.EventLog.dll": {
+          "lib/net10.0/System.Diagnostics.EventLog.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net9.0/_._": {
+          "lib/net10.0/System.Diagnostics.EventLog.dll": {
             "related": ".xml"
           }
         },
@@ -2177,7 +2292,11 @@
           "buildTransitive/net8.0/_._": {}
         },
         "runtimeTargets": {
-          "runtimes/win/lib/net9.0/_._": {
+          "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.Messages.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          },
+          "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.dll": {
             "assetType": "runtime",
             "rid": "win"
           }
@@ -2276,48 +2395,20 @@
           }
         }
       },
-      "System.Management/6.0.2": {
+      "System.Reactive/6.1.0": {
         "type": "package",
-        "dependencies": {
-          "System.CodeDom": "6.0.0"
-        },
         "compile": {
-          "lib/net6.0/System.Management.dll": {
+          "lib/net6.0/System.Reactive.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net6.0/System.Management.dll": {
+          "lib/net6.0/System.Reactive.dll": {
             "related": ".xml"
           }
         },
         "build": {
-          "buildTransitive/netcoreapp3.1/_._": {}
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net6.0/System.Management.dll": {
-            "assetType": "runtime",
-            "rid": "win"
-          }
-        }
-      },
-      "System.Private.ServiceModel/4.5.3": {
-        "type": "package",
-        "dependencies": {
-          "Microsoft.NETCore.Platforms": "2.1.0"
-        },
-        "compile": {
-          "ref/netstandard/_._": {}
-        },
-        "runtimeTargets": {
-          "runtimes/unix/lib/netstandard2.0/System.Private.ServiceModel.dll": {
-            "assetType": "runtime",
-            "rid": "unix"
-          },
-          "runtimes/win/lib/netstandard2.0/System.Private.ServiceModel.dll": {
-            "assetType": "runtime",
-            "rid": "win"
-          }
+          "buildTransitive/net6.0/_._": {}
         }
       },
       "System.Security.Cryptography.Pkcs/9.0.13": {
@@ -2350,7 +2441,7 @@
           }
         },
         "runtime": {
-          "lib/net9.0/_._": {
+          "lib/net9.0/System.Security.Cryptography.ProtectedData.dll": {
             "related": ".xml"
           }
         },
@@ -2358,18 +2449,29 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "System.ServiceModel.Primitives/4.5.3": {
+      "System.ServiceProcess.ServiceController/10.0.9": {
         "type": "package",
         "dependencies": {
-          "System.Private.ServiceModel": "4.5.3"
+          "System.Diagnostics.EventLog": "10.0.9"
         },
         "compile": {
-          "ref/netstandard2.0/System.ServiceModel.Primitives.dll": {},
-          "ref/netstandard2.0/System.ServiceModel.dll": {}
+          "lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
         },
         "runtime": {
-          "lib/netstandard2.0/System.ServiceModel.Primitives.dll": {},
-          "lib/netstandard2.0/System.ServiceModel.dll": {}
+          "lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          }
         }
       },
       "IPC.Gateway.Core/1.0.0": {
@@ -2429,6 +2531,86 @@
         "lib/net48/BACnet.dll",
         "lib/netstandard2.0/BACnet.dll",
         "logo.png"
+      ]
+    },
+    "Beckhoff.TwinCAT.Ads/7.0.292": {
+      "sha512": "oCN8brTt4GNWgPJxQ4IuIevirHgQa48t6T+7CGv9P67L4e1vEwiF+xu8QVSaD88UvQwRp1W09RE5Mx98nPrYmw==",
+      "type": "package",
+      "path": "beckhoff.twincat.ads/7.0.292",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "License.md",
+        "Package.png",
+        "ReadMe.md",
+        "beckhoff.twincat.ads.7.0.292.nupkg.sha512",
+        "beckhoff.twincat.ads.nuspec",
+        "lib/net10.0/TwinCAT.Ads.dll",
+        "lib/net10.0/TwinCAT.Ads.xml",
+        "lib/net8.0/TwinCAT.Ads.dll",
+        "lib/net8.0/TwinCAT.Ads.xml",
+        "lib/netstandard2.0/TwinCAT.Ads.dll",
+        "lib/netstandard2.0/TwinCAT.Ads.xml"
+      ]
+    },
+    "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+      "sha512": "yAe0aZJ8QoKipPblSMLQsUt6We+1u7bQ0Yz0SQSKNwZ61bPfYFt2/ujFKsT7O79Ijmnsqrhx8MsWFuG9bR/cvQ==",
+      "type": "package",
+      "path": "beckhoff.twincat.ads.abstractions/7.0.292",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "License.md",
+        "Package.png",
+        "ReadMe.md",
+        "beckhoff.twincat.ads.abstractions.7.0.292.nupkg.sha512",
+        "beckhoff.twincat.ads.abstractions.nuspec",
+        "lib/net10.0/TwinCAT.Ads.Abstractions.dll",
+        "lib/net10.0/TwinCAT.Ads.Abstractions.xml",
+        "lib/net8.0/TwinCAT.Ads.Abstractions.dll",
+        "lib/net8.0/TwinCAT.Ads.Abstractions.xml",
+        "lib/netstandard2.0/TwinCAT.Ads.Abstractions.dll",
+        "lib/netstandard2.0/TwinCAT.Ads.Abstractions.xml"
+      ]
+    },
+    "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+      "sha512": "wHX0gKEBrlNmNBYJNBuF1Qs29cP1bNhKFu/cYN46US8rctuA7n70RRR0igJvUebeG3IGsU1Qx+bcCu3U2tM1EA==",
+      "type": "package",
+      "path": "beckhoff.twincat.ads.configurationproviders/7.0.292",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "License.md",
+        "Package.png",
+        "ReadMe.md",
+        "beckhoff.twincat.ads.configurationproviders.7.0.292.nupkg.sha512",
+        "beckhoff.twincat.ads.configurationproviders.nuspec",
+        "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.dll",
+        "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.xml",
+        "lib/net8.0/TwinCAT.Ads.ConfigurationProviders.dll",
+        "lib/net8.0/TwinCAT.Ads.ConfigurationProviders.xml",
+        "lib/netstandard2.0/TwinCAT.Ads.ConfigurationProviders.dll",
+        "lib/netstandard2.0/TwinCAT.Ads.ConfigurationProviders.xml"
+      ]
+    },
+    "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+      "sha512": "oAhfn6kcfSrWt50xuynUGazr0LT7m2g3SlATnqUCt1GgaICyxOf3XnmAi3yllGN2yrlcU2QqZF4LLl8Px0SvNw==",
+      "type": "package",
+      "path": "beckhoff.twincat.ads.server/7.0.292",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "License.md",
+        "Package.png",
+        "ReadMe.md",
+        "beckhoff.twincat.ads.server.7.0.292.nupkg.sha512",
+        "beckhoff.twincat.ads.server.nuspec",
+        "lib/net10.0/TwinCAT.Ads.Server.dll",
+        "lib/net10.0/TwinCAT.Ads.Server.xml",
+        "lib/net8.0/TwinCAT.Ads.Server.dll",
+        "lib/net8.0/TwinCAT.Ads.Server.xml",
+        "lib/netstandard2.0/TwinCAT.Ads.Server.dll",
+        "lib/netstandard2.0/TwinCAT.Ads.Server.xml"
       ]
     },
     "BitFaster.Caching/2.6.0": {
@@ -2492,28 +2674,55 @@
         "lib/portable-win+net40+sl40+wp7+wpa81/Common.Logging.Core.pdb"
       ]
     },
-    "log4net/2.0.8": {
-      "sha512": "N41MQGHZImiCfn0cUuSBjZxrcNfIQCuCgQP0rpgB3J/NWponEh3lc1LxJEuIsPAR9Oc1jVvfkNNFCY1C5hf9LA==",
+    "EEIP.NetStandard/1.0.1": {
+      "sha512": "gek5QvxvzASrMdRKqPYLzAdbeCsLIGenjUKE1xGFS7q+CHO/OXRG2S6ocSUw09To2huXnxFAnGsXx0YfFArjdQ==",
       "type": "package",
-      "path": "log4net/2.0.8",
+      "path": "eeip.netstandard/1.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "lib/net20-full/log4net.dll",
-        "lib/net20-full/log4net.xml",
-        "lib/net35-client/log4net.dll",
-        "lib/net35-client/log4net.xml",
-        "lib/net35-full/log4net.dll",
-        "lib/net35-full/log4net.xml",
-        "lib/net40-client/log4net.dll",
-        "lib/net40-client/log4net.xml",
-        "lib/net40-full/log4net.dll",
-        "lib/net40-full/log4net.xml",
-        "lib/net45-full/log4net.dll",
-        "lib/net45-full/log4net.xml",
-        "lib/netstandard1.3/log4net.dll",
-        "log4net.2.0.8.nupkg.sha512",
-        "log4net.nuspec"
+        "README.md",
+        "eeip.netstandard.1.0.1.nupkg.sha512",
+        "eeip.netstandard.nuspec",
+        "lib/netstandard2.0/EEIP.NetStandard.dll",
+        "lib/netstandard2.0/EEIP.NetStandard.xml"
+      ]
+    },
+    "Lextm.SharpSnmpLib/12.5.7": {
+      "sha512": "k631wRQNnFOpKxsYyziPp1UR4v+IBFS81nnmQyQa+RxSlmYjoLViNXINV43Aa49kQO1ulSUmGTI9DD94z0HAHg==",
+      "type": "package",
+      "path": "lextm.sharpsnmplib/12.5.7",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lextm.sharpsnmplib.12.5.7.nupkg.sha512",
+        "lextm.sharpsnmplib.nuspec",
+        "lib/net471/SharpSnmpLib.dll",
+        "lib/net471/SharpSnmpLib.pdb",
+        "lib/net471/SharpSnmpLib.xml",
+        "lib/net8.0/SharpSnmpLib.dll",
+        "lib/net8.0/SharpSnmpLib.pdb",
+        "lib/net8.0/SharpSnmpLib.xml",
+        "readme.md"
+      ]
+    },
+    "log4net/3.3.0": {
+      "sha512": "wtZ7K4XGWDxeQqHbUybwIug/3AAzhKcmroLf4ENfE5GsaDIMqT3GLX24f18XPFY8Qg9vaxfMSAODwWAXqkjI/Q==",
+      "type": "package",
+      "path": "log4net/3.3.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "README.md",
+        "lib/net462/log4net.dll",
+        "lib/net462/log4net.pdb",
+        "lib/net462/log4net.xml",
+        "lib/netstandard2.0/log4net.dll",
+        "lib/netstandard2.0/log4net.pdb",
+        "lib/netstandard2.0/log4net.xml",
+        "log4net.3.3.0.nupkg.sha512",
+        "log4net.nuspec",
+        "package-icon.png"
       ]
     },
     "Microsoft.Bcl.Cryptography/9.0.13": {
@@ -2752,10 +2961,39 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Microsoft.Extensions.Configuration.Abstractions/10.0.8": {
-      "sha512": "I63esIFbL3h5pSt7gXpXOlmcwDmYBUoYNEglKfDPFUqtYvSV84f2l28hO2lfVXsV0wdlplgAM7IVz16matapSg==",
+    "Microsoft.Extensions.Configuration/10.0.9": {
+      "sha512": "woZsWLhOQsASuxbmgiZJqiGUBNo3IjRdXC92xt8rRokza+P6/nIsnzq7sm9Or6ZYcRl2kL1ufj8HVzp1QlPTXw==",
       "type": "package",
-      "path": "microsoft.extensions.configuration.abstractions/10.0.8",
+      "path": "microsoft.extensions.configuration/10.0.9",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "PACKAGE.md",
+        "THIRD-PARTY-NOTICES.TXT",
+        "buildTransitive/net461/Microsoft.Extensions.Configuration.targets",
+        "buildTransitive/net462/_._",
+        "buildTransitive/net8.0/_._",
+        "buildTransitive/netcoreapp2.0/Microsoft.Extensions.Configuration.targets",
+        "lib/net10.0/Microsoft.Extensions.Configuration.dll",
+        "lib/net10.0/Microsoft.Extensions.Configuration.xml",
+        "lib/net462/Microsoft.Extensions.Configuration.dll",
+        "lib/net462/Microsoft.Extensions.Configuration.xml",
+        "lib/net8.0/Microsoft.Extensions.Configuration.dll",
+        "lib/net8.0/Microsoft.Extensions.Configuration.xml",
+        "lib/net9.0/Microsoft.Extensions.Configuration.dll",
+        "lib/net9.0/Microsoft.Extensions.Configuration.xml",
+        "lib/netstandard2.0/Microsoft.Extensions.Configuration.dll",
+        "lib/netstandard2.0/Microsoft.Extensions.Configuration.xml",
+        "microsoft.extensions.configuration.10.0.9.nupkg.sha512",
+        "microsoft.extensions.configuration.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
+    "Microsoft.Extensions.Configuration.Abstractions/10.0.9": {
+      "sha512": "qGhRPd3VxfLV9UqatVOiD9mAeUbj2KiMwGFYC5uXlzExiZQoe4X/hdmzGIU7BQjNLTqCnnbTHVyBglG3668/HA==",
+      "type": "package",
+      "path": "microsoft.extensions.configuration.abstractions/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -2776,8 +3014,48 @@
         "lib/net9.0/Microsoft.Extensions.Configuration.Abstractions.xml",
         "lib/netstandard2.0/Microsoft.Extensions.Configuration.Abstractions.dll",
         "lib/netstandard2.0/Microsoft.Extensions.Configuration.Abstractions.xml",
-        "microsoft.extensions.configuration.abstractions.10.0.8.nupkg.sha512",
+        "microsoft.extensions.configuration.abstractions.10.0.9.nupkg.sha512",
         "microsoft.extensions.configuration.abstractions.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
+    "Microsoft.Extensions.Configuration.Binder/10.0.9": {
+      "sha512": "Tp/+LPb70RyjjtLg9m5C959eP4KrUpJHThZfAegZVpsfmGvzfuNkuYbI/ft+LvXhMSyUcAeOPaN6rzTccwnZAg==",
+      "type": "package",
+      "path": "microsoft.extensions.configuration.binder/10.0.9",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "PACKAGE.md",
+        "THIRD-PARTY-NOTICES.TXT",
+        "analyzers/dotnet/cs/Microsoft.Extensions.Configuration.Binder.SourceGeneration.dll",
+        "analyzers/dotnet/cs/cs/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/de/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/es/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/fr/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/it/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/ja/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/ko/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/pl/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/pt-BR/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/ru/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/tr/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/zh-Hans/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "analyzers/dotnet/cs/zh-Hant/Microsoft.Extensions.Configuration.Binder.SourceGeneration.resources.dll",
+        "buildTransitive/netstandard2.0/Microsoft.Extensions.Configuration.Binder.targets",
+        "lib/net10.0/Microsoft.Extensions.Configuration.Binder.dll",
+        "lib/net10.0/Microsoft.Extensions.Configuration.Binder.xml",
+        "lib/net462/Microsoft.Extensions.Configuration.Binder.dll",
+        "lib/net462/Microsoft.Extensions.Configuration.Binder.xml",
+        "lib/net8.0/Microsoft.Extensions.Configuration.Binder.dll",
+        "lib/net8.0/Microsoft.Extensions.Configuration.Binder.xml",
+        "lib/net9.0/Microsoft.Extensions.Configuration.Binder.dll",
+        "lib/net9.0/Microsoft.Extensions.Configuration.Binder.xml",
+        "lib/netstandard2.0/Microsoft.Extensions.Configuration.Binder.dll",
+        "lib/netstandard2.0/Microsoft.Extensions.Configuration.Binder.xml",
+        "microsoft.extensions.configuration.binder.10.0.9.nupkg.sha512",
+        "microsoft.extensions.configuration.binder.nuspec",
         "useSharedDesignerContext.txt"
       ]
     },
@@ -2812,10 +3090,10 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.8": {
-      "sha512": "21nbDV60SRPWGIivsyl6lqBeEJNG1sginhhfWgRrr3Ais7aQ12To25OAHQxgoiJkjqy1aQ6RxpZBGYuTi7Ge6A==",
+    "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.9": {
+      "sha512": "g41l/30G3K4B/d/L8kjux0+30e27c8D0FVQ/PFCpbekgfDpj9mnDhieP67EqXWvl1EWNeZh2rpR4F5B/jcDOHA==",
       "type": "package",
-      "path": "microsoft.extensions.dependencyinjection.abstractions/10.0.8",
+      "path": "microsoft.extensions.dependencyinjection.abstractions/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -2838,7 +3116,7 @@
         "lib/netstandard2.0/Microsoft.Extensions.DependencyInjection.Abstractions.xml",
         "lib/netstandard2.1/Microsoft.Extensions.DependencyInjection.Abstractions.dll",
         "lib/netstandard2.1/Microsoft.Extensions.DependencyInjection.Abstractions.xml",
-        "microsoft.extensions.dependencyinjection.abstractions.10.0.8.nupkg.sha512",
+        "microsoft.extensions.dependencyinjection.abstractions.10.0.9.nupkg.sha512",
         "microsoft.extensions.dependencyinjection.abstractions.nuspec",
         "useSharedDesignerContext.txt"
       ]
@@ -2874,10 +3152,10 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Microsoft.Extensions.Logging.Abstractions/10.0.8": {
-      "sha512": "fdVadZmsC8jRP0KvKy8mO8f6GV/HyBvElfcSxEhd+5FM5boAw/01iSaCto5G3G37ApJira4A3pNaVvBv8cUiLQ==",
+    "Microsoft.Extensions.Logging.Abstractions/10.0.9": {
+      "sha512": "9S/DFt4cohlMPpzIxjG6kk0L8MuN2vDm9pbMCulxtJzzk82oJHVLBd8vuQxaPskaYQwKqmFmbannf5eoChgjYg==",
       "type": "package",
-      "path": "microsoft.extensions.logging.abstractions/10.0.8",
+      "path": "microsoft.extensions.logging.abstractions/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -2941,7 +3219,7 @@
         "lib/net9.0/Microsoft.Extensions.Logging.Abstractions.xml",
         "lib/netstandard2.0/Microsoft.Extensions.Logging.Abstractions.dll",
         "lib/netstandard2.0/Microsoft.Extensions.Logging.Abstractions.xml",
-        "microsoft.extensions.logging.abstractions.10.0.8.nupkg.sha512",
+        "microsoft.extensions.logging.abstractions.10.0.9.nupkg.sha512",
         "microsoft.extensions.logging.abstractions.nuspec",
         "useSharedDesignerContext.txt"
       ]
@@ -2992,10 +3270,10 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Microsoft.Extensions.Primitives/10.0.8": {
-      "sha512": "OBPo4nYhMyIbtueoC10CBm6AGAbo/A9IV8QQ/6ryZS7VvmqpGT7hunazeHLxFawRzn3oLOq4jhqhpBX4tfswWQ==",
+    "Microsoft.Extensions.Primitives/10.0.9": {
+      "sha512": "fmEbAUFsaIKirgLt/lYhuFRBwhcSJN31jjHgCdbQxJiWOum6EdLjkbgGuukSP9z/a+9LibaxII/kF+GwOXgC4g==",
       "type": "package",
-      "path": "microsoft.extensions.primitives/10.0.8",
+      "path": "microsoft.extensions.primitives/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -3016,7 +3294,7 @@
         "lib/net9.0/Microsoft.Extensions.Primitives.xml",
         "lib/netstandard2.0/Microsoft.Extensions.Primitives.dll",
         "lib/netstandard2.0/Microsoft.Extensions.Primitives.xml",
-        "microsoft.extensions.primitives.10.0.8.nupkg.sha512",
+        "microsoft.extensions.primitives.10.0.9.nupkg.sha512",
         "microsoft.extensions.primitives.nuspec",
         "useSharedDesignerContext.txt"
       ]
@@ -3177,23 +3455,6 @@
         "microsoft.identitymodel.tokens.nuspec"
       ]
     },
-    "Microsoft.NETCore.Platforms/2.1.0": {
-      "sha512": "ok+RPAtESz/9MUXeIEz6Lv5XAGQsaNmEYXMsgVALj4D7kqC8gveKWXWXbufLySR2fWrwZf8smyN5RmHu0e4BHA==",
-      "type": "package",
-      "path": "microsoft.netcore.platforms/2.1.0",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "LICENSE.TXT",
-        "THIRD-PARTY-NOTICES.TXT",
-        "lib/netstandard1.0/_._",
-        "microsoft.netcore.platforms.2.1.0.nupkg.sha512",
-        "microsoft.netcore.platforms.nuspec",
-        "runtime.json",
-        "useSharedDesignerContext.txt",
-        "version.txt"
-      ]
-    },
     "Microsoft.SqlServer.Server/1.0.0": {
       "sha512": "N4KeF3cpcm1PUHym1RmakkzfkEv3GRMyofVv40uXsQhCQeglr2OHNcUk2WOG51AKpGO8ynGpo9M/kFXSzghwug==",
       "type": "package",
@@ -3326,27 +3587,6 @@
         "npgsql.5.0.18.nupkg.sha512",
         "npgsql.nuspec",
         "postgresql.png"
-      ]
-    },
-    "Opc.UaFx.Client/2.53.1": {
-      "sha512": "IcUahuNOvPLR6cP4aHpM9jB9zFjy3HUBnF0QCYWLdtuDr8Km2gjRlnhxmgqEY7LDfmDa90cVhJD9WVm2cktvng==",
-      "type": "package",
-      "path": "opc.uafx.client/2.53.1",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "LICENSE.md",
-        "images/icon.png",
-        "lib/net472/Opc.UaFx.Client.dll",
-        "lib/net472/Opc.UaFx.Client.xml",
-        "lib/netcoreapp3.1/Opc.UaFx.Client.deps.json",
-        "lib/netcoreapp3.1/Opc.UaFx.Client.dll",
-        "lib/netcoreapp3.1/Opc.UaFx.Client.xml",
-        "lib/netstandard2.0/Opc.UaFx.Client.deps.json",
-        "lib/netstandard2.0/Opc.UaFx.Client.dll",
-        "lib/netstandard2.0/Opc.UaFx.Client.xml",
-        "opc.uafx.client.2.53.1.nupkg.sha512",
-        "opc.uafx.client.nuspec"
       ]
     },
     "OPCFoundation.NetStandard.Opc.Ua/1.5.378.145": {
@@ -3573,6 +3813,23 @@
         "opcfoundation.netstandard.opc.ua.types.nuspec"
       ]
     },
+    "opendnp3/3.1.2": {
+      "sha512": "jbudOxqKEaq+5vDv2SJ96w/PaKou05qJb9sJggjCJje33WVzQG/TYG5xQFzGLltE+1dif1YuSpxPethlN0e23A==",
+      "type": "package",
+      "path": "opendnp3/3.1.2",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/opendnp3.props",
+        "build/opendnp3.targets",
+        "opendnp3.3.1.2.nupkg.sha512",
+        "opendnp3.nuspec",
+        "runtime/x64/DNP3CLRAdapter.dll",
+        "runtime/x64/DNP3CLRInterface.dll",
+        "runtime/x86/DNP3CLRAdapter.dll",
+        "runtime/x86/DNP3CLRInterface.dll"
+      ]
+    },
     "Oracle.ManagedDataAccess.Core/23.8.0": {
       "sha512": "wgCcndZnwbWySb4Bm0UOAJO8wOagFAs1IG8Aa4ZX38D9N9MrySfryGKJd+yajb2CDGXv/yL3x7yES6mmF4OMWw==",
       "type": "package",
@@ -3614,21 +3871,6 @@
         "lib/netstandard2.0/PacketDotNet.dll",
         "packetdotnet.0.19.3.nupkg.sha512",
         "packetdotnet.nuspec"
-      ]
-    },
-    "Portable.BouncyCastle/1.9.0": {
-      "sha512": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw==",
-      "type": "package",
-      "path": "portable.bouncycastle/1.9.0",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "lib/net40/BouncyCastle.Crypto.dll",
-        "lib/net40/BouncyCastle.Crypto.xml",
-        "lib/netstandard2.0/BouncyCastle.Crypto.dll",
-        "lib/netstandard2.0/BouncyCastle.Crypto.xml",
-        "portable.bouncycastle.1.9.0.nupkg.sha512",
-        "portable.bouncycastle.nuspec"
       ]
     },
     "runtime.android-arm.runtime.native.System.IO.Ports/10.0.0": {
@@ -4313,26 +4555,28 @@
         "sqlsugarcore.mysqlconnector.nuspec"
       ]
     },
-    "System.CodeDom/6.0.0": {
-      "sha512": "CPc6tWO1LAer3IzfZufDBRL+UZQcj5uS207NHALQzP84Vp/z6wF0Aa0YZImOQY8iStY0A2zI/e3ihKNPfUm8XA==",
+    "System.ComponentModel.Composition/10.0.9": {
+      "sha512": "qeEr33Kz5yILup3wWSOhb3LmEE/jK9Rk0dtGbAJI/W1jn8FJwPn9BI5azZ764tQmk1/3wtWeZI8Ypu+GIW3d8Q==",
       "type": "package",
-      "path": "system.codedom/6.0.0",
+      "path": "system.componentmodel.composition/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "Icon.png",
-        "LICENSE.TXT",
         "THIRD-PARTY-NOTICES.TXT",
-        "buildTransitive/netcoreapp2.0/System.CodeDom.targets",
-        "buildTransitive/netcoreapp3.1/_._",
-        "lib/net461/System.CodeDom.dll",
-        "lib/net461/System.CodeDom.xml",
-        "lib/net6.0/System.CodeDom.dll",
-        "lib/net6.0/System.CodeDom.xml",
-        "lib/netstandard2.0/System.CodeDom.dll",
-        "lib/netstandard2.0/System.CodeDom.xml",
-        "system.codedom.6.0.0.nupkg.sha512",
-        "system.codedom.nuspec",
+        "buildTransitive/net8.0/_._",
+        "buildTransitive/netcoreapp2.0/System.ComponentModel.Composition.targets",
+        "lib/net10.0/System.ComponentModel.Composition.dll",
+        "lib/net10.0/System.ComponentModel.Composition.xml",
+        "lib/net462/_._",
+        "lib/net8.0/System.ComponentModel.Composition.dll",
+        "lib/net8.0/System.ComponentModel.Composition.xml",
+        "lib/net9.0/System.ComponentModel.Composition.dll",
+        "lib/net9.0/System.ComponentModel.Composition.xml",
+        "lib/netstandard2.0/System.ComponentModel.Composition.dll",
+        "lib/netstandard2.0/System.ComponentModel.Composition.xml",
+        "system.componentmodel.composition.10.0.9.nupkg.sha512",
+        "system.componentmodel.composition.nuspec",
         "useSharedDesignerContext.txt"
       ]
     },
@@ -4364,21 +4608,22 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "System.Diagnostics.EventLog/9.0.13": {
-      "sha512": "675Rk4RwaVrWo09wrR2rpDVKixtgtnhd5NhPrn6O21uj92JvE61KTGupn76M2N6Ff/xJjY3SHSfSg0MIanEzGw==",
+    "System.Diagnostics.EventLog/10.0.9": {
+      "sha512": "s2PcxHK4IYQ6gmD3VSBkym9tWGkFisKjcjWBdl7a+n4Yy66ae4beJ1ZdjDp060SSll4W3Rt4H2LW87dWckv+QQ==",
       "type": "package",
-      "path": "system.diagnostics.eventlog/9.0.13",
+      "path": "system.diagnostics.eventlog/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "Icon.png",
-        "LICENSE.TXT",
         "PACKAGE.md",
         "THIRD-PARTY-NOTICES.TXT",
         "buildTransitive/net461/System.Diagnostics.EventLog.targets",
         "buildTransitive/net462/_._",
         "buildTransitive/net8.0/_._",
         "buildTransitive/netcoreapp2.0/System.Diagnostics.EventLog.targets",
+        "lib/net10.0/System.Diagnostics.EventLog.dll",
+        "lib/net10.0/System.Diagnostics.EventLog.xml",
         "lib/net462/System.Diagnostics.EventLog.dll",
         "lib/net462/System.Diagnostics.EventLog.xml",
         "lib/net8.0/System.Diagnostics.EventLog.dll",
@@ -4387,13 +4632,16 @@
         "lib/net9.0/System.Diagnostics.EventLog.xml",
         "lib/netstandard2.0/System.Diagnostics.EventLog.dll",
         "lib/netstandard2.0/System.Diagnostics.EventLog.xml",
+        "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.Messages.dll",
+        "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.dll",
+        "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.xml",
         "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.Messages.dll",
         "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.dll",
         "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.xml",
         "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll",
         "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll",
         "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.xml",
-        "system.diagnostics.eventlog.9.0.13.nupkg.sha512",
+        "system.diagnostics.eventlog.10.0.9.nupkg.sha512",
         "system.diagnostics.eventlog.nuspec",
         "useSharedDesignerContext.txt"
       ]
@@ -4546,53 +4794,31 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "System.Management/6.0.2": {
-      "sha512": "s6c9x2Kghd+ncEDnT6ApYVOacDXr/Y57oSUSx6wjegMOfKxhtrXn3PdASPNU59y3kB9OJ1yb3l5k6uKr3bhqew==",
+    "System.Reactive/6.1.0": {
+      "sha512": "M5cCC1ZMkZr9jbSQGTHnVkb5TDN67qWCV7AP8TAHdGkvDlu0puT5NzemESNn9+HkYIDpWpocP68/i+/ame2/2w==",
       "type": "package",
-      "path": "system.management/6.0.2",
+      "path": "system.reactive/6.1.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "Icon.png",
-        "LICENSE.TXT",
-        "THIRD-PARTY-NOTICES.TXT",
-        "buildTransitive/netcoreapp2.0/System.Management.targets",
-        "buildTransitive/netcoreapp3.1/_._",
-        "lib/net461/_._",
-        "lib/net6.0/System.Management.dll",
-        "lib/net6.0/System.Management.xml",
-        "lib/netcoreapp3.1/System.Management.dll",
-        "lib/netcoreapp3.1/System.Management.xml",
-        "lib/netstandard2.0/System.Management.dll",
-        "lib/netstandard2.0/System.Management.xml",
-        "runtimes/win/lib/net6.0/System.Management.dll",
-        "runtimes/win/lib/net6.0/System.Management.xml",
-        "runtimes/win/lib/netcoreapp3.1/System.Management.dll",
-        "runtimes/win/lib/netcoreapp3.1/System.Management.xml",
-        "system.management.6.0.2.nupkg.sha512",
-        "system.management.nuspec",
-        "useSharedDesignerContext.txt"
-      ]
-    },
-    "System.Private.ServiceModel/4.5.3": {
-      "sha512": "ancrQgJagx+yC4SZbuE+eShiEAUIF0E1d21TRSoy1C/rTwafAVcBr/fKibkq5TQzyy9uNil2tx2/iaUxsy0S9g==",
-      "type": "package",
-      "path": "system.private.servicemodel/4.5.3",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "LICENSE.TXT",
-        "THIRD-PARTY-NOTICES.TXT",
-        "ref/netstandard/_._",
-        "runtimes/unix/lib/netstandard1.3/System.Private.ServiceModel.dll",
-        "runtimes/unix/lib/netstandard2.0/System.Private.ServiceModel.dll",
-        "runtimes/win/lib/netcore50/System.Private.ServiceModel.dll",
-        "runtimes/win/lib/netstandard1.3/System.Private.ServiceModel.dll",
-        "runtimes/win/lib/netstandard2.0/System.Private.ServiceModel.dll",
-        "runtimes/win/lib/uap10.0.16300/System.Private.ServiceModel.dll",
-        "system.private.servicemodel.4.5.3.nupkg.sha512",
-        "system.private.servicemodel.nuspec",
-        "version.txt"
+        "build/net6.0-windows10.0.19041/_._",
+        "build/net6.0/_._",
+        "buildTransitive/net6.0-windows10.0.19041/_._",
+        "buildTransitive/net6.0/_._",
+        "icon.png",
+        "lib/net472/System.Reactive.dll",
+        "lib/net472/System.Reactive.xml",
+        "lib/net6.0-windows10.0.19041/System.Reactive.dll",
+        "lib/net6.0-windows10.0.19041/System.Reactive.xml",
+        "lib/net6.0/System.Reactive.dll",
+        "lib/net6.0/System.Reactive.xml",
+        "lib/netstandard2.0/System.Reactive.dll",
+        "lib/netstandard2.0/System.Reactive.xml",
+        "lib/uap10.0.18362/System.Reactive.dll",
+        "lib/uap10.0.18362/System.Reactive.xml",
+        "readme.md",
+        "system.reactive.6.1.0.nupkg.sha512",
+        "system.reactive.nuspec"
       ]
     },
     "System.Security.Cryptography.Pkcs/9.0.13": {
@@ -4662,56 +4888,39 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "System.ServiceModel.Primitives/4.5.3": {
-      "sha512": "Wc9Hgg4Cmqi416zvEgq2sW1YYCGuhwWzspDclJWlFZqY6EGhFUPZU+kVpl5z9kAgrSOQP7/Uiik+PtSQtmq+5A==",
+    "System.ServiceProcess.ServiceController/10.0.9": {
+      "sha512": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g==",
       "type": "package",
-      "path": "system.servicemodel.primitives/4.5.3",
+      "path": "system.serviceprocess.servicecontroller/10.0.9",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "LICENSE.TXT",
+        "Icon.png",
+        "PACKAGE.md",
         "THIRD-PARTY-NOTICES.TXT",
-        "lib/MonoAndroid10/_._",
-        "lib/MonoTouch10/_._",
-        "lib/net45/_._",
-        "lib/net46/System.ServiceModel.Primitives.dll",
-        "lib/net461/System.ServiceModel.Primitives.dll",
-        "lib/netcore50/System.ServiceModel.Primitives.dll",
-        "lib/netstandard1.3/System.ServiceModel.Primitives.dll",
-        "lib/netstandard2.0/System.ServiceModel.Primitives.dll",
-        "lib/netstandard2.0/System.ServiceModel.dll",
-        "lib/portable-net45+win8+wp8/_._",
-        "lib/uap10.0.16300/System.ServiceModel.Primitives.dll",
-        "lib/uap10.0.16300/System.ServiceModel.dll",
-        "lib/win8/_._",
-        "lib/wp8/_._",
-        "lib/xamarinios10/_._",
-        "lib/xamarinmac20/_._",
-        "lib/xamarintvos10/_._",
-        "lib/xamarinwatchos10/_._",
-        "ref/MonoAndroid10/_._",
-        "ref/MonoTouch10/_._",
-        "ref/net45/_._",
-        "ref/net46/System.ServiceModel.Primitives.dll",
-        "ref/net461/System.ServiceModel.Primitives.dll",
-        "ref/netcore50/System.ServiceModel.Primitives.dll",
-        "ref/netstandard1.0/System.ServiceModel.Primitives.dll",
-        "ref/netstandard1.1/System.ServiceModel.Primitives.dll",
-        "ref/netstandard1.3/System.ServiceModel.Primitives.dll",
-        "ref/netstandard2.0/System.ServiceModel.Primitives.dll",
-        "ref/netstandard2.0/System.ServiceModel.dll",
-        "ref/portable-net45+win8+wp8/_._",
-        "ref/uap10.0.16300/System.ServiceModel.Primitives.dll",
-        "ref/uap10.0.16300/System.ServiceModel.dll",
-        "ref/win8/_._",
-        "ref/wp8/_._",
-        "ref/xamarinios10/_._",
-        "ref/xamarinmac20/_._",
-        "ref/xamarintvos10/_._",
-        "ref/xamarinwatchos10/_._",
-        "system.servicemodel.primitives.4.5.3.nupkg.sha512",
-        "system.servicemodel.primitives.nuspec",
-        "version.txt"
+        "buildTransitive/net461/System.ServiceProcess.ServiceController.targets",
+        "buildTransitive/net462/_._",
+        "buildTransitive/net8.0/_._",
+        "buildTransitive/netcoreapp2.0/System.ServiceProcess.ServiceController.targets",
+        "lib/net10.0/System.ServiceProcess.ServiceController.dll",
+        "lib/net10.0/System.ServiceProcess.ServiceController.xml",
+        "lib/net462/System.ServiceProcess.ServiceController.dll",
+        "lib/net462/System.ServiceProcess.ServiceController.xml",
+        "lib/net8.0/System.ServiceProcess.ServiceController.dll",
+        "lib/net8.0/System.ServiceProcess.ServiceController.xml",
+        "lib/net9.0/System.ServiceProcess.ServiceController.dll",
+        "lib/net9.0/System.ServiceProcess.ServiceController.xml",
+        "lib/netstandard2.0/System.ServiceProcess.ServiceController.dll",
+        "lib/netstandard2.0/System.ServiceProcess.ServiceController.xml",
+        "runtimes/win/lib/net10.0/System.ServiceProcess.ServiceController.dll",
+        "runtimes/win/lib/net10.0/System.ServiceProcess.ServiceController.xml",
+        "runtimes/win/lib/net8.0/System.ServiceProcess.ServiceController.dll",
+        "runtimes/win/lib/net8.0/System.ServiceProcess.ServiceController.xml",
+        "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll",
+        "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.xml",
+        "system.serviceprocess.servicecontroller.10.0.9.nupkg.sha512",
+        "system.serviceprocess.servicecontroller.nuspec",
+        "useSharedDesignerContext.txt"
       ]
     },
     "IPC.Gateway.Core/1.0.0": {
@@ -4733,10 +4942,15 @@
   "projectFileDependencyGroups": {
     "net10.0": [
       "BACnet >= 3.0.2",
+      "Beckhoff.TwinCAT.Ads >= 7.0.292",
+      "EEIP.NetStandard >= 1.0.1",
       "IPC.Gateway.Core >= 1.0.0",
+      "Lextm.SharpSnmpLib >= 12.5.7",
       "NModbus.Serial >= 3.0.83",
-      "Opc.UaFx.Client >= 2.53.1",
-      "System.IO.Ports >= 10.0.0"
+      "OPCFoundation.NetStandard.Opc.Ua.Client >= 1.5.378.145",
+      "System.IO.Ports >= 10.0.0",
+      "log4net >= 3.3.0",
+      "opendnp3 >= 3.1.2"
     ]
   },
   "packageFolders": {
@@ -4804,17 +5018,39 @@
             "target": "Package",
             "version": "[3.0.2, )"
           },
+          "Beckhoff.TwinCAT.Ads": {
+            "target": "Package",
+            "version": "[7.0.292, )"
+          },
+          "EEIP.NetStandard": {
+            "target": "Package",
+            "version": "[1.0.1, )"
+          },
+          "Lextm.SharpSnmpLib": {
+            "target": "Package",
+            "version": "[12.5.7, )"
+          },
           "NModbus.Serial": {
             "target": "Package",
             "version": "[3.0.83, )"
           },
-          "Opc.UaFx.Client": {
+          "OPCFoundation.NetStandard.Opc.Ua.Client": {
             "target": "Package",
-            "version": "[2.53.1, )"
+            "version": "[1.5.378.145, )"
           },
           "System.IO.Ports": {
             "target": "Package",
             "version": "[10.0.0, )"
+          },
+          "log4net": {
+            "target": "Package",
+            "version": "[3.3.0, )"
+          },
+          "opendnp3": {
+            "include": "None",
+            "target": "Package",
+            "version": "[3.1.2, )",
+            "generatePathProperty": true
           }
         },
         "imports": [
@@ -5110,27 +5346,5 @@
         }
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1904",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "包 \"log4net\" 2.0.8 具有已知的 严重 严重性漏洞，https://github.com/advisories/GHSA-2cwj-8chv-9pp9",
-      "libraryId": "log4net",
-      "targetGraphs": [
-        "net10.0"
-      ]
-    },
-    {
-      "code": "NU1902",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "包 \"log4net\" 2.0.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-4f7c-pmjv-c25w",
-      "libraryId": "log4net",
-      "targetGraphs": [
-        "net10.0"
-      ]
-    }
-  ]
+  }
 }

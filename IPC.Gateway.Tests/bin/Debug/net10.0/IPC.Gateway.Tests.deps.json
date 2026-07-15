@@ -35,6 +35,56 @@
           }
         }
       },
+      "Beckhoff.TwinCAT.Ads/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Server": "7.0.292",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+        "dependencies": {
+          "System.ServiceProcess.ServiceController": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Abstractions.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "System.ComponentModel.Composition": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "Beckhoff.TwinCAT.Ads.ConfigurationProviders": "7.0.292",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Server.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
       "BitFaster.Caching/2.6.0": {
         "runtime": {
           "lib/net10.0/BitFaster.Caching.dll": {
@@ -62,11 +112,30 @@
           }
         }
       },
-      "log4net/2.0.8": {
+      "EEIP.NetStandard/1.0.1": {
         "runtime": {
-          "lib/netstandard1.3/log4net.dll": {
-            "assemblyVersion": "2.0.8.0",
-            "fileVersion": "2.0.8.0"
+          "lib/netstandard2.0/EEIP.NetStandard.dll": {
+            "assemblyVersion": "1.0.1.0",
+            "fileVersion": "1.0.1.0"
+          }
+        }
+      },
+      "Lextm.SharpSnmpLib/12.5.7": {
+        "runtime": {
+          "lib/net8.0/SharpSnmpLib.dll": {
+            "assemblyVersion": "12.5.7.0",
+            "fileVersion": "12.5.7.0"
+          }
+        }
+      },
+      "log4net/3.3.0": {
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "9.0.13"
+        },
+        "runtime": {
+          "lib/netstandard2.0/log4net.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
           }
         }
       },
@@ -717,20 +786,6 @@
           }
         }
       },
-      "Opc.UaFx.Client/2.53.1": {
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.4",
-          "Portable.BouncyCastle": "1.9.0",
-          "System.Management": "6.0.2",
-          "System.ServiceModel.Primitives": "4.5.3"
-        },
-        "runtime": {
-          "lib/netcoreapp3.1/Opc.UaFx.Client.dll": {
-            "assemblyVersion": "2.0.0.0",
-            "fileVersion": "2.53.1.0"
-          }
-        }
-      },
       "OPCFoundation.NetStandard.Opc.Ua/1.5.378.145": {
         "dependencies": {
           "OPCFoundation.NetStandard.Opc.Ua.Client": "1.5.378.145",
@@ -858,20 +913,12 @@
       },
       "PacketDotNet/0.19.3": {
         "dependencies": {
-          "log4net": "2.0.8"
+          "log4net": "3.3.0"
         },
         "runtime": {
           "lib/netstandard2.0/PacketDotNet.dll": {
             "assemblyVersion": "0.19.3.0",
             "fileVersion": "0.19.3.0"
-          }
-        }
-      },
-      "Portable.BouncyCastle/1.9.0": {
-        "runtime": {
-          "lib/netstandard2.0/BouncyCastle.Crypto.dll": {
-            "assemblyVersion": "1.9.0.0",
-            "fileVersion": "1.9.0.1"
           }
         }
       },
@@ -1280,11 +1327,11 @@
           }
         }
       },
-      "System.CodeDom/6.0.0": {
+      "System.ComponentModel.Composition/10.0.9": {
         "runtime": {
-          "lib/net6.0/System.CodeDom.dll": {
-            "assemblyVersion": "6.0.0.0",
-            "fileVersion": "6.0.21.52210"
+          "lib/net10.0/System.ComponentModel.Composition.dll": {
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
           }
         }
       },
@@ -1383,25 +1430,6 @@
           }
         }
       },
-      "System.Management/6.0.2": {
-        "dependencies": {
-          "System.CodeDom": "6.0.0"
-        },
-        "runtime": {
-          "lib/net6.0/System.Management.dll": {
-            "assemblyVersion": "6.0.0.2",
-            "fileVersion": "6.0.1823.26907"
-          }
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net6.0/System.Management.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "6.0.0.2",
-            "fileVersion": "6.0.1823.26907"
-          }
-        }
-      },
       "System.Numerics.Tensors/9.0.0": {
         "runtime": {
           "lib/net9.0/System.Numerics.Tensors.dll": {
@@ -1410,19 +1438,11 @@
           }
         }
       },
-      "System.Private.ServiceModel/4.5.3": {
-        "runtimeTargets": {
-          "runtimes/unix/lib/netstandard2.0/System.Private.ServiceModel.dll": {
-            "rid": "unix",
-            "assetType": "runtime",
-            "assemblyVersion": "4.5.0.3",
-            "fileVersion": "4.6.26720.1"
-          },
-          "runtimes/win/lib/netstandard2.0/System.Private.ServiceModel.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "4.5.0.3",
-            "fileVersion": "4.6.26720.1"
+      "System.Reactive/6.1.0": {
+        "runtime": {
+          "lib/net6.0/System.Reactive.dll": {
+            "assemblyVersion": "6.1.0.0",
+            "fileVersion": "6.1.0.62682"
           }
         }
       },
@@ -1431,21 +1451,6 @@
           "lib/net9.0/System.Security.Cryptography.ProtectedData.dll": {
             "assemblyVersion": "9.0.0.0",
             "fileVersion": "9.0.1326.6317"
-          }
-        }
-      },
-      "System.ServiceModel.Primitives/4.5.3": {
-        "dependencies": {
-          "System.Private.ServiceModel": "4.5.3"
-        },
-        "runtime": {
-          "lib/netstandard2.0/System.ServiceModel.Primitives.dll": {
-            "assemblyVersion": "4.5.0.3",
-            "fileVersion": "4.6.26720.1"
-          },
-          "lib/netstandard2.0/System.ServiceModel.dll": {
-            "assemblyVersion": "4.0.0.0",
-            "fileVersion": "4.6.26720.1"
           }
         }
       },
@@ -1566,10 +1571,14 @@
       "IPC.Gateway.LegacyProtocolPlugins/1.0.0": {
         "dependencies": {
           "BACnet": "3.0.2",
+          "Beckhoff.TwinCAT.Ads": "7.0.292",
+          "EEIP.NetStandard": "1.0.1",
           "IPC.Gateway.Core": "1.0.0",
+          "Lextm.SharpSnmpLib": "12.5.7",
           "NModbus.Serial": "3.0.83",
-          "Opc.UaFx.Client": "2.53.1",
-          "System.IO.Ports": "10.0.0"
+          "OPCFoundation.NetStandard.Opc.Ua.Client": "1.5.378.145",
+          "System.IO.Ports": "10.0.0",
+          "log4net": "3.3.0"
         },
         "runtime": {
           "IPC.Gateway.LegacyProtocolPlugins.dll": {
@@ -1612,6 +1621,22 @@
             "fileVersion": "1.0.0.0"
           }
         }
+      },
+      "DNP3CLRInterface/3.1.2.0": {
+        "runtime": {
+          "DNP3CLRInterface.dll": {
+            "assemblyVersion": "3.1.2.0",
+            "fileVersion": "3.1.2.0"
+          }
+        }
+      },
+      "DNP3CLRAdapter/3.1.2.0": {
+        "runtime": {
+          "DNP3CLRAdapter.dll": {
+            "assemblyVersion": "3.1.2.0",
+            "fileVersion": "0.0.0.0"
+          }
+        }
       }
     }
   },
@@ -1627,6 +1652,34 @@
       "sha512": "sha512-v9LzuZ++X4jZG0WMuofUSnp2fGfos/wjzdmZGc7VLXZnzNg+Jq1qJ4eYEjGtmMr+aNU5qchMcqVj1r7noB0NBw==",
       "path": "bacnet/3.0.2",
       "hashPath": "bacnet.3.0.2.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oCN8brTt4GNWgPJxQ4IuIevirHgQa48t6T+7CGv9P67L4e1vEwiF+xu8QVSaD88UvQwRp1W09RE5Mx98nPrYmw==",
+      "path": "beckhoff.twincat.ads/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-yAe0aZJ8QoKipPblSMLQsUt6We+1u7bQ0Yz0SQSKNwZ61bPfYFt2/ujFKsT7O79Ijmnsqrhx8MsWFuG9bR/cvQ==",
+      "path": "beckhoff.twincat.ads.abstractions/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.abstractions.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wHX0gKEBrlNmNBYJNBuF1Qs29cP1bNhKFu/cYN46US8rctuA7n70RRR0igJvUebeG3IGsU1Qx+bcCu3U2tM1EA==",
+      "path": "beckhoff.twincat.ads.configurationproviders/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.configurationproviders.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oAhfn6kcfSrWt50xuynUGazr0LT7m2g3SlATnqUCt1GgaICyxOf3XnmAi3yllGN2yrlcU2QqZF4LLl8Px0SvNw==",
+      "path": "beckhoff.twincat.ads.server/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.server.7.0.292.nupkg.sha512"
     },
     "BitFaster.Caching/2.6.0": {
       "type": "package",
@@ -1649,12 +1702,26 @@
       "path": "common.logging.core/3.4.1",
       "hashPath": "common.logging.core.3.4.1.nupkg.sha512"
     },
-    "log4net/2.0.8": {
+    "EEIP.NetStandard/1.0.1": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-N41MQGHZImiCfn0cUuSBjZxrcNfIQCuCgQP0rpgB3J/NWponEh3lc1LxJEuIsPAR9Oc1jVvfkNNFCY1C5hf9LA==",
-      "path": "log4net/2.0.8",
-      "hashPath": "log4net.2.0.8.nupkg.sha512"
+      "sha512": "sha512-gek5QvxvzASrMdRKqPYLzAdbeCsLIGenjUKE1xGFS7q+CHO/OXRG2S6ocSUw09To2huXnxFAnGsXx0YfFArjdQ==",
+      "path": "eeip.netstandard/1.0.1",
+      "hashPath": "eeip.netstandard.1.0.1.nupkg.sha512"
+    },
+    "Lextm.SharpSnmpLib/12.5.7": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-k631wRQNnFOpKxsYyziPp1UR4v+IBFS81nnmQyQa+RxSlmYjoLViNXINV43Aa49kQO1ulSUmGTI9DD94z0HAHg==",
+      "path": "lextm.sharpsnmplib/12.5.7",
+      "hashPath": "lextm.sharpsnmplib.12.5.7.nupkg.sha512"
+    },
+    "log4net/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wtZ7K4XGWDxeQqHbUybwIug/3AAzhKcmroLf4ENfE5GsaDIMqT3GLX24f18XPFY8Qg9vaxfMSAODwWAXqkjI/Q==",
+      "path": "log4net/3.3.0",
+      "hashPath": "log4net.3.3.0.nupkg.sha512"
     },
     "Microsoft.Bcl.Cryptography/9.0.13": {
       "type": "package",
@@ -1845,13 +1912,6 @@
       "path": "npgsql/5.0.18",
       "hashPath": "npgsql.5.0.18.nupkg.sha512"
     },
-    "Opc.UaFx.Client/2.53.1": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-IcUahuNOvPLR6cP4aHpM9jB9zFjy3HUBnF0QCYWLdtuDr8Km2gjRlnhxmgqEY7LDfmDa90cVhJD9WVm2cktvng==",
-      "path": "opc.uafx.client/2.53.1",
-      "hashPath": "opc.uafx.client.2.53.1.nupkg.sha512"
-    },
     "OPCFoundation.NetStandard.Opc.Ua/1.5.378.145": {
       "type": "package",
       "serviceable": true,
@@ -1935,13 +1995,6 @@
       "sha512": "sha512-i7phQmaidpAaSA5SPW5g9B4VYxlyZWp0Z+ILvMNGoEzJI8RRQlpXADQNFs++KiYdJd1pxK9luGKepEQU5EC/1w==",
       "path": "packetdotnet/0.19.3",
       "hashPath": "packetdotnet.0.19.3.nupkg.sha512"
-    },
-    "Portable.BouncyCastle/1.9.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw==",
-      "path": "portable.bouncycastle/1.9.0",
-      "hashPath": "portable.bouncycastle.1.9.0.nupkg.sha512"
     },
     "runtime.android-arm.runtime.native.System.IO.Ports/10.0.0": {
       "type": "package",
@@ -2125,12 +2178,12 @@
       "path": "sqlsugarcore.kdbndp/9.3.8.122",
       "hashPath": "sqlsugarcore.kdbndp.9.3.8.122.nupkg.sha512"
     },
-    "System.CodeDom/6.0.0": {
+    "System.ComponentModel.Composition/10.0.9": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-CPc6tWO1LAer3IzfZufDBRL+UZQcj5uS207NHALQzP84Vp/z6wF0Aa0YZImOQY8iStY0A2zI/e3ihKNPfUm8XA==",
-      "path": "system.codedom/6.0.0",
-      "hashPath": "system.codedom.6.0.0.nupkg.sha512"
+      "sha512": "sha512-qeEr33Kz5yILup3wWSOhb3LmEE/jK9Rk0dtGbAJI/W1jn8FJwPn9BI5azZ764tQmk1/3wtWeZI8Ypu+GIW3d8Q==",
+      "path": "system.componentmodel.composition/10.0.9",
+      "hashPath": "system.componentmodel.composition.10.0.9.nupkg.sha512"
     },
     "System.Configuration.ConfigurationManager/9.0.13": {
       "type": "package",
@@ -2167,13 +2220,6 @@
       "path": "system.io.ports/10.0.0",
       "hashPath": "system.io.ports.10.0.0.nupkg.sha512"
     },
-    "System.Management/6.0.2": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-s6c9x2Kghd+ncEDnT6ApYVOacDXr/Y57oSUSx6wjegMOfKxhtrXn3PdASPNU59y3kB9OJ1yb3l5k6uKr3bhqew==",
-      "path": "system.management/6.0.2",
-      "hashPath": "system.management.6.0.2.nupkg.sha512"
-    },
     "System.Numerics.Tensors/9.0.0": {
       "type": "package",
       "serviceable": true,
@@ -2181,12 +2227,12 @@
       "path": "system.numerics.tensors/9.0.0",
       "hashPath": "system.numerics.tensors.9.0.0.nupkg.sha512"
     },
-    "System.Private.ServiceModel/4.5.3": {
+    "System.Reactive/6.1.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-ancrQgJagx+yC4SZbuE+eShiEAUIF0E1d21TRSoy1C/rTwafAVcBr/fKibkq5TQzyy9uNil2tx2/iaUxsy0S9g==",
-      "path": "system.private.servicemodel/4.5.3",
-      "hashPath": "system.private.servicemodel.4.5.3.nupkg.sha512"
+      "sha512": "sha512-M5cCC1ZMkZr9jbSQGTHnVkb5TDN67qWCV7AP8TAHdGkvDlu0puT5NzemESNn9+HkYIDpWpocP68/i+/ame2/2w==",
+      "path": "system.reactive/6.1.0",
+      "hashPath": "system.reactive.6.1.0.nupkg.sha512"
     },
     "System.Security.Cryptography.ProtectedData/9.0.13": {
       "type": "package",
@@ -2194,13 +2240,6 @@
       "sha512": "sha512-t8S9IDpjJKsLpLkeBdW8cWtcPyYqrGu93Dej1RO6WwuL/lkFSqWlan3rMJfortqz1mRIh+sys2AFsSA6jWJ3Jg==",
       "path": "system.security.cryptography.protecteddata/9.0.13",
       "hashPath": "system.security.cryptography.protecteddata.9.0.13.nupkg.sha512"
-    },
-    "System.ServiceModel.Primitives/4.5.3": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-Wc9Hgg4Cmqi416zvEgq2sW1YYCGuhwWzspDclJWlFZqY6EGhFUPZU+kVpl5z9kAgrSOQP7/Uiik+PtSQtmq+5A==",
-      "path": "system.servicemodel.primitives/4.5.3",
-      "hashPath": "system.servicemodel.primitives.4.5.3.nupkg.sha512"
     },
     "System.ServiceProcess.ServiceController/10.0.9": {
       "type": "package",
@@ -2288,6 +2327,16 @@
     },
     "IPC.Gateway.WebHost/1.0.0": {
       "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "DNP3CLRInterface/3.1.2.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "DNP3CLRAdapter/3.1.2.0": {
+      "type": "reference",
       "serviceable": false,
       "sha512": ""
     }

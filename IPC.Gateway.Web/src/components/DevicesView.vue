@@ -673,8 +673,7 @@ const devices = computed(() => (props.project?.devices ?? []).map(cloneDevice))
 const runtimeMap = computed(() => {
   const map = new Map<string, DeviceRuntimeStatus>()
   for (const item of props.runtimeDevices ?? []) {
-    if (item.deviceId) map.set(item.deviceId.toLowerCase(), item)
-    if (item.deviceName) map.set(item.deviceName.toLowerCase(), item)
+    map.set(deviceIdentityKey(item.channelId, item.deviceId), item)
   }
   return map
 })
@@ -682,9 +681,7 @@ const runtimeMap = computed(() => {
 const runtimeTagMap = computed(() => {
   const map = new Map<string, TagValueSnapshot>()
   for (const item of props.runtimeTags ?? []) {
-    if (item.tagId) map.set(`id:${normalizeKey(item.tagId)}`, item)
-    addRuntimeTagPath(map, item.deviceName, item.groupName, item.tagName, item)
-    addRuntimeTagPath(map, item.deviceId, item.groupId, item.tagName, item)
+    map.set(tagIdentityKey(item.channelId, item.deviceId, item.groupId, item.tagId), item)
   }
   return map
 })
@@ -1110,7 +1107,7 @@ function channelNodeKey(channel: ChannelConfig) {
 }
 
 function deviceNodeKey(device: DeviceConfig) {
-  return `device:${device.id || device.name}`
+  return `device:${device.channelId}:${device.id}`
 }
 
 function findDeviceNode(device: DeviceConfig) {
@@ -1126,12 +1123,12 @@ function channelDeviceCount(channelId: string) {
 }
 
 function groupNodeKey(device: DeviceConfig, group: GroupConfig) {
-  return `group:${device.id || device.name}:${group.id || group.name}`
+  return `group:${device.channelId}:${device.id}:${group.id}`
 }
 
 function deviceRuntime(device?: DeviceConfig) {
   if (!device) return undefined
-  return runtimeMap.value.get((device.id || '').toLowerCase()) ?? runtimeMap.value.get((device.name || '').toLowerCase())
+  return runtimeMap.value.get(deviceIdentityKey(device.channelId, device.id))
 }
 
 function deviceRecoveryText(device?: DeviceConfig) {
@@ -1147,11 +1144,7 @@ function tagSnapshot(tag: TagConfig) {
 }
 
 function findTagSnapshot(device: DeviceConfig | undefined, group: GroupConfig | null | undefined, tag: TagConfig) {
-  const byId = runtimeTagMap.value.get(`id:${normalizeKey(tag.id)}`)
-  if (byId) return byId
-
-  return runtimeTagMap.value.get(`path:${tagPathKey(device?.name, group?.name, tag.name)}`) ??
-    runtimeTagMap.value.get(`path:${tagPathKey(device?.id, group?.id, tag.name)}`)
+  return runtimeTagMap.value.get(tagIdentityKey(device?.channelId, device?.id, group?.id, tag.id))
 }
 
 function deviceTagHealth(device?: DeviceConfig) {
@@ -1298,6 +1291,10 @@ async function submitWriteTag() {
   writeSaving.value = true
   try {
     const result = await writeTag({
+      channelId: writeTargetDevice.value.channelId,
+      deviceId: writeTargetDevice.value.id,
+      groupId: writeTargetGroup.value?.id || '',
+      tagId: writeTargetTag.value.id,
       deviceName: writeTargetDevice.value.name,
       groupName: writeTargetGroup.value?.name || '',
       tagName: writeTargetTag.value.name,
@@ -1354,28 +1351,32 @@ function validateScalarValue(type: string, value: string) {
   }
 
   if (!/^-?\d+$/.test(value)) return '请输入整数'
+  if (type === 'int64' || type === 'uint64') {
+    const number = BigInt(value)
+    const min = type === 'int64' ? -9223372036854775808n : 0n
+    const max = type === 'int64' ? 9223372036854775807n : 18446744073709551615n
+    return number >= min && number <= max ? '' : `数值范围应为 ${min} 到 ${max}`
+  }
+
   const number = Number(value)
   if (!Number.isSafeInteger(number)) return '整数超出安全范围'
   const ranges: Record<string, [number, number]> = {
     int16: [-32768, 32767],
     uint16: [0, 65535],
     int32: [-2147483648, 2147483647],
-    uint32: [0, 4294967295],
-    int64: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
-    uint64: [0, Number.MAX_SAFE_INTEGER]
+    uint32: [0, 4294967295]
   }
   const range = ranges[type]
   if (range && (number < range[0] || number > range[1])) return `数值范围应为 ${range[0]} 到 ${range[1]}`
   return ''
 }
 
-function addRuntimeTagPath(map: Map<string, TagValueSnapshot>, device: string, group: string, tag: string, snapshot: TagValueSnapshot) {
-  const key = tagPathKey(device, group, tag)
-  if (key.replace(/\//g, '')) map.set(`path:${key}`, snapshot)
+function deviceIdentityKey(channelId: string | null | undefined, deviceId: string | null | undefined) {
+  return [channelId, deviceId].map(normalizeKey).join('/')
 }
 
-function tagPathKey(device: string | null | undefined, group: string | null | undefined, tag: string | null | undefined) {
-  return [device, group, tag].map(normalizeKey).join('/')
+function tagIdentityKey(channelId: string | null | undefined, deviceId: string | null | undefined, groupId: string | null | undefined, tagId: string | null | undefined) {
+  return [channelId, deviceId, groupId, tagId].map(normalizeKey).join('/')
 }
 
 function normalizeKey(value: string | null | undefined) {
@@ -1434,7 +1435,7 @@ async function submitTemplate() {
 async function exportSelectedTags() {
   if (!selectedDevice.value) return
   try {
-    const blob = await exportTagsCsv(selectedDevice.value.id)
+    const blob = await exportTagsCsv(selectedDevice.value.channelId, selectedDevice.value.id)
     downloadBlob(blob, `ipc-gateway-tags-${selectedDevice.value.name || 'device'}-${snapshotTimestamp()}.csv`)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '点位导出失败')
@@ -1446,7 +1447,7 @@ async function handleImportTags(uploadFile: UploadFile) {
   if (!raw || !selectedDevice.value) return
   try {
     const text = await raw.text()
-    const result = await importTagsCsv(text, selectedDevice.value.id)
+    const result = await importTagsCsv(text, selectedDevice.value.channelId, selectedDevice.value.id)
     ElMessage.success(`点位导入完成：新增 ${result.addedCount}，更新 ${result.updatedCount}`)
     if (result.warnings?.length) ElMessage.warning(result.warnings[0])
     emit('changed')
@@ -1470,7 +1471,7 @@ async function openCreateChannel() {
     enabled: true,
     protocol: driver.protocol,
     driverId: driver.driverId,
-    maxConcurrentDevicePolls: 4,
+    maxConcurrentDevicePolls: 64,
     schedulingWeight: 1
   }
   channelDrawerVisible.value = true
@@ -1854,7 +1855,7 @@ function connectionSummary(device: DeviceConfig) {
   if (device.protocol === 'VirtualPlc') return connection.host || 'default'
   if (device.protocol === 'OpcDa') return `${connection.host || 'localhost'} / ${connection.opcDaServerProgId || '-'}`
   if (device.protocol === 'Plugin') return `${connection.driverId || '-'} ${connection.host || ''}`.trim()
-  if (['ModbusRtu', 'MitsubishiSerial', 'MitsubishiQlSerial', 'Dlt6452007', 'Cjt1882004'].includes(device.protocol)) {
+  if (['ModbusRtu', 'ModbusAscii', 'MitsubishiSerial', 'MitsubishiQlSerial'].includes(device.protocol)) {
     return `${connection.host || 'COM1'} @ ${connection.port || 9600}`
   }
   return `${connection.host || '-'}:${connection.port || 0}`

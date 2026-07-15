@@ -1,6 +1,6 @@
 import type { RuntimeErrorDetail } from '../../api'
 
-export type TopologyNodeType = 'gateway' | 'protocol' | 'device' | 'group' | 'tag' | 'tagSummary' | 'service'
+export type TopologyNodeType = 'gateway' | 'channel' | 'device' | 'group' | 'tag' | 'tagSummary' | 'service'
 export type TopologyTone = 'good' | 'warn' | 'bad' | 'disabled' | 'normal'
 
 export interface TopologyNodeMeta {
@@ -30,7 +30,7 @@ export interface TopologyLink {
 }
 
 export interface TopologySummary {
-  protocols: number
+  channels: number
   devices: number
   onlineDevices: number
   offlineDevices: number

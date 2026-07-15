@@ -28,15 +28,30 @@ namespace IPC.Plc.Communication.OmronFins
     
     internal sealed class FinsMemoryArea
     {
-        public FinsMemoryArea(string name, byte wordCode, byte bitCode)
+        public FinsMemoryArea(
+            string name,
+            byte wordCode,
+            byte bitCode,
+            int maximumAddress,
+            bool supportsWord = true,
+            bool supportsBit = true,
+            bool bitAddressUsesWordIndex = false)
         {
             Name = name;
             WordCode = wordCode;
             BitCode = bitCode;
+            MaximumAddress = maximumAddress;
+            SupportsWord = supportsWord;
+            SupportsBit = supportsBit;
+            BitAddressUsesWordIndex = bitAddressUsesWordIndex;
         }
 
-        public string Name { get; private set; }
-        public byte WordCode { get; private set; }
-        public byte BitCode { get; private set; }
+        public string Name { get; }
+        public byte WordCode { get; }
+        public byte BitCode { get; }
+        public int MaximumAddress { get; }
+        public bool SupportsWord { get; }
+        public bool SupportsBit { get; }
+        public bool BitAddressUsesWordIndex { get; }
     }
 }

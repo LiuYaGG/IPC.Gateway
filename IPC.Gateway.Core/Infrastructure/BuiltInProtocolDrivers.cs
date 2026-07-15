@@ -109,6 +109,34 @@ namespace IPC.Plc.Communication.Infrastructure
         }
     }
 
+    public sealed class Cjt1882018ProtocolDriver : ProtocolDriverBase
+    {
+        public Cjt1882018ProtocolDriver()
+            : base("builtin.cjt188-2018", "Built-in CJ/T 188-2018", PlcProtocol.Cjt1882018)
+        {
+        }
+
+        public override IPlcClient CreateClient(PlcConnectionOptions options)
+        {
+            return new Cjt1882018Client(options);
+        }
+
+        public override PlcTagValidationResult ValidateTag(
+            PlcConnectionOptions options,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            return PlcProtocolTagValidator.Validate(
+                PlcProtocol.Cjt1882018,
+                Cjt1882018Client.NormalizeAddress(address),
+                dataType,
+                elementCount,
+                elementOffset);
+        }
+    }
+
     public sealed class VirtualPlcProtocolDriver : ProtocolDriverBase
     {
         public VirtualPlcProtocolDriver()

@@ -25,8 +25,8 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
-using Opc.UaFx;
-using Opc.UaFx.Client;
+using Opc.Ua;
+using Opc.Ua.Client;
 
 namespace IPC.Plc.Communication.OpcUa
 {
@@ -41,12 +41,14 @@ namespace IPC.Plc.Communication.OpcUa
     
     public sealed class OpcUaClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IAsyncPlcSubscriptionClient
     {
-        private const int MaxNodesPerBatchRead = 128;
+        private const int DefaultMaxNodesPerBatchRead = 128;
 
         private readonly PlcConnectionOptions _options;
         private readonly List<OpcUaSubscription> _subscriptions = new List<OpcUaSubscription>();
-        private OpcClient _client;
+        private ISession _session;
         private bool _connected;
+        private int _maxNodesPerBatchRead = DefaultMaxNodesPerBatchRead;
+        private int _maxMonitoredItemsPerCall = 1000;
 
         public OpcUaClient(PlcConnectionOptions options)
         {
@@ -55,7 +57,7 @@ namespace IPC.Plc.Communication.OpcUa
 
         public bool IsConnected
         {
-            get { return _connected && _client != null && _client.State == OpcClientState.Connected; }
+            get { return _connected && _session != null && _session.Connected; }
         }
 
         public PlcProtocol Protocol
@@ -68,15 +70,18 @@ namespace IPC.Plc.Communication.OpcUa
             if (IsConnected)
                 return;
 
-            _client = new OpcClient(BuildEndpoint(), BuildSecurityPolicy());
-            _client.OperationTimeout = Math.Max(1000, _options.TimeoutMilliseconds);
-            if (_options.OpcUaAutoTrustServerCertificate)
-                _client.CertificateValidationFailed += AcceptServerCertificate;
+            if (_session != null)
+                Disconnect();
 
-            if (!string.IsNullOrWhiteSpace(_options.Username))
-                _client.Security.UserIdentity = new OpcClientIdentity(_options.Username, _options.Password ?? string.Empty);
-            _client.Connect();
-            _connected = true;
+            EndpointDescription security = BuildSecurityPolicy();
+            _session = OpcUaFoundationSessionFactory.Connect(
+                _options,
+                BuildEndpoint(),
+                security.SecurityMode,
+                security.SecurityPolicyUri);
+            _connected = _session != null && _session.Connected;
+            _maxNodesPerBatchRead = ReadServerOperationLimit("i=11705", DefaultMaxNodesPerBatchRead);
+            _maxMonitoredItemsPerCall = ReadServerOperationLimit("i=11714", 1000);
         }
 
         public ValueTask ConnectAsync(CancellationToken cancellationToken)
@@ -90,23 +95,37 @@ namespace IPC.Plc.Communication.OpcUa
         public void Disconnect()
         {
             DisposeSubscriptions();
-            if (ShouldDisconnectClient())
+            if (_session != null)
             {
                 try
                 {
-                    _client.Disconnect();
+                    _session.CloseAsync(
+                            Math.Max(1000, _options.TimeoutMilliseconds),
+                            true,
+                            CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    _session.Dispose();
                 }
                 catch
                 {
                 }
             }
 
+            _session = null;
             _connected = false;
         }
 
         public ValueTask DisconnectAsync(CancellationToken cancellationToken)
         {
-            if (_client == null)
+            if (_session == null)
             {
                 _connected = false;
                 return ValueTask.CompletedTask;
@@ -119,7 +138,7 @@ namespace IPC.Plc.Communication.OpcUa
         {
             EnsureConnected();
             string nodeId = NormalizeNodeId(address, elementOffset);
-            OpcValue value = _client.ReadNode(nodeId);
+            DataValue value = ReadNodes(new[] { NodeId.Parse(nodeId) })[0];
             EnsureGoodStatus(value, nodeId);
             object converted = ConvertForRead(value == null ? null : value.Value, dataType, elementCount);
             return new PlcReadResult(0, dataType.ToString(), converted);
@@ -144,7 +163,7 @@ namespace IPC.Plc.Communication.OpcUa
 
             PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
             List<PendingRead> pending = new List<PendingRead>();
-            List<OpcNodeId> nodeIds = new List<OpcNodeId>();
+            List<NodeId> nodeIds = new List<NodeId>();
 
             for (int i = 0; i < requests.Count; i++)
             {
@@ -153,7 +172,7 @@ namespace IPC.Plc.Communication.OpcUa
                 {
                     string nodeId = NormalizeNodeId(request.Address, request.ElementOffset);
                     pending.Add(new PendingRead(i, request, nodeId));
-                    nodeIds.Add(OpcNodeId.Parse(nodeId));
+                    nodeIds.Add(NodeId.Parse(nodeId));
                 }
                 catch (Exception ex)
                 {
@@ -166,7 +185,7 @@ namespace IPC.Plc.Communication.OpcUa
                 int offset = 0;
                 while (offset < pending.Count)
                 {
-                    int count = Math.Min(MaxNodesPerBatchRead, pending.Count - offset);
+                    int count = Math.Min(_maxNodesPerBatchRead, pending.Count - offset);
                     ReadPendingChunk(pending, nodeIds, ordered, offset, count);
                     offset += count;
                 }
@@ -210,17 +229,17 @@ namespace IPC.Plc.Communication.OpcUa
 
         private void ReadPendingChunk(
             List<PendingRead> pending,
-            List<OpcNodeId> nodeIds,
+            List<NodeId> nodeIds,
             PlcBatchReadResult[] ordered,
             int offset,
             int count)
         {
-            IList<OpcValue> values;
+            IList<DataValue> values;
             try
             {
-                OpcNodeId[] chunkNodeIds = new OpcNodeId[count];
+                NodeId[] chunkNodeIds = new NodeId[count];
                 nodeIds.CopyTo(offset, chunkNodeIds, 0, count);
-                values = _client.ReadNodes(chunkNodeIds).ToList();
+                values = ReadNodes(chunkNodeIds);
             }
             catch (Exception ex)
             {
@@ -248,7 +267,7 @@ namespace IPC.Plc.Communication.OpcUa
 
                 try
                 {
-                    OpcValue value = i < values.Count ? values[i] : null;
+                    DataValue value = i < values.Count ? values[i] : null;
                     EnsureGoodStatus(value, read.NodeId);
                     object converted = ConvertForRead(value == null ? null : value.Value, read.Request.DataType, read.Request.ElementCount);
                     PlcReadResult result = new PlcReadResult(0, read.Request.DataType.ToString(), converted);
@@ -256,9 +275,37 @@ namespace IPC.Plc.Communication.OpcUa
                 }
                 catch (Exception ex)
                 {
-                    ordered[read.Index] = PlcBatchReadResult.FromFailure(read.Request, ex.Message, PlcReadFailureScope.Tag);
+                    ordered[read.Index] = PlcBatchReadResult.FromFailure(
+                        read.Request,
+                        ex.Message,
+                        PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag));
                 }
             }
+        }
+
+        private IList<DataValue> ReadNodes(IList<NodeId> nodeIds)
+        {
+            ReadValueIdCollection nodesToRead = new ReadValueIdCollection();
+            for (int i = 0; i < nodeIds.Count; i++)
+            {
+                nodesToRead.Add(new ReadValueId
+                {
+                    NodeId = nodeIds[i],
+                    AttributeId = Attributes.Value
+                });
+            }
+
+            ReadResponse response = _session.ReadAsync(
+                    null,
+                    0,
+                    TimestampsToReturn.Both,
+                    nodesToRead,
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            ClientBase.ValidateResponse(response.Results, nodesToRead);
+            ClientBase.ValidateDiagnosticInfos(response.DiagnosticInfos, nodesToRead);
+            return response.Results;
         }
 
         private static void MarkPendingChunkFailure(
@@ -323,6 +370,12 @@ namespace IPC.Plc.Communication.OpcUa
             Exception current = exception;
             while (current != null)
             {
+                if (current is PlcProtocolException protocolException &&
+                    PlcBatchReadResult.IsConnectionFailureScope(protocolException.FailureScope))
+                    return true;
+                if (current is ServiceResultException serviceException &&
+                    PlcBatchReadResult.IsConnectionFailureScope(ClassifyStatus(serviceException.StatusCode)))
+                    return true;
                 if (current is PlcCommunicationException ||
                     current is TimeoutException ||
                     current is IOException ||
@@ -354,6 +407,13 @@ namespace IPC.Plc.Communication.OpcUa
             Exception current = exception;
             while (current != null)
             {
+                if (current is PlcProtocolException protocolException &&
+                    protocolException.FailureScope == PlcReadFailureScope.Session)
+                    return true;
+                if (current is ServiceResultException serviceException &&
+                    ClassifyStatus(serviceException.StatusCode) == PlcReadFailureScope.Session)
+                    return true;
+
                 string text = (current.Message ?? string.Empty).ToLowerInvariant();
                 if (text.IndexOf("session", StringComparison.Ordinal) >= 0 ||
                     text.IndexOf("secure channel", StringComparison.Ordinal) >= 0 ||
@@ -373,7 +433,12 @@ namespace IPC.Plc.Communication.OpcUa
             Exception current = exception;
             while (current != null)
             {
-                if (current is PlcTagException)
+                if (current is PlcTagException ||
+                    current is PlcProtocolException protocolException &&
+                    !PlcBatchReadResult.IsConnectionFailureScope(protocolException.FailureScope))
+                    return true;
+                if (current is ServiceResultException serviceException &&
+                    !PlcBatchReadResult.IsConnectionFailureScope(ClassifyStatus(serviceException.StatusCode)))
                     return true;
 
                 string text = (current.Message ?? string.Empty).ToLowerInvariant();
@@ -399,9 +464,31 @@ namespace IPC.Plc.Communication.OpcUa
             EnsureConnected();
             string nodeId = NormalizeNodeId(address, elementOffset);
             object value = ParseValue(dataType, valueText);
-            OpcStatus status = _client.WriteNode(nodeId, value);
-            if (status != null && !status.IsGood)
-                throw new PlcTagException("OPC UA write failed for " + nodeId + ": " + status.Description);
+            WriteValueCollection nodesToWrite = new WriteValueCollection
+            {
+                new WriteValue
+                {
+                    NodeId = NodeId.Parse(nodeId),
+                    AttributeId = Attributes.Value,
+                    Value = new DataValue(new Variant(value))
+                }
+            };
+
+            WriteResponse response = _session.WriteAsync(null, nodesToWrite, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            ClientBase.ValidateResponse(response.Results, nodesToWrite);
+            ClientBase.ValidateDiagnosticInfos(response.DiagnosticInfos, nodesToWrite);
+            if (response.Results.Count == 0 || StatusCode.IsBad(response.Results[0]))
+            {
+                StatusCode status = response.Results.Count == 0
+                    ? StatusCodes.BadUnexpectedError
+                    : response.Results[0];
+                throw new PlcProtocolException(
+                    ClassifyStatus(status),
+                    "OPC UA write failed for " + nodeId + ": " + status,
+                    status.ToString());
+            }
         }
 
         public ValueTask WriteAsync(
@@ -416,11 +503,11 @@ namespace IPC.Plc.Communication.OpcUa
 
         public void Dispose()
         {
-            if (_subscriptions.Count > 0 || ShouldDisconnectClient())
+            if (_subscriptions.Count > 0 || ShouldCloseSession())
                 Disconnect();
-            if (_client != null)
-                _client.Dispose();
-            _client = null;
+            else if (_session != null)
+                _session.Dispose();
+            _session = null;
             _connected = false;
         }
 
@@ -443,16 +530,16 @@ namespace IPC.Plc.Communication.OpcUa
             }
         }
 
-        private bool ShouldDisconnectClient()
+        private bool ShouldCloseSession()
         {
-            if (_client == null)
+            if (_session == null)
                 return false;
             if (_connected)
                 return true;
 
             try
             {
-                return _client.State == OpcClientState.Connected;
+                return _session.Connected;
             }
             catch
             {
@@ -483,45 +570,49 @@ namespace IPC.Plc.Communication.OpcUa
             return BuildEndpointFromUri("opc.tcp://" + host, port);
         }
 
-        private OpcSecurityPolicy BuildSecurityPolicy()
+        private EndpointDescription BuildSecurityPolicy()
         {
-            OpcSecurityMode mode = ParseSecurityMode(_options.OpcUaMessageSecurityMode);
-            OpcSecurityAlgorithm algorithm = ParseSecurityAlgorithm(_options.OpcUaSecurityPolicy);
-            if (mode == OpcSecurityMode.None && algorithm != OpcSecurityAlgorithm.None)
+            MessageSecurityMode mode = ParseSecurityMode(_options.OpcUaMessageSecurityMode);
+            string policyUri = ParseSecurityPolicyUri(_options.OpcUaSecurityPolicy);
+            if (mode == MessageSecurityMode.None && policyUri != SecurityPolicies.None)
                 throw new ArgumentException("OPC UA message security mode None requires security policy None.");
-            if (mode != OpcSecurityMode.None && algorithm == OpcSecurityAlgorithm.None)
+            if (mode != MessageSecurityMode.None && policyUri == SecurityPolicies.None)
                 throw new ArgumentException("OPC UA Sign or SignAndEncrypt requires a secure security policy.");
 
-            return new OpcSecurityPolicy(mode, algorithm);
+            return new EndpointDescription
+            {
+                SecurityMode = mode,
+                SecurityPolicyUri = policyUri
+            };
         }
 
-        private static OpcSecurityMode ParseSecurityMode(string value)
+        private static MessageSecurityMode ParseSecurityMode(string value)
         {
             string normalized = NormalizeSecurityName(value);
             if (normalized == "NONE")
-                return OpcSecurityMode.None;
+                return MessageSecurityMode.None;
             if (normalized == "SIGN")
-                return OpcSecurityMode.Sign;
+                return MessageSecurityMode.Sign;
             if (normalized == "SIGNANDENCRYPT")
-                return OpcSecurityMode.SignAndEncrypt;
+                return MessageSecurityMode.SignAndEncrypt;
             throw new ArgumentException("Unsupported OPC UA message security mode: " + (value ?? string.Empty));
         }
 
-        private static OpcSecurityAlgorithm ParseSecurityAlgorithm(string value)
+        private static string ParseSecurityPolicyUri(string value)
         {
             string normalized = NormalizeSecurityName(value);
             if (normalized == "NONE")
-                return OpcSecurityAlgorithm.None;
+                return SecurityPolicies.None;
             if (normalized == "BASIC128RSA15")
-                return OpcSecurityAlgorithm.Basic128Rsa15;
+                return SecurityPolicies.Basic128Rsa15;
             if (normalized == "BASIC256")
-                return OpcSecurityAlgorithm.Basic256;
+                return SecurityPolicies.Basic256;
             if (normalized == "BASIC256SHA256")
-                return OpcSecurityAlgorithm.Basic256Sha256;
+                return SecurityPolicies.Basic256Sha256;
             if (normalized == "AES128SHA256RSAOAEP")
-                return OpcSecurityAlgorithm.Aes128_Sha256_RsaOaep;
+                return SecurityPolicies.Aes128_Sha256_RsaOaep;
             if (normalized == "AES256SHA256RSAPSS")
-                return OpcSecurityAlgorithm.Aes256_Sha256_RsaPss;
+                return SecurityPolicies.Aes256_Sha256_RsaPss;
             throw new ArgumentException("Unsupported OPC UA security policy: " + (value ?? string.Empty));
         }
 
@@ -537,10 +628,20 @@ namespace IPC.Plc.Communication.OpcUa
                        .ToUpperInvariant();
         }
 
-        private static void AcceptServerCertificate(object sender, OpcCertificateValidationFailedEventArgs eventArgs)
+        private int ReadServerOperationLimit(string nodeId, int fallback)
         {
-            if (eventArgs != null)
-                eventArgs.Accept = true;
+            try
+            {
+                DataValue value = ReadNodes(new[] { NodeId.Parse(nodeId) })[0];
+                if (value == null || StatusCode.IsBad(value.StatusCode))
+                    return fallback;
+                int limit = Convert.ToInt32(value.Value, CultureInfo.InvariantCulture);
+                return limit > 0 ? Math.Clamp(limit, 1, 10000) : fallback;
+            }
+            catch
+            {
+                return fallback;
+            }
         }
 
         private static string BuildEndpointFromUri(string endpoint, int port)
@@ -576,11 +677,36 @@ namespace IPC.Plc.Communication.OpcUa
                 throw new InvalidOperationException("OPC UA client is not connected.");
         }
 
-        private static void EnsureGoodStatus(OpcValue value, string nodeId)
+        private static void EnsureGoodStatus(DataValue value, string nodeId)
         {
-            OpcStatus status = value == null ? null : value.Status;
-            if (status != null && !status.IsGood)
-                throw new PlcTagException("OPC UA read failed for " + nodeId + ": " + status.Description);
+            StatusCode status = value == null ? StatusCodes.BadNoData : value.StatusCode;
+            if (StatusCode.IsBad(status))
+                throw new PlcProtocolException(
+                    ClassifyStatus(status),
+                    "OPC UA 读取失败 " + nodeId + ": " + status,
+                    status.ToString());
+        }
+
+        private static PlcReadFailureScope ClassifyStatus(StatusCode statusCode)
+        {
+            uint code = statusCode.Code;
+            if (code == StatusCodes.BadSessionClosed ||
+                code == StatusCodes.BadSessionIdInvalid ||
+                code == StatusCodes.BadSessionNotActivated)
+                return PlcReadFailureScope.Session;
+
+            if (code == StatusCodes.BadCommunicationError ||
+                code == StatusCodes.BadConnectionClosed ||
+                code == StatusCodes.BadConnectionRejected ||
+                code == StatusCodes.BadSecureChannelClosed ||
+                code == StatusCodes.BadSecureChannelIdInvalid ||
+                code == StatusCodes.BadSecureChannelTokenUnknown ||
+                code == StatusCodes.BadServerNotConnected ||
+                code == StatusCodes.BadTcpSecureChannelUnknown ||
+                code == StatusCodes.BadTimeout)
+                return PlcReadFailureScope.Transport;
+
+            return PlcReadFailureScope.Tag;
         }
 
         private static PlcBatchReadRequest EnsureRequest(PlcBatchReadRequest request)
@@ -734,9 +860,9 @@ namespace IPC.Plc.Communication.OpcUa
             private readonly Func<PlcSubscriptionUpdate, ValueTask> _onUpdate;
             private readonly Dictionary<string, PlcSubscriptionRequest> _requestsByKey =
                 new Dictionary<string, PlcSubscriptionRequest>(StringComparer.OrdinalIgnoreCase);
-            private readonly Dictionary<string, OpcMonitoredItem> _itemsByKey =
-                new Dictionary<string, OpcMonitoredItem>(StringComparer.OrdinalIgnoreCase);
-            private OpcSubscription _subscription;
+            private readonly Dictionary<string, MonitoredItem> _itemsByKey =
+                new Dictionary<string, MonitoredItem>(StringComparer.OrdinalIgnoreCase);
+            private Subscription _subscription;
             private bool _disposed;
 
             public OpcUaSubscription(OpcUaClient owner, Func<PlcSubscriptionUpdate, ValueTask> onUpdate)
@@ -751,8 +877,8 @@ namespace IPC.Plc.Communication.OpcUa
                 {
                     return !_disposed &&
                            _subscription != null &&
-                           _subscription.IsCreated &&
-                           _subscription.IsPublishing &&
+                           _subscription.Created &&
+                           _subscription.PublishingEnabled &&
                            _owner.IsConnected;
                 }
             }
@@ -804,13 +930,26 @@ namespace IPC.Plc.Communication.OpcUa
                 {
                     try
                     {
-                        foreach (OpcMonitoredItem item in _itemsByKey.Values)
-                            item.DataChangeReceived -= OnDataChangeReceived;
-                        _subscription.Unsubscribe();
+                        foreach (MonitoredItem item in _itemsByKey.Values)
+                            item.Notification -= OnNotification;
+                        if (_subscription.Created)
+                        {
+                            _subscription.DeleteAsync(true, CancellationToken.None)
+                                .GetAwaiter()
+                                .GetResult();
+                        }
+                        if (_owner._session != null)
+                        {
+                            _owner._session.RemoveSubscriptionAsync(_subscription, CancellationToken.None)
+                                .GetAwaiter()
+                                .GetResult();
+                        }
                     }
                     catch
                     {
                     }
+
+                    _subscription.Dispose();
                 }
 
                 _itemsByKey.Clear();
@@ -821,17 +960,37 @@ namespace IPC.Plc.Communication.OpcUa
 
             private void CreateSubscription(IList<PlcSubscriptionRequest> requests, PlcSubscriptionOptions options)
             {
-                OpcSubscribeDataChange[] nodes = new OpcSubscribeDataChange[requests.Count];
-                for (int i = 0; i < requests.Count; i++)
-                    nodes[i] = CreateSubscribeNode(requests[i]);
-
-                _subscription = _owner._client.SubscribeNodes(nodes);
+                _subscription = new Subscription(_owner._session.DefaultSubscription);
                 ConfigureSubscription(_subscription, requests.Count, options);
-                TrackSubscriptionItems(requests, options);
-                _subscription.ApplyChanges();
-                if (!_subscription.IsPublishing)
-                    _subscription.StartPublishing();
-                TryResendCurrentValues();
+
+                int firstCount = Math.Min(requests.Count, Math.Max(1, _owner._maxMonitoredItemsPerCall));
+                for (int i = 0; i < firstCount; i++)
+                {
+                    MonitoredItem item = CreateMonitoredItem(requests[i], options);
+                    _subscription.AddItem(item);
+                    TrackItem(requests[i], item);
+                }
+
+                _owner._session.AddSubscription(_subscription);
+                _subscription.CreateAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+                int addedInCall = 0;
+                for (int index = firstCount; index < requests.Count; index++)
+                {
+                    PlcSubscriptionRequest request = requests[index];
+                    MonitoredItem item = CreateMonitoredItem(request, options);
+                    _subscription.AddItem(item);
+                    TrackItem(request, item);
+                    addedInCall++;
+                    if (addedInCall >= _owner._maxMonitoredItemsPerCall || index == requests.Count - 1)
+                    {
+                        _subscription.ApplyChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
+                        addedInCall = 0;
+                    }
+                }
+
+                if (!_subscription.PublishingEnabled)
+                    _subscription.SetPublishingModeAsync(true, CancellationToken.None).GetAwaiter().GetResult();
             }
 
             private void ReconcileSubscription(IList<PlcSubscriptionRequest> requests, PlcSubscriptionOptions options)
@@ -841,129 +1000,122 @@ namespace IPC.Plc.Communication.OpcUa
                 for (int i = 0; i < requests.Count; i++)
                     target[requests[i].Key] = requests[i];
 
-                List<OpcMonitoredItem> removeItems = new List<OpcMonitoredItem>();
-                foreach (KeyValuePair<string, OpcMonitoredItem> pair in _itemsByKey.ToArray())
+                List<MonitoredItem> removeItems = new List<MonitoredItem>();
+                foreach (KeyValuePair<string, MonitoredItem> pair in _itemsByKey.ToArray())
                 {
                     if (target.ContainsKey(pair.Key))
                         continue;
 
-                    pair.Value.DataChangeReceived -= OnDataChangeReceived;
+                    pair.Value.Notification -= OnNotification;
                     removeItems.Add(pair.Value);
                     _itemsByKey.Remove(pair.Key);
                     _requestsByKey.Remove(pair.Key);
                 }
 
                 if (removeItems.Count > 0)
-                    _subscription.RemoveMonitoredItem(removeItems);
+                    _subscription.RemoveItems(removeItems);
 
+                int pendingAdds = 0;
                 for (int i = 0; i < requests.Count; i++)
                 {
                     PlcSubscriptionRequest request = requests[i];
-                    OpcMonitoredItem existing;
+                    MonitoredItem existing;
                     if (_itemsByKey.TryGetValue(request.Key, out existing))
                     {
-                        ConfigureMonitoredItem(existing, request, options);
-                        _requestsByKey[request.Key] = request;
-                        continue;
+                        PlcSubscriptionRequest previous = _requestsByKey[request.Key];
+                        if (HasSameMonitoredTarget(previous, request))
+                        {
+                            ConfigureMonitoredItem(existing, request, options);
+                            _requestsByKey[request.Key] = request;
+                            continue;
+                        }
+
+                        existing.Notification -= OnNotification;
+                        _subscription.RemoveItem(existing);
+                        _itemsByKey.Remove(request.Key);
+                        _requestsByKey.Remove(request.Key);
                     }
 
-                    OpcMonitoredItem item = AddMonitoredItem(_subscription, request, options);
+                    MonitoredItem item = CreateMonitoredItem(request, options);
+                    _subscription.AddItem(item);
                     TrackItem(request, item);
+                    pendingAdds++;
+                    if (pendingAdds >= _owner._maxMonitoredItemsPerCall)
+                    {
+                        _subscription.ApplyChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
+                        pendingAdds = 0;
+                    }
                 }
 
                 ConfigureSubscription(_subscription, requests.Count, options);
-                _subscription.ApplyChanges();
-                if (!_subscription.IsPublishing)
-                    _subscription.StartPublishing();
-                TryResendCurrentValues();
+                _subscription.ModifyAsync(CancellationToken.None).GetAwaiter().GetResult();
+                _subscription.ApplyChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
+                if (!_subscription.PublishingEnabled)
+                    _subscription.SetPublishingModeAsync(true, CancellationToken.None).GetAwaiter().GetResult();
             }
 
-            private void TryResendCurrentValues()
+            private static bool HasSameMonitoredTarget(
+                PlcSubscriptionRequest previous,
+                PlcSubscriptionRequest current)
             {
-                try
-                {
-                    _subscription.ResendData();
-                }
-                catch
-                {
-                    // ResendData is only a warm-up hint. Some servers reject it while normal publishing still works.
-                }
+                return previous != null &&
+                       current != null &&
+                       previous.ElementOffset == current.ElementOffset &&
+                       string.Equals(previous.Address, current.Address, StringComparison.OrdinalIgnoreCase);
             }
 
-            private void TrackItem(PlcSubscriptionRequest request, OpcMonitoredItem item)
+            private void TrackItem(PlcSubscriptionRequest request, MonitoredItem item)
             {
                 _requestsByKey[request.Key] = request;
                 _itemsByKey[request.Key] = item;
             }
 
-            private OpcSubscribeDataChange CreateSubscribeNode(PlcSubscriptionRequest request)
-            {
-                string nodeId = NormalizeNodeId(request.Address, request.ElementOffset);
-                return new OpcSubscribeDataChange(OpcNodeId.Parse(nodeId), OpcAttribute.Value, OnDataChangeReceived);
-            }
-
-            private OpcMonitoredItem AddMonitoredItem(
-                OpcSubscription subscription,
+            private MonitoredItem CreateMonitoredItem(
                 PlcSubscriptionRequest request,
                 PlcSubscriptionOptions options)
             {
-                string nodeId = NormalizeNodeId(request.Address, request.ElementOffset);
-                OpcMonitoredItem item = subscription.AddMonitoredItem(
-                    OpcNodeId.Parse(nodeId),
-                    OpcAttribute.Value,
-                    OnDataChangeReceived);
+                MonitoredItem item = new MonitoredItem(_subscription.DefaultItem);
                 ConfigureMonitoredItem(item, request, options);
+                item.Notification += OnNotification;
                 return item;
             }
 
-            private void TrackSubscriptionItems(IList<PlcSubscriptionRequest> requests, PlcSubscriptionOptions options)
-            {
-                List<OpcMonitoredItem> items = _subscription.MonitoredItems.ToList();
-                int count = Math.Min(requests.Count, items.Count);
-                for (int i = 0; i < count; i++)
-                {
-                    OpcMonitoredItem item = items[i];
-                    item.DataChangeReceived -= OnDataChangeReceived;
-                    item.DataChangeReceived += OnDataChangeReceived;
-                    ConfigureMonitoredItem(item, requests[i], options);
-                    TrackItem(requests[i], item);
-                }
-            }
-
             private static void ConfigureSubscription(
-                OpcSubscription subscription,
+                Subscription subscription,
                 int requestCount,
                 PlcSubscriptionOptions options)
             {
                 subscription.DisplayName = "IPC Gateway OPC UA";
                 subscription.PublishingInterval = options.PublishingIntervalMs;
-                subscription.MaxNotificationsPerPublish = Math.Max(1, requestCount);
-                subscription.PublishingIsEnabled = true;
-                // Item-level DataChangeReceived handlers depend on the monitored item data cache.
-                subscription.UseMonitoredItemDataCache = true;
+                subscription.MaxNotificationsPerPublish = (uint)Math.Max(1, requestCount);
+                subscription.PublishingEnabled = true;
             }
 
             private static void ConfigureMonitoredItem(
-                OpcMonitoredItem item,
+                MonitoredItem item,
                 PlcSubscriptionRequest request,
                 PlcSubscriptionOptions options)
             {
                 item.DisplayName = string.IsNullOrWhiteSpace(request.Key) ? request.Address : request.Key;
-                item.MonitoringMode = OpcMonitoringMode.Reporting;
+                item.StartNodeId = NodeId.Parse(NormalizeNodeId(request.Address, request.ElementOffset));
+                item.AttributeId = Attributes.Value;
+                item.MonitoringMode = MonitoringMode.Reporting;
                 item.SamplingInterval = Math.Max(100, request.SamplingIntervalMs > 0 ? request.SamplingIntervalMs : options.SamplingIntervalMs);
-                item.QueueSize = Math.Max(1, options.QueueSize);
-                item.Tag = request;
+                item.QueueSize = (uint)Math.Max(1, options.QueueSize);
+                item.DiscardOldest = options.DiscardOldest;
+                item.Handle = request;
             }
 
-            private void OnDataChangeReceived(object sender, OpcDataChangeReceivedEventArgs e)
+            private void OnNotification(MonitoredItem monitoredItem, MonitoredItemNotificationEventArgs e)
             {
-                PlcSubscriptionRequest request = ResolveRequest(e);
+                PlcSubscriptionRequest request = ResolveRequest(monitoredItem);
                 if (request == null)
                     return;
 
                 try
                 {
-                    OpcValue value = e == null || e.Item == null ? null : e.Item.Value;
+                    MonitoredItemNotification notification = e?.NotificationValue as MonitoredItemNotification;
+                    DataValue value = notification?.Value;
                     EnsureGoodStatus(value, NormalizeNodeId(request.Address, request.ElementOffset));
                     object converted = ConvertForRead(value == null ? null : value.Value, request.DataType, request.ElementCount);
                     PlcReadResult result = new PlcReadResult(0, request.DataType.ToString(), converted);
@@ -978,19 +1130,16 @@ namespace IPC.Plc.Communication.OpcUa
                 }
             }
 
-            private PlcSubscriptionRequest ResolveRequest(OpcDataChangeReceivedEventArgs e)
+            private PlcSubscriptionRequest ResolveRequest(MonitoredItem monitoredItem)
             {
-                PlcSubscriptionRequest request = null;
-                if (e != null && e.MonitoredItem != null)
-                    request = e.MonitoredItem.Tag as PlcSubscriptionRequest;
+                PlcSubscriptionRequest request = monitoredItem?.Handle as PlcSubscriptionRequest;
 
                 if (request != null)
                     return request;
 
-                long clientId = e != null && e.Item != null ? e.Item.ClientID : 0;
-                foreach (KeyValuePair<string, OpcMonitoredItem> pair in _itemsByKey)
+                foreach (KeyValuePair<string, MonitoredItem> pair in _itemsByKey)
                 {
-                    if (pair.Value.ClientID == clientId)
+                    if (ReferenceEquals(pair.Value, monitoredItem))
                     {
                         PlcSubscriptionRequest found;
                         return _requestsByKey.TryGetValue(pair.Key, out found) ? found : null;
@@ -1002,10 +1151,10 @@ namespace IPC.Plc.Communication.OpcUa
 
             private void PublishItemStatusFailures()
             {
-                foreach (KeyValuePair<string, OpcMonitoredItem> pair in _itemsByKey)
+                foreach (KeyValuePair<string, MonitoredItem> pair in _itemsByKey)
                 {
-                    OpcMonitoredItem item = pair.Value;
-                    if (item == null || item.Status == null || item.Status.Error == null || !item.Status.Error.IsBad)
+                    MonitoredItem item = pair.Value;
+                    if (item == null || item.Status == null || !ServiceResult.IsBad(item.Status.Error))
                         continue;
 
                     PlcSubscriptionRequest request;
@@ -1013,7 +1162,10 @@ namespace IPC.Plc.Communication.OpcUa
                         continue;
 
                     string message = item.Status.Error.ToString();
-                    PublishUpdate(PlcSubscriptionUpdate.FromFailure(request, message, PlcReadFailureScope.Tag));
+                    PublishUpdate(PlcSubscriptionUpdate.FromFailure(
+                        request,
+                        message,
+                        ClassifyStatus(item.Status.Error.StatusCode)));
                 }
             }
 

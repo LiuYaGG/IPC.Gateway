@@ -45,6 +45,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
         private const int MaxBitPoints = 480;
 
         private readonly PlcConnectionOptions _options;
+        private IPC.Gateway.LegacyProtocolPlugins.SharedSerialPortLease _channelLease;
         private SerialPort _serialPort;
 
         public MitsubishiQlSerialClient(PlcConnectionOptions options)
@@ -56,7 +57,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         public bool IsConnected
         {
-            get { return _serialPort != null && _serialPort.IsOpen; }
+            get { return _channelLease != null && _channelLease.IsOpen; }
         }
 
         public PlcProtocol Protocol
@@ -68,27 +69,19 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
         {
             Disconnect();
 
-            string portName = string.IsNullOrWhiteSpace(_options.Host) ? "COM1" : _options.Host.Trim();
-            int baudRate = _options.Port <= 0 ? 9600 : _options.Port;
-            int dataBits = _options.DataBits <= 0 ? 8 : _options.DataBits;
-            _serialPort = new SerialPort(
-                portName,
-                baudRate,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapParity(_options.SerialParity),
-                dataBits,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapStopBits(_options.SerialStopBits));
-            _serialPort.ReadTimeout = _options.TimeoutMilliseconds;
-            _serialPort.WriteTimeout = _options.TimeoutMilliseconds;
-            _serialPort.Open();
+            _channelLease = IPC.Gateway.LegacyProtocolPlugins.SharedSerialPortRegistry.Acquire(
+                _options,
+                PlcProtocol.MitsubishiQlSerial,
+                8);
+            _serialPort = _channelLease.Port;
         }
 
         public void Disconnect()
         {
-            if (_serialPort != null)
+            if (_channelLease != null)
             {
-                if (_serialPort.IsOpen)
-                    _serialPort.Close();
-                _serialPort.Dispose();
+                _channelLease.Dispose();
+                _channelLease = null;
                 _serialPort = null;
             }
         }
@@ -337,16 +330,22 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private string SendRead(string command, string subcommand, MitsubishiQlSerialAddress address, int points)
         {
+            lock (_channelLease.SyncRoot)
+            {
             string requestData = BuildRequestData(command, subcommand, address, points, null);
             SendRequest(requestData);
             return ReadDataResponse();
+            }
         }
 
         private void SendWrite(string command, string subcommand, MitsubishiQlSerialAddress address, int points, string data)
         {
+            lock (_channelLease.SyncRoot)
+            {
             string requestData = BuildRequestData(command, subcommand, address, points, data);
             SendRequest(requestData);
             ReadCompletionResponse();
+            }
         }
 
         private string BuildRequestData(string command, string subcommand, MitsubishiQlSerialAddress address, int points, string data)

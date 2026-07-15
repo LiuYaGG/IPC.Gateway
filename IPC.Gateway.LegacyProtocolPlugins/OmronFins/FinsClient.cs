@@ -18,6 +18,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -37,12 +38,14 @@ namespace IPC.Plc.Communication.OmronFins
     
     public sealed class FinsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
-        private const int MaxWordCount = 240;
-        private const int MaxBitCount = 480;
+        private const int MaximumTcpPayloadLength = 1024 * 1024;
 
         private readonly PlcConnectionOptions _options;
+        private readonly FinsDriverOptions _driverOptions;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
+        private UdpClient _udpClient;
+        private IPEndPoint _udpRemoteEndPoint;
         private byte _clientNode;
         private byte _serverNode;
         private byte _sid;
@@ -52,11 +55,17 @@ namespace IPC.Plc.Communication.OmronFins
             if (options == null)
                 throw new ArgumentNullException("options");
             _options = options;
+            _driverOptions = FinsDriverOptions.Parse(options);
         }
 
         public bool IsConnected
         {
-            get { return _tcpClient != null && _tcpClient.Connected; }
+            get
+            {
+                if (_options.Transport == NetworkTransport.Udp)
+                    return _udpClient != null;
+                return _tcpClient != null && _tcpClient.Connected && _stream != null;
+            }
         }
 
         public PlcProtocol Protocol
@@ -69,13 +78,36 @@ namespace IPC.Plc.Communication.OmronFins
             Disconnect();
 
             int port = _options.Port <= 0 ? 9600 : _options.Port;
+            if (_options.Transport == NetworkTransport.Udp)
+            {
+                IPAddress address = ResolveAddress(_options.Host);
+                _udpRemoteEndPoint = new IPEndPoint(address, port);
+                _udpClient = new UdpClient(address.AddressFamily);
+                _udpClient.Client.ReceiveTimeout = GetTimeoutMilliseconds();
+                _udpClient.Client.SendTimeout = GetTimeoutMilliseconds();
+                _udpClient.Connect(_udpRemoteEndPoint);
+                InitializeUdpNodes();
+                return;
+            }
+
             _tcpClient = new TcpClient();
-            _tcpClient.ReceiveTimeout = _options.TimeoutMilliseconds;
-            _tcpClient.SendTimeout = _options.TimeoutMilliseconds;
-            _tcpClient.Connect(_options.Host, port);
+            _tcpClient.ReceiveTimeout = GetTimeoutMilliseconds();
+            _tcpClient.SendTimeout = GetTimeoutMilliseconds();
+            try
+            {
+                _tcpClient.ConnectAsync(_options.Host, port)
+                    .WaitAsync(TimeSpan.FromMilliseconds(GetTimeoutMilliseconds()))
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                Disconnect();
+                throw;
+            }
             _stream = _tcpClient.GetStream();
-            _stream.ReadTimeout = _options.TimeoutMilliseconds;
-            _stream.WriteTimeout = _options.TimeoutMilliseconds;
+            _stream.ReadTimeout = GetTimeoutMilliseconds();
+            _stream.WriteTimeout = GetTimeoutMilliseconds();
 
             Handshake();
         }
@@ -85,13 +117,42 @@ namespace IPC.Plc.Communication.OmronFins
             Disconnect();
 
             int port = _options.Port <= 0 ? 9600 : _options.Port;
+            if (_options.Transport == NetworkTransport.Udp)
+            {
+                IPAddress address = await ResolveAddressAsync(_options.Host, cancellationToken).ConfigureAwait(false);
+                _udpRemoteEndPoint = new IPEndPoint(address, port);
+                _udpClient = new UdpClient(address.AddressFamily);
+                _udpClient.Client.ReceiveTimeout = GetTimeoutMilliseconds();
+                _udpClient.Client.SendTimeout = GetTimeoutMilliseconds();
+                _udpClient.Connect(_udpRemoteEndPoint);
+                InitializeUdpNodes();
+                return;
+            }
+
             _tcpClient = new TcpClient();
-            _tcpClient.ReceiveTimeout = _options.TimeoutMilliseconds;
-            _tcpClient.SendTimeout = _options.TimeoutMilliseconds;
-            await _tcpClient.ConnectAsync(_options.Host, port, cancellationToken).ConfigureAwait(false);
+            _tcpClient.ReceiveTimeout = GetTimeoutMilliseconds();
+            _tcpClient.SendTimeout = GetTimeoutMilliseconds();
+            using (CancellationTokenSource connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                connectTimeout.CancelAfter(GetTimeoutMilliseconds());
+                try
+                {
+                    await _tcpClient.ConnectAsync(_options.Host, port, connectTimeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    Disconnect();
+                    throw new TimeoutException("FINS/TCP 连接超时。");
+                }
+                catch
+                {
+                    Disconnect();
+                    throw;
+                }
+            }
             _stream = _tcpClient.GetStream();
-            _stream.ReadTimeout = _options.TimeoutMilliseconds;
-            _stream.WriteTimeout = _options.TimeoutMilliseconds;
+            _stream.ReadTimeout = GetTimeoutMilliseconds();
+            _stream.WriteTimeout = GetTimeoutMilliseconds();
 
             await HandshakeAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -109,6 +170,13 @@ namespace IPC.Plc.Communication.OmronFins
                 _tcpClient.Close();
                 _tcpClient = null;
             }
+
+            if (_udpClient != null)
+            {
+                _udpClient.Close();
+                _udpClient = null;
+            }
+            _udpRemoteEndPoint = null;
         }
 
         public ValueTask DisconnectAsync(CancellationToken cancellationToken)
@@ -124,12 +192,13 @@ namespace IPC.Plc.Communication.OmronFins
             if (elementCount <= 0)
                 elementCount = 1;
 
-            FinsAddress address = FinsAddress.Parse(addressText, dataType);
+            FinsAddress address = FinsAddress.Parse(addressText, dataType, _driverOptions);
             if (FinsDataCodec.IsBitType(dataType))
             {
                 int count = PlcDataTypeHelper.IsArray(dataType) ? elementCount : 1;
                 FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
-                byte[] bitBytes = ReadMemory(start.Area.BitCode, start.WordAddress, start.BitIndex, count, MaxBitCount);
+                start.EnsureRange(count, true);
+                byte[] bitBytes = ReadMemory(start.Area.BitCode, start.WordAddress, start.BitIndex, count, _driverOptions.MaxBitCount);
                 object value = FinsDataCodec.DecodeBits(dataType, bitBytes, count);
                 return new PlcReadResult(start.Area.BitCode, start.Area.Name + ".BIT", value);
             }
@@ -141,7 +210,8 @@ namespace IPC.Plc.Communication.OmronFins
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
             int words = FinsDataCodec.GetWordCount(dataType, usesCount ? elementCount : 1);
-            byte[] data = ReadMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, MaxWordCount);
+            wordStart.EnsureRange(words, false);
+            byte[] data = ReadMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, _driverOptions.MaxWordCount);
             object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _options.WordOrder);
             return new PlcReadResult(wordStart.Area.WordCode, wordStart.Area.Name + ".WORD", result);
         }
@@ -158,12 +228,13 @@ namespace IPC.Plc.Communication.OmronFins
             if (elementCount <= 0)
                 elementCount = 1;
 
-            FinsAddress address = FinsAddress.Parse(addressText, dataType);
+            FinsAddress address = FinsAddress.Parse(addressText, dataType, _driverOptions);
             if (FinsDataCodec.IsBitType(dataType))
             {
                 int count = PlcDataTypeHelper.IsArray(dataType) ? elementCount : 1;
                 FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
-                byte[] bitBytes = await ReadMemoryAsync(start.Area.BitCode, start.WordAddress, start.BitIndex, count, MaxBitCount, cancellationToken).ConfigureAwait(false);
+                start.EnsureRange(count, true);
+                byte[] bitBytes = await ReadMemoryAsync(start.Area.BitCode, start.WordAddress, start.BitIndex, count, _driverOptions.MaxBitCount, cancellationToken).ConfigureAwait(false);
                 object value = FinsDataCodec.DecodeBits(dataType, bitBytes, count);
                 return new PlcReadResult(start.Area.BitCode, start.Area.Name + ".BIT", value);
             }
@@ -175,7 +246,8 @@ namespace IPC.Plc.Communication.OmronFins
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
             int words = FinsDataCodec.GetWordCount(dataType, usesCount ? elementCount : 1);
-            byte[] data = await ReadMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, MaxWordCount, cancellationToken).ConfigureAwait(false);
+            wordStart.EnsureRange(words, false);
+            byte[] data = await ReadMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
             object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _options.WordOrder);
             return new PlcReadResult(wordStart.Area.WordCode, wordStart.Area.Name + ".WORD", result);
         }
@@ -186,9 +258,13 @@ namespace IPC.Plc.Communication.OmronFins
             return FinsBatchReadExecutor.ReadMany(requests, new FinsBatchReadContext
             {
                 ReadMemory = ReadMemory,
+                ReadMultipleMemory = ReadMultipleMemory,
                 WordOrder = _options.WordOrder,
-                MaxWordCount = MaxWordCount,
-                MaxBitCount = MaxBitCount
+                MaxWordCount = _driverOptions.MaxWordCount,
+                MaxBitCount = _driverOptions.MaxBitCount,
+                MaxGapWords = _driverOptions.MaxGapWords,
+                MaxSparseItems = _driverOptions.MaxSparseItems,
+                DriverOptions = _driverOptions
             });
         }
 
@@ -200,9 +276,13 @@ namespace IPC.Plc.Communication.OmronFins
             return await FinsBatchReadExecutor.ReadManyAsync(requests, new FinsAsyncBatchReadContext
             {
                 ReadMemoryAsync = ReadMemoryAsync,
+                ReadMultipleMemoryAsync = ReadMultipleMemoryAsync,
                 WordOrder = _options.WordOrder,
-                MaxWordCount = MaxWordCount,
-                MaxBitCount = MaxBitCount
+                MaxWordCount = _driverOptions.MaxWordCount,
+                MaxBitCount = _driverOptions.MaxBitCount,
+                MaxGapWords = _driverOptions.MaxGapWords,
+                MaxSparseItems = _driverOptions.MaxSparseItems,
+                DriverOptions = _driverOptions
             }, cancellationToken).ConfigureAwait(false);
         }
 
@@ -211,12 +291,13 @@ namespace IPC.Plc.Communication.OmronFins
             EnsureConnected();
             EnsureSupportedType(dataType);
 
-            FinsAddress address = FinsAddress.Parse(addressText, dataType);
+            FinsAddress address = FinsAddress.Parse(addressText, dataType, _driverOptions);
             if (FinsDataCodec.IsBitType(dataType))
             {
                 byte[] values = FinsDataCodec.EncodeBits(dataType, valueText);
                 FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
-                WriteMemory(start.Area.BitCode, start.WordAddress, start.BitIndex, values, values.Length, MaxBitCount);
+                start.EnsureRange(values.Length, true);
+                WriteMemory(start.Area.BitCode, start.WordAddress, start.BitIndex, values, values.Length, _driverOptions.MaxBitCount);
                 return;
             }
 
@@ -226,7 +307,8 @@ namespace IPC.Plc.Communication.OmronFins
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
             byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _options.WordOrder);
-            WriteMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, MaxWordCount);
+            wordStart.EnsureRange(data.Length / 2, false);
+            WriteMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, _driverOptions.MaxWordCount);
         }
 
         public async ValueTask WriteAsync(
@@ -239,12 +321,13 @@ namespace IPC.Plc.Communication.OmronFins
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             EnsureSupportedType(dataType);
 
-            FinsAddress address = FinsAddress.Parse(addressText, dataType);
+            FinsAddress address = FinsAddress.Parse(addressText, dataType, _driverOptions);
             if (FinsDataCodec.IsBitType(dataType))
             {
                 byte[] values = FinsDataCodec.EncodeBits(dataType, valueText);
                 FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
-                await WriteMemoryAsync(start.Area.BitCode, start.WordAddress, start.BitIndex, values, values.Length, MaxBitCount, cancellationToken).ConfigureAwait(false);
+                start.EnsureRange(values.Length, true);
+                await WriteMemoryAsync(start.Area.BitCode, start.WordAddress, start.BitIndex, values, values.Length, _driverOptions.MaxBitCount, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -254,7 +337,8 @@ namespace IPC.Plc.Communication.OmronFins
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
             byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _options.WordOrder);
-            await WriteMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, MaxWordCount, cancellationToken).ConfigureAwait(false);
+            wordStart.EnsureRange(data.Length / 2, false);
+            await WriteMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
         }
 
         public void Dispose()
@@ -269,9 +353,9 @@ namespace IPC.Plc.Communication.OmronFins
             while (copied < count)
             {
                 int segmentCount = Math.Min(segmentLimit, count - copied);
-                AddressParts parts = OffsetAddress(wordAddress, bitIndex, copied, areaCode == 0x30 || areaCode == 0x31 || areaCode == 0x32 || areaCode == 0x33 || areaCode == 0x02 || areaCode == 0x20);
+                AddressParts parts = OffsetAddress(wordAddress, bitIndex, copied, areaCode);
                 byte[] command = BuildMemoryCommand(0x01, 0x01, areaCode, parts.WordAddress, parts.BitIndex, segmentCount, null);
-                byte[] response = SendFinsCommand(command);
+                byte[] response = SendFinsCommand(command, true);
                 ValidateMemoryResponse(response, 0x01, 0x01);
                 int dataOffset = 14;
                 int expectedBytes = IsBitAreaCode(areaCode) ? segmentCount : segmentCount * 2;
@@ -297,9 +381,9 @@ namespace IPC.Plc.Communication.OmronFins
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 int segmentCount = Math.Min(segmentLimit, count - copied);
-                AddressParts parts = OffsetAddress(wordAddress, bitIndex, copied, areaCode == 0x30 || areaCode == 0x31 || areaCode == 0x32 || areaCode == 0x33 || areaCode == 0x02 || areaCode == 0x20);
+                AddressParts parts = OffsetAddress(wordAddress, bitIndex, copied, areaCode);
                 byte[] command = BuildMemoryCommand(0x01, 0x01, areaCode, parts.WordAddress, parts.BitIndex, segmentCount, null);
-                byte[] response = await SendFinsCommandAsync(command, cancellationToken).ConfigureAwait(false);
+                byte[] response = await SendFinsCommandAsync(command, true, cancellationToken).ConfigureAwait(false);
                 ValidateMemoryResponse(response, 0x01, 0x01);
                 int dataOffset = 14;
                 int expectedBytes = IsBitAreaCode(areaCode) ? segmentCount : segmentCount * 2;
@@ -311,6 +395,62 @@ namespace IPC.Plc.Communication.OmronFins
             return result.ToArray();
         }
 
+        private byte[] ReadMultipleMemory(IList<FinsMemoryPoint> points)
+        {
+            byte[] command = BuildMultipleMemoryReadCommand(points);
+            byte[] response = SendFinsCommand(command, true);
+            ValidateMemoryResponse(response, 0x01, 0x04);
+            return DecodeMultipleMemoryResponse(response, points);
+        }
+
+        private async ValueTask<byte[]> ReadMultipleMemoryAsync(
+            IList<FinsMemoryPoint> points,
+            CancellationToken cancellationToken)
+        {
+            byte[] command = BuildMultipleMemoryReadCommand(points);
+            byte[] response = await SendFinsCommandAsync(command, true, cancellationToken).ConfigureAwait(false);
+            ValidateMemoryResponse(response, 0x01, 0x04);
+            return DecodeMultipleMemoryResponse(response, points);
+        }
+
+        private static byte[] BuildMultipleMemoryReadCommand(IList<FinsMemoryPoint> points)
+        {
+            if (points == null || points.Count == 0 || points.Count > 167)
+                throw new ArgumentOutOfRangeException("points");
+
+            byte[] command = new byte[2 + points.Count * 4];
+            command[0] = 0x01;
+            command[1] = 0x04;
+            for (int i = 0; i < points.Count; i++)
+            {
+                FinsMemoryPoint point = points[i];
+                int offset = 2 + i * 4;
+                command[offset] = point.AreaCode;
+                command[offset + 1] = (byte)(point.WordAddress >> 8);
+                command[offset + 2] = (byte)(point.WordAddress & 0xFF);
+                command[offset + 3] = (byte)point.BitIndex;
+            }
+            return command;
+        }
+
+        private static byte[] DecodeMultipleMemoryResponse(byte[] response, IList<FinsMemoryPoint> points)
+        {
+            using MemoryStream data = new MemoryStream();
+            int offset = 14;
+            for (int i = 0; i < points.Count; i++)
+            {
+                FinsMemoryPoint point = points[i];
+                int required = 1 + point.ByteCount;
+                if (response.Length < offset + required)
+                    throw new IOException("FINS multiple-memory response is too short.");
+                if (response[offset] != point.AreaCode)
+                    throw new IOException("FINS multiple-memory response area code mismatch.");
+                data.Write(response, offset + 1, point.ByteCount);
+                offset += required;
+            }
+            return data.ToArray();
+        }
+
         private void WriteMemory(byte areaCode, int wordAddress, int bitIndex, byte[] data, int count, int segmentLimit)
         {
             int written = 0;
@@ -318,11 +458,11 @@ namespace IPC.Plc.Communication.OmronFins
             while (written < count)
             {
                 int segmentCount = Math.Min(segmentLimit, count - written);
-                AddressParts parts = OffsetAddress(wordAddress, bitIndex, written, IsBitAreaCode(areaCode));
+                AddressParts parts = OffsetAddress(wordAddress, bitIndex, written, areaCode);
                 byte[] segmentData = new byte[segmentCount * bytesPerElement];
                 Buffer.BlockCopy(data, written * bytesPerElement, segmentData, 0, segmentData.Length);
                 byte[] command = BuildMemoryCommand(0x01, 0x02, areaCode, parts.WordAddress, parts.BitIndex, segmentCount, segmentData);
-                byte[] response = SendFinsCommand(command);
+                byte[] response = SendFinsCommand(command, false);
                 ValidateMemoryResponse(response, 0x01, 0x02);
                 written += segmentCount;
             }
@@ -343,11 +483,11 @@ namespace IPC.Plc.Communication.OmronFins
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 int segmentCount = Math.Min(segmentLimit, count - written);
-                AddressParts parts = OffsetAddress(wordAddress, bitIndex, written, IsBitAreaCode(areaCode));
+                AddressParts parts = OffsetAddress(wordAddress, bitIndex, written, areaCode);
                 byte[] segmentData = new byte[segmentCount * bytesPerElement];
                 Buffer.BlockCopy(data, written * bytesPerElement, segmentData, 0, segmentData.Length);
                 byte[] command = BuildMemoryCommand(0x01, 0x02, areaCode, parts.WordAddress, parts.BitIndex, segmentCount, segmentData);
-                byte[] response = await SendFinsCommandAsync(command, cancellationToken).ConfigureAwait(false);
+                byte[] response = await SendFinsCommandAsync(command, false, cancellationToken).ConfigureAwait(false);
                 ValidateMemoryResponse(response, 0x01, 0x02);
                 written += segmentCount;
             }
@@ -361,7 +501,7 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(request, 4, 12);
             WriteUInt32(request, 8, 0);
             WriteUInt32(request, 12, 0);
-            WriteUInt32(request, 16, 0);
+            WriteUInt32(request, 16, _driverOptions.SourceNode);
             _stream.Write(request, 0, request.Length);
 
             byte[] header = ReadExact(16);
@@ -376,11 +516,10 @@ namespace IPC.Plc.Communication.OmronFins
             if (length < 16)
                 throw new InvalidOperationException("FINS/TCP 握手响应长度不足。");
 
-            byte[] payload = ReadExact((int)length - 8);
+            byte[] payload = ReadExact(ValidateTcpPayloadLength(length));
             _clientNode = (byte)ReadUInt32(payload, 0);
             _serverNode = (byte)ReadUInt32(payload, 4);
-            if (_clientNode == 0)
-                _clientNode = 0xEF;
+            ApplyConfiguredNodes();
         }
 
         private async ValueTask HandshakeAsync(CancellationToken cancellationToken)
@@ -391,7 +530,7 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(request, 4, 12);
             WriteUInt32(request, 8, 0);
             WriteUInt32(request, 12, 0);
-            WriteUInt32(request, 16, 0);
+            WriteUInt32(request, 16, _driverOptions.SourceNode);
             await _stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
 
             byte[] header = await ReadExactAsync(16, cancellationToken).ConfigureAwait(false);
@@ -406,16 +545,18 @@ namespace IPC.Plc.Communication.OmronFins
             if (length < 16)
                 throw new InvalidOperationException("FINS/TCP handshake response is too short.");
 
-            byte[] payload = await ReadExactAsync((int)length - 8, cancellationToken).ConfigureAwait(false);
+            byte[] payload = await ReadExactAsync(ValidateTcpPayloadLength(length), cancellationToken).ConfigureAwait(false);
             _clientNode = (byte)ReadUInt32(payload, 0);
             _serverNode = (byte)ReadUInt32(payload, 4);
-            if (_clientNode == 0)
-                _clientNode = 0xEF;
+            ApplyConfiguredNodes();
         }
 
-        private byte[] SendFinsCommand(byte[] command)
+        private byte[] SendFinsCommand(byte[] command, bool allowUdpReadRetry)
         {
-            byte[] finsFrame = BuildFinsFrame(command);
+            byte[] finsFrame = BuildFinsFrame(command, out byte sid);
+            if (_options.Transport == NetworkTransport.Udp)
+                return SendUdp(finsFrame, sid, allowUdpReadRetry);
+
             byte[] packet = new byte[16 + finsFrame.Length];
             byte[] magic = Encoding.ASCII.GetBytes("FINS");
             Buffer.BlockCopy(magic, 0, packet, 0, magic.Length);
@@ -434,16 +575,19 @@ namespace IPC.Plc.Communication.OmronFins
                 throw new InvalidOperationException("FINS/TCP 响应命令不正确。");
             if (error != 0)
                 throw new InvalidOperationException("FINS/TCP 响应错误: 0x" + error.ToString("X8"));
-            if (length < 8)
-                throw new InvalidOperationException("FINS/TCP 响应长度不足。");
-            return ReadExact((int)length - 8);
+            int payloadLength = ValidateTcpPayloadLength(length);
+            return ValidateFinsResponseFrame(ReadExact(payloadLength), sid);
         }
 
         private async ValueTask<byte[]> SendFinsCommandAsync(
             byte[] command,
+            bool allowUdpReadRetry,
             CancellationToken cancellationToken)
         {
-            byte[] finsFrame = BuildFinsFrame(command);
+            byte[] finsFrame = BuildFinsFrame(command, out byte sid);
+            if (_options.Transport == NetworkTransport.Udp)
+                return await SendUdpAsync(finsFrame, sid, allowUdpReadRetry, cancellationToken).ConfigureAwait(false);
+
             byte[] packet = new byte[16 + finsFrame.Length];
             byte[] magic = Encoding.ASCII.GetBytes("FINS");
             Buffer.BlockCopy(magic, 0, packet, 0, magic.Length);
@@ -462,24 +606,118 @@ namespace IPC.Plc.Communication.OmronFins
                 throw new InvalidOperationException("FINS/TCP response command is invalid.");
             if (error != 0)
                 throw new InvalidOperationException("FINS/TCP response error: 0x" + error.ToString("X8"));
-            if (length < 8)
-                throw new InvalidOperationException("FINS/TCP response length is invalid.");
-            return await ReadExactAsync((int)length - 8, cancellationToken).ConfigureAwait(false);
+            int payloadLength = ValidateTcpPayloadLength(length);
+            byte[] response = await ReadExactAsync(payloadLength, cancellationToken).ConfigureAwait(false);
+            return ValidateFinsResponseFrame(response, sid);
         }
 
-        private byte[] BuildFinsFrame(byte[] command)
+        private byte[] SendUdp(byte[] request, byte sid, bool allowReadRetry)
+        {
+            int retryCount = allowReadRetry ? _driverOptions.UdpReadRetries : 0;
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    DrainPendingUdpResponses();
+                    _udpClient.Send(request, request.Length);
+                    IPEndPoint remote = null;
+                    byte[] response = _udpClient.Receive(ref remote);
+                    ValidateUdpRemoteEndPoint(remote);
+                    return ValidateFinsResponseFrame(response, sid);
+                }
+                catch (Exception ex) when (IsRetryableUdpFailure(ex))
+                {
+                    if (attempt >= retryCount)
+                        throw new TimeoutException("Omron FINS/UDP request timed out.", ex);
+                    Thread.Sleep(Random.Shared.Next(25, 101));
+                }
+            }
+        }
+
+        private async ValueTask<byte[]> SendUdpAsync(
+            byte[] request,
+            byte sid,
+            bool allowReadRetry,
+            CancellationToken cancellationToken)
+        {
+            int retryCount = allowReadRetry ? _driverOptions.UdpReadRetries : 0;
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    DrainPendingUdpResponses();
+                    using CancellationTokenSource timeout = CreateUdpTimeout(cancellationToken);
+                    await _udpClient.SendAsync(request, request.Length).WaitAsync(timeout.Token).ConfigureAwait(false);
+                    UdpReceiveResult result = await _udpClient.ReceiveAsync(timeout.Token).ConfigureAwait(false);
+                    ValidateUdpRemoteEndPoint(result.RemoteEndPoint);
+                    return ValidateFinsResponseFrame(result.Buffer, sid);
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    if (attempt >= retryCount)
+                        throw new TimeoutException("Omron FINS/UDP request timed out.", ex);
+                    await Task.Delay(Random.Shared.Next(25, 101), cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (IsRetryableUdpFailure(ex))
+                {
+                    if (attempt >= retryCount)
+                        throw new TimeoutException("Omron FINS/UDP request timed out.", ex);
+                    await Task.Delay(Random.Shared.Next(25, 101), cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        private static bool IsRetryableUdpFailure(Exception exception)
+        {
+            if (exception is TimeoutException || exception is IOException)
+                return true;
+            if (exception is not SocketException socketException)
+                return false;
+            return socketException.SocketErrorCode == SocketError.TimedOut ||
+                   socketException.SocketErrorCode == SocketError.WouldBlock ||
+                   socketException.SocketErrorCode == SocketError.ConnectionReset ||
+                   socketException.SocketErrorCode == SocketError.NetworkReset ||
+                   socketException.SocketErrorCode == SocketError.HostUnreachable;
+        }
+
+        private CancellationTokenSource CreateUdpTimeout(CancellationToken cancellationToken)
+        {
+            CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(GetTimeoutMilliseconds());
+            return timeout;
+        }
+
+        private void DrainPendingUdpResponses()
+        {
+            while (_udpClient != null && _udpClient.Available > 0)
+            {
+                IPEndPoint remote = null;
+                _udpClient.Receive(ref remote);
+            }
+        }
+
+        private void ValidateUdpRemoteEndPoint(IPEndPoint remote)
+        {
+            if (_udpRemoteEndPoint == null || remote == null ||
+                !_udpRemoteEndPoint.Address.Equals(remote.Address) ||
+                _udpRemoteEndPoint.Port != remote.Port)
+                throw new IOException("FINS/UDP response endpoint mismatch.");
+        }
+
+        private byte[] BuildFinsFrame(byte[] command, out byte sid)
         {
             byte[] frame = new byte[10 + command.Length];
             frame[0] = 0x80;
             frame[1] = 0x00;
             frame[2] = 0x02;
-            frame[3] = GetDestinationNetwork();
+            frame[3] = _driverOptions.DestinationNetwork;
             frame[4] = _serverNode;
-            frame[5] = GetDestinationUnit();
-            frame[6] = 0x00;
+            frame[5] = _driverOptions.DestinationUnit;
+            frame[6] = _driverOptions.SourceNetwork;
             frame[7] = _clientNode;
-            frame[8] = 0x00;
-            frame[9] = NextSid();
+            frame[8] = _driverOptions.SourceUnit;
+            sid = NextSid();
+            frame[9] = sid;
             Buffer.BlockCopy(command, 0, frame, 10, command.Length);
             return frame;
         }
@@ -509,12 +747,47 @@ namespace IPC.Plc.Communication.OmronFins
                 throw new InvalidOperationException("FINS 响应命令不匹配。");
             ushort endCode = ReadUInt16(response, 12);
             if (endCode != 0)
-                throw new InvalidOperationException("FINS错误: end code 0x" + endCode.ToString("X4") + " (" + GetEndCodeName(endCode) + ")");
+                throw new FinsProtocolException(
+                    endCode,
+                    "FINS错误: end code 0x" + endCode.ToString("X4") + " (" + GetEndCodeName(endCode) + ")",
+                    GetEndCodeScope(endCode));
         }
 
-        private static AddressParts OffsetAddress(int wordAddress, int bitIndex, int offset, bool isBitArea)
+        private byte[] ValidateFinsResponseFrame(byte[] response, byte expectedSid)
         {
-            if (!isBitArea)
+            if (response == null || response.Length < 10)
+                throw new IOException("FINS response frame is too short.");
+            if ((response[0] & 0x40) == 0)
+                throw new IOException("FINS response flag is missing.");
+            if (response[9] != expectedSid)
+                throw new IOException("FINS response SID mismatch.");
+            if (response[4] != _clientNode || response[7] != _serverNode)
+                throw new IOException("FINS response node address mismatch.");
+            return response;
+        }
+
+        private static int ValidateTcpPayloadLength(uint length)
+        {
+            if (length < 8 || length - 8 > MaximumTcpPayloadLength)
+                throw new IOException("FINS/TCP response length is invalid: " + length);
+            return checked((int)length - 8);
+        }
+
+        private static FinsErrorScope GetEndCodeScope(ushort endCode)
+        {
+            if (endCode == 0x0401)
+                return FinsErrorScope.Tag;
+            int mainCode = endCode >> 8;
+            if (mainCode >= 0x01 && mainCode <= 0x05)
+                return FinsErrorScope.Device;
+            if (mainCode == 0x20 || mainCode == 0x22 || mainCode == 0x23 || mainCode == 0x25)
+                return FinsErrorScope.Device;
+            return FinsErrorScope.Tag;
+        }
+
+        private static AddressParts OffsetAddress(int wordAddress, int bitIndex, int offset, byte areaCode)
+        {
+            if (!IsBitAreaCode(areaCode) || IsWordIndexedBitAreaCode(areaCode))
                 return new AddressParts(wordAddress + offset, bitIndex);
 
             int absoluteBit = bitIndex + offset;
@@ -523,13 +796,13 @@ namespace IPC.Plc.Communication.OmronFins
 
         private void EnsureConnected()
         {
-            if (!IsConnected || _stream == null)
+            if (!IsConnected)
                 Connect();
         }
 
         private async ValueTask EnsureConnectedAsync(CancellationToken cancellationToken)
         {
-            if (!IsConnected || _stream == null)
+            if (!IsConnected)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -542,22 +815,67 @@ namespace IPC.Plc.Communication.OmronFins
                 throw new NotSupportedException("FINS 协议不使用 Modbus Coil/Discrete Input 类型，请选择 BOOL 或 BOOL[]。");
         }
 
-        private byte GetDestinationNetwork()
+        private void ApplyConfiguredNodes()
         {
-            if (_options.Rack < 0)
-                return 0;
-            if (_options.Rack > 127)
-                return 127;
-            return (byte)_options.Rack;
+            if (_driverOptions.SourceNode != 0)
+                _clientNode = _driverOptions.SourceNode;
+            if (_driverOptions.DestinationNode != 0)
+                _serverNode = _driverOptions.DestinationNode;
+            if (_clientNode == 0)
+                _clientNode = 0xEF;
+            if (_serverNode == 0)
+                throw new InvalidOperationException("FINS 目标节点号不能为 0。");
         }
 
-        private byte GetDestinationUnit()
+        private void InitializeUdpNodes()
         {
-            if (_options.Slot < 0)
-                return 0;
-            if (_options.Slot > 31)
-                return 31;
-            return (byte)_options.Slot;
+            IPEndPoint local = _udpClient.Client.LocalEndPoint as IPEndPoint;
+            _clientNode = _driverOptions.SourceNode != 0
+                ? _driverOptions.SourceNode
+                : GetNodeFromAddress(local?.Address, "源");
+            _serverNode = _driverOptions.DestinationNode != 0
+                ? _driverOptions.DestinationNode
+                : GetNodeFromAddress(_udpRemoteEndPoint?.Address, "目标");
+        }
+
+        private static byte GetNodeFromAddress(IPAddress address, string role)
+        {
+            byte[] bytes = address?.GetAddressBytes();
+            if (bytes == null || bytes.Length != 4 || bytes[3] == 0 || bytes[3] == 255)
+                throw new InvalidOperationException("无法从 IP 地址推导 FINS " + role + "节点号，请显式配置节点号。");
+            return bytes[3];
+        }
+
+        private static IPAddress ResolveAddress(string host)
+        {
+            IPAddress[] addresses = Dns.GetHostAddresses(host);
+            return SelectAddress(addresses, host);
+        }
+
+        private static async ValueTask<IPAddress> ResolveAddressAsync(string host, CancellationToken cancellationToken)
+        {
+            IPAddress[] addresses = await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+            return SelectAddress(addresses, host);
+        }
+
+        private static IPAddress SelectAddress(IPAddress[] addresses, string host)
+        {
+            if (addresses != null)
+            {
+                for (int i = 0; i < addresses.Length; i++)
+                {
+                    if (addresses[i].AddressFamily == AddressFamily.InterNetwork)
+                        return addresses[i];
+                }
+                if (addresses.Length > 0)
+                    return addresses[0];
+            }
+            throw new InvalidOperationException("PLC 地址解析失败: " + host);
+        }
+
+        private int GetTimeoutMilliseconds()
+        {
+            return _options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000;
         }
 
         private byte NextSid()
@@ -575,7 +893,15 @@ namespace IPC.Plc.Communication.OmronFins
                    areaCode == 0x32 ||
                    areaCode == 0x33 ||
                    areaCode == 0x02 ||
-                   areaCode == 0x20;
+                   areaCode == 0x09 ||
+                   areaCode == 0x0A ||
+                   (areaCode >= 0x20 && areaCode <= 0x2F) ||
+                   (areaCode >= 0xE0 && areaCode <= 0xE8);
+        }
+
+        private static bool IsWordIndexedBitAreaCode(byte areaCode)
+        {
+            return areaCode == 0x09;
         }
 
         private byte[] ReadExact(int count)

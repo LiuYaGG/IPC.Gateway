@@ -180,7 +180,7 @@ public static class GatewayCoreServiceCollectionExtensions
             CaCertificatePath = section["CaCertificatePath"] ?? string.Empty,
             SubscribeTopic = section["SubscribeTopic"] ?? "gateway/IPC-Gateway-Web/config",
             PublishEnabled = GetBool(section, "PublishEnabled", true),
-            PublishTopicTemplate = section["PublishTopicTemplate"] ?? "ipc/data/{device}/{group}/{tag}",
+            PublishTopicTemplate = section["PublishTopicTemplate"] ?? "ipc/data/{channel}/{device}/{group}/{tag}",
             PublishQos = GetInt(section, "PublishQos", 0),
             HeartbeatEnabled = GetBool(section, "HeartbeatEnabled", true),
             HeartbeatIntervalSeconds = GetInt(section, "HeartbeatIntervalSeconds", 60),

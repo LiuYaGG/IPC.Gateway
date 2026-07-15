@@ -22,6 +22,9 @@ using System.Globalization;
 using System.IO;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Text.Json;
 using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.OpcDa
@@ -36,13 +39,16 @@ namespace IPC.Plc.Communication.OpcDa
     
     
     
-    public sealed class OpcDaClient : IPlcClient, IPlcBatchReadClient
+    public sealed class OpcDaClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
         private const int OpcQualityGood = 0xC0;
 
         private readonly PlcConnectionOptions _options;
         private readonly object _syncRoot;
         private readonly Dictionary<string, OpcDaItemHandle> _itemsByAddress;
+        private readonly BoundedSynchronousIoExecutor _executor;
+        private readonly OpcDaDataSource _readSource;
+        private readonly int _requestedUpdateRate;
 
         private IOPCServer _server;
         private IOPCItemMgt _itemMgt;
@@ -57,6 +63,11 @@ namespace IPC.Plc.Communication.OpcDa
             _options = options ?? new PlcConnectionOptions();
             _syncRoot = new object();
             _itemsByAddress = new Dictionary<string, OpcDaItemHandle>(StringComparer.OrdinalIgnoreCase);
+            _executor = new BoundedSynchronousIoExecutor(1, 32, "OPC DA COM", true);
+            _readSource = ReadDriverString("opcDaReadSource", "Cache").Equals("Device", StringComparison.OrdinalIgnoreCase)
+                ? OpcDaDataSource.Device
+                : OpcDaDataSource.Cache;
+            _requestedUpdateRate = ReadDriverInt("opcDaUpdateRateMilliseconds", 1000, 50, 60000);
         }
 
         public bool IsConnected
@@ -108,6 +119,47 @@ namespace IPC.Plc.Communication.OpcDa
             }
         }
 
+        public ValueTask ConnectAsync(CancellationToken cancellationToken)
+        {
+            return _executor.InvokeAsync(Connect, cancellationToken);
+        }
+
+        public ValueTask DisconnectAsync(CancellationToken cancellationToken)
+        {
+            return _executor.InvokeAsync(Disconnect, cancellationToken);
+        }
+
+        public ValueTask<PlcReadResult> ReadAsync(
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            return _executor.InvokeAsync(
+                () => Read(address, dataType, elementCount, elementOffset),
+                cancellationToken);
+        }
+
+        public ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
+            IList<PlcBatchReadRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            return _executor.InvokeAsync(() => ReadMany(requests), cancellationToken);
+        }
+
+        public ValueTask WriteAsync(
+            string address,
+            PlcDataType dataType,
+            string valueText,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            return _executor.InvokeAsync(
+                () => Write(address, dataType, valueText, elementOffset),
+                cancellationToken);
+        }
+
         public PlcReadResult Read(string address, PlcDataType dataType, int elementCount, int elementOffset)
         {
             lock (_syncRoot)
@@ -117,7 +169,7 @@ namespace IPC.Plc.Communication.OpcDa
                 int[] handles = new[] { item.ServerHandle };
                 IntPtr valuesPointer;
                 IntPtr errorsPointer;
-                _syncIO.Read(OpcDaDataSource.Device, 1, handles, out valuesPointer, out errorsPointer);
+                _syncIO.Read(_readSource, 1, handles, out valuesPointer, out errorsPointer);
 
                 try
                 {
@@ -127,7 +179,10 @@ namespace IPC.Plc.Communication.OpcDa
 
                     OpcDaItemState state = (OpcDaItemState)Marshal.PtrToStructure(valuesPointer, typeof(OpcDaItemState));
                     if ((state.Quality & OpcQualityGood) != OpcQualityGood)
-                        throw new PlcCommunicationException("OPC DA read quality is not good. ItemID: " + item.ItemId);
+                        throw new PlcProtocolException(
+                            PlcReadFailureScope.Tag,
+                            "OPC DA标签质量不是Good。ItemID: " + item.ItemId,
+                            "QUALITY-0x" + state.Quality.ToString("X4", CultureInfo.InvariantCulture));
 
                     object value = ConvertForRead(state.Value, dataType, elementCount, elementOffset);
                     return new PlcReadResult((ushort)item.CanonicalDataType, VarTypeName(item.CanonicalDataType), value);
@@ -151,6 +206,7 @@ namespace IPC.Plc.Communication.OpcDa
                 EnsureConnected();
                 PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
                 List<PendingRead> pending = new List<PendingRead>();
+                PreloadItems(requests);
 
                 for (int i = 0; i < requests.Count; i++)
                 {
@@ -203,6 +259,7 @@ namespace IPC.Plc.Communication.OpcDa
         public void Dispose()
         {
             Disconnect();
+            _executor.Dispose();
         }
 
         private string GetServerProgId()
@@ -213,6 +270,41 @@ namespace IPC.Plc.Communication.OpcDa
             if (string.IsNullOrWhiteSpace(progId))
                 throw new InvalidOperationException("OPC DA Server ProgID cannot be empty.");
             return progId.Trim();
+        }
+
+        private string ReadDriverString(string name, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(_options.DriverOptionsJson))
+                return fallback;
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(_options.DriverOptionsJson);
+                return document.RootElement.TryGetProperty(name, out JsonElement value) &&
+                       value.ValueKind == JsonValueKind.String
+                    ? value.GetString() ?? fallback
+                    : fallback;
+            }
+            catch (JsonException)
+            {
+                return fallback;
+            }
+        }
+
+        private int ReadDriverInt(string name, int fallback, int min, int max)
+        {
+            if (string.IsNullOrWhiteSpace(_options.DriverOptionsJson))
+                return fallback;
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(_options.DriverOptionsJson);
+                return document.RootElement.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int number)
+                    ? Math.Clamp(number, min, max)
+                    : fallback;
+            }
+            catch (JsonException)
+            {
+                return fallback;
+            }
         }
 
         private string GetGroupName()
@@ -275,7 +367,7 @@ namespace IPC.Plc.Communication.OpcDa
         private int[] BuildUpdateRateCandidates()
         {
             List<int> values = new List<int>();
-            AddDistinct(values, 1000);
+            AddDistinct(values, _requestedUpdateRate);
             AddDistinct(values, Math.Max(100, Math.Min(60000, _options.TimeoutMilliseconds)));
             AddDistinct(values, 500);
             return values.ToArray();
@@ -365,6 +457,60 @@ namespace IPC.Plc.Communication.OpcDa
             }
         }
 
+        private void PreloadItems(IList<PlcBatchReadRequest> requests)
+        {
+            List<string> missing = new List<string>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int index = 0; index < requests.Count; index++)
+            {
+                string itemId = (requests[index]?.Address ?? string.Empty).Trim();
+                if (itemId.Length > 0 && !_itemsByAddress.ContainsKey(itemId) && seen.Add(itemId))
+                    missing.Add(itemId);
+            }
+            if (missing.Count == 0)
+                return;
+
+            OpcDaItemDef[] definitions = new OpcDaItemDef[missing.Count];
+            for (int index = 0; index < missing.Count; index++)
+            {
+                definitions[index] = new OpcDaItemDef
+                {
+                    AccessPath = string.Empty,
+                    ItemId = missing[index],
+                    Active = 1,
+                    ClientHandle = _itemsByAddress.Count + index + 1,
+                    BlobSize = 0,
+                    Blob = IntPtr.Zero,
+                    RequestedDataType = 0,
+                    Reserved = 0
+                };
+            }
+
+            IntPtr resultsPointer = IntPtr.Zero;
+            IntPtr errorsPointer = IntPtr.Zero;
+            _itemMgt.AddItems(definitions.Length, definitions, out resultsPointer, out errorsPointer);
+            try
+            {
+                int resultSize = Marshal.SizeOf(typeof(OpcDaItemResult));
+                for (int index = 0; index < definitions.Length; index++)
+                {
+                    if (ReadError(errorsPointer, index) != 0)
+                        continue;
+                    IntPtr resultPointer = IntPtr.Add(resultsPointer, index * resultSize);
+                    OpcDaItemResult result = (OpcDaItemResult)Marshal.PtrToStructure(resultPointer, typeof(OpcDaItemResult));
+                    _itemsByAddress[missing[index]] = new OpcDaItemHandle(
+                        missing[index],
+                        result.ServerHandle,
+                        result.CanonicalDataType);
+                }
+            }
+            finally
+            {
+                DestroyItemResults(resultsPointer, definitions.Length);
+                FreeCoTaskMemory(errorsPointer);
+            }
+        }
+
         private void ReadPendingItems(List<PendingRead> pending, PlcBatchReadResult[] ordered)
         {
             int[] handles = new int[pending.Count];
@@ -375,7 +521,7 @@ namespace IPC.Plc.Communication.OpcDa
             IntPtr errorsPointer = IntPtr.Zero;
             try
             {
-                _syncIO.Read(OpcDaDataSource.Device, pending.Count, handles, out valuesPointer, out errorsPointer);
+                _syncIO.Read(_readSource, pending.Count, handles, out valuesPointer, out errorsPointer);
                 int stateSize = Marshal.SizeOf(typeof(OpcDaItemState));
 
                 for (int i = 0; i < pending.Count; i++)
@@ -441,7 +587,10 @@ namespace IPC.Plc.Communication.OpcDa
         private static PlcBatchReadResult BuildReadResult(PendingRead read, OpcDaItemState state)
         {
             if ((state.Quality & OpcQualityGood) != OpcQualityGood)
-                throw new PlcCommunicationException("OPC DA read quality is not good. ItemID: " + read.Item.ItemId);
+                throw new PlcProtocolException(
+                    PlcReadFailureScope.Tag,
+                    "OPC DA标签质量不是Good。ItemID: " + read.Item.ItemId,
+                    "QUALITY-0x" + state.Quality.ToString("X4", CultureInfo.InvariantCulture));
 
             object value = ConvertForRead(
                 state.Value,

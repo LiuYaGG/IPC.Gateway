@@ -110,23 +110,38 @@ namespace IPC.Runtime.Engine
             {
                 switch (device?.Protocol ?? PlcProtocol.Plugin)
                 {
+                    case PlcProtocol.EtherNetIp:
+                        if (!Regex.IsMatch(address, @"^@(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)/(0[xX][0-9A-Fa-f]+|[0-9]+)(/(0[xX][0-9A-Fa-f]+|[0-9]+))?$") &&
+                            !Regex.IsMatch(address, @"^(Assembly|InputAssembly|OutputAssembly|ConfigAssembly):(0[xX][0-9A-Fa-f]+|[0-9]+)(:(0[xX][0-9A-Fa-f]+|[0-9]+))?$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(address, @"^(Input|Output):[0-9]+(\.[0-7])?$", RegexOptions.IgnoreCase))
+                            return "EtherNet/IP 地址格式无效。";
+                        break;
                     case PlcProtocol.RockwellCip:
                         if (!IsValidCipPath(address))
                             return "AB/CIP 标签路径格式无效。";
                         break;
+                    case PlcProtocol.RockwellPccc:
+                        if (!Regex.IsMatch(address, @"^(ST|[NBFLOTICSR])\d+:\d+(\.[A-Z0-9]+)?(/\d+)?$", RegexOptions.IgnoreCase))
+                            return "AB/PCCC地址格式无效。";
+                        break;
                     case PlcProtocol.ModbusTcp:
                     case PlcProtocol.ModbusRtu:
+                    case PlcProtocol.ModbusAscii:
                         _ = ModbusAddress.Parse(address, tag.DataType);
                         break;
                     case PlcProtocol.Dlt6452007:
                         _ = Dlt645Address.Parse(address);
                         break;
                     case PlcProtocol.Cjt1882004:
+                    case PlcProtocol.Cjt1882018:
                         _ = Cjt188Address.Parse(address);
                         break;
                     case PlcProtocol.SiemensS7:
-                        if (!Regex.IsMatch(address, @"^(DB\d+\.DB[XBWDL]\d+(\.\d+)?|[MIQV][XBWDL]?\d+(\.\d+)?)$", RegexOptions.IgnoreCase))
+                        if (!Regex.IsMatch(address, @"^(DB\d+\.DB[XBWDL]\d+(\.\d+)?|[MIQVEA][XBWDL]?\d+(\.\d+)?)$", RegexOptions.IgnoreCase))
                             return "西门子地址格式无效。";
+                        if (Regex.IsMatch(address, @"(?:DBX|[MIQVEA]X?)[0-9]+\.[0-9]+$", RegexOptions.IgnoreCase) &&
+                            tag.DataType != PlcDataType.Bool && tag.DataType != PlcDataType.BoolArray)
+                            return "带 .bit 后缀的 S7 地址必须使用 Bool 或 BoolArray。";
                         break;
                     case PlcProtocol.MitsubishiMc:
                     case PlcProtocol.MitsubishiMc1E:
@@ -140,7 +155,10 @@ namespace IPC.Runtime.Engine
                             return "欧姆龙 FINS 地址格式无效。";
                         break;
                     case PlcProtocol.CanOpen:
-                        if (!Regex.IsMatch(address, @"^((0X)?[0-9A-F]{1,3}[:/])?(0X)?[0-9A-F]{1,4}[:/.](0X)?[0-9A-F]{1,2}$", RegexOptions.IgnoreCase))
+                        if (!Regex.IsMatch(address, @"^((0X)?[0-9A-F]{1,3}[:/])?(0X)?[0-9A-F]{1,4}[:/.](0X)?[0-9A-F]{1,2}$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(address, @"^(TPDO[1-4]|RPDO[1-4]):([1-9]|[1-9][0-9]|1[01][0-9]|12[0-7])(:[0-7](\.[0-7])?)?$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(address, @"^(Heartbeat|EMCY|NMT):([1-9]|[1-9][0-9]|1[01][0-9]|12[0-7])$", RegexOptions.IgnoreCase) &&
+                            !Regex.IsMatch(address, @"^(SYNC|TIME)$", RegexOptions.IgnoreCase))
                             return "CANopen 对象字典地址格式无效。";
                         break;
                     case PlcProtocol.BacnetIp:
@@ -212,12 +230,32 @@ namespace IPC.Runtime.Engine
                 return tag.Address.Trim();
             if (device?.Protocol == PlcProtocol.Dlt6452007)
                 return "DLT645:" + (tag.MeterAddress ?? string.Empty).Trim() + ":" + (tag.MeterDataIdentifier ?? string.Empty).Trim();
-            if (device?.Protocol == PlcProtocol.Cjt1882004)
+            if (device?.Protocol == PlcProtocol.Cjt1882004 || device?.Protocol == PlcProtocol.Cjt1882018)
             {
-                string meterType = string.IsNullOrWhiteSpace(tag.MeterType) ? string.Empty : tag.MeterType.Trim() + ":";
+                string meterType = NormalizeCjtMeterType(tag.MeterType);
+                meterType = string.IsNullOrWhiteSpace(meterType) ? string.Empty : meterType + ":";
                 return "CJ188:" + meterType + (tag.MeterAddress ?? string.Empty).Trim() + ":" + (tag.MeterDataIdentifier ?? string.Empty).Trim();
             }
             return string.Empty;
+        }
+
+        private static string NormalizeCjtMeterType(string? meterType)
+        {
+            string value = (meterType ?? string.Empty).Trim();
+            if (Regex.IsMatch(value, "^[0-9A-Fa-f]{2}$"))
+                return value.ToUpperInvariant();
+            return value switch
+            {
+                "水表" or "冷水表" => "10",
+                "热水表" => "11",
+                "直饮水表" => "12",
+                "中水表" => "13",
+                "热量表" => "20",
+                "冷量表" => "21",
+                "冷热量表" => "22",
+                "燃气表" => "30",
+                _ => value
+            };
         }
 
         private static string GetTagKey(TagConfig tag)

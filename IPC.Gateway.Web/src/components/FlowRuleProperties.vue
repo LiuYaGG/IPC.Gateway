@@ -642,28 +642,19 @@ defineEmits<{
 
 const tagKey = computed(() => props.node
   ? findTagSelectionKey(props.project, {
-    sourcePointCode: props.node.pointCode,
-    sourceDeviceName: props.node.deviceName,
-    sourceGroupName: props.node.groupName,
-    sourceTagName: props.node.tagName
+    sourceTagId: props.node.tagId
   })
   : '')
 
 const relatedTagKey = computed(() => props.node
   ? findTagSelectionKey(props.project, {
-    sourcePointCode: props.node.relatedPointCode,
-    sourceDeviceName: props.node.relatedDeviceName,
-    sourceGroupName: props.node.relatedGroupName,
-    sourceTagName: props.node.relatedTagName
+    sourceTagId: props.node.relatedTagId
   })
   : '')
 
 const contextTagKey = computed(() => props.node
   ? findTagSelectionKey(props.project, {
-    sourcePointCode: props.node.contextPointCode,
-    sourceDeviceName: props.node.contextDeviceName,
-    sourceGroupName: props.node.contextGroupName,
-    sourceTagName: props.node.contextTagName
+    sourceTagId: props.node.contextTagId
   })
   : '')
 
@@ -721,6 +712,11 @@ function changeTag(selection: TagSelection | null) {
 
 function changeRelatedTag(selection: TagSelection | null) {
   if (!props.node) return
+  props.node.relatedChannelId = selection?.channelId ?? ''
+  props.node.relatedChannelName = selection?.channelName ?? ''
+  props.node.relatedDeviceId = selection?.deviceId ?? ''
+  props.node.relatedGroupId = selection?.groupId ?? ''
+  props.node.relatedTagId = selection?.tagId ?? ''
   props.node.relatedDeviceName = selection?.deviceName ?? ''
   props.node.relatedGroupName = selection?.groupName ?? ''
   props.node.relatedTagName = selection?.tagName ?? ''
@@ -730,6 +726,11 @@ function changeRelatedTag(selection: TagSelection | null) {
 
 function changeContextTag(selection: TagSelection | null) {
   if (!props.node) return
+  props.node.contextChannelId = selection?.channelId ?? ''
+  props.node.contextChannelName = selection?.channelName ?? ''
+  props.node.contextDeviceId = selection?.deviceId ?? ''
+  props.node.contextGroupId = selection?.groupId ?? ''
+  props.node.contextTagId = selection?.tagId ?? ''
   props.node.contextDeviceName = selection?.deviceName ?? ''
   props.node.contextGroupName = selection?.groupName ?? ''
   props.node.contextTagName = selection?.tagName ?? ''

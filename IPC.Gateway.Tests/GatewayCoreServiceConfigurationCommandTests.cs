@@ -16,9 +16,13 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using IPC.EdgeGateway;
+using IPC.Gateway.Core.Application.Gateway;
 using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Infrastructure.Persistence;
+using IPC.Runtime.Configuration;
+using IPC.Runtime.Engine;
 using IPC.Runtime.Values;
+using System.Reflection;
 
 namespace IPC.Gateway.Tests;
 
@@ -71,6 +75,122 @@ public sealed class GatewayCoreServiceConfigurationCommandTests : IDisposable
         Assert.Equal(1, status.DeviceCount);
         Assert.Equal(1, status.EnabledDeviceCount);
         Assert.Equal("Line 1", gateway.CurrentProject.Devices.Single().Name);
+    }
+
+    [Fact]
+    public void ApplyConfigurationCommand_RuleChangesDoNotRestartRuntime()
+    {
+        using GatewayCoreService gateway = CreateGateway();
+        gateway.Start();
+        int runtimeGeneration = GetRuntimeGeneration(gateway.Runtime);
+
+        gateway.ApplyConfigurationCommand("test", """
+{
+  "action": "upsertRule",
+  "rule": {
+    "id": "hot-rule",
+    "name": "Hot Rule",
+    "enabled": false
+  }
+}
+""");
+
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+        Assert.Contains(gateway.CurrentProject.Rules, rule => rule.Id == "hot-rule");
+
+        gateway.ApplyConfigurationCommand("test", """
+{
+  "action": "deleteRule",
+  "ruleId": "hot-rule"
+}
+""");
+
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+        Assert.DoesNotContain(gateway.CurrentProject.Rules, rule => rule.Id == "hot-rule");
+    }
+
+    [Fact]
+    public async Task ApplyConfigurationCommandAsync_FlowRuleChangesDoNotRestartRuntime()
+    {
+        using GatewayCoreService gateway = CreateGateway();
+        gateway.Start();
+        int runtimeGeneration = GetRuntimeGeneration(gateway.Runtime);
+
+        await gateway.ApplyConfigurationCommandAsync("test", """
+{
+  "action": "upsertFlowRule",
+  "flowRule": {
+    "id": "hot-flow-rule",
+    "name": "Hot Flow Rule",
+    "enabled": false,
+    "lifecycleState": "Draft",
+    "mode": "Flow",
+    "nodes": [],
+    "edges": []
+  }
+}
+""");
+
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+        Assert.Contains(gateway.CurrentProject.FlowRules, rule => rule.Id == "hot-flow-rule");
+
+        await gateway.ApplyConfigurationCommandAsync("test", """
+{
+  "action": "deleteFlowRule",
+  "flowRuleId": "hot-flow-rule"
+}
+""");
+
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+        Assert.DoesNotContain(gateway.CurrentProject.FlowRules, rule => rule.Id == "hot-flow-rule");
+    }
+
+    [Fact]
+    public void RuleApplicationService_RuleChangesDoNotRestartRuntime()
+    {
+        using GatewayCoreService gateway = CreateGateway();
+        gateway.Start();
+        GatewayRuleConfigurationApplicationService rules = new GatewayRuleConfigurationApplicationService(gateway);
+        int runtimeGeneration = GetRuntimeGeneration(gateway.Runtime);
+
+        EdgeRuleConfig added = rules.AddRule(new EdgeRuleConfig
+        {
+            Id = "application-rule",
+            Name = "Application Rule",
+            Enabled = false
+        });
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+
+        added.Description = "updated";
+        rules.UpdateRule(added.Id, added);
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+
+        rules.DeleteRule(added.Id);
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+    }
+
+    [Fact]
+    public async Task RuleApplicationServiceAsync_FlowRuleChangesDoNotRestartRuntime()
+    {
+        using GatewayCoreService gateway = CreateGateway();
+        gateway.Start();
+        GatewayRuleConfigurationApplicationService rules = new GatewayRuleConfigurationApplicationService(gateway);
+        int runtimeGeneration = GetRuntimeGeneration(gateway.Runtime);
+
+        FlowRuleDefinition added = await rules.AddFlowRuleAsync(new FlowRuleDefinition
+        {
+            Id = "application-flow-rule",
+            Name = "Application Flow Rule",
+            Enabled = false
+        });
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+
+        added.Description = "updated";
+        await rules.UpdateFlowRuleAsync(added.Id, added);
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
+
+        await rules.DeleteFlowRuleAsync(added.Id);
+        Assert.Equal(runtimeGeneration, GetRuntimeGeneration(gateway.Runtime));
     }
 
     [Fact]
@@ -157,5 +277,12 @@ public sealed class GatewayCoreServiceConfigurationCommandTests : IDisposable
                 Directory = Path.Combine(_rootDirectory, "history")
             },
             new StorageHealthThresholds());
+    }
+
+    private static int GetRuntimeGeneration(IRuntimeService runtime)
+    {
+        FieldInfo field = typeof(RuntimeEngine).GetField("_runtimeGeneration", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Runtime generation field was not found.");
+        return (int)(field.GetValue(runtime) ?? 0);
     }
 }

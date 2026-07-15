@@ -6,9 +6,9 @@
       <small>{{ summary.offlineDevices }} 离线，{{ summary.disabledDevices }} 停用</small>
     </article>
     <article>
-      <span>协议类型</span>
-      <strong>{{ summary.protocols }}</strong>
-      <small>按协议汇聚设备链路</small>
+      <span>配置通道</span>
+      <strong>{{ summary.channels }}</strong>
+      <small>按通道汇聚设备与调度链路</small>
     </article>
     <article>
       <span>分组/标签</span>

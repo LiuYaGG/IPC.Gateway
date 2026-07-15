@@ -193,7 +193,10 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
-                if (IsCommunicationException(ex))
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (scope != PlcReadFailureScope.Tag)
                     throw;
 
                 for (int i = 0; i < batch.Count; i++)
@@ -210,9 +213,12 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
-                if (IsCommunicationException(ex))
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (scope != PlcReadFailureScope.Tag)
                     throw;
-                operation.SetFailure(ex.Message, IsCommunicationException(ex));
+                operation.SetFailure(ex.Message, scope);
             }
         }
 
@@ -237,7 +243,10 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
-                if (IsCommunicationException(ex))
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (scope != PlcReadFailureScope.Tag)
                     throw;
 
                 for (int i = 0; i < batch.Count; i++)
@@ -257,9 +266,12 @@ namespace IPC.Plc.Communication.Cip
             }
             catch (Exception ex)
             {
-                if (IsCommunicationException(ex))
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (scope != PlcReadFailureScope.Tag)
                     throw;
-                operation.SetFailure(ex.Message, IsCommunicationException(ex));
+                operation.SetFailure(ex.Message, scope);
             }
         }
 
@@ -267,11 +279,16 @@ namespace IPC.Plc.Communication.Cip
         {
             try
             {
-                operation.SetSuccess(context.DecodeReadResponse(response, operation.DataType, operation.ElementCount));
+                operation.SetSuccess(context.DecodeReadResponse(
+                    response,
+                    operation.TagName,
+                    operation.DataType,
+                    operation.ElementCount,
+                    operation.Owner.Request.ElementOffset));
             }
             catch (Exception ex)
             {
-                operation.SetFailure(ex.Message, false);
+                operation.SetFailure(ex.Message, PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag));
             }
         }
 
@@ -279,11 +296,16 @@ namespace IPC.Plc.Communication.Cip
         {
             try
             {
-                operation.SetSuccess(context.DecodeReadResponse(response, operation.DataType, operation.ElementCount));
+                operation.SetSuccess(context.DecodeReadResponse(
+                    response,
+                    operation.TagName,
+                    operation.DataType,
+                    operation.ElementCount,
+                    operation.Owner.Request.ElementOffset));
             }
             catch (Exception ex)
             {
-                operation.SetFailure(ex.Message, false);
+                operation.SetFailure(ex.Message, PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag));
             }
         }
 
@@ -409,8 +431,13 @@ namespace IPC.Plc.Communication.Cip
             int offset = 4 + additionalWords * 2;
             if (offset > response.Length)
                 throw new InvalidOperationException("CIP additional status length is invalid.");
-            if (generalStatus != 0)
-                throw new InvalidOperationException("CIP error: general status 0x" + generalStatus.ToString("X2"));
+            // 0x1E 表示一个或多个内嵌服务失败；仍应解析每个响应，避免坏点拖垮整个批次。
+            bool hasEmbeddedServiceError = expectedService == 0x8A && generalStatus == 0x1E;
+            if (generalStatus != 0 && !hasEmbeddedServiceError)
+                throw new PlcProtocolException(
+                    CipStatusClassifier.Classify(generalStatus, true),
+                    "CIP Multiple Service错误: general status 0x" + generalStatus.ToString("X2"),
+                    "0x" + generalStatus.ToString("X2"));
 
             return offset;
         }

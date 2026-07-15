@@ -39,6 +39,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
         public int BitOffset { get; private set; }
         public bool HasBitOffset { get; private set; }
         public bool IsBitDevice { get; private set; }
+        public bool UsesHexAddress { get; private set; }
 
         public McAddress AddDeviceOffset(int offset)
         {
@@ -49,7 +50,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 DeviceNumber = DeviceNumber + offset,
                 BitOffset = BitOffset,
                 HasBitOffset = HasBitOffset,
-                IsBitDevice = IsBitDevice
+                IsBitDevice = IsBitDevice,
+                UsesHexAddress = UsesHexAddress
             };
         }
 
@@ -66,7 +68,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 DeviceNumber = DeviceNumber + totalBits / 16,
                 BitOffset = totalBits % 16,
                 HasBitOffset = true,
-                IsBitDevice = false
+                IsBitDevice = false,
+                UsesHexAddress = UsesHexAddress
             };
         }
 
@@ -98,7 +101,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 DeviceNumber = number,
                 BitOffset = bit,
                 HasBitOffset = hasBit,
-                IsBitDevice = device.IsBitDevice
+                IsBitDevice = device.IsBitDevice,
+                UsesHexAddress = device.HexNumber
             };
         }
 
@@ -120,22 +124,50 @@ namespace IPC.Plc.Communication.MitsubishiMc
             {
                 case "M":
                     return new DeviceInfo("M", 0x90, true, false);
+                case "SM":
+                    return new DeviceInfo("SM", 0x91, true, false);
                 case "L":
                     return new DeviceInfo("L", 0x92, true, false);
                 case "F":
                     return new DeviceInfo("F", 0x93, true, false);
                 case "V":
                     return new DeviceInfo("V", 0x94, true, false);
+                case "S":
+                    return new DeviceInfo("S", 0x98, true, false);
                 case "X":
                     return new DeviceInfo("X", 0x9C, true, true);
                 case "Y":
                     return new DeviceInfo("Y", 0x9D, true, true);
                 case "B":
                     return new DeviceInfo("B", 0xA0, true, true);
+                case "SB":
+                    return new DeviceInfo("SB", 0xA1, true, true);
+                case "DX":
+                    return new DeviceInfo("DX", 0xA2, true, true);
+                case "DY":
+                    return new DeviceInfo("DY", 0xA3, true, true);
                 case "D":
                     return new DeviceInfo("D", 0xA8, false, false);
+                case "SD":
+                    return new DeviceInfo("SD", 0xA9, false, false);
                 case "W":
                     return new DeviceInfo("W", 0xB4, false, true);
+                case "SW":
+                    return new DeviceInfo("SW", 0xB5, false, true);
+                case "TC":
+                    return new DeviceInfo("TC", 0xC0, true, false);
+                case "TS":
+                    return new DeviceInfo("TS", 0xC1, true, false);
+                case "TN":
+                    return new DeviceInfo("TN", 0xC2, false, false);
+                case "CC":
+                    return new DeviceInfo("CC", 0xC3, true, false);
+                case "CS":
+                    return new DeviceInfo("CS", 0xC4, true, false);
+                case "CN":
+                    return new DeviceInfo("CN", 0xC5, false, false);
+                case "Z":
+                    return new DeviceInfo("Z", 0xCC, false, false);
                 case "R":
                     return new DeviceInfo("R", 0xAF, false, false);
                 case "ZR":

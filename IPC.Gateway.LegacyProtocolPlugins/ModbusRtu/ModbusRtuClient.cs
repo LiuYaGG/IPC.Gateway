@@ -35,7 +35,7 @@ namespace IPC.Plc.Communication.ModbusRtu
     
     
     
-    public sealed class ModbusRtuClient : IPlcClient, IPlcBatchReadClient
+    public class ModbusRtuClient : IPlcClient, IPlcBatchReadClient
     {
         private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
         private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;
@@ -43,48 +43,45 @@ namespace IPC.Plc.Communication.ModbusRtu
         private const int MaxWriteRegisters = NModbusMasterAdapter.MaxWriteRegisters;
 
         private readonly PlcConnectionOptions _options;
-        private SerialPort _serialPort;
+        private readonly PlcProtocol _protocol;
+        private readonly ModbusDriverOptions _driverOptions;
+        private SharedModbusSerialChannelLease _channelLease;
         private NModbusMasterAdapter _adapter;
 
         public ModbusRtuClient(PlcConnectionOptions options)
+            : this(options, PlcProtocol.ModbusRtu)
+        {
+        }
+
+        protected ModbusRtuClient(PlcConnectionOptions options, PlcProtocol protocol)
         {
             if (options == null)
                 throw new ArgumentNullException("options");
+            if (protocol != PlcProtocol.ModbusRtu && protocol != PlcProtocol.ModbusAscii)
+                throw new ArgumentOutOfRangeException("protocol");
             _options = options;
+            _protocol = protocol;
+            _driverOptions = ModbusDriverOptions.Parse(options.DriverOptionsJson);
         }
 
         public bool IsConnected
         {
-            get { return _serialPort != null && _serialPort.IsOpen && _adapter != null; }
+            get { return _channelLease != null && _channelLease.IsOpen && _adapter != null; }
         }
 
         public PlcProtocol Protocol
         {
-            get { return PlcProtocol.ModbusRtu; }
+            get { return _protocol; }
         }
 
         public void Connect()
         {
             Disconnect();
 
-            string portName = string.IsNullOrWhiteSpace(_options.Host) ? "COM1" : _options.Host.Trim();
-            int baudRate = _options.Port <= 0 ? 9600 : _options.Port;
-            int dataBits = _options.DataBits <= 0 ? 8 : _options.DataBits;
-
-            _serialPort = new SerialPort(
-                portName,
-                baudRate,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapParity(_options.SerialParity),
-                dataBits,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapStopBits(_options.SerialStopBits));
             try
             {
-                _serialPort.ReadTimeout = _options.TimeoutMilliseconds;
-                _serialPort.WriteTimeout = _options.TimeoutMilliseconds;
-                _serialPort.Open();
-
-                IModbusMaster master = new ModbusFactory().CreateRtuMaster(new SerialPortAdapter(_serialPort));
-                _adapter = new NModbusMasterAdapter(master, GetSlaveId(), _options.TimeoutMilliseconds);
+                _channelLease = SharedModbusSerialChannelRegistry.Acquire(_options, _protocol);
+                _adapter = _channelLease.CreateAdapter(GetSlaveId());
             }
             catch
             {
@@ -101,19 +98,11 @@ namespace IPC.Plc.Communication.ModbusRtu
                 _adapter = null;
             }
 
-            if (_serialPort != null)
+            if (_channelLease != null)
             {
-                SerialPort serialPort = _serialPort;
-                _serialPort = null;
-                try
-                {
-                    if (serialPort.IsOpen)
-                        serialPort.Close();
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-                serialPort.Dispose();
+                SharedModbusSerialChannelLease channelLease = _channelLease;
+                _channelLease = null;
+                channelLease.Dispose();
             }
         }
 
@@ -165,7 +154,8 @@ namespace IPC.Plc.Communication.ModbusRtu
                 GetTypeCode = GetTypeCode,
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
-                MaxReadRegisters = MaxReadRegisters
+                MaxReadRegisters = MaxReadRegisters,
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints
             });
         }
 
@@ -347,6 +337,7 @@ namespace IPC.Plc.Communication.ModbusRtu
 #endif
         }
 
+#if false
         private byte[] SendRequest(byte expectedFunction, byte[] pdu)
         {
             if (pdu == null || pdu.Length == 0)
@@ -426,6 +417,7 @@ namespace IPC.Plc.Communication.ModbusRtu
                 throw new IOException("Modbus RTU 串口连接已断开。");
             return (byte)value;
         }
+#endif
 
         private void EnsureConnected()
         {

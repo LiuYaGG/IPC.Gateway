@@ -660,16 +660,11 @@ function mergeRuntimeDevices(current: DeviceRuntimeStatus[], changed: DeviceRunt
 }
 
 function runtimeTagKey(tag: TagValueSnapshot) {
-  const id = normalizeKey(tag.tagId)
-  if (id) return `id:${id}`
-  return tagPathKey(`${tag.deviceId}|${tag.deviceName}`, `${tag.groupId}|${tag.groupName}`, tag.tagName)
+  return `id:${tagIdentityKey(tag.channelId, tag.deviceId, tag.groupId, tag.tagId)}`
 }
 
 function runtimeDeviceKey(device: DeviceRuntimeStatus) {
-  const id = normalizeKey(device.deviceId)
-  if (id) return `id:${id}`
-  const name = normalizeKey(device.deviceName)
-  return name ? `name:${name}` : ''
+  return `id:${deviceIdentityKey(device.channelId, device.deviceId)}`
 }
 
 function sameRuntimeTag(left: TagValueSnapshot, right: TagValueSnapshot) {
@@ -730,18 +725,22 @@ function sanitizeStatus(source: GatewayStatus | null | undefined, currentProject
   if (!currentProject) return source
 
   const projectDevices = currentProject.devices ?? []
-  const activeDevices = projectDevices.filter(isConfigEnabled)
-  const deviceIds = new Set(activeDevices.map(device => normalizeKey(device.id)).filter(Boolean))
-  const deviceNames = new Set(activeDevices.map(device => normalizeKey(device.name)).filter(Boolean))
+  const activeChannelIds = new Set((currentProject.channels ?? [])
+    .filter(isConfigEnabled)
+    .map(channel => normalizeKey(channel.id))
+    .filter(Boolean))
+  const activeDevices = projectDevices.filter(device =>
+    isConfigEnabled(device) && activeChannelIds.has(normalizeKey(device.channelId)))
+  const deviceKeys = new Set(activeDevices.map(device => deviceIdentityKey(device.channelId, device.id)))
   const tagScope = buildProjectTagScope(activeDevices)
-  const devices = filterRuntimeDevices(source.devices ?? [], deviceIds, deviceNames)
-  const tags = filterRuntimeTags(source.tags ?? [], tagScope.tagIds, tagScope.tagPaths)
+  const devices = filterRuntimeDevices(source.devices ?? [], deviceKeys)
+  const tags = filterRuntimeTags(source.tags ?? [], tagScope.tagKeys)
   const goodTagCount = tags.filter(tag => normalizeKey(tag.quality) === 'good').length
   const badTagCount = tags.filter(tag => {
     const quality = normalizeKey(tag.quality)
     return !!quality && quality !== 'good' && quality !== 'unknown'
   }).length
-  const recentErrors = (source.recentErrors ?? []).filter(error => isRuntimeErrorInScope(error, deviceNames, tagScope.tagPaths))
+  const recentErrors = (source.recentErrors ?? []).filter(error => isRuntimeErrorInScope(error, deviceKeys, tagScope.tagKeys))
 
   return {
     ...source,
@@ -759,18 +758,13 @@ function sanitizeStatus(source: GatewayStatus | null | undefined, currentProject
   }
 }
 
-function filterRuntimeDevices(devices: DeviceRuntimeStatus[], deviceIds: Set<string>, deviceNames: Set<string>) {
-  if (deviceIds.size === 0 && deviceNames.size === 0) return []
-  return devices.filter(device => {
-    const id = normalizeKey(device.deviceId)
-    const name = normalizeKey(device.deviceName)
-    return (!!id && deviceIds.has(id)) || (!!name && deviceNames.has(name))
-  })
+function filterRuntimeDevices(devices: DeviceRuntimeStatus[], deviceKeys: Set<string>) {
+  if (deviceKeys.size === 0) return []
+  return devices.filter(device => deviceKeys.has(deviceIdentityKey(device.channelId, device.deviceId)))
 }
 
 function buildProjectTagScope(devices: ProjectConfig['devices']) {
-  const tagIds = new Set<string>()
-  const tagPaths = new Set<string>()
+  const tagKeys = new Set<string>()
   let groupCount = 0
   let tagCount = 0
 
@@ -780,7 +774,7 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
     for (const tag of device.tags ?? []) {
       if (!isConfigEnabled(tag)) continue
       tagCount += 1
-      addTagScope(tagIds, tagPaths, device.id, device.name, '', '', tag.id, tag.name)
+      tagKeys.add(tagIdentityKey(device.channelId, device.id, '', tag.id))
     }
 
     for (const group of device.groups ?? []) {
@@ -789,57 +783,35 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
       for (const tag of group.tags ?? []) {
         if (!isConfigEnabled(tag)) continue
         tagCount += 1
-        addTagScope(tagIds, tagPaths, device.id, device.name, group.id, group.name, tag.id, tag.name)
+        tagKeys.add(tagIdentityKey(device.channelId, device.id, group.id, tag.id))
       }
     }
   }
 
-  return { tagIds, tagPaths, groupCount, tagCount }
+  return { tagKeys, groupCount, tagCount }
 }
 
-function addTagScope(
-  tagIds: Set<string>,
-  tagPaths: Set<string>,
-  deviceId: string,
-  deviceName: string,
-  groupId: string,
-  groupName: string,
-  tagId: string,
-  tagName: string
-) {
-  const id = normalizeKey(tagId)
-  if (id) tagIds.add(id)
-  addIfNotEmpty(tagPaths, tagPathKey(deviceName, groupName, tagName))
-  addIfNotEmpty(tagPaths, tagPathKey(deviceId, groupId, tagName))
+function filterRuntimeTags(tags: TagValueSnapshot[], tagKeys: Set<string>) {
+  if (tagKeys.size === 0) return []
+  return tags.filter(tag => tagKeys.has(tagIdentityKey(tag.channelId, tag.deviceId, tag.groupId, tag.tagId)))
 }
 
-function filterRuntimeTags(tags: TagValueSnapshot[], tagIds: Set<string>, tagPaths: Set<string>) {
-  if (tagIds.size === 0 && tagPaths.size === 0) return []
-  return tags.filter(tag => {
-    const id = normalizeKey(tag.tagId)
-    return (!!id && tagIds.has(id)) ||
-      tagPaths.has(tagPathKey(tag.deviceName, tag.groupName, tag.tagName)) ||
-      tagPaths.has(tagPathKey(tag.deviceId, tag.groupId, tag.tagName))
-  })
+function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceKeys: Set<string>, tagKeys: Set<string>) {
+  const deviceId = normalizeKey(error.deviceId)
+  if (!deviceId) return true
+  if (!deviceKeys.has(deviceIdentityKey(error.channelId, error.deviceId))) return false
+
+  const tagId = normalizeKey(error.tagId)
+  if (!tagId) return true
+  return tagKeys.has(tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId))
 }
 
-function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceNames: Set<string>, tagPaths: Set<string>) {
-  const deviceName = normalizeKey(error.deviceName)
-  if (!deviceName) return true
-  if (!deviceNames.has(deviceName)) return false
-
-  const tagName = normalizeKey(error.tagName)
-  if (!tagName) return true
-
-  return tagPaths.has(tagPathKey(error.deviceName, error.groupName, error.tagName))
+function deviceIdentityKey(channelId: string | null | undefined, deviceId: string | null | undefined) {
+  return [channelId, deviceId].map(normalizeKey).join('/')
 }
 
-function tagPathKey(device: string | null | undefined, group: string | null | undefined, tag: string | null | undefined) {
-  return [device, group, tag].map(normalizeKey).join('/')
-}
-
-function addIfNotEmpty(set: Set<string>, value: string) {
-  if (value.replace(/\//g, '')) set.add(value)
+function tagIdentityKey(channelId: string | null | undefined, deviceId: string | null | undefined, groupId: string | null | undefined, tagId: string | null | undefined) {
+  return [channelId, deviceId, groupId, tagId].map(normalizeKey).join('/')
 }
 
 function normalizeKey(value: string | null | undefined) {

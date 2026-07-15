@@ -7,10 +7,14 @@ namespace IPC.Plc.Communication.Core
             switch (protocol)
             {
                 case PlcProtocol.RockwellCip:
+                case PlcProtocol.EtherNetIp:
+                case PlcProtocol.RockwellPccc:
                 case PlcProtocol.SiemensS7:
                 case PlcProtocol.MitsubishiMc:
                 case PlcProtocol.MitsubishiMc1E:
                 case PlcProtocol.OmronFins:
+                case PlcProtocol.BeckhoffAds:
+                case PlcProtocol.Snmp:
                     return NativeIo(128);
 
                 case PlcProtocol.ModbusTcp:
@@ -18,6 +22,7 @@ namespace IPC.Plc.Communication.Core
 
                 case PlcProtocol.Dlt6452007:
                 case PlcProtocol.Cjt1882004:
+                case PlcProtocol.Cjt1882018:
                     return NativeIo(64, supportsWrite: false);
 
                 case PlcProtocol.MitsubishiSerial:
@@ -25,6 +30,7 @@ namespace IPC.Plc.Communication.Core
                     return DedicatedThread(64);
 
                 case PlcProtocol.ModbusRtu:
+                case PlcProtocol.ModbusAscii:
                     return DedicatedThread(128);
 
                 case PlcProtocol.BacnetIp:
@@ -38,6 +44,12 @@ namespace IPC.Plc.Communication.Core
 
                 case PlcProtocol.OpcDa:
                     return SyncOnly(512, "OPC DA currently uses synchronous COM IO.");
+
+                case PlcProtocol.MqttClient:
+                    return SyncOnly(512, "MQTT southbound keeps one background subscription and serves tag reads from its latest-value cache.");
+
+                case PlcProtocol.Dnp3:
+                    return SyncOnly(512, "DNP3 combines sparse points into bounded range scans and isolates missing or bad-quality points per tag.");
 
                 case PlcProtocol.VirtualPlc:
                     return new PlcClientCapabilities

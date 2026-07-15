@@ -96,7 +96,7 @@ namespace IPC.Plc.Communication.SiemensS7
         private static bool TryParseArea(string address, out S7Address result)
         {
             result = null;
-            Match match = Regex.Match(address, @"^([MIQ])([XBWDL])?(\d+)(?:\.(\d+))?$");
+            Match match = Regex.Match(address, @"^([MIQEA])([XBWDL])?(\d+)(?:\.(\d+))?$");
             if (!match.Success)
                 return false;
 
@@ -126,6 +126,8 @@ namespace IPC.Plc.Communication.SiemensS7
         {
             if (byteOffset < 0)
                 throw new ArgumentOutOfRangeException("byteOffset");
+            if (byteOffset > 0x1FFFFF)
+                throw new ArgumentOutOfRangeException("byteOffset", "S7 byte offset exceeds the 24-bit protocol address range.");
             if (bitOffset < 0 || bitOffset > 7)
                 throw new ArgumentOutOfRangeException("bitOffset");
 
@@ -161,8 +163,10 @@ namespace IPC.Plc.Communication.SiemensS7
             switch (areaName)
             {
                 case 'I':
+                case 'E':
                     return 0x81;
                 case 'Q':
+                case 'A':
                     return 0x82;
                 case 'M':
                     return 0x83;

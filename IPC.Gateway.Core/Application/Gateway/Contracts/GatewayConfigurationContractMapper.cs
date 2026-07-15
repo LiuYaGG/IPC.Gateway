@@ -286,6 +286,11 @@ public static class GatewayConfigurationContractMapper
             Name = rule.Name,
             Enabled = rule.Enabled,
             ConditionType = rule.ConditionType.ToString(),
+            SourceChannelId = rule.SourceChannelId,
+            SourceChannelName = rule.SourceChannelName,
+            SourceDeviceId = rule.SourceDeviceId,
+            SourceGroupId = rule.SourceGroupId,
+            SourceTagId = rule.SourceTagId,
             SourcePointCode = rule.SourcePointCode,
             SourceDeviceName = rule.SourceDeviceName,
             SourceGroupName = rule.SourceGroupName,
@@ -323,6 +328,11 @@ public static class GatewayConfigurationContractMapper
             StateExpectedValue = rule.StateExpectedValue,
             StateClearValue = rule.StateClearValue,
             StateTimeoutSeconds = rule.StateTimeoutSeconds,
+            RelatedChannelId = rule.RelatedChannelId,
+            RelatedChannelName = rule.RelatedChannelName,
+            RelatedDeviceId = rule.RelatedDeviceId,
+            RelatedGroupId = rule.RelatedGroupId,
+            RelatedTagId = rule.RelatedTagId,
             RelatedDeviceName = rule.RelatedDeviceName,
             RelatedGroupName = rule.RelatedGroupName,
             RelatedTagName = rule.RelatedTagName,
@@ -334,6 +344,11 @@ public static class GatewayConfigurationContractMapper
             ContextName = rule.ContextName,
             ContextExpectedValue = rule.ContextExpectedValue,
             ContextOperator = rule.ContextOperator.ToString(),
+            ContextChannelId = rule.ContextChannelId,
+            ContextChannelName = rule.ContextChannelName,
+            ContextDeviceId = rule.ContextDeviceId,
+            ContextGroupId = rule.ContextGroupId,
+            ContextTagId = rule.ContextTagId,
             ContextDeviceName = rule.ContextDeviceName,
             ContextGroupName = rule.ContextGroupName,
             ContextTagName = rule.ContextTagName,
@@ -422,6 +437,11 @@ public static class GatewayConfigurationContractMapper
         return new EdgeRuleConditionDto
         {
             Id = condition.Id,
+            SourceChannelId = condition.SourceChannelId,
+            SourceChannelName = condition.SourceChannelName,
+            SourceDeviceId = condition.SourceDeviceId,
+            SourceGroupId = condition.SourceGroupId,
+            SourceTagId = condition.SourceTagId,
             SourcePointCode = condition.SourcePointCode,
             SourceDeviceName = condition.SourceDeviceName,
             SourceGroupName = condition.SourceGroupName,
@@ -473,6 +493,11 @@ public static class GatewayConfigurationContractMapper
             Label = node.Label,
             X = node.X,
             Y = node.Y,
+            ChannelId = node.ChannelId,
+            ChannelName = node.ChannelName,
+            DeviceId = node.DeviceId,
+            GroupId = node.GroupId,
+            TagId = node.TagId,
             DeviceName = node.DeviceName,
             GroupName = node.GroupName,
             TagName = node.TagName,
@@ -514,6 +539,11 @@ public static class GatewayConfigurationContractMapper
             StateExpectedValue = node.StateExpectedValue,
             StateClearValue = node.StateClearValue,
             StateTimeoutSeconds = node.StateTimeoutSeconds,
+            RelatedChannelId = node.RelatedChannelId,
+            RelatedChannelName = node.RelatedChannelName,
+            RelatedDeviceId = node.RelatedDeviceId,
+            RelatedGroupId = node.RelatedGroupId,
+            RelatedTagId = node.RelatedTagId,
             RelatedDeviceName = node.RelatedDeviceName,
             RelatedGroupName = node.RelatedGroupName,
             RelatedTagName = node.RelatedTagName,
@@ -525,6 +555,11 @@ public static class GatewayConfigurationContractMapper
             ContextName = node.ContextName,
             ContextExpectedValue = node.ContextExpectedValue,
             ContextOperator = node.ContextOperator,
+            ContextChannelId = node.ContextChannelId,
+            ContextChannelName = node.ContextChannelName,
+            ContextDeviceId = node.ContextDeviceId,
+            ContextGroupId = node.ContextGroupId,
+            ContextTagId = node.ContextTagId,
             ContextDeviceName = node.ContextDeviceName,
             ContextGroupName = node.ContextGroupName,
             ContextTagName = node.ContextTagName,
@@ -680,7 +715,9 @@ public static class GatewayConfigurationContractMapper
             SparkplugIncludeProperties = options.SparkplugIncludeProperties,
             SparkplugUseAliases = options.SparkplugUseAliases,
             SparkplugDeathQos = options.SparkplugDeathQos,
-            SparkplugBirthQos = options.SparkplugBirthQos
+            SparkplugBirthQos = options.SparkplugBirthQos,
+            SparkplugEnableCommands = options.SparkplugEnableCommands,
+            SparkplugPrimaryHostId = options.SparkplugPrimaryHostId
         };
     }
 
@@ -811,6 +848,8 @@ public static class GatewayConfigurationContractMapper
     {
         return new DeviceRuntimeStatusDto
         {
+            ChannelId = status.ChannelId,
+            ChannelName = status.ChannelName,
             DeviceId = status.DeviceId,
             DeviceName = status.DeviceName,
             Protocol = status.Protocol,
@@ -979,8 +1018,13 @@ public static class GatewayConfigurationContractMapper
         return new RuntimeErrorDto
         {
             Category = error.Category,
+            ChannelId = error.ChannelId,
+            ChannelName = error.ChannelName,
+            DeviceId = error.DeviceId,
             DeviceName = error.DeviceName,
+            GroupId = error.GroupId,
             GroupName = error.GroupName,
+            TagId = error.TagId,
             TagName = error.TagName,
             Message = error.Message,
             Suggestion = error.Suggestion,
@@ -996,6 +1040,8 @@ public static class GatewayConfigurationContractMapper
 
         return new TagValueSnapshotDto
         {
+            ChannelId = snapshot.ChannelId ?? string.Empty,
+            ChannelName = snapshot.ChannelName ?? string.Empty,
             DeviceId = snapshot.DeviceId ?? string.Empty,
             DeviceProtocol = snapshot.DeviceProtocol ?? string.Empty,
             GroupId = snapshot.GroupId ?? string.Empty,
@@ -1157,6 +1203,7 @@ public static class GatewayConfigurationContractMapper
             ApplicationName = status.ApplicationName,
             EndpointUrl = status.EndpointUrl,
             NamespaceUri = status.NamespaceUri,
+            ChannelNodeCount = status.ChannelNodeCount,
             DeviceNodeCount = status.DeviceNodeCount,
             GroupNodeCount = status.GroupNodeCount,
             TagNodeCount = status.TagNodeCount,
@@ -1187,6 +1234,12 @@ public static class GatewayConfigurationContractMapper
             TriggeredCount = status.TriggeredCount,
             ClearedCount = status.ClearedCount,
             FailedEvaluationCount = status.FailedEvaluationCount,
+            ActionFailureCount = status.ActionFailureCount,
+            PendingActionCount = status.PendingActionCount,
+            DroppedActionCount = status.DroppedActionCount,
+            PendingInputEventCount = status.PendingInputEventCount,
+            MaxObservedPendingInputEventCount = status.MaxObservedPendingInputEventCount,
+            DroppedInputEventCount = status.DroppedInputEventCount,
             LastEvaluationTime = status.LastEvaluationTime,
             LastEventTime = status.LastEventTime,
             LastErrorTime = status.LastErrorTime,
@@ -1244,6 +1297,7 @@ public static class GatewayConfigurationContractMapper
             TriggeredCount = status.TriggeredCount,
             ClearedCount = status.ClearedCount,
             FailedEvaluationCount = status.FailedEvaluationCount,
+            ActionFailureCount = status.ActionFailureCount,
             RecentEvents = status.RecentEvents.Select(ToDto).ToList()
         };
     }
@@ -1256,16 +1310,23 @@ public static class GatewayConfigurationContractMapper
         TagValueSnapshot snapshot = ruleEvent.Snapshot;
         return new RuleEngineRuntimeEventDto
         {
+            EventId = ruleEvent.EventId,
             RuleId = ruleEvent.RuleId,
             RuleName = ruleEvent.RuleName,
             ConditionType = ruleEvent.ConditionType.ToString(),
             EventType = ruleEvent.EventType,
             State = ruleEvent.State,
             Message = ruleEvent.Message,
+            Severity = ruleEvent.Severity,
             Topic = ruleEvent.Topic,
             PointCode = BuildPointCode(snapshot),
+            ChannelId = snapshot == null ? string.Empty : snapshot.ChannelId,
+            ChannelName = snapshot == null ? string.Empty : snapshot.ChannelName,
+            DeviceId = snapshot == null ? string.Empty : snapshot.DeviceId,
             DeviceName = snapshot == null ? string.Empty : snapshot.DeviceName,
+            GroupId = snapshot == null ? string.Empty : snapshot.GroupId,
             GroupName = snapshot == null ? string.Empty : snapshot.GroupName,
+            TagId = snapshot == null ? string.Empty : snapshot.TagId,
             TagName = snapshot == null ? string.Empty : snapshot.TagName,
             Value = ruleEvent.Value,
             Threshold = ruleEvent.Threshold,
@@ -1281,6 +1342,11 @@ public static class GatewayConfigurationContractMapper
         return new WriteTagResultDto
         {
             Success = response.Success,
+            ChannelId = response.ChannelId,
+            ChannelName = response.ChannelName,
+            DeviceId = response.DeviceId,
+            GroupId = response.GroupId,
+            TagId = response.TagId,
             DeviceName = response.DeviceName,
             GroupName = response.GroupName,
             TagName = response.TagName,
@@ -1492,6 +1558,11 @@ public static class GatewayConfigurationContractMapper
             Name = dto.Name,
             Enabled = dto.Enabled,
             ConditionType = ParseEnum(dto.ConditionType, EdgeRuleConditionType.Threshold),
+            SourceChannelId = dto.SourceChannelId,
+            SourceChannelName = dto.SourceChannelName,
+            SourceDeviceId = dto.SourceDeviceId,
+            SourceGroupId = dto.SourceGroupId,
+            SourceTagId = dto.SourceTagId,
             SourcePointCode = dto.SourcePointCode,
             SourceDeviceName = dto.SourceDeviceName,
             SourceGroupName = dto.SourceGroupName,
@@ -1529,6 +1600,11 @@ public static class GatewayConfigurationContractMapper
             StateExpectedValue = dto.StateExpectedValue,
             StateClearValue = dto.StateClearValue,
             StateTimeoutSeconds = dto.StateTimeoutSeconds,
+            RelatedChannelId = dto.RelatedChannelId,
+            RelatedChannelName = dto.RelatedChannelName,
+            RelatedDeviceId = dto.RelatedDeviceId,
+            RelatedGroupId = dto.RelatedGroupId,
+            RelatedTagId = dto.RelatedTagId,
             RelatedDeviceName = dto.RelatedDeviceName,
             RelatedGroupName = dto.RelatedGroupName,
             RelatedTagName = dto.RelatedTagName,
@@ -1540,6 +1616,11 @@ public static class GatewayConfigurationContractMapper
             ContextName = dto.ContextName,
             ContextExpectedValue = dto.ContextExpectedValue,
             ContextOperator = ParseEnum(dto.ContextOperator, EdgeRuleComparisonOperator.Equal),
+            ContextChannelId = dto.ContextChannelId,
+            ContextChannelName = dto.ContextChannelName,
+            ContextDeviceId = dto.ContextDeviceId,
+            ContextGroupId = dto.ContextGroupId,
+            ContextTagId = dto.ContextTagId,
             ContextDeviceName = dto.ContextDeviceName,
             ContextGroupName = dto.ContextGroupName,
             ContextTagName = dto.ContextTagName,
@@ -1625,6 +1706,11 @@ public static class GatewayConfigurationContractMapper
         return new EdgeRuleConditionConfig
         {
             Id = EmptyToNewId(dto.Id),
+            SourceChannelId = dto.SourceChannelId,
+            SourceChannelName = dto.SourceChannelName,
+            SourceDeviceId = dto.SourceDeviceId,
+            SourceGroupId = dto.SourceGroupId,
+            SourceTagId = dto.SourceTagId,
             SourcePointCode = dto.SourcePointCode,
             SourceDeviceName = dto.SourceDeviceName,
             SourceGroupName = dto.SourceGroupName,
@@ -1670,6 +1756,11 @@ public static class GatewayConfigurationContractMapper
             Label = dto.Label,
             X = dto.X,
             Y = dto.Y,
+            ChannelId = dto.ChannelId,
+            ChannelName = dto.ChannelName,
+            DeviceId = dto.DeviceId,
+            GroupId = dto.GroupId,
+            TagId = dto.TagId,
             DeviceName = dto.DeviceName,
             GroupName = dto.GroupName,
             TagName = dto.TagName,
@@ -1711,6 +1802,11 @@ public static class GatewayConfigurationContractMapper
             StateExpectedValue = dto.StateExpectedValue,
             StateClearValue = dto.StateClearValue,
             StateTimeoutSeconds = dto.StateTimeoutSeconds,
+            RelatedChannelId = dto.RelatedChannelId,
+            RelatedChannelName = dto.RelatedChannelName,
+            RelatedDeviceId = dto.RelatedDeviceId,
+            RelatedGroupId = dto.RelatedGroupId,
+            RelatedTagId = dto.RelatedTagId,
             RelatedDeviceName = dto.RelatedDeviceName,
             RelatedGroupName = dto.RelatedGroupName,
             RelatedTagName = dto.RelatedTagName,
@@ -1722,6 +1818,11 @@ public static class GatewayConfigurationContractMapper
             ContextName = dto.ContextName,
             ContextExpectedValue = dto.ContextExpectedValue,
             ContextOperator = dto.ContextOperator,
+            ContextChannelId = dto.ContextChannelId,
+            ContextChannelName = dto.ContextChannelName,
+            ContextDeviceId = dto.ContextDeviceId,
+            ContextGroupId = dto.ContextGroupId,
+            ContextTagId = dto.ContextTagId,
             ContextDeviceName = dto.ContextDeviceName,
             ContextGroupName = dto.ContextGroupName,
             ContextTagName = dto.ContextTagName,
@@ -1871,7 +1972,9 @@ public static class GatewayConfigurationContractMapper
             SparkplugIncludeProperties = dto.SparkplugIncludeProperties,
             SparkplugUseAliases = dto.SparkplugUseAliases,
             SparkplugDeathQos = dto.SparkplugDeathQos,
-            SparkplugBirthQos = dto.SparkplugBirthQos
+            SparkplugBirthQos = dto.SparkplugBirthQos,
+            SparkplugEnableCommands = dto.SparkplugEnableCommands,
+            SparkplugPrimaryHostId = dto.SparkplugPrimaryHostId
         };
     }
 
@@ -2016,6 +2119,8 @@ public static class GatewayConfigurationContractMapper
             return snapshot.PointCode.Trim();
 
         string group = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
-        return ((snapshot.DeviceName ?? string.Empty).Trim() + "." + group + "." + (snapshot.TagName ?? string.Empty).Trim()).Trim('.');
+        return ((snapshot.ChannelName ?? string.Empty).Trim() + "." +
+                (snapshot.DeviceName ?? string.Empty).Trim() + "." + group + "." +
+                (snapshot.TagName ?? string.Empty).Trim()).Trim('.');
     }
 }

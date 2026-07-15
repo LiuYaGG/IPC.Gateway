@@ -1,4 +1,4 @@
-import type { DeviceConfig, DeviceRuntimeStatus, GatewayStatus, GroupConfig, ProjectConfig, RuntimeErrorDetail, TagConfig, TagValueSnapshot } from '../../api'
+import type { ChannelConfig, DeviceConfig, DeviceRuntimeStatus, GatewayStatus, GroupConfig, ProjectConfig, RuntimeErrorDetail, TagConfig, TagValueSnapshot } from '../../api'
 import { nodeCategory, nodeSize } from './topologyLayout'
 import { buildTopologyLanePlan } from './topologyLanePlan'
 import { filterErrors, mergeTone, normalizeKey, resolveDeviceTone, resolveTagTone, tagConfigKey, tagSnapshotKey, toneLabel } from './topologyStatus'
@@ -14,23 +14,29 @@ export interface BuildTopologyInput {
 }
 
 export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyModel {
+  const channels = input.project?.channels ?? []
   const devices = input.project?.devices ?? []
   const query = normalizeKey(input.search)
   const runtimeMap = buildDeviceRuntimeMap(input.status?.devices ?? [])
   const snapshotMap = buildTagSnapshotMap(input.status?.tags ?? [])
   const errors = input.status?.recentErrors ?? []
-  const visibleDevices = devices.filter(device => matchesDevice(device, query))
-  const protocolNames = Array.from(new Set(visibleDevices.map(device => device.protocol || 'Unknown'))).sort()
+  const channelMap = new Map(channels.map(channel => [normalizeKey(channel.id), channel]))
+  const visibleDevices = devices.filter(device => matchesDevice(device, channelMap.get(normalizeKey(device.channelId)), query))
+  const visibleChannels = channels.filter(channel => {
+    if (!query) return true
+    return matchesChannel(channel, query) || visibleDevices.some(device => normalizeKey(device.channelId) === normalizeKey(channel.id))
+  })
+  const channelKeys = visibleChannels.map(channelLayoutKey)
   const groupRows = buildGroupRows(visibleDevices)
   const tagCount = countTags(visibleDevices)
   const lanePlan = buildTopologyLanePlan(
     groupRows.map(row => ({
       key: groupRowKey(row),
       deviceKey: deviceLayoutKey(row.device),
-      protocol: row.device.protocol || 'Unknown',
+      channelKey: normalizeKey(row.device.channelId),
       tagCount: row.tags.length
     })),
-    protocolNames,
+    channelKeys,
     input.showTagNodes
   )
   const height = lanePlan.height
@@ -59,14 +65,15 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
   }))
 
   addServiceNodes(nodes, links, input.status)
-  addProtocolNodes(nodes, links, protocolNames, visibleDevices, runtimeMap, lanePlan)
+  addChannelNodes(nodes, links, visibleChannels, visibleDevices, runtimeMap, lanePlan, errors)
 
   visibleDevices.forEach((device, index) => {
     const deviceId = deviceNodeId(device, index)
     matchedDeviceIds.add(device.id || device.name)
-    const runtime = runtimeMap.get(normalizeKey(device.id)) ?? runtimeMap.get(normalizeKey(device.name))
+    const channel = channelMap.get(normalizeKey(device.channelId))
+    const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
     const deviceTags = collectDeviceTags(device)
-    const deviceErrors = filterErrors(errors, device.name)
+    const deviceErrors = filterErrors(errors, device.channelId, device.id)
     const y = lanePlan.deviceY.get(deviceLayoutKey(device)) ?? Math.round(height / 2)
     const tone = resolveDeviceTone(device, runtime)
 
@@ -79,6 +86,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       y,
       value: deviceTags.length,
       rows: [
+        { label: '通道', value: channel?.name || '-' },
         { label: '协议', value: device.protocol || '-' },
         { label: '状态', value: toneLabel(tone) },
         { label: '成功率', value: `${Number(runtime?.successRate || 0).toFixed(1)}%` },
@@ -87,7 +95,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       ],
       errors: deviceErrors
     }))
-    links.push({ source: `protocol:${device.protocol || 'Unknown'}`, target: deviceId, value: device.protocol || '-' })
+    links.push({ source: channelNodeId(device.channelId), target: deviceId, value: channel?.name || '-' })
 
     addDeviceGroups({
       device,
@@ -112,14 +120,14 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
     matchedDeviceIds,
     tagNodeLimitReached: input.showTagNodes && tagCount > tagNodeLimit,
     summary: {
-      protocols: protocolNames.length,
+      channels: visibleChannels.length,
       devices: visibleDevices.length,
       onlineDevices: visibleDevices.filter(device => {
-        const runtime = runtimeMap.get(normalizeKey(device.id)) ?? runtimeMap.get(normalizeKey(device.name))
+        const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
         return device.enabled && !!runtime?.isConnected
       }).length,
       offlineDevices: visibleDevices.filter(device => {
-        const runtime = runtimeMap.get(normalizeKey(device.id)) ?? runtimeMap.get(normalizeKey(device.name))
+        const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
         return device.enabled && !runtime?.isConnected
       }).length,
       disabledDevices: visibleDevices.filter(device => !device.enabled).length,
@@ -127,7 +135,9 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       tags: tagCount,
       visibleTags: renderedTagNodes,
       hiddenTags,
-      recentErrors: errors.filter(error => !query || visibleDevices.some(device => normalizeKey(device.name) === normalizeKey(error.deviceName))).length
+      recentErrors: errors.filter(error => !query ||
+        visibleDevices.some(device => normalizeKey(device.id) === normalizeKey(error.deviceId)) ||
+        visibleChannels.some(channel => normalizeKey(channel.id) === normalizeKey(error.channelId))).length
     }
   }
 }
@@ -158,30 +168,40 @@ function addServiceNodes(nodes: TopologyNode[], links: TopologyLink[], status: G
   })
 }
 
-function addProtocolNodes(nodes: TopologyNode[], links: TopologyLink[], protocolNames: string[], devices: DeviceConfig[], runtimeMap: Map<string, DeviceRuntimeStatus>, lanePlan: ReturnType<typeof buildTopologyLanePlan>) {
-  protocolNames.forEach((protocol, index) => {
-    const protocolDevices = devices.filter(device => (device.protocol || 'Unknown') === protocol)
-    const tones = protocolDevices.map(device => {
-      const runtime = runtimeMap.get(normalizeKey(device.id)) ?? runtimeMap.get(normalizeKey(device.name))
+function addChannelNodes(
+  nodes: TopologyNode[],
+  links: TopologyLink[],
+  channels: ChannelConfig[],
+  devices: DeviceConfig[],
+  runtimeMap: Map<string, DeviceRuntimeStatus>,
+  lanePlan: ReturnType<typeof buildTopologyLanePlan>,
+  errors: RuntimeErrorDetail[]
+) {
+  channels.forEach((channel, index) => {
+    const channelDevices = devices.filter(device => normalizeKey(device.channelId) === normalizeKey(channel.id))
+    const tones = channelDevices.map(device => {
+      const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
       return resolveDeviceTone(device, runtime)
     })
-    const tone = mergeTone(tones)
+    const tone = channel.enabled ? mergeTone(tones) : 'disabled'
     nodes.push(createNode({
-      id: `protocol:${protocol}`,
-      name: protocol,
-      type: 'protocol',
+      id: channelNodeId(channel.id),
+      name: channel.name || channel.id || '未命名通道',
+      type: 'channel',
       tone,
       x: 300,
-      y: lanePlan.protocolY.get(protocol) ?? 160 + index * 90,
-      value: protocolDevices.length,
+      y: lanePlan.channelY.get(channelLayoutKey(channel)) ?? 160 + index * 90,
+      value: channelDevices.length,
       rows: [
-        { label: '协议', value: protocol },
-        { label: '设备数', value: protocolDevices.length },
+        { label: '通道', value: channel.name || '-' },
+        { label: '协议', value: channel.protocol || '-' },
+        { label: '设备数', value: channelDevices.length },
+        { label: '并发上限', value: channel.maxConcurrentDevicePolls || 0 },
         { label: '状态', value: toneLabel(tone) }
       ],
-      errors: []
+      errors: filterErrors(errors, channel.id)
     }))
-    links.push({ source: 'gateway', target: `protocol:${protocol}` })
+    links.push({ source: 'gateway', target: channelNodeId(channel.id) })
   })
 }
 
@@ -224,7 +244,7 @@ function addDeviceGroups(args: AddDeviceGroupArgs) {
         { label: '采集周期', value: row.group ? `${row.group.scanRateMs || 0} ms` : `${args.device.defaultScanRateMs || 0} ms` },
         { label: '状态', value: toneLabel(tone as TopologyTone) }
       ],
-      errors: filterErrors(args.errors, args.device.name, row.group?.name || '')
+      errors: filterErrors(args.errors, args.device.channelId, args.device.id, row.group?.id || '')
     }))
     args.links.push({ source: args.deviceId, target: groupNode })
 
@@ -249,7 +269,7 @@ function addTagNodesOrSummary(args: AddDeviceGroupArgs, row: GroupRow, groupNode
         { label: '标签数', value: tags.length },
         { label: '提示', value: args.showTagNodes ? '标签数量超过上限，已折叠显示' : '可打开“显示标签节点”查看明细' }
       ],
-      errors: filterErrors(args.errors, args.device.name, row.group?.name || '')
+      errors: filterErrors(args.errors, args.device.channelId, args.device.id, row.group?.id || '')
     }))
     args.links.push({ source: groupNode, target: `${groupNode}:tags` })
     return
@@ -275,7 +295,7 @@ function addTagNodesOrSummary(args: AddDeviceGroupArgs, row: GroupRow, groupNode
         { label: '单位', value: snapshot?.unit || tag.unit || '-' },
         { label: '最近错误', value: snapshot?.errorMessage || '-' }
       ],
-      errors: filterErrors(args.errors, args.device.name, row.group?.name || '', tag.name)
+      errors: filterErrors(args.errors, args.device.channelId, args.device.id, row.group?.id || '', tag.id)
     }))
     args.links.push({ source: groupNode, target: tagNode })
   })
@@ -339,10 +359,12 @@ function countTags(devices: DeviceConfig[]) {
   return devices.reduce((sum, device) => sum + collectDeviceTags(device).length, 0)
 }
 
-function matchesDevice(device: DeviceConfig, query: string) {
+function matchesDevice(device: DeviceConfig, channel: ChannelConfig | undefined, query: string) {
   if (!query) return true
   const tags = collectDeviceTags(device)
   const text = [
+    channel?.id,
+    channel?.name,
     device.id,
     device.name,
     device.protocol,
@@ -352,12 +374,17 @@ function matchesDevice(device: DeviceConfig, query: string) {
   return text.includes(query)
 }
 
+function matchesChannel(channel: ChannelConfig, query: string) {
+  return [channel.id, channel.name, channel.protocol, channel.driverId]
+    .map(normalizeKey)
+    .join(' ')
+    .includes(query)
+}
+
 function buildDeviceRuntimeMap(devices: DeviceRuntimeStatus[]) {
   const map = new Map<string, DeviceRuntimeStatus>()
   devices.forEach(device => {
-    map.set(normalizeKey(device.deviceId), device)
-    map.set(normalizeKey(device.deviceName), device)
-    map.set(deviceRuntimeKeyFallback(device), device)
+    map.set(deviceRuntimeMapKey(device.channelId, device.deviceId), device)
   })
   return map
 }
@@ -366,21 +393,16 @@ function buildTagSnapshotMap(tags: TagValueSnapshot[]) {
   const map = new Map<string, TagValueSnapshot>()
   tags.forEach(tag => {
     map.set(tagSnapshotKey(tag), tag)
-    map.set([
-      normalizeKey(tag.deviceName),
-      normalizeKey(tag.groupName),
-      normalizeKey(tag.tagName)
-    ].join('/'), tag)
   })
   return map
 }
 
 function deviceNodeId(device: DeviceConfig, index: number) {
-  return `device:${device.id || device.name || index}`
+  return `device:${device.channelId || '_'}:${device.id || index}`
 }
 
 function groupNodeId(device: DeviceConfig, group: GroupConfig | null, index: number) {
-  return `group:${device.id || device.name}:${group?.id || group?.name || `direct-${index}`}`
+  return `group:${device.channelId || '_'}:${device.id || '_'}:${group?.id || `direct-${index}`}`
 }
 
 function groupRowKey(row: GroupRow) {
@@ -388,7 +410,15 @@ function groupRowKey(row: GroupRow) {
 }
 
 function deviceLayoutKey(device: DeviceConfig) {
-  return device.id || device.name || 'device'
+  return `${normalizeKey(device.channelId)}/${normalizeKey(device.id)}`
+}
+
+function channelLayoutKey(channel: ChannelConfig) {
+  return normalizeKey(channel.id)
+}
+
+function channelNodeId(channelId: string) {
+  return `channel:${channelId || '_'}`
 }
 
 function moduleTone(enabled?: boolean, running?: boolean, error?: string): TopologyTone {
@@ -401,6 +431,6 @@ function countRenderedTagNodes(nodes: TopologyNode[]) {
   return nodes.filter(node => node.type === 'tag').length
 }
 
-function deviceRuntimeKeyFallback(device: DeviceRuntimeStatus) {
-  return `${normalizeKey(device.deviceId)}|${normalizeKey(device.deviceName)}`
+function deviceRuntimeMapKey(channelId: string, deviceId: string) {
+  return `${normalizeKey(channelId)}/${normalizeKey(deviceId)}`
 }

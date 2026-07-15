@@ -41,6 +41,7 @@ namespace IPC.EdgeGateway
         public string ApplicationName { get; set; }
         public string EndpointUrl { get; set; }
         public string NamespaceUri { get; set; }
+        public int ChannelNodeCount { get; set; }
         public int DeviceNodeCount { get; set; }
         public int GroupNodeCount { get; set; }
         public int TagNodeCount { get; set; }

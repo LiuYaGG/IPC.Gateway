@@ -16,8 +16,14 @@
     <el-divider content-position="left">采集配置</el-divider>
     <div class="form-grid">
       <el-form-item label="数据类型">
-        <el-select v-model="model.dataType">
-          <el-option v-for="item in dataTypeOptions" :key="item" :label="item" :value="item" />
+        <el-select v-model="model.dataType" filterable class="data-type-select">
+          <el-option-group
+            v-for="group in availableDataTypeGroups"
+            :key="group.label"
+            :label="group.label"
+          >
+            <el-option v-for="item in group.options" :key="item" :label="item" :value="item" />
+          </el-option-group>
         </el-select>
       </el-form-item>
       <el-form-item label="访问模式">
@@ -201,7 +207,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import type { TagConfig } from '../api'
 import {
   accessModeOptions,
-  dataTypeOptions,
+  dataTypeOptionGroups,
   defaultMeterType,
   isMeterProtocol,
   meterAddressPlaceholder,
@@ -218,6 +224,7 @@ const props = defineProps<{
 
 const formRef = ref<FormInstance>()
 const activeProtocol = computed(() => props.model.protocol || props.deviceProtocol)
+const availableDataTypeGroups = computed(() => dataTypeOptionGroups(activeProtocol.value))
 const isMeter = computed(() => isMeterProtocol(activeProtocol.value))
 const addressPlaceholder = computed(() => tagAddressPlaceholder(activeProtocol.value))
 const meterAddressHint = computed(() => meterAddressPlaceholder(activeProtocol.value))

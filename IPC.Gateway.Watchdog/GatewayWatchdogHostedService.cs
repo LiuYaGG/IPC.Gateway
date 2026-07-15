@@ -30,6 +30,7 @@ public sealed class GatewayWatchdogHostedService : BackgroundService, IGatewayWa
     private readonly GatewayWatchdogOptions _options;
     private readonly GatewayWatchdogEvaluator _evaluator;
     private readonly GatewayRestartProtectionStore _protectionStore;
+    private readonly GatewayWatchdogRecoveryGate _recoveryGate;
     private readonly object _sync = new object();
     private GatewayWatchdogSnapshot _snapshot;
 
@@ -45,6 +46,7 @@ public sealed class GatewayWatchdogHostedService : BackgroundService, IGatewayWa
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _evaluator = new GatewayWatchdogEvaluator(_options);
         _protectionStore = new GatewayRestartProtectionStore(_options);
+        _recoveryGate = new GatewayWatchdogRecoveryGate();
         _snapshot = new GatewayWatchdogSnapshot
         {
             Enabled = _options.Enabled,
@@ -144,64 +146,104 @@ public sealed class GatewayWatchdogHostedService : BackgroundService, IGatewayWa
 
     private async Task TryRecoverAsync(string reason, CancellationToken cancellationToken)
     {
-        GatewayRestartProtectionState protection = _protectionStore.Load();
-        DateTime nowUtc = DateTime.UtcNow;
-        GatewayRestartProtectionStatus protectionStatus = protection.ToStatus(nowUtc, _options);
-        if (protectionStatus.RecoveryBlocked)
+        if (!_recoveryGate.TryEnter())
         {
-            AddEvent("recover", "blocked", reason, "恢复动作被冷却时间或恢复风暴保护拦截。");
+            AddEvent("recover", "inProgress", reason, "上一次恢复仍在执行，本次恢复已跳过。");
             UpdateSnapshot(snapshot =>
             {
-                snapshot.State = GatewayWatchdogStates.Protected;
+                snapshot.State = GatewayWatchdogStates.Recovering;
                 snapshot.BlockedRecoveryCount++;
-                snapshot.RestartProtection = protectionStatus;
+                snapshot.LastIssue = "上一次恢复仍在执行，已阻止重叠恢复。";
             });
-            await MaybeRequestHostStopAsync(reason, protection, cancellationToken);
             return;
         }
 
-        protection.RecoveryAttemptsUtc.Add(nowUtc);
-        protection.LastRecoveryUtc = nowUtc;
-        _protectionStore.Save(protection);
-
-        UpdateSnapshot(snapshot =>
-        {
-            snapshot.State = GatewayWatchdogStates.Recovering;
-            snapshot.RecoveryAttemptCount++;
-            snapshot.LastRecoveryTime = DateTime.Now;
-        });
-
+        bool releaseGateOnExit = true;
         try
         {
+            GatewayRestartProtectionState protection = _protectionStore.Load();
+            DateTime nowUtc = DateTime.UtcNow;
+            GatewayRestartProtectionStatus protectionStatus = protection.ToStatus(nowUtc, _options);
+            if (protectionStatus.RecoveryBlocked)
+            {
+                AddEvent("recover", "blocked", reason, "恢复动作被冷却时间或恢复风暴保护拦截。");
+                UpdateSnapshot(snapshot =>
+                {
+                    snapshot.State = GatewayWatchdogStates.Protected;
+                    snapshot.BlockedRecoveryCount++;
+                    snapshot.RestartProtection = protectionStatus;
+                });
+                await MaybeRequestHostStopAsync(reason, protection, cancellationToken);
+                return;
+            }
+
+            protection.RecoveryAttemptsUtc.Add(nowUtc);
+            protection.LastRecoveryUtc = nowUtc;
+            _protectionStore.Save(protection);
+
+            UpdateSnapshot(snapshot =>
+            {
+                snapshot.State = GatewayWatchdogStates.Recovering;
+                snapshot.RecoveryAttemptCount++;
+                snapshot.LastRecoveryTime = DateTime.Now;
+            });
+
             _logger.LogWarning("IPC Gateway watchdog recovery started. Reason={Reason}", reason);
-            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, _options.RecoveryTimeoutSeconds)));
             Task recoveryTask = Task.Run(() =>
             {
                 _gateway.Stop();
                 _gateway.Start();
             }, CancellationToken.None);
-            await recoveryTask.WaitAsync(timeout.Token);
+            _ = _recoveryGate.ReleaseWhenCompleted(recoveryTask);
+            releaseGateOnExit = false;
 
-            AddEvent("recover", "success", reason, string.Empty);
-            UpdateSnapshot(snapshot =>
+            using CancellationTokenSource recoveryTimeout = new CancellationTokenSource(
+                TimeSpan.FromSeconds(Math.Max(5, _options.RecoveryTimeoutSeconds)));
+            using CancellationTokenSource waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                recoveryTimeout.Token);
+
+            try
             {
-                snapshot.State = GatewayWatchdogStates.Healthy;
-                snapshot.RecoverySuccessCount++;
-            });
-            _logger.LogWarning("IPC Gateway watchdog recovery completed.");
+                await recoveryTask.WaitAsync(waitCancellation.Token);
+
+                AddEvent("recover", "success", reason, string.Empty);
+                UpdateSnapshot(snapshot =>
+                {
+                    snapshot.State = GatewayWatchdogStates.Healthy;
+                    snapshot.RecoverySuccessCount++;
+                });
+                _logger.LogWarning("IPC Gateway watchdog recovery completed.");
+            }
+            catch (OperationCanceledException ex) when (recoveryTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                string timeoutMessage = "恢复等待已超时，但原恢复任务仍在执行；完成前不会启动新的恢复。";
+                AddEvent("recover", "timeout", reason, timeoutMessage);
+                UpdateSnapshot(snapshot =>
+                {
+                    snapshot.State = GatewayWatchdogStates.Recovering;
+                    snapshot.RecoveryFailureCount++;
+                    snapshot.LastIssue = timeoutMessage;
+                });
+                _logger.LogWarning(ex, "IPC Gateway watchdog recovery timed out; overlapping recovery is suppressed until the active recovery finishes.");
+            }
+            catch (Exception ex)
+            {
+                AddEvent("recover", "failed", reason, ex.Message);
+                UpdateSnapshot(snapshot =>
+                {
+                    snapshot.State = GatewayWatchdogStates.Unhealthy;
+                    snapshot.RecoveryFailureCount++;
+                    snapshot.LastIssue = ex.Message;
+                });
+                _logger.LogError(ex, "IPC Gateway watchdog recovery failed.");
+                await MaybeRequestHostStopAsync(reason, protection, cancellationToken);
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            AddEvent("recover", "failed", reason, ex.Message);
-            UpdateSnapshot(snapshot =>
-            {
-                snapshot.State = GatewayWatchdogStates.Unhealthy;
-                snapshot.RecoveryFailureCount++;
-                snapshot.LastIssue = ex.Message;
-            });
-            _logger.LogError(ex, "IPC Gateway watchdog recovery failed.");
-            await MaybeRequestHostStopAsync(reason, protection, cancellationToken);
+            if (releaseGateOnExit)
+                _recoveryGate.Release();
         }
     }
 

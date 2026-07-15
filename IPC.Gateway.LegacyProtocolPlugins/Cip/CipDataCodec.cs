@@ -41,8 +41,15 @@ namespace IPC.Plc.Communication.Cip
     {
         public static object Decode(PlcDataType requestedType, ushort actualType, byte[] data, int count)
         {
+            ValidateActualType(requestedType, actualType);
             switch (requestedType)
             {
+                case PlcDataType.Int8:
+                    Require(data, 1);
+                    return unchecked((sbyte)data[0]);
+                case PlcDataType.UInt8:
+                    Require(data, 1);
+                    return data[0];
                 case PlcDataType.Bool:
                     Require(data, 1);
                     return data[0] != 0;
@@ -74,6 +81,10 @@ namespace IPC.Plc.Communication.Cip
                     return BitConverter.ToDouble(data, 0);
                 case PlcDataType.BoolArray:
                     return DecodeBoolArray(actualType, data, count);
+                case PlcDataType.Int8Array:
+                    return DecodeArray<sbyte>(data, count, 1, delegate(byte[] b, int o) { return unchecked((sbyte)b[o]); });
+                case PlcDataType.UInt8Array:
+                    return DecodeArray<byte>(data, count, 1, delegate(byte[] b, int o) { return b[o]; });
                 case PlcDataType.Int16Array:
                     return DecodeArray<short>(data, count, 2, delegate(byte[] b, int o) { return BitConverter.ToInt16(b, o); });
                 case PlcDataType.UInt16Array:
@@ -95,10 +106,32 @@ namespace IPC.Plc.Communication.Cip
             }
         }
 
+        private static void ValidateActualType(PlcDataType requestedType, ushort actualType)
+        {
+            if (requestedType == PlcDataType.BoolArray &&
+                (actualType == CipTypeCodes.Bool || actualType == CipTypeCodes.Dword || actualType == CipTypeCodes.Dint))
+                return;
+            if (requestedType == PlcDataType.Int32Array && actualType == CipTypeCodes.Dword)
+                return;
+            if (requestedType == PlcDataType.String &&
+                (actualType == CipTypeCodes.String || actualType == CipTypeCodes.AbbreviatedStructure))
+                return;
+
+            ushort expected = CipTypeCodes.FromPlcDataType(requestedType);
+            if (actualType != expected)
+                throw new InvalidOperationException(
+                    "CIP标签数据类型不匹配，配置为" + CipTypeCodes.ToName(expected) +
+                    "，PLC返回" + CipTypeCodes.ToName(actualType) + "。");
+        }
+
         public static byte[] Encode(PlcDataType dataType, string text)
         {
             switch (dataType)
             {
+                case PlcDataType.Int8:
+                    return new[] { unchecked((byte)sbyte.Parse(text, CultureInfo.InvariantCulture)) };
+                case PlcDataType.UInt8:
+                    return new[] { byte.Parse(text, CultureInfo.InvariantCulture) };
                 case PlcDataType.Bool:
                     return new[] { ParseBool(text) ? (byte)1 : (byte)0 };
                 case PlcDataType.Int16:
@@ -121,6 +154,10 @@ namespace IPC.Plc.Communication.Cip
                     return BitConverter.GetBytes(double.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.BoolArray:
                     return EncodeBoolArray(SplitValues(text));
+                case PlcDataType.Int8Array:
+                    return EncodeArray(SplitValues(text), delegate(string s) { return new[] { unchecked((byte)sbyte.Parse(s, CultureInfo.InvariantCulture)) }; });
+                case PlcDataType.UInt8Array:
+                    return EncodeArray(SplitValues(text), delegate(string s) { return new[] { byte.Parse(s, CultureInfo.InvariantCulture) }; });
                 case PlcDataType.Int16Array:
                     return EncodeArray(SplitValues(text), delegate(string s) { return BitConverter.GetBytes(short.Parse(s, CultureInfo.InvariantCulture)); });
                 case PlcDataType.UInt16Array:

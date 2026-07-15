@@ -61,8 +61,9 @@ public sealed class EdgeRuleEngineServiceTests
         harness.Raise("Pressure", 11D);
         Assert.Equal(0, harness.Engine.GetStatus().TriggeredCount);
 
-        Thread.Sleep(1100);
-        harness.Raise("Pressure", 12D);
+        Assert.True(SpinWait.SpinUntil(
+            () => harness.Engine.GetStatus().TriggeredCount == 1,
+            TimeSpan.FromSeconds(2)));
 
         EdgeRuleEngineStatus status = harness.Engine.GetStatus();
         Assert.Equal(1, status.TriggeredCount);
@@ -148,6 +149,72 @@ public sealed class EdgeRuleEngineServiceTests
     }
 
     [Fact]
+    public void AnomalyZScore_DetectsDeviationFromZeroVarianceBaseline()
+    {
+        EdgeRuleConfig rule = SourceRule(EdgeRuleConditionType.AnomalyDetection);
+        rule.AnomalyMode = "ZScore";
+        rule.AnomalyThreshold = 3D;
+        rule.AnomalyBaselineWindowSeconds = 60;
+        using RuleEngineHarness harness = RuleEngineHarness.Start(rule);
+
+        harness.Raise("Pressure", 10D);
+        harness.Raise("Pressure", 10D);
+        harness.Raise("Pressure", 11D);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.True(status.Rules.Single().IsActive);
+        Assert.Equal("AnomalyZScore", status.Rules.Single().ActiveState);
+    }
+
+    [Fact]
+    public void MultiLevelAlarm_UsesHighestSeverityAndCustomMessage()
+    {
+        EdgeRuleConfig rule = SourceRule(EdgeRuleConditionType.MultiLevelAlarm);
+        rule.AlarmLevels.Add(new EdgeRuleAlarmLevelConfig
+        {
+            Name = "CriticalHigh",
+            Severity = "Critical",
+            Operator = EdgeRuleComparisonOperator.GreaterThanOrEqual,
+            CompareValue = 20D,
+            Message = "Critical pressure"
+        });
+        rule.AlarmLevels.Add(new EdgeRuleAlarmLevelConfig
+        {
+            Name = "WarningHigh",
+            Severity = "Warning",
+            Operator = EdgeRuleComparisonOperator.GreaterThanOrEqual,
+            CompareValue = 10D,
+            Message = "Warning pressure"
+        });
+        using RuleEngineHarness harness = RuleEngineHarness.Start(rule);
+
+        harness.Raise("Pressure", 25D);
+
+        EdgeRuleRuntimeEvent ruleEvent = harness.Engine.GetStatus().RecentEvents.Single();
+        Assert.Equal("Critical", ruleEvent.Severity);
+        Assert.Equal("Critical pressure", ruleEvent.Message);
+        Assert.Equal("CriticalHigh", ruleEvent.State);
+    }
+
+    [Fact]
+    public void BrokenExpressionRule_DoesNotBlockHealthyRule()
+    {
+        EdgeRuleConfig broken = SourceRule(EdgeRuleConditionType.Expression);
+        broken.Name = "Broken expression";
+        broken.Expression = "{missing-tag} > 0";
+        EdgeRuleConfig healthy = ThresholdRule();
+        healthy.Name = "Healthy threshold";
+        using RuleEngineHarness harness = RuleEngineHarness.Start(broken, healthy);
+
+        harness.Raise("Pressure", 11D);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.Equal(1, status.FailedEvaluationCount);
+        Assert.Equal(1, status.TriggeredCount);
+        Assert.True(status.Rules.Single(item => item.RuleName == "Healthy threshold").IsActive);
+    }
+
+    [Fact]
     public void MqttPublishSwitches_AreRespected()
     {
         EdgeRuleConfig noPublishRule = ThresholdRule();
@@ -169,6 +236,34 @@ public sealed class EdgeRuleEngineServiceTests
 
         Assert.Equal(1, noClearPublishHarness.Engine.GetStatus().ClearedCount);
         Assert.Single(noClearPublishHarness.Published);
+    }
+
+    [Fact]
+    public void MqttQos2_IsPreserved()
+    {
+        EdgeRuleConfig rule = ThresholdRule();
+        rule.PublishQos = 2;
+        using RuleEngineHarness harness = RuleEngineHarness.Start(rule);
+
+        harness.Raise("Pressure", 11D);
+
+        Assert.Single(harness.Published);
+        Assert.Equal(2, harness.Published[0].Qos);
+    }
+
+    [Fact]
+    public void CombinationRule_DoesNotUseStaleRelatedSnapshot()
+    {
+        EdgeRuleConfig rule = CombinationRule(EdgeRuleLogicalOperator.And);
+        using RuleEngineHarness harness = RuleEngineHarness.Start(rule);
+        DateTime now = DateTime.Now;
+
+        harness.Raise("Pressure", 20D, now.AddMinutes(-10));
+        harness.Raise("Temperature", 4D, now);
+
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.Equal(0, status.TriggeredCount);
+        Assert.False(status.Rules.Single().IsActive);
     }
 
     [Fact]
@@ -198,6 +293,7 @@ public sealed class EdgeRuleEngineServiceTests
         using WebhookTestServer server = WebhookTestServer.Start();
         EdgeRuleConfig rule = ThresholdRule();
         rule.Name = "HighPressure";
+        rule.ActiveMessage = "Pressure \"critical\"\nline";
         rule.PublishToMqtt = false;
         rule.Actions.Add(new EdgeRuleActionConfig
         {
@@ -206,7 +302,7 @@ public sealed class EdgeRuleEngineServiceTests
             WebhookUrl = server.Url + "?state={state}",
             WebhookMethod = "PUT",
             WebhookHeaders = "X-Rule: {ruleName}\nAccept: application/json\nContent-Type: application/vnd.ipc.rule+json",
-            WebhookBodyTemplate = "{\"rule\":\"{ruleName}\",\"state\":\"{state}\",\"value\":{value},\"point\":\"{pointCode}\"}",
+            WebhookBodyTemplate = "{\"rule\":\"{ruleName}\",\"state\":\"{state}\",\"message\":\"{message}\",\"value\":{value},\"point\":\"{pointCode}\"}",
             WebhookContentType = "application/json",
             WebhookTimeoutSeconds = 3
         });
@@ -221,8 +317,11 @@ public sealed class EdgeRuleEngineServiceTests
         Assert.Equal("HighPressure", request.Headers["X-Rule"]);
         Assert.Equal("application/json", request.Headers["Accept"]);
         Assert.Equal("application/vnd.ipc.rule+json", request.Headers["Content-Type"]);
+        Assert.True(request.Headers.ContainsKey("X-IPC-Rule-Event-Id"));
         Assert.Contains("\"value\":11", request.Body, StringComparison.Ordinal);
         Assert.Contains("\"point\":\"Boiler.Main.Pressure\"", request.Body, StringComparison.Ordinal);
+        using System.Text.Json.JsonDocument body = System.Text.Json.JsonDocument.Parse(request.Body);
+        Assert.Equal("Pressure \"critical\"\nline", body.RootElement.GetProperty("message").GetString());
     }
 
     [Fact]
@@ -245,9 +344,10 @@ public sealed class EdgeRuleEngineServiceTests
         await server.RequestTask.WaitAsync(TimeSpan.FromSeconds(5));
         EdgeRuleEngineStatus status = await WaitForStatusAsync(
             harness.Engine,
-            current => current.FailedEvaluationCount == 1);
+            current => current.ActionFailureCount == 1);
 
-        Assert.Equal(1, status.FailedEvaluationCount);
+        Assert.Equal(0, status.FailedEvaluationCount);
+        Assert.Equal(1, status.ActionFailureCount);
         Assert.Contains("Webhook returned HTTP 500", status.LastError, StringComparison.Ordinal);
     }
 
@@ -266,6 +366,11 @@ public sealed class EdgeRuleEngineServiceTests
             Id = Guid.NewGuid().ToString("N"),
             Name = conditionType + " rule",
             ConditionType = conditionType,
+            SourceChannelId = "channel:test",
+            SourceChannelName = "Test Channel",
+            SourceDeviceId = "device:boiler",
+            SourceGroupId = "group:main",
+            SourceTagId = "tag:boiler/main/pressure",
             SourceDeviceName = "Boiler",
             SourceGroupName = "Main",
             SourceTagName = "Pressure",
@@ -290,6 +395,10 @@ public sealed class EdgeRuleEngineServiceTests
             {
                 new EdgeRuleConditionConfig
                 {
+                    SourceChannelId = "channel:test",
+                    SourceDeviceId = "device:boiler",
+                    SourceGroupId = "group:main",
+                    SourceTagId = "tag:boiler/main/pressure",
                     SourceDeviceName = "Boiler",
                     SourceGroupName = "Main",
                     SourceTagName = "Pressure",
@@ -299,6 +408,10 @@ public sealed class EdgeRuleEngineServiceTests
                 },
                 new EdgeRuleConditionConfig
                 {
+                    SourceChannelId = "channel:test",
+                    SourceDeviceId = "device:boiler",
+                    SourceGroupId = "group:main",
+                    SourceTagId = "tag:boiler/main/temperature",
                     SourceDeviceName = "Boiler",
                     SourceGroupName = "Main",
                     SourceTagName = "Temperature",
@@ -382,6 +495,11 @@ public sealed class EdgeRuleEngineServiceTests
         {
             _runtime.Raise(new TagValueSnapshot
             {
+                ChannelId = "channel:test",
+                ChannelName = "Test Channel",
+                DeviceId = "device:boiler",
+                GroupId = "group:main",
+                TagId = "tag:boiler/main/" + tagName.ToLowerInvariant(),
                 DeviceName = "Boiler",
                 GroupName = "Main",
                 TagName = tagName,
@@ -563,12 +681,6 @@ public sealed class EdgeRuleEngineServiceTests
             TagValueChanged?.Invoke(this, new TagValueChangedEventArgs(snapshot));
         }
 
-        public bool TryGetSnapshot(string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
-        {
-            snapshot = null;
-            return false;
-        }
-
         public IList<TagValueSnapshot> GetSnapshots() => new List<TagValueSnapshot>();
         public void RestoreSnapshots(IList<TagValueSnapshot> snapshots) { }
         public IList<DeviceRuntimeStatus> GetDeviceStatuses() => new List<DeviceRuntimeStatus>();
@@ -577,8 +689,8 @@ public sealed class EdgeRuleEngineServiceTests
         public ReadTagResponse ReadCached(ReadTagRequest request) => new ReadTagResponse();
         public ReadTagsResponse ReadCached(ReadTagsRequest request) => new ReadTagsResponse();
         public ReadTagsResponse QueryCached(ReadTagRequest request) => new ReadTagsResponse();
-        public ReadTagsResponse ReadTagByDeviceCached(string deviceName, string tagName) => new ReadTagsResponse();
-        public ReadTagsResponse ReadGroupCached(string deviceName, string groupName) => new ReadTagsResponse();
+        public ReadTagsResponse ReadTagByDeviceCached(string channelId, string deviceId, string tagId) => new ReadTagsResponse();
+        public ReadTagsResponse ReadGroupCached(string channelId, string deviceId, string groupId) => new ReadTagsResponse();
         public WriteTagResponse WriteTag(WriteTagRequest request) => new WriteTagResponse();
         public void Dispose() { }
     }

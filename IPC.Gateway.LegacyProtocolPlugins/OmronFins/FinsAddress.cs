@@ -50,6 +50,9 @@ namespace IPC.Plc.Communication.OmronFins
 
         public FinsAddress OffsetBits(int bitOffset)
         {
+            if (Area.BitAddressUsesWordIndex)
+                return new FinsAddress(Area, checked(WordAddress + bitOffset), 0);
+
             int absoluteBit = (HasBitIndex ? BitIndex : 0) + bitOffset;
             return new FinsAddress(Area, WordAddress + absoluteBit / 16, absoluteBit % 16);
         }
@@ -60,6 +63,11 @@ namespace IPC.Plc.Communication.OmronFins
         }
 
         public static FinsAddress Parse(string text, PlcDataType dataType)
+        {
+            return Parse(text, dataType, null);
+        }
+
+        public static FinsAddress Parse(string text, PlcDataType dataType, FinsDriverOptions options)
         {
             if (string.IsNullOrWhiteSpace(text))
                 throw new FormatException("FINS 地址不能为空。");
@@ -77,34 +85,66 @@ namespace IPC.Plc.Communication.OmronFins
 
             FinsMemoryArea area;
             string numberText;
-            SplitArea(value, out area, out numberText);
+            SplitArea(value, options, out area, out numberText);
 
             int wordAddress = int.Parse(numberText, CultureInfo.InvariantCulture);
-            if (wordAddress < 0 || wordAddress > 0xFFFF)
-                throw new FormatException("FINS 字地址必须在 0 到 65535 之间。");
+            ValidateAddressRange(area, wordAddress);
 
-            if ((dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray) && bitIndex < 0)
+            if (options != null && options.IsNjNx && IsTimerCounterArea(area))
+                throw new NotSupportedException("NJ/NX 的 FINS 兼容内存不支持 TIM/CNT 区域，请改用发布变量或映射到 CIO/WR/HR/DM/EM。");
+
+            if (area.BitAddressUsesWordIndex && bitIndex > 0)
+                throw new FormatException("TIM/CNT 完成标志按编号寻址，不支持 .1 到 .15 位后缀。");
+
+            bool isBitType = dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray;
+            if (isBitType && !area.SupportsBit)
+                throw new NotSupportedException("该 FINS 区域不支持位访问: " + area.Name);
+            if (!isBitType && !area.SupportsWord)
+                throw new NotSupportedException("该 FINS 区域只支持完成标志位访问: " + area.Name);
+
+            if (isBitType && bitIndex < 0)
                 bitIndex = 0;
 
             return new FinsAddress(area, wordAddress, bitIndex);
         }
 
-        private static void SplitArea(string value, out FinsMemoryArea area, out string numberText)
+        public void EnsureRange(int pointCount, bool bitAccess)
         {
-            string[] prefixes = new[] { "CIO", "WR", "HR", "AR", "DM", "EM", "W", "H", "A", "D", "E", "C" };
+            if (pointCount <= 0)
+                throw new ArgumentOutOfRangeException("pointCount");
+
+            int finalWord = bitAccess
+                ? Area.BitAddressUsesWordIndex
+                    ? checked(WordAddress + pointCount - 1)
+                    : checked(WordAddress + ((HasBitIndex ? BitIndex : 0) + pointCount - 1) / 16)
+                : checked(WordAddress + pointCount - 1);
+            ValidateAddressRange(Area, finalWord);
+        }
+
+        private static void SplitArea(
+            string value,
+            FinsDriverOptions options,
+            out FinsMemoryArea area,
+            out string numberText)
+        {
+            string[] prefixes = new[] { "CIO", "WR", "HR", "AR", "DM", "EM", "TU", "CU", "W", "H", "A", "D", "E", "T", "C" };
             for (int i = 0; i < prefixes.Length; i++)
             {
                 string prefix = prefixes[i];
                 if (!value.StartsWith(prefix, StringComparison.Ordinal))
                     continue;
 
-                area = GetArea(prefix);
                 numberText = value.Substring(prefix.Length);
                 if (string.IsNullOrWhiteSpace(numberText))
                     throw new FormatException("FINS 地址缺少字编号。");
 
-                if (area.Name == "EM")
-                    numberText = RemoveEmBank(numberText);
+                if (prefix == "EM" || prefix == "E")
+                {
+                    ParseEmArea(numberText, options, out area, out numberText);
+                    return;
+                }
+
+                area = GetArea(prefix);
                 return;
             }
 
@@ -112,16 +152,48 @@ namespace IPC.Plc.Communication.OmronFins
             numberText = value;
         }
 
-        private static string RemoveEmBank(string numberText)
+        private static void ParseEmArea(
+            string text,
+            FinsDriverOptions options,
+            out FinsMemoryArea area,
+            out string numberText)
         {
-            if (numberText.StartsWith("_", StringComparison.Ordinal))
-                return numberText.Substring(1);
+            int underscore = text.IndexOf('_');
+            if (underscore < 0)
+            {
+                area = CreateEmBankArea(0, options);
+                numberText = text;
+                return;
+            }
 
-            int underscore = numberText.IndexOf('_');
-            if (underscore >= 0)
-                return numberText.Substring(underscore + 1);
+            string bankText = text.Substring(0, underscore);
+            numberText = text.Substring(underscore + 1);
+            if (numberText.Length == 0)
+                throw new FormatException("EM 地址缺少字地址。");
+            if (bankText.Length == 0)
+            {
+                area = new FinsMemoryArea("EM_CURRENT", 0x98, 0x0A, 32767);
+                return;
+            }
 
-            return numberText;
+            if (!int.TryParse(bankText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int bank))
+                throw new FormatException("EM 银行号必须是 0 到 18 的十六进制数。");
+            area = CreateEmBankArea(bank, options);
+        }
+
+        private static FinsMemoryArea CreateEmBankArea(int bank, FinsDriverOptions options)
+        {
+            int maxBank = options == null ? 0x18 : options.MaxEmBank;
+            if (bank < 0 || bank > maxBank || bank > 0x18)
+                throw new FormatException("EM 银行号超出控制器配置范围: " + bank.ToString("X", CultureInfo.InvariantCulture));
+
+            byte wordCode = bank <= 0x0F
+                ? checked((byte)(0xA0 + bank))
+                : checked((byte)(0x60 + bank - 0x10));
+            byte bitCode = bank <= 0x0F
+                ? checked((byte)(0x20 + bank))
+                : checked((byte)(0xE0 + bank - 0x10));
+            return new FinsMemoryArea("EM" + bank.ToString("X", CultureInfo.InvariantCulture), wordCode, bitCode, 32767);
         }
 
         private static FinsMemoryArea GetArea(string prefix)
@@ -129,26 +201,44 @@ namespace IPC.Plc.Communication.OmronFins
             switch (prefix)
             {
                 case "CIO":
-                case "C":
-                    return new FinsMemoryArea("CIO", 0xB0, 0x30);
+                    return new FinsMemoryArea("CIO", 0xB0, 0x30, 6143);
                 case "WR":
                 case "W":
-                    return new FinsMemoryArea("WR", 0xB1, 0x31);
+                    return new FinsMemoryArea("WR", 0xB1, 0x31, 511);
                 case "HR":
                 case "H":
-                    return new FinsMemoryArea("HR", 0xB2, 0x32);
+                    return new FinsMemoryArea("HR", 0xB2, 0x32, 511);
                 case "AR":
                 case "A":
-                    return new FinsMemoryArea("AR", 0xB3, 0x33);
+                    return new FinsMemoryArea("AR", 0xB3, 0x33, 11535);
                 case "DM":
                 case "D":
-                    return new FinsMemoryArea("DM", 0x82, 0x02);
-                case "EM":
-                case "E":
-                    return new FinsMemoryArea("EM", 0xA0, 0x20);
+                    return new FinsMemoryArea("DM", 0x82, 0x02, 32767);
+                case "T":
+                    return new FinsMemoryArea("TIM", 0x89, 0x09, 4095, true, true, true);
+                case "C":
+                    return new FinsMemoryArea("CNT", 0x89, 0x09, 4095, true, true, true);
+                case "TU":
+                    return new FinsMemoryArea("TU", 0x89, 0x09, 4095, false, true, true);
+                case "CU":
+                    return new FinsMemoryArea("CU", 0x89, 0x09, 4095, false, true, true);
                 default:
                     throw new FormatException("不支持的 FINS 区域: " + prefix);
             }
+        }
+
+        private static bool IsTimerCounterArea(FinsMemoryArea area)
+        {
+            return area.Name == "TIM" || area.Name == "CNT" || area.Name == "TU" || area.Name == "CU";
+        }
+
+        private static void ValidateAddressRange(FinsMemoryArea area, int wordAddress)
+        {
+            bool valid = wordAddress >= 0 && wordAddress <= area.MaximumAddress;
+            if (valid && area.Name == "AR")
+                valid = wordAddress <= 1471 || wordAddress >= 10000;
+            if (!valid)
+                throw new FormatException("FINS 地址超出 " + area.Name + " 区域范围: " + wordAddress);
         }
     }
 }

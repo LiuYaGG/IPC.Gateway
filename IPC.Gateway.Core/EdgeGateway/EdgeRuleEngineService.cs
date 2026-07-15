@@ -18,12 +18,14 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Mail;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using IPC.Gateway.Core.Gateway;
@@ -43,7 +45,7 @@ namespace IPC.EdgeGateway
     
     
     
-    public sealed class EdgeRuleEngineService : IDisposable
+    public sealed partial class EdgeRuleEngineService : IDisposable
     {
         private const int MaxRecentEvents = 200;
         private const int DefaultExpressionTimeoutMilliseconds = 50;
@@ -84,17 +86,18 @@ namespace IPC.EdgeGateway
         private readonly ProjectConfig _projectConfig;
         private readonly Func<string, string, int, bool> _mqttPublisher;
         private readonly MqttGatewayOptions _gatewayOptions;
-        private readonly CircuitBreaker _circuitBreaker;
         private readonly IModelInferenceService _modelInference;
         private readonly Dictionary<string, EdgeRuleState> _states;
         private readonly Dictionary<string, EdgeRuleRuntimeRuleStatus> _ruleStatuses;
         private readonly Dictionary<string, TagValueSnapshot> _snapshotsByPoint;
         private readonly Dictionary<string, TagValueSnapshot> _snapshotsByPath;
+        private readonly Dictionary<string, TagValueSnapshot> _snapshotsByTagId;
         private readonly List<EdgeRuleRuntimeEvent> _recentEvents;
         private long _evaluationCount;
         private long _triggeredCount;
         private long _clearedCount;
         private long _failedEvaluationCount;
+        private long _actionFailureCount;
         private DateTime _lastEvaluationTime;
         private DateTime _lastEventTime;
         private DateTime _lastErrorTime;
@@ -119,18 +122,20 @@ namespace IPC.EdgeGateway
             _projectConfig = projectConfig;
             _mqttPublisher = mqttPublisher;
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
-            _circuitBreaker = new CircuitBreaker("RuleEngine", circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine);
+            _ruleCircuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
             _syncRoot = new object();
             _states = new Dictionary<string, EdgeRuleState>(StringComparer.OrdinalIgnoreCase);
             _ruleStatuses = new Dictionary<string, EdgeRuleRuntimeRuleStatus>(StringComparer.OrdinalIgnoreCase);
             _snapshotsByPoint = new Dictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
             _snapshotsByPath = new Dictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+            _snapshotsByTagId = new Dictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
             _recentEvents = new List<EdgeRuleRuntimeEvent>();
             _lastEvaluationTime = DateTime.MinValue;
             _lastEventTime = DateTime.MinValue;
             _lastErrorTime = DateTime.MinValue;
             _lastError = string.Empty;
+            BuildRuleDependencyIndex();
         }
 
         public bool IsRunning
@@ -169,6 +174,9 @@ namespace IPC.EdgeGateway
                 _runtime.TagValueChanged -= OnTagValueChanged;
                 _runtime.TagValueChanged += OnTagValueChanged;
             }
+
+            SeedRuntimeSnapshots();
+            StartRuleScheduler();
         }
 
         public void Stop()
@@ -178,6 +186,10 @@ namespace IPC.EdgeGateway
 
             lock (_syncRoot)
                 _running = false;
+
+            StopRuleScheduler();
+            _actionExecutor.CancelPending();
+            CancelModelEvaluations();
         }
 
         public void Reload()
@@ -188,7 +200,14 @@ namespace IPC.EdgeGateway
                 _ruleStatuses.Clear();
                 _snapshotsByPoint.Clear();
                 _snapshotsByPath.Clear();
+                _snapshotsByChannelPath.Clear();
+                _ambiguousSnapshotPaths.Clear();
+                _ambiguousSnapshotPoints.Clear();
+                _snapshotsByTagId.Clear();
+                _ruleCircuitBreakers.Clear();
             }
+            _actionExecutor.CancelPending();
+            CancelModelEvaluations();
         }
 
         public IList<EdgeRuleRuntimeEvent> GetRecentEvents()
@@ -204,41 +223,47 @@ namespace IPC.EdgeGateway
 
         public EdgeRuleEngineStatus GetStatus()
         {
-            List<EdgeRuleConfig> rules = GetRules();
-            int enabledRuleCount = 0;
-            for (int i = 0; i < rules.Count; i++)
+            lock (_evaluationSyncRoot)
             {
-                if (rules[i] != null && rules[i].Enabled)
-                    enabledRuleCount++;
-            }
-
-            lock (_syncRoot)
-            {
-                EdgeRuleEngineStatus status = new EdgeRuleEngineStatus
-                {
-                    IsRunning = _running,
-                    Enabled = enabledRuleCount > 0,
-                    RuleCount = rules.Count,
-                    EnabledRuleCount = enabledRuleCount,
-                    ActiveRuleCount = CountActiveRules(),
-                    CachedSnapshotCount = _snapshotsByPoint.Count + _snapshotsByPath.Count,
-                    RecentEventCount = _recentEvents.Count,
-                    EvaluationCount = _evaluationCount,
-                    TriggeredCount = _triggeredCount,
-                    ClearedCount = _clearedCount,
-                    FailedEvaluationCount = _failedEvaluationCount,
-                    LastEvaluationTime = _lastEvaluationTime,
-                    LastEventTime = _lastEventTime,
-                    LastErrorTime = _lastErrorTime,
-                    LastError = _lastError,
-                    CircuitBreaker = _circuitBreaker.Snapshot()
-                };
-
-                for (int i = 0; i < _recentEvents.Count; i++)
-                    status.RecentEvents.Add(CloneEvent(_recentEvents[i]));
+                List<EdgeRuleConfig> rules = GetRules();
+                int enabledRuleCount = 0;
                 for (int i = 0; i < rules.Count; i++)
-                    status.Rules.Add(CloneRuleStatus(BuildRuleStatus(rules[i])));
-                return status;
+                {
+                    if (rules[i] != null && rules[i].Enabled)
+                        enabledRuleCount++;
+                }
+
+                lock (_syncRoot)
+                {
+                    EdgeRuleEngineStatus status = new EdgeRuleEngineStatus
+                    {
+                        IsRunning = _running,
+                        Enabled = enabledRuleCount > 0,
+                        RuleCount = rules.Count,
+                        EnabledRuleCount = enabledRuleCount,
+                        ActiveRuleCount = CountActiveRules(),
+                        CachedSnapshotCount = _snapshotsByTagId.Count,
+                        RecentEventCount = _recentEvents.Count,
+                        EvaluationCount = _evaluationCount,
+                        TriggeredCount = _triggeredCount,
+                        ClearedCount = _clearedCount,
+                        FailedEvaluationCount = _failedEvaluationCount,
+                        ActionFailureCount = _actionFailureCount,
+                        PendingActionCount = _actionExecutor.PendingCount,
+                        DroppedActionCount = _actionExecutor.DroppedCount,
+                        LastEvaluationTime = _lastEvaluationTime,
+                        LastEventTime = _lastEventTime,
+                        LastErrorTime = _lastErrorTime,
+                        LastError = _lastError,
+                        CircuitBreaker = BuildRuleCircuitBreakerStatus()
+                    };
+
+                    for (int i = 0; i < _recentEvents.Count; i++)
+                        status.RecentEvents.Add(CloneEvent(_recentEvents[i]));
+                    for (int i = 0; i < rules.Count; i++)
+                        status.Rules.Add(CloneRuleStatus(BuildRuleStatus(rules[i])));
+                    return status;
+                }
             }
         }
 
@@ -248,6 +273,8 @@ namespace IPC.EdgeGateway
                 return;
             _disposed = true;
             Stop();
+            _actionExecutor.Dispose();
+            _modelExecutor.Dispose();
         }
 
         private void OnTagValueChanged(object? sender, TagValueChangedEventArgs e)
@@ -263,21 +290,23 @@ namespace IPC.EdgeGateway
             if (snapshot == null)
                 return;
 
+            lock (_evaluationSyncRoot)
+                ProcessSnapshotCore(snapshot);
+        }
+
+        private void ProcessSnapshotCore(TagValueSnapshot snapshot)
+        {
+
             lock (_syncRoot)
             {
                 if (!_running)
                     return;
             }
 
-            RememberSnapshot(snapshot);
-
-            if (!_circuitBreaker.CanExecute())
-            {
-                RecordEngineDegraded("Rule engine circuit breaker is open; evaluation skipped.");
+            if (!RememberSnapshot(snapshot))
                 return;
-            }
 
-            List<EdgeRuleConfig> rules = GetRules();
+            List<EdgeRuleConfig> rules = GetCandidateRules(snapshot);
             if (rules.Count == 0)
                 return;
 
@@ -289,33 +318,20 @@ namespace IPC.EdgeGateway
                 EdgeRuleConfig rule = rules[i];
                 if (rule == null || !rule.Enabled)
                     continue;
+                if (_seedingRuntimeSnapshots && _restoredRuleIds.Contains(GetRuleId(rule)))
+                    continue;
                 if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule))
                     continue;
                 if (RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
                     continue;
 
-                try
-                {
-                    if (rule.ConditionType == EdgeRuleConditionType.Combination ||
-                        rule.ConditionType == EdgeRuleConditionType.Sequence)
-                    {
-                        RecordEvaluation(rule);
-                        EvaluateRule(rule, snapshot, value);
-                        _circuitBreaker.RecordSuccess();
-                    }
-                    else if (Matches(rule, snapshot))
-                    {
-                        RecordEvaluation(rule);
-                        EvaluateRule(rule, snapshot, value);
-                        _circuitBreaker.RecordSuccess();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _circuitBreaker.RecordFailure(ex.Message);
-                    RecordEvaluationFailure(rule, ex);
-                    IpcLogService.WriteError("Edge rule evaluation failed: " + rule.Name, ex);
-                }
+                if (!Matches(rule, snapshot))
+                    continue;
+
+                if (rule.ConditionType == EdgeRuleConditionType.ModelInference)
+                    QueueModelEvaluation(rule, snapshot, value);
+                else
+                    EvaluateRuleSafely(rule, snapshot, value, recordEvaluation: true);
             }
         }
 
@@ -578,7 +594,10 @@ namespace IPC.EdgeGateway
                 return;
             }
 
-            double seconds = Math.Max(0.001D, (timestamp - state.LastTimestamp).TotalSeconds);
+            double elapsedSeconds = (timestamp - state.LastTimestamp).TotalSeconds;
+            if (elapsedSeconds <= 0D)
+                return;
+            double seconds = Math.Max(0.001D, elapsedSeconds);
             double rate = Math.Abs(value - state.LastValue) / seconds;
             state.LastValue = value;
             state.LastTimestamp = timestamp;
@@ -617,7 +636,8 @@ namespace IPC.EdgeGateway
             for (int i = 0; i < rule.AlarmLevels.Count; i++)
             {
                 EdgeRuleAlarmLevelConfig level = rule.AlarmLevels[i];
-                if (level != null && Compare(value, level.Operator, level.CompareValue))
+                if (level != null && Compare(value, level.Operator, level.CompareValue) &&
+                    (matched == null || AlarmSeverityRank(level.Severity) > AlarmSeverityRank(matched.Severity)))
                     matched = level;
             }
 
@@ -630,7 +650,7 @@ namespace IPC.EdgeGateway
             string stateName = string.IsNullOrWhiteSpace(matched.Name) ? matched.Severity : matched.Name;
             if (string.IsNullOrWhiteSpace(stateName))
                 stateName = "Alarm";
-            ApplyBooleanState(rule, snapshot, state, true, stateName, value, matched.CompareValue);
+            ApplyBooleanState(rule, snapshot, state, true, stateName, value, matched.CompareValue, matched.Message, matched.Severity);
         }
 
         private void EvaluateExpression(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
@@ -666,29 +686,42 @@ namespace IPC.EdgeGateway
         private void EvaluateAggregation(EdgeRuleConfig rule, TagValueSnapshot triggerSnapshot, double triggerValue, EdgeRuleState state)
         {
             List<double> values = new List<double>();
+            HashSet<string> sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             TagValueSnapshot eventSnapshot = triggerSnapshot;
-            bool triggerIsSource = MatchesSource(rule.SourcePointCode, rule.SourceDeviceName, rule.SourceGroupName, rule.SourceTagName, triggerSnapshot);
-
-            if (triggerIsSource)
+            TagValueSnapshot sourceSnapshot;
+            if (MatchesSource(rule.SourceTagId, triggerSnapshot))
+                sourceSnapshot = triggerSnapshot;
+            else if (!TryGetRuleSnapshot(rule, out sourceSnapshot))
             {
-                AddNumericValue(values, triggerSnapshot, triggerValue);
-            }
-            else if (TryGetRuleSnapshot(rule, out TagValueSnapshot sourceSnapshot))
-            {
-                eventSnapshot = sourceSnapshot;
-                AddNumericValue(values, sourceSnapshot, raw => ApplyValueTransform(rule, sourceSnapshot, raw));
+                ApplyBooleanState(rule, triggerSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                return;
             }
 
-            if (HasConfiguredSource(rule.RelatedPointCode, rule.RelatedDeviceName, rule.RelatedGroupName, rule.RelatedTagName) &&
-                TryGetRelatedSnapshot(rule, out TagValueSnapshot relatedSnapshot))
+            eventSnapshot = sourceSnapshot;
+            if (!TryAddAggregationValue(values, sources, sourceSnapshot, triggerSnapshot, raw => ApplyValueTransform(rule, sourceSnapshot, raw)))
             {
-                AddNumericValue(values, relatedSnapshot, raw => raw * rule.RelationMultiplier + rule.RelationOffset);
+                ApplyBooleanState(rule, triggerSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                return;
             }
 
-            if (HasConfiguredSource(rule.ContextPointCode, rule.ContextDeviceName, rule.ContextGroupName, rule.ContextTagName) &&
-                TryGetContextSnapshot(rule, triggerSnapshot, out TagValueSnapshot contextSnapshot))
+            if (HasConfiguredSource(rule.RelatedTagId))
             {
-                AddNumericValue(values, contextSnapshot, raw => raw);
+                if (!TryGetRelatedSnapshot(rule, out TagValueSnapshot relatedSnapshot) ||
+                    !TryAddAggregationValue(values, sources, relatedSnapshot, triggerSnapshot, raw => raw * rule.RelationMultiplier + rule.RelationOffset))
+                {
+                    ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                    return;
+                }
+            }
+
+            if (HasConfiguredSource(rule.ContextTagId))
+            {
+                if (!TryGetContextSnapshot(rule, triggerSnapshot, out TagValueSnapshot contextSnapshot) ||
+                    !TryAddAggregationValue(values, sources, contextSnapshot, triggerSnapshot, raw => raw))
+                {
+                    ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                    return;
+                }
             }
 
             if (rule.Conditions != null)
@@ -696,10 +729,14 @@ namespace IPC.EdgeGateway
                 for (int i = 0; i < rule.Conditions.Count; i++)
                 {
                     EdgeRuleConditionConfig condition = rule.Conditions[i];
-                    if (condition == null || !TryGetConditionSnapshot(condition, out TagValueSnapshot conditionSnapshot))
+                    if (condition == null)
                         continue;
-
-                    AddNumericValue(values, conditionSnapshot, raw => ApplyValueTransform(condition, conditionSnapshot, raw));
+                    if (!TryGetConditionSnapshot(condition, out TagValueSnapshot conditionSnapshot) ||
+                        !TryAddAggregationValue(values, sources, conditionSnapshot, triggerSnapshot, raw => ApplyValueTransform(condition, conditionSnapshot, raw)))
+                    {
+                        ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                        return;
+                    }
                 }
             }
 
@@ -777,13 +814,22 @@ namespace IPC.EdgeGateway
             DateTime now = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
             string current = GetStateMachineValue(snapshot);
             bool expected = MatchesStateValue(current, rule.StateExpectedValue);
-            bool clear = !string.IsNullOrWhiteSpace(rule.StateClearValue) && MatchesStateValue(current, rule.StateClearValue);
+            bool hasExplicitClear = !string.IsNullOrWhiteSpace(rule.StateClearValue);
+            bool clear = hasExplicitClear && MatchesStateValue(current, rule.StateClearValue);
 
-            if (!expected || clear)
+            if (clear || (!expected && !hasExplicitClear))
             {
                 state.StateMachineInExpected = false;
                 state.StateMachineEnteredTime = DateTime.MinValue;
                 ApplyBooleanState(rule, snapshot, state, false, StateName(rule), value, 0D);
+                return;
+            }
+
+            if (!expected)
+            {
+                state.LastEvaluationSnapshot = snapshot.Clone();
+                state.LastEvaluationValue = value;
+                state.LastEvaluationThreshold = 0D;
                 return;
             }
 
@@ -849,10 +895,7 @@ namespace IPC.EdgeGateway
         {
             DateTime now = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
             string current = GetStateMachineValue(snapshot);
-            double targetSeconds = rule.TaktTargetSeconds > 0D ? rule.TaktTargetSeconds : Math.Max(1D, rule.CycleMaxSeconds);
-            double tolerancePercent = Math.Max(0D, rule.TaktTolerancePercent);
-            double minSeconds = Math.Max(0D, targetSeconds * (1D - tolerancePercent / 100D));
-            double maxSeconds = targetSeconds * (1D + tolerancePercent / 100D);
+            ResolveProcessTaktRange(rule, out double targetSeconds, out double minSeconds, out double maxSeconds);
 
             if (MatchesStateValue(current, rule.CycleStartValue))
             {
@@ -888,6 +931,22 @@ namespace IPC.EdgeGateway
             }
 
             ApplyBooleanState(rule, snapshot, state, false, "TaktNormal", runningSeconds, targetSeconds);
+        }
+
+        private static void ResolveProcessTaktRange(
+            EdgeRuleConfig rule,
+            out double targetSeconds,
+            out double minSeconds,
+            out double maxSeconds)
+        {
+            targetSeconds = rule.TaktTargetSeconds > 0D ? rule.TaktTargetSeconds : Math.Max(1D, rule.CycleMaxSeconds);
+            double tolerancePercent = Math.Max(0D, rule.TaktTolerancePercent);
+            minSeconds = rule.CycleMinSeconds > 0
+                ? rule.CycleMinSeconds
+                : Math.Max(0D, targetSeconds * (1D - tolerancePercent / 100D));
+            maxSeconds = rule.CycleMaxSeconds > 0
+                ? rule.CycleMaxSeconds
+                : targetSeconds * (1D + tolerancePercent / 100D);
         }
 
         private void EvaluateAnomalyDetection(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
@@ -936,9 +995,11 @@ namespace IPC.EdgeGateway
                 }
                 else
                 {
-                    metric = stdDev <= 0D ? 0D : deviation / stdDev;
-                    active = stdDev > 0D && metric >= (threshold <= 0D ? 3D : threshold);
                     threshold = threshold <= 0D ? 3D : threshold;
+                    metric = stdDev <= 0D
+                        ? (deviation > 0D ? double.MaxValue : 0D)
+                        : deviation / stdDev;
+                    active = metric >= threshold;
                 }
             }
 
@@ -995,6 +1056,8 @@ namespace IPC.EdgeGateway
 
                     if (inputSnapshot.Quality != TagQuality.Good)
                         throw new InvalidOperationException("Model input tag quality is not good: " + token);
+                    if (!IsSnapshotFresh(inputSnapshot, triggerSnapshot))
+                        throw new InvalidOperationException("Model input tag is stale: " + token);
 
                     double feature;
                     if (!TryGetNumericValue(inputSnapshot, out feature))
@@ -1046,7 +1109,11 @@ namespace IPC.EdgeGateway
                 return false;
 
             string key = token.Trim();
+            if (string.Equals(snapshot.TagId, key, StringComparison.OrdinalIgnoreCase))
+                return true;
             if (string.Equals(GetPointCode(snapshot), key, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (string.Equals(BuildChannelSnapshotPath(snapshot), key, StringComparison.OrdinalIgnoreCase))
                 return true;
 
             string group = snapshot.GroupName ?? string.Empty;
@@ -1058,12 +1125,15 @@ namespace IPC.EdgeGateway
 
         private void EvaluateTagRelation(EdgeRuleConfig rule, TagValueSnapshot triggerSnapshot, double triggerValue, EdgeRuleState state)
         {
-            TagValueSnapshot sourceSnapshot = MatchesSource(rule.SourcePointCode, rule.SourceDeviceName, rule.SourceGroupName, rule.SourceTagName, triggerSnapshot)
+            TagValueSnapshot sourceSnapshot = MatchesSource(rule.SourceTagId, triggerSnapshot)
                 ? triggerSnapshot
                 : TryGetRuleSnapshot(rule, out TagValueSnapshot cachedSource) ? cachedSource : new TagValueSnapshot();
             if (string.IsNullOrWhiteSpace(sourceSnapshot.TagName) && string.IsNullOrWhiteSpace(GetPointCode(sourceSnapshot)))
+            {
+                ApplyBooleanState(rule, triggerSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
-            if (sourceSnapshot.Quality != TagQuality.Good)
+            }
+            if (sourceSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(sourceSnapshot, triggerSnapshot))
             {
                 ApplyBooleanState(rule, triggerSnapshot, state, false, "TagRelation", triggerValue, 0D);
                 return;
@@ -1071,8 +1141,11 @@ namespace IPC.EdgeGateway
 
             TagValueSnapshot relatedSnapshot;
             if (!TryGetRelatedSnapshot(rule, out relatedSnapshot))
+            {
+                ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
-            if (relatedSnapshot.Quality != TagQuality.Good)
+            }
+            if (relatedSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(relatedSnapshot, triggerSnapshot))
             {
                 ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelation", triggerValue, 0D);
                 return;
@@ -1083,6 +1156,7 @@ namespace IPC.EdgeGateway
             if (!TryGetNumericValue(sourceSnapshot, out sourceValue) ||
                 !TryGetNumericValue(relatedSnapshot, out relatedValue))
             {
+                ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
             }
 
@@ -1096,7 +1170,15 @@ namespace IPC.EdgeGateway
         {
             TagValueSnapshot contextSnapshot;
             if (!TryGetContextSnapshot(rule, triggerSnapshot, out contextSnapshot))
+            {
+                ApplyBooleanState(rule, triggerSnapshot, state, false, "ContextInputUnavailable", triggerValue, 0D);
                 return;
+            }
+            if (contextSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(contextSnapshot, triggerSnapshot))
+            {
+                ApplyBooleanState(rule, triggerSnapshot, state, false, "ContextInputUnavailable", triggerValue, 0D);
+                return;
+            }
 
             string current = GetStateMachineValue(contextSnapshot);
             bool active = CompareStateValue(current, rule.ContextExpectedValue, rule.ContextOperator);
@@ -1127,25 +1209,19 @@ namespace IPC.EdgeGateway
             {
                 EdgeRuleConditionConfig condition = rule.Conditions[i];
                 TagValueSnapshot conditionSnapshot;
-                if (!TryGetConditionSnapshot(condition, out conditionSnapshot))
+                if (!TryGetConditionSnapshot(condition, out conditionSnapshot) ||
+                    conditionSnapshot.Quality != TagQuality.Good ||
+                    !IsSnapshotFresh(conditionSnapshot, triggerSnapshot))
                 {
-                    if (rule.LogicalOperator == EdgeRuleLogicalOperator.And)
-                        return;
-                    continue;
-                }
-                if (conditionSnapshot.Quality != TagQuality.Good)
-                {
-                    if (rule.LogicalOperator == EdgeRuleLogicalOperator.And)
-                        return;
-                    continue;
+                    ApplyBooleanState(rule, triggerSnapshot, state, false, "CombinationInputUnavailable", triggerValue, 0D);
+                    return;
                 }
 
                 double conditionValue;
                 if (!TryGetNumericValue(conditionSnapshot, out conditionValue))
                 {
-                    if (rule.LogicalOperator == EdgeRuleLogicalOperator.And)
-                        return;
-                    continue;
+                    ApplyBooleanState(rule, triggerSnapshot, state, false, "CombinationInputUnavailable", triggerValue, 0D);
+                    return;
                 }
 
                 conditionValue = ApplyValueTransform(condition, conditionSnapshot, conditionValue);
@@ -1157,14 +1233,10 @@ namespace IPC.EdgeGateway
                 if (rule.LogicalOperator == EdgeRuleLogicalOperator.And)
                 {
                     result = result && conditionResult;
-                    if (!result)
-                        break;
                 }
                 else
                 {
                     result = result || conditionResult;
-                    if (result)
-                        break;
                 }
             }
 
@@ -1186,7 +1258,14 @@ namespace IPC.EdgeGateway
             int expectedIndex = Math.Max(0, state.SequenceStepIndex);
             int matchedIndex = FindMatchedSequenceStep(rule, triggerSnapshot, expectedIndex, out double matchedValue, out double threshold);
             if (matchedIndex < 0)
+            {
+                if (rule.SequenceResetOnMismatch &&
+                    rule.Conditions.Any(condition => condition != null && MatchesSource(condition.SourceTagId, triggerSnapshot)))
+                {
+                    ResetSequence(state);
+                }
                 return;
+            }
 
             if (expectedIndex > 0 && rule.SequenceMinIntervalSeconds > 0)
             {
@@ -1238,7 +1317,7 @@ namespace IPC.EdgeGateway
         {
             value = 0D;
             threshold = 0D;
-            if (condition == null || !MatchesSource(condition.SourcePointCode, condition.SourceDeviceName, condition.SourceGroupName, condition.SourceTagName, snapshot))
+            if (condition == null || !MatchesSource(condition.SourceTagId, snapshot))
                 return false;
             if (snapshot.Quality != TagQuality.Good)
                 return false;
@@ -1292,9 +1371,21 @@ namespace IPC.EdgeGateway
             state.SequenceLastStepTime = DateTime.MinValue;
         }
 
-        private void ApplyBooleanState(EdgeRuleConfig rule, TagValueSnapshot snapshot, EdgeRuleState state, bool active, string activeState, double value, double threshold)
+        private void ApplyBooleanState(
+            EdgeRuleConfig rule,
+            TagValueSnapshot snapshot,
+            EdgeRuleState state,
+            bool active,
+            string activeState,
+            double value,
+            double threshold,
+            string? activeMessageOverride = null,
+            string? severity = null)
         {
             DateTime now = DateTime.Now;
+            state.LastEvaluationSnapshot = snapshot.Clone();
+            state.LastEvaluationValue = value;
+            state.LastEvaluationThreshold = threshold;
             if (!active)
             {
                 state.PendingState = string.Empty;
@@ -1321,9 +1412,18 @@ namespace IPC.EdgeGateway
                     state.PendingClearState = string.Empty;
                     state.PendingClearSince = DateTime.MinValue;
                     PublishEvent(rule, snapshot, "clear", oldState, value, threshold, BuildClearMessage(rule, snapshot, oldState), rule.PublishToMqtt && rule.PublishOnClear);
+                    state.ActiveMessageOverride = string.Empty;
+                    state.ActiveSeverity = string.Empty;
                 }
                 return;
             }
+
+            if (!string.IsNullOrWhiteSpace(activeMessageOverride))
+                state.ActiveMessageOverride = activeMessageOverride.Trim();
+            if (!string.IsNullOrWhiteSpace(severity))
+                state.ActiveSeverity = severity.Trim();
+            else if (string.IsNullOrWhiteSpace(state.ActiveSeverity))
+                state.ActiveSeverity = FirstText(rule.AlarmSeverity, "Warning");
 
             state.PendingClearState = string.Empty;
             state.PendingClearSince = DateTime.MinValue;
@@ -1342,8 +1442,8 @@ namespace IPC.EdgeGateway
             {
                 if (ShouldPublishEscalation(rule, state, now))
                 {
-                    state.EscalationPublished = true;
-                    PublishEvent(rule, snapshot, "active", "Escalated:" + newState, value, threshold, BuildActiveMessage(rule, snapshot, newState), rule.PublishToMqtt);
+                    if (PublishEvent(rule, snapshot, "active", "Escalated:" + newState, value, threshold, BuildStateActiveMessage(rule, snapshot, newState, state), rule.PublishToMqtt))
+                        state.EscalationPublished = true;
                 }
                 return;
             }
@@ -1354,7 +1454,7 @@ namespace IPC.EdgeGateway
             state.ActiveState = newState;
             state.ActiveSince = now;
             state.EscalationPublished = false;
-            PublishEvent(rule, snapshot, "active", newState, value, threshold, BuildActiveMessage(rule, snapshot, newState), rule.PublishToMqtt);
+            PublishEvent(rule, snapshot, "active", newState, value, threshold, BuildStateActiveMessage(rule, snapshot, newState, state), rule.PublishToMqtt);
         }
 
         private EdgeRuleState GetState(EdgeRuleConfig? rule)
@@ -1375,14 +1475,14 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private void PublishEvent(EdgeRuleConfig rule, TagValueSnapshot snapshot, string eventType, string state, double value, double threshold, string message, bool publishCustomEvent)
+        private bool PublishEvent(EdgeRuleConfig rule, TagValueSnapshot snapshot, string eventType, string state, double value, double threshold, string message, bool publishCustomEvent)
         {
             DateTime now = DateTime.Now;
             EdgeRuleState ruleState = GetState(rule);
             if (string.Equals(eventType, "active", StringComparison.OrdinalIgnoreCase) &&
                 !CanPublishActiveEvent(rule, ruleState, now))
             {
-                return;
+                return false;
             }
 
             EdgeRuleRuntimeEvent ruleEvent = new EdgeRuleRuntimeEvent
@@ -1393,6 +1493,7 @@ namespace IPC.EdgeGateway
                 EventType = eventType,
                 State = state,
                 Message = message,
+                Severity = FirstText(ruleState.ActiveSeverity, rule.AlarmSeverity, "Warning"),
                 Snapshot = snapshot.Clone(),
                 SourceValues = BuildSourceValues(rule, snapshot),
                 Value = value,
@@ -1410,16 +1511,23 @@ namespace IPC.EdgeGateway
 
             if (rule.Actions != null && rule.Actions.Count > 0)
             {
-                if (CanDispatchActions(rule, ruleState, now))
+                if (CanDispatchActions(rule, ruleState, now, eventType))
                     DispatchActions(ruleEvent, rule.Actions, Math.Max(0, rule.ActionDelaySeconds));
-                return;
+                return true;
             }
 
             if (!publishCustomEvent || _mqttPublisher == null)
-                return;
+                return true;
 
             int qos = ClampQos(rule.PublishQos);
-            _mqttPublisher(cloudTopic, ruleEvent.Payload, qos);
+            if (_mqttPublisher(cloudTopic, ruleEvent.Payload, qos))
+                return true;
+
+            RecordActionFailure(
+                ruleEvent,
+                new EdgeRuleActionConfig { ActionType = FlowRuleNodeTypes.MqttPublish },
+                new InvalidOperationException("MQTT publisher rejected the rule event."));
+            return false;
         }
 
         private List<EdgeRuleRuntimeSourceValue> BuildSourceValues(EdgeRuleConfig rule, TagValueSnapshot triggerSnapshot)
@@ -1432,26 +1540,17 @@ namespace IPC.EdgeGateway
             AddConfiguredSourceValue(
                 values,
                 "source",
-                rule.SourcePointCode,
-                rule.SourceDeviceName,
-                rule.SourceGroupName,
-                rule.SourceTagName,
+                rule.SourceTagId,
                 triggerSnapshot);
             AddConfiguredSourceValue(
                 values,
                 "related",
-                rule.RelatedPointCode,
-                rule.RelatedDeviceName,
-                rule.RelatedGroupName,
-                rule.RelatedTagName,
+                rule.RelatedTagId,
                 triggerSnapshot);
             AddConfiguredSourceValue(
                 values,
                 "context",
-                rule.ContextPointCode,
-                rule.ContextDeviceName,
-                rule.ContextGroupName,
-                rule.ContextTagName,
+                rule.ContextTagId,
                 triggerSnapshot);
 
             if (rule.Conditions != null)
@@ -1465,10 +1564,7 @@ namespace IPC.EdgeGateway
                     AddConfiguredSourceValue(
                         values,
                         "condition",
-                        condition.SourcePointCode,
-                        condition.SourceDeviceName,
-                        condition.SourceGroupName,
-                        condition.SourceTagName,
+                        condition.SourceTagId,
                         triggerSnapshot);
                 }
             }
@@ -1480,21 +1576,18 @@ namespace IPC.EdgeGateway
         private void AddConfiguredSourceValue(
             List<EdgeRuleRuntimeSourceValue> values,
             string role,
-            string pointCode,
-            string deviceName,
-            string groupName,
-            string tagName,
+            string tagId,
             TagValueSnapshot triggerSnapshot)
         {
-            if (!HasConfiguredSource(pointCode, deviceName, groupName, tagName))
+            if (!HasConfiguredSource(tagId))
                 return;
 
             TagValueSnapshot snapshot;
-            if (triggerSnapshot != null && MatchesSource(pointCode, deviceName, groupName, tagName, triggerSnapshot))
+            if (triggerSnapshot != null && MatchesSource(tagId, triggerSnapshot))
             {
                 snapshot = triggerSnapshot;
             }
-            else if (!TryGetSnapshotBySource(pointCode, deviceName, groupName, tagName, out snapshot))
+            else if (!TryGetSnapshotBySource(tagId, out snapshot))
             {
                 return;
             }
@@ -1546,8 +1639,8 @@ namespace IPC.EdgeGateway
             if (snapshot == null)
                 return string.Empty;
 
-            if (!string.IsNullOrWhiteSpace(snapshot.DeviceName) || !string.IsNullOrWhiteSpace(snapshot.TagName))
-                return "path:" + BuildPathKey(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+            if (!string.IsNullOrWhiteSpace(snapshot.TagId))
+                return "tag:" + snapshot.TagId.Trim();
 
             string pointCode = GetPointCode(snapshot);
             if (!string.IsNullOrWhiteSpace(pointCode))
@@ -1561,7 +1654,7 @@ namespace IPC.EdgeGateway
             if (rule == null || state == null)
                 return true;
 
-            int suppressSeconds = Math.Max(Math.Max(0, rule.AlarmSuppressSeconds), Math.Max(0, rule.AlarmReTriggerSeconds));
+            int suppressSeconds = Math.Max(0, rule.AlarmSuppressSeconds);
             if (suppressSeconds <= 0 || state.LastActiveEventTime == DateTime.MinValue)
                 return true;
 
@@ -1587,15 +1680,19 @@ namespace IPC.EdgeGateway
             return now - state.ActiveSince >= TimeSpan.FromSeconds(seconds);
         }
 
-        private static bool CanDispatchActions(EdgeRuleConfig rule, EdgeRuleState state, DateTime now)
+        private static bool CanDispatchActions(EdgeRuleConfig rule, EdgeRuleState state, DateTime now, string eventType)
         {
             if (rule == null || state == null)
                 return true;
 
+            bool clearEvent = string.Equals(eventType, "clear", StringComparison.OrdinalIgnoreCase);
+            DateTime lastDispatchTime = clearEvent ? state.LastClearActionDispatchTime : state.LastActiveActionDispatchTime;
+            DateTime windowStart = clearEvent ? state.ClearActionDispatchWindowStart : state.ActiveActionDispatchWindowStart;
+            int dispatchCount = clearEvent ? state.ClearActionDispatchCount : state.ActiveActionDispatchCount;
             int cooldownSeconds = Math.Max(0, rule.ActionCooldownSeconds);
             if (cooldownSeconds > 0 &&
-                state.LastActionDispatchTime != DateTime.MinValue &&
-                now - state.LastActionDispatchTime < TimeSpan.FromSeconds(cooldownSeconds))
+                lastDispatchTime != DateTime.MinValue &&
+                now - lastDispatchTime < TimeSpan.FromSeconds(cooldownSeconds))
             {
                 return false;
             }
@@ -1603,20 +1700,31 @@ namespace IPC.EdgeGateway
             int maxPerMinute = Math.Max(0, rule.ActionMaxPerMinute);
             if (maxPerMinute > 0)
             {
-                if (state.ActionDispatchWindowStart == DateTime.MinValue ||
-                    now - state.ActionDispatchWindowStart >= TimeSpan.FromMinutes(1))
+                if (windowStart == DateTime.MinValue ||
+                    now - windowStart >= TimeSpan.FromMinutes(1))
                 {
-                    state.ActionDispatchWindowStart = now;
-                    state.ActionDispatchCount = 0;
+                    windowStart = now;
+                    dispatchCount = 0;
                 }
 
-                if (state.ActionDispatchCount >= maxPerMinute)
+                if (dispatchCount >= maxPerMinute)
                     return false;
 
-                state.ActionDispatchCount++;
+                dispatchCount++;
             }
 
-            state.LastActionDispatchTime = now;
+            if (clearEvent)
+            {
+                state.LastClearActionDispatchTime = now;
+                state.ClearActionDispatchWindowStart = windowStart;
+                state.ClearActionDispatchCount = dispatchCount;
+            }
+            else
+            {
+                state.LastActiveActionDispatchTime = now;
+                state.ActiveActionDispatchWindowStart = windowStart;
+                state.ActiveActionDispatchCount = dispatchCount;
+            }
             return true;
         }
 
@@ -1627,12 +1735,15 @@ namespace IPC.EdgeGateway
                 return;
 
             EdgeRuleRuntimeEvent eventCopy = CloneEvent(ruleEvent);
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                if (delaySeconds > 0)
-                    Thread.Sleep(TimeSpan.FromSeconds(Math.Min(3600, delaySeconds)));
-                ExecuteActions(eventCopy, actionCopies);
-            });
+            bool queued = _actionExecutor.TryEnqueue(
+                () =>
+                {
+                    if (IsActionEventCurrent(eventCopy))
+                        ExecuteActions(eventCopy, actionCopies);
+                },
+                TimeSpan.FromSeconds(Math.Min(3600, Math.Max(0, delaySeconds))));
+            if (!queued)
+                RecordActionQueueFailure(ruleEvent);
         }
 
         private void ExecuteActions(EdgeRuleRuntimeEvent ruleEvent, IList<EdgeRuleActionConfig> actions)
@@ -1702,12 +1813,13 @@ namespace IPC.EdgeGateway
         private void ExecuteMqttAction(EdgeRuleRuntimeEvent ruleEvent, EdgeRuleActionConfig action)
         {
             if (_mqttPublisher == null)
-                return;
+                throw new InvalidOperationException("MQTT publisher is unavailable.");
 
             string topic = BuildActionTopic(action, ruleEvent);
             if (string.IsNullOrWhiteSpace(topic))
                 topic = ruleEvent.Topic;
-            _mqttPublisher(topic, ruleEvent.Payload, ClampQos(action.Qos));
+            if (!_mqttPublisher(topic, ruleEvent.Payload, ClampQos(action.Qos)))
+                throw new InvalidOperationException("MQTT publisher rejected the rule action.");
         }
 
         private void ExecuteEmailAction(EdgeRuleRuntimeEvent ruleEvent, EdgeRuleActionConfig action)
@@ -1755,8 +1867,10 @@ namespace IPC.EdgeGateway
                 catch (Exception ex)
                 {
                     lastError = ex;
-                    if (attempt + 1 < attempts)
+                    if (attempt + 1 < attempts && IsRetryableWebhookFailure(ex))
                         Thread.Sleep(Math.Min(2000, 250 * (attempt + 1)));
+                    else
+                        break;
                 }
             }
 
@@ -1767,7 +1881,9 @@ namespace IPC.EdgeGateway
         private void ExecuteWebhookOnce(EdgeRuleRuntimeEvent ruleEvent, EdgeRuleActionConfig action)
         {
             string method = string.IsNullOrWhiteSpace(action.WebhookMethod) ? "POST" : action.WebhookMethod.Trim().ToUpperInvariant();
-            string body = RenderActionTemplate(FirstText(action.WebhookBodyTemplate, ruleEvent.Payload), ruleEvent);
+            string contentType = FirstText(action.WebhookContentType, "application/json");
+            bool jsonBody = contentType.IndexOf("json", StringComparison.OrdinalIgnoreCase) >= 0;
+            string body = RenderActionTemplate(FirstText(action.WebhookBodyTemplate, ruleEvent.Payload), ruleEvent, jsonBody);
             byte[] bodyBytes = Encoding.UTF8.GetBytes(body ?? string.Empty);
             TimeSpan timeout = TimeSpan.FromSeconds(Math.Max(1, action.WebhookTimeoutSeconds));
             using CancellationTokenSource timeoutSource = new CancellationTokenSource(timeout);
@@ -1778,16 +1894,79 @@ namespace IPC.EdgeGateway
             if (ShouldWriteWebhookBody(method) && bodyBytes.Length > 0)
             {
                 ByteArrayContent content = new ByteArrayContent(bodyBytes);
-                content.Headers.TryAddWithoutValidation("Content-Type", FirstText(action.WebhookContentType, "application/json"));
+                content.Headers.TryAddWithoutValidation("Content-Type", contentType);
                 request.Content = content;
             }
 
             ApplyWebhookHeaders(request, request.Content, RenderActionTemplate(action.WebhookHeaders, ruleEvent));
+            if (!request.Headers.Contains("X-IPC-Rule-Event-Id") && !string.IsNullOrWhiteSpace(ruleEvent.EventId))
+                request.Headers.TryAddWithoutValidation("X-IPC-Rule-Event-Id", ruleEvent.EventId);
 
             using HttpResponseMessage response = WebhookHttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, timeoutSource.Token);
             int statusCode = (int)response.StatusCode;
             if (statusCode >= 400)
-                throw new InvalidOperationException("Webhook returned HTTP " + statusCode.ToString(CultureInfo.InvariantCulture));
+                throw new HttpRequestException(
+                    "Webhook returned HTTP " + statusCode.ToString(CultureInfo.InvariantCulture),
+                    null,
+                    response.StatusCode);
+
+            string responseBody = response.Content == null
+                ? string.Empty
+                : response.Content.ReadAsStringAsync(timeoutSource.Token).GetAwaiter().GetResult();
+            ValidateWebhookLogicalResponse(responseBody);
+        }
+
+        private static bool IsRetryableWebhookFailure(Exception exception)
+        {
+            if (exception is OperationCanceledException)
+                return true;
+            if (exception is HttpRequestException requestException)
+            {
+                int? statusCode = requestException.StatusCode == null ? null : (int)requestException.StatusCode.Value;
+                return statusCode == null || statusCode == 408 || statusCode == 429 || statusCode >= 500;
+            }
+            return false;
+        }
+
+        private static void ValidateWebhookLogicalResponse(string responseBody)
+        {
+            string text = NullToEmpty(responseBody).Trim();
+            if (string.IsNullOrWhiteSpace(text) || !text.StartsWith("{", StringComparison.Ordinal))
+                return;
+
+            if (text.Length > 65536)
+                text = text.Substring(0, 65536);
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(text);
+                JsonElement root = document.RootElement;
+                if (root.TryGetProperty("success", out JsonElement success) &&
+                    (success.ValueKind == JsonValueKind.False ||
+                     (success.ValueKind == JsonValueKind.String && bool.TryParse(success.GetString(), out bool successValue) && !successValue)))
+                {
+                    throw new InvalidOperationException("Webhook response reported success=false.");
+                }
+
+                if (TryGetWebhookErrorCode(root, "errcode", out long errorCode) && errorCode != 0)
+                    throw new InvalidOperationException("Webhook response reported errcode=" + errorCode.ToString(CultureInfo.InvariantCulture));
+                if (TryGetWebhookErrorCode(root, "code", out long code) && code != 0 && code != 200)
+                    throw new InvalidOperationException("Webhook response reported code=" + code.ToString(CultureInfo.InvariantCulture));
+            }
+            catch (JsonException)
+            {
+                // A successful endpoint is allowed to return non-JSON text even with a JSON-like prefix.
+            }
+        }
+
+        private static bool TryGetWebhookErrorCode(JsonElement root, string propertyName, out long code)
+        {
+            code = 0;
+            if (!root.TryGetProperty(propertyName, out JsonElement element))
+                return false;
+            if (element.ValueKind == JsonValueKind.Number)
+                return element.TryGetInt64(out code);
+            return element.ValueKind == JsonValueKind.String &&
+                   long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out code);
         }
 
         private static void AddMailAddresses(MailAddressCollection collection, string addresses)
@@ -1855,8 +2034,13 @@ namespace IPC.EdgeGateway
                 .Replace("{gatewayId}", SanitizeTopicSegment(_gatewayOptions.GatewayId))
                 .Replace("{ruleName}", SanitizeTopicSegment(ruleEvent == null ? string.Empty : ruleEvent.RuleName))
                 .Replace("{pointCode}", SanitizeTopicSegment(snapshot == null ? string.Empty : GetPointCode(snapshot)))
+                .Replace("{channelId}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.ChannelId))
+                .Replace("{channel}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.ChannelName))
+                .Replace("{deviceId}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.DeviceId))
                 .Replace("{device}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.DeviceName))
+                .Replace("{groupId}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.GroupId))
                 .Replace("{group}", SanitizeTopicSegment(snapshot == null || string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName))
+                .Replace("{tagId}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.TagId))
                 .Replace("{tag}", SanitizeTopicSegment(snapshot == null ? string.Empty : snapshot.TagName))
                 .Replace("{state}", SanitizeTopicSegment(ruleEvent == null ? string.Empty : ruleEvent.State))
                 .Replace("{eventType}", SanitizeTopicSegment(ruleEvent == null ? string.Empty : ruleEvent.EventType));
@@ -1866,36 +2050,44 @@ namespace IPC.EdgeGateway
             return topic.Trim('/');
         }
 
-        private string RenderActionTemplate(string template, EdgeRuleRuntimeEvent ruleEvent)
+        private string RenderActionTemplate(string template, EdgeRuleRuntimeEvent ruleEvent, bool jsonEscapeStrings = false)
         {
             if (ruleEvent == null)
                 return NullToEmpty(template);
 
             TagValueSnapshot snapshot = ruleEvent.Snapshot;
             string text = NullToEmpty(template);
+            Func<string, string> formatString = value => jsonEscapeStrings ? JsonEscape(NullToEmpty(value)) : NullToEmpty(value);
             return text
-                .Replace("{gatewayId}", NullToEmpty(_gatewayOptions.GatewayId))
-                .Replace("{gatewayName}", NullToEmpty(_gatewayOptions.GatewayName))
-                .Replace("{siteName}", NullToEmpty(_gatewayOptions.SiteName))
-                .Replace("{ruleId}", NullToEmpty(ruleEvent.RuleId))
-                .Replace("{ruleName}", NullToEmpty(ruleEvent.RuleName))
-                .Replace("{conditionType}", ruleEvent.ConditionType.ToString())
-                .Replace("{eventType}", NullToEmpty(ruleEvent.EventType))
-                .Replace("{state}", NullToEmpty(ruleEvent.State))
-                .Replace("{message}", NullToEmpty(ruleEvent.Message))
+                .Replace("{gatewayId}", formatString(_gatewayOptions.GatewayId))
+                .Replace("{gatewayName}", formatString(_gatewayOptions.GatewayName))
+                .Replace("{siteName}", formatString(_gatewayOptions.SiteName))
+                .Replace("{ruleId}", formatString(ruleEvent.RuleId))
+                .Replace("{ruleName}", formatString(ruleEvent.RuleName))
+                .Replace("{conditionType}", formatString(ruleEvent.ConditionType.ToString()))
+                .Replace("{eventType}", formatString(ruleEvent.EventType))
+                .Replace("{state}", formatString(ruleEvent.State))
+                .Replace("{message}", formatString(ruleEvent.Message))
+                .Replace("{severity}", formatString(ruleEvent.Severity))
+                .Replace("{eventId}", formatString(ruleEvent.EventId))
                 .Replace("{payload}", NullToEmpty(ruleEvent.Payload))
-                .Replace("{topic}", NullToEmpty(ruleEvent.Topic))
+                .Replace("{topic}", formatString(ruleEvent.Topic))
                 .Replace("{value}", ruleEvent.Value.ToString("R", CultureInfo.InvariantCulture))
                 .Replace("{threshold}", ruleEvent.Threshold.ToString("R", CultureInfo.InvariantCulture))
                 .Replace("{timestamp}", ruleEvent.Timestamp.ToString("o"))
-                .Replace("{pointCode}", snapshot == null ? string.Empty : GetPointCode(snapshot))
-                .Replace("{device}", snapshot == null ? string.Empty : NullToEmpty(snapshot.DeviceName))
-                .Replace("{group}", snapshot == null ? string.Empty : NullToEmpty(snapshot.GroupName))
-                .Replace("{tag}", snapshot == null ? string.Empty : NullToEmpty(snapshot.TagName))
-                .Replace("{unit}", snapshot == null ? string.Empty : NullToEmpty(snapshot.Unit))
-                .Replace("{quality}", snapshot == null ? string.Empty : snapshot.Quality.ToString())
-                .Replace("{assetPath}", snapshot == null ? string.Empty : NullToEmpty(snapshot.AssetPath))
-                .Replace("{businessType}", snapshot == null ? string.Empty : NullToEmpty(snapshot.BusinessType));
+                .Replace("{pointCode}", snapshot == null ? string.Empty : formatString(GetPointCode(snapshot)))
+                .Replace("{channelId}", snapshot == null ? string.Empty : formatString(snapshot.ChannelId))
+                .Replace("{channel}", snapshot == null ? string.Empty : formatString(snapshot.ChannelName))
+                .Replace("{deviceId}", snapshot == null ? string.Empty : formatString(snapshot.DeviceId))
+                .Replace("{device}", snapshot == null ? string.Empty : formatString(snapshot.DeviceName))
+                .Replace("{groupId}", snapshot == null ? string.Empty : formatString(snapshot.GroupId))
+                .Replace("{group}", snapshot == null ? string.Empty : formatString(snapshot.GroupName))
+                .Replace("{tagId}", snapshot == null ? string.Empty : formatString(snapshot.TagId))
+                .Replace("{tag}", snapshot == null ? string.Empty : formatString(snapshot.TagName))
+                .Replace("{unit}", snapshot == null ? string.Empty : formatString(snapshot.Unit))
+                .Replace("{quality}", snapshot == null ? string.Empty : formatString(snapshot.Quality.ToString()))
+                .Replace("{assetPath}", snapshot == null ? string.Empty : formatString(snapshot.AssetPath))
+                .Replace("{businessType}", snapshot == null ? string.Empty : formatString(snapshot.BusinessType));
         }
 
         private void RecordActionFailure(EdgeRuleRuntimeEvent ruleEvent, EdgeRuleActionConfig action, Exception ex)
@@ -1909,8 +2101,8 @@ namespace IPC.EdgeGateway
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(ruleEvent);
                 status.LastErrorTime = _lastErrorTime;
                 status.LastError = _lastError;
-                status.FailedEvaluationCount++;
-                _failedEvaluationCount++;
+                status.ActionFailureCount++;
+                _actionFailureCount++;
             }
         }
 
@@ -2124,7 +2316,7 @@ namespace IPC.EdgeGateway
                 for (int i = 0; i < rule.Conditions.Count; i++)
                 {
                     EdgeRuleConditionConfig condition = rule.Conditions[i];
-                    if (condition != null && MatchesSource(condition.SourcePointCode, condition.SourceDeviceName, condition.SourceGroupName, condition.SourceTagName, snapshot))
+                    if (condition != null && MatchesSource(condition.SourceTagId, snapshot))
                         return true;
                 }
             }
@@ -2133,10 +2325,20 @@ namespace IPC.EdgeGateway
                 ExpressionReferencesSnapshot(rule.Expression, snapshot))
                 return true;
 
+            if (rule.ConditionType == EdgeRuleConditionType.ModelInference)
+            {
+                List<string> inputTags = SplitModelInputTags(rule.ModelInputTags);
+                for (int i = 0; i < inputTags.Count; i++)
+                {
+                    if (MatchesSnapshotToken(snapshot, inputTags[i]))
+                        return true;
+                }
+            }
+
             if (rule.ConditionType == EdgeRuleConditionType.Aggregation)
             {
-                if (MatchesSource(rule.RelatedPointCode, rule.RelatedDeviceName, rule.RelatedGroupName, rule.RelatedTagName, snapshot) ||
-                    MatchesSource(rule.ContextPointCode, rule.ContextDeviceName, rule.ContextGroupName, rule.ContextTagName, snapshot))
+                if (MatchesSource(rule.RelatedTagId, snapshot) ||
+                    MatchesSource(rule.ContextTagId, snapshot))
                     return true;
 
                 if (rule.Conditions != null)
@@ -2144,70 +2346,33 @@ namespace IPC.EdgeGateway
                     for (int i = 0; i < rule.Conditions.Count; i++)
                     {
                         EdgeRuleConditionConfig condition = rule.Conditions[i];
-                        if (condition != null && MatchesSource(condition.SourcePointCode, condition.SourceDeviceName, condition.SourceGroupName, condition.SourceTagName, snapshot))
+                        if (condition != null && MatchesSource(condition.SourceTagId, snapshot))
                             return true;
                     }
                 }
             }
 
             if (rule.ConditionType == EdgeRuleConditionType.TagRelation &&
-                MatchesSource(rule.RelatedPointCode, rule.RelatedDeviceName, rule.RelatedGroupName, rule.RelatedTagName, snapshot))
+                MatchesSource(rule.RelatedTagId, snapshot))
                 return true;
 
             if (rule.ConditionType == EdgeRuleConditionType.ContextGate &&
-                MatchesSource(rule.ContextPointCode, rule.ContextDeviceName, rule.ContextGroupName, rule.ContextTagName, snapshot))
+                MatchesSource(rule.ContextTagId, snapshot))
                 return true;
 
-            return MatchesSource(rule.SourcePointCode, rule.SourceDeviceName, rule.SourceGroupName, rule.SourceTagName, snapshot);
+            return MatchesSource(rule.SourceTagId, snapshot);
         }
 
-        private static bool MatchesSource(string sourcePointCode, string sourceDeviceName, string sourceGroupName, string sourceTagName, TagValueSnapshot snapshot)
+        private static bool MatchesSource(string sourceTagId, TagValueSnapshot snapshot)
         {
-            if (snapshot == null)
-                return false;
-
-            bool hasPathScope = HasPathScope(sourceDeviceName, sourceGroupName, sourceTagName);
-            if (hasPathScope)
-                return MatchesConfiguredSourceFields(sourceDeviceName, sourceGroupName, sourceTagName, snapshot);
-
-            string configuredPointCode = NullToEmpty(sourcePointCode).Trim();
-            if (!string.IsNullOrWhiteSpace(configuredPointCode))
-            {
-                if (string.Equals(configuredPointCode, GetPointCode(snapshot), StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(configuredPointCode, NullToEmpty(snapshot.PointCode).Trim(), StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
+            return snapshot != null &&
+                   !string.IsNullOrWhiteSpace(sourceTagId) &&
+                   string.Equals(sourceTagId.Trim(), NullToEmpty(snapshot.TagId).Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool HasPathScope(string deviceName, string groupName, string tagName)
+        private static bool HasConfiguredSource(string tagId)
         {
-            return !string.IsNullOrWhiteSpace(deviceName) ||
-                   !string.IsNullOrWhiteSpace(groupName) ||
-                   !string.IsNullOrWhiteSpace(tagName);
-        }
-
-        private static bool MatchesConfiguredSourceFields(string sourceDeviceName, string sourceGroupName, string sourceTagName, TagValueSnapshot snapshot)
-        {
-            return MatchesConfiguredField(sourceDeviceName, snapshot.DeviceName) &&
-                   MatchesConfiguredField(sourceGroupName, snapshot.GroupName) &&
-                   MatchesConfiguredField(sourceTagName, snapshot.TagName);
-        }
-
-        private static bool MatchesConfiguredField(string configured, string actual)
-        {
-            string expected = NullToEmpty(configured).Trim();
-            return string.IsNullOrWhiteSpace(expected) ||
-                   string.Equals(expected, NullToEmpty(actual).Trim(), StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool HasConfiguredSource(string pointCode, string deviceName, string groupName, string tagName)
-        {
-            return !string.IsNullOrWhiteSpace(pointCode) ||
-                   !string.IsNullOrWhiteSpace(deviceName) ||
-                   !string.IsNullOrWhiteSpace(groupName) ||
-                   !string.IsNullOrWhiteSpace(tagName);
+            return !string.IsNullOrWhiteSpace(tagId);
         }
 
         private static bool ExpressionReferencesSnapshot(string expression, TagValueSnapshot snapshot)
@@ -2216,6 +2381,7 @@ namespace IPC.EdgeGateway
                 return false;
 
             string pointCode = GetPointCode(snapshot);
+            string channelPath = BuildChannelSnapshotPath(snapshot);
             string path = (NullToEmpty(snapshot.DeviceName).Trim() + "." +
                            NullToEmpty(snapshot.GroupName).Trim() + "." +
                            NullToEmpty(snapshot.TagName).Trim()).Trim('.');
@@ -2226,24 +2392,82 @@ namespace IPC.EdgeGateway
                 {
                     string token = match.Groups[1].Value.Trim();
                     return !string.Equals(token, "value", StringComparison.OrdinalIgnoreCase) &&
-                           (string.Equals(token, pointCode, StringComparison.OrdinalIgnoreCase) ||
+                           (string.Equals(token, snapshot.TagId, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(token, pointCode, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(token, channelPath, StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(token, path, StringComparison.OrdinalIgnoreCase));
                 });
         }
 
-        private void RememberSnapshot(TagValueSnapshot snapshot)
+        private bool RememberSnapshot(TagValueSnapshot snapshot)
         {
             if (snapshot == null)
-                return;
+                return false;
 
             TagValueSnapshot clone = snapshot.Clone();
             lock (_syncRoot)
             {
+                if (!string.IsNullOrWhiteSpace(snapshot.TagId) &&
+                    _snapshotsByTagId.TryGetValue(snapshot.TagId.Trim(), out TagValueSnapshot? existingByTag) &&
+                    existingByTag != null &&
+                    snapshot.Timestamp != DateTime.MinValue &&
+                    existingByTag.Timestamp != DateTime.MinValue &&
+                    snapshot.Timestamp < existingByTag.Timestamp)
+                {
+                    return false;
+                }
+
                 string pointCode = GetPointCode(snapshot);
                 if (!string.IsNullOrWhiteSpace(pointCode))
-                    _snapshotsByPoint[pointCode] = clone.Clone();
-                _snapshotsByPath[BuildPathKey(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName)] = clone;
+                {
+                    if (_snapshotsByPoint.TryGetValue(pointCode, out TagValueSnapshot? existingPoint) &&
+                        existingPoint != null &&
+                        !IsSameSnapshotSource(existingPoint, snapshot))
+                    {
+                        _snapshotsByPoint.Remove(pointCode);
+                        _ambiguousSnapshotPoints.Add(pointCode);
+                    }
+                    else if (!_ambiguousSnapshotPoints.Contains(pointCode))
+                    {
+                        _snapshotsByPoint[pointCode] = clone.Clone();
+                    }
+                }
+
+                string legacyPathKey = BuildPathKey(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+                if (_snapshotsByPath.TryGetValue(legacyPathKey, out TagValueSnapshot? existingPath) &&
+                    existingPath != null &&
+                    !IsSameSnapshotSource(existingPath, snapshot))
+                {
+                    _snapshotsByPath.Remove(legacyPathKey);
+                    _ambiguousSnapshotPaths.Add(legacyPathKey);
+                }
+                else if (!_ambiguousSnapshotPaths.Contains(legacyPathKey))
+                {
+                    _snapshotsByPath[legacyPathKey] = clone.Clone();
+                }
+
+                string channelPath = BuildChannelSnapshotPath(snapshot);
+                if (!string.IsNullOrWhiteSpace(channelPath))
+                    _snapshotsByChannelPath[channelPath] = clone.Clone();
+                if (!string.IsNullOrWhiteSpace(snapshot.TagId))
+                    _snapshotsByTagId[snapshot.TagId.Trim()] = clone.Clone();
             }
+            return true;
+        }
+
+        private static bool IsSameSnapshotSource(TagValueSnapshot first, TagValueSnapshot second)
+        {
+            if (first == null || second == null)
+                return false;
+            if (!string.IsNullOrWhiteSpace(first.TagId) || !string.IsNullOrWhiteSpace(second.TagId))
+            {
+                return string.Equals(first.TagId, second.TagId, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(first.ChannelId, second.ChannelId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(first.DeviceId, second.DeviceId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(first.GroupId, second.GroupId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(first.TagName, second.TagName, StringComparison.OrdinalIgnoreCase);
         }
 
         private bool TryGetConditionSnapshot(EdgeRuleConditionConfig condition, out TagValueSnapshot snapshot)
@@ -2253,10 +2477,7 @@ namespace IPC.EdgeGateway
                 return false;
 
             return TryGetSnapshotBySource(
-                condition.SourcePointCode,
-                condition.SourceDeviceName,
-                condition.SourceGroupName,
-                condition.SourceTagName,
+                condition.SourceTagId,
                 out snapshot);
         }
 
@@ -2267,10 +2488,7 @@ namespace IPC.EdgeGateway
                 return false;
 
             return TryGetSnapshotBySource(
-                rule.SourcePointCode,
-                rule.SourceDeviceName,
-                rule.SourceGroupName,
-                rule.SourceTagName,
+                rule.SourceTagId,
                 out snapshot);
         }
 
@@ -2281,10 +2499,7 @@ namespace IPC.EdgeGateway
                 return false;
 
             return TryGetSnapshotBySource(
-                rule.RelatedPointCode,
-                rule.RelatedDeviceName,
-                rule.RelatedGroupName,
-                rule.RelatedTagName,
+                rule.RelatedTagId,
                 out snapshot);
         }
 
@@ -2295,9 +2510,7 @@ namespace IPC.EdgeGateway
                 return false;
 
             bool hasContextSource =
-                !string.IsNullOrWhiteSpace(rule.ContextPointCode) ||
-                !string.IsNullOrWhiteSpace(rule.ContextDeviceName) ||
-                !string.IsNullOrWhiteSpace(rule.ContextTagName);
+                !string.IsNullOrWhiteSpace(rule.ContextTagId);
             if (!hasContextSource)
             {
                 snapshot = triggerSnapshot == null ? new TagValueSnapshot() : triggerSnapshot.Clone();
@@ -2305,57 +2518,21 @@ namespace IPC.EdgeGateway
             }
 
             return TryGetSnapshotBySource(
-                rule.ContextPointCode,
-                rule.ContextDeviceName,
-                rule.ContextGroupName,
-                rule.ContextTagName,
+                rule.ContextTagId,
                 out snapshot);
         }
 
-        private bool TryGetSnapshotBySource(string pointCode, string deviceName, string groupName, string tagName, out TagValueSnapshot snapshot)
+        private bool TryGetSnapshotBySource(string tagId, out TagValueSnapshot snapshot)
         {
             snapshot = new TagValueSnapshot();
+            if (string.IsNullOrWhiteSpace(tagId))
+                return false;
+
             lock (_syncRoot)
             {
-                bool hasPathScope = HasPathScope(deviceName, groupName, tagName);
-                if (hasPathScope)
+                if (_snapshotsByTagId.TryGetValue(tagId.Trim(), out TagValueSnapshot? cached) && cached != null)
                 {
-                    string pathKey = BuildPathKey(deviceName, groupName, tagName);
-                    TagValueSnapshot? pathSnapshot;
-                    if (_snapshotsByPath.TryGetValue(pathKey, out pathSnapshot) &&
-                        pathSnapshot != null)
-                    {
-                        snapshot = pathSnapshot.Clone();
-                        return true;
-                    }
-
-                    TagValueSnapshot? scopedSnapshot = _snapshotsByPath.Values.FirstOrDefault(item =>
-                        item != null && MatchesConfiguredSourceFields(deviceName, groupName, tagName, item));
-                    if (scopedSnapshot != null)
-                    {
-                        snapshot = scopedSnapshot.Clone();
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                string normalizedPointCode = NullToEmpty(pointCode).Trim();
-                TagValueSnapshot? pointSnapshot;
-                if (!string.IsNullOrWhiteSpace(normalizedPointCode) &&
-                    _snapshotsByPoint.TryGetValue(normalizedPointCode, out pointSnapshot) &&
-                    pointSnapshot != null)
-                {
-                    snapshot = pointSnapshot.Clone();
-                    return true;
-                }
-
-                string fallbackPathKey = BuildPathKey(deviceName, groupName, tagName);
-                TagValueSnapshot? fallbackPathSnapshot;
-                if (_snapshotsByPath.TryGetValue(fallbackPathKey, out fallbackPathSnapshot) &&
-                    fallbackPathSnapshot != null)
-                {
-                    snapshot = fallbackPathSnapshot.Clone();
+                    snapshot = cached.Clone();
                     return true;
                 }
             }
@@ -2428,9 +2605,7 @@ namespace IPC.EdgeGateway
             DateTime oldest = now.AddSeconds(-Math.Max(1, windowSeconds));
             samples.RemoveAll(sample => sample.Timestamp < oldest);
 
-            sampleLimit = Math.Max(0, sampleLimit);
-            if (sampleLimit <= 0)
-                return;
+            sampleLimit = sampleLimit <= 0 ? 10000 : Math.Min(10000, sampleLimit);
 
             while (samples.Count > sampleLimit)
                 samples.RemoveAt(0);
@@ -2492,6 +2667,27 @@ namespace IPC.EdgeGateway
                 return;
 
             values.Add(projector == null ? rawValue : projector(rawValue));
+        }
+
+        private static bool TryAddAggregationValue(
+            List<double> values,
+            HashSet<string> sources,
+            TagValueSnapshot snapshot,
+            TagValueSnapshot referenceSnapshot,
+            Func<double, double> projector)
+        {
+            if (values == null || sources == null || snapshot == null ||
+                snapshot.Quality != TagQuality.Good || !IsSnapshotFresh(snapshot, referenceSnapshot))
+                return false;
+
+            double rawValue;
+            if (!TryGetNumericValue(snapshot, out rawValue))
+                return false;
+
+            string key = BuildSourceValueKey(snapshot);
+            if (sources.Add(key))
+                values.Add(projector == null ? rawValue : projector(rawValue));
+            return true;
         }
 
         private static string NormalizeWindowStatistic(string statistic)
@@ -2683,11 +2879,16 @@ namespace IPC.EdgeGateway
                 if (TryGetSnapshotByToken(token, out tokenSnapshot))
                 {
                     double tokenValue;
-                    if (tokenSnapshot.Quality == TagQuality.Good && TryGetNumericValue(tokenSnapshot, out tokenValue))
-                        return tokenValue.ToString("R", CultureInfo.InvariantCulture);
+                    if (tokenSnapshot.Quality != TagQuality.Good)
+                        throw new InvalidOperationException("Expression tag quality is not good: " + token);
+                    if (!IsSnapshotFresh(tokenSnapshot, snapshot))
+                        throw new InvalidOperationException("Expression tag value is stale: " + token);
+                    if (!TryGetNumericValue(tokenSnapshot, out tokenValue))
+                        throw new InvalidOperationException("Expression tag is not numeric: " + token);
+                    return tokenValue.ToString("R", CultureInfo.InvariantCulture);
                 }
 
-                return "0";
+                throw new InvalidOperationException("Expression tag was not found: " + token);
             });
 
             text = text
@@ -2703,22 +2904,14 @@ namespace IPC.EdgeGateway
 
         private static object ComputeSandboxedExpression(string text, int timeoutMilliseconds)
         {
-            Task<object> task = Task.Factory.StartNew(
-                () => new DataTable().Compute(text, string.Empty),
-                CancellationToken.None,
-                TaskCreationOptions.DenyChildAttach,
-                TaskScheduler.Default);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            object result = new DataTable().Compute(text, string.Empty);
+            stopwatch.Stop();
 
-            try
-            {
-                if (!task.Wait(TimeSpan.FromMilliseconds(timeoutMilliseconds)))
-                    throw new TimeoutException("Expression execution timed out.");
-                return task.GetAwaiter().GetResult();
-            }
-            catch (AggregateException ex) when (ex.InnerExceptions.Count == 1)
-            {
-                throw ex.InnerExceptions[0];
-            }
+            if (stopwatch.Elapsed > TimeSpan.FromMilliseconds(timeoutMilliseconds))
+                throw new TimeoutException("Expression execution timed out.");
+
+            return result;
         }
 
         private static void ValidateSandboxExpression(string text)
@@ -2785,11 +2978,26 @@ namespace IPC.EdgeGateway
 
             lock (_syncRoot)
             {
+                if (_snapshotsByTagId.TryGetValue(key, out TagValueSnapshot? tagSnapshot) &&
+                    tagSnapshot != null)
+                {
+                    snapshot = tagSnapshot.Clone();
+                    return true;
+                }
+
                 TagValueSnapshot? pointSnapshot;
-                if (_snapshotsByPoint.TryGetValue(key, out pointSnapshot) &&
+                if (!_ambiguousSnapshotPoints.Contains(key) &&
+                    _snapshotsByPoint.TryGetValue(key, out pointSnapshot) &&
                     pointSnapshot != null)
                 {
                     snapshot = pointSnapshot.Clone();
+                    return true;
+                }
+
+                if (_snapshotsByChannelPath.TryGetValue(key, out TagValueSnapshot? channelPathSnapshot) &&
+                    channelPathSnapshot != null)
+                {
+                    snapshot = channelPathSnapshot.Clone();
                     return true;
                 }
 
@@ -2799,8 +3007,10 @@ namespace IPC.EdgeGateway
                     string device = parts[0];
                     string tag = parts[parts.Length - 1];
                     string group = parts.Length > 2 ? string.Join(".", parts, 1, parts.Length - 2) : string.Empty;
+                    string legacyPathKey = BuildPathKey(device, group, tag);
                     TagValueSnapshot? pathSnapshot;
-                    if (_snapshotsByPath.TryGetValue(BuildPathKey(device, group, tag), out pathSnapshot) &&
+                    if (!_ambiguousSnapshotPaths.Contains(legacyPathKey) &&
+                        _snapshotsByPath.TryGetValue(legacyPathKey, out pathSnapshot) &&
                         pathSnapshot != null)
                     {
                         snapshot = pathSnapshot.Clone();
@@ -2842,6 +3052,30 @@ namespace IPC.EdgeGateway
             return ReplaceTokens("{ruleName} triggered: {pointCode} = {value}", rule, snapshot, state);
         }
 
+        private static string BuildStateActiveMessage(
+            EdgeRuleConfig rule,
+            TagValueSnapshot snapshot,
+            string stateName,
+            EdgeRuleState state)
+        {
+            return !string.IsNullOrWhiteSpace(state.ActiveMessageOverride)
+                ? ReplaceTokens(state.ActiveMessageOverride, rule, snapshot, stateName)
+                : BuildActiveMessage(rule, snapshot, stateName);
+        }
+
+        private static int AlarmSeverityRank(string severity)
+        {
+            if (string.Equals(severity, "Critical", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(severity, "Error", StringComparison.OrdinalIgnoreCase))
+                return 3;
+            if (string.Equals(severity, "Warning", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(severity, "Warn", StringComparison.OrdinalIgnoreCase))
+                return 2;
+            if (string.Equals(severity, "Info", StringComparison.OrdinalIgnoreCase))
+                return 1;
+            return 0;
+        }
+
         private static string BuildClearMessage(EdgeRuleConfig rule, TagValueSnapshot snapshot, string state)
         {
             if (!string.IsNullOrWhiteSpace(rule.ClearMessage))
@@ -2854,8 +3088,13 @@ namespace IPC.EdgeGateway
             return NullToEmpty(template)
                 .Replace("{ruleName}", NullToEmpty(rule.Name))
                 .Replace("{pointCode}", GetPointCode(snapshot))
+                .Replace("{channelId}", NullToEmpty(snapshot.ChannelId))
+                .Replace("{channel}", NullToEmpty(snapshot.ChannelName))
+                .Replace("{deviceId}", NullToEmpty(snapshot.DeviceId))
                 .Replace("{device}", NullToEmpty(snapshot.DeviceName))
+                .Replace("{groupId}", NullToEmpty(snapshot.GroupId))
                 .Replace("{group}", string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName)
+                .Replace("{tagId}", NullToEmpty(snapshot.TagId))
                 .Replace("{tag}", NullToEmpty(snapshot.TagName))
                 .Replace("{value}", NullToEmpty(snapshot.ValueText))
                 .Replace("{state}", NullToEmpty(state));
@@ -2871,8 +3110,13 @@ namespace IPC.EdgeGateway
                 .Replace("{gatewayId}", SanitizeTopicSegment(_gatewayOptions.GatewayId))
                 .Replace("{ruleName}", SanitizeTopicSegment(rule.Name))
                 .Replace("{pointCode}", SanitizeTopicSegment(GetPointCode(snapshot)))
+                .Replace("{channelId}", SanitizeTopicSegment(snapshot.ChannelId))
+                .Replace("{channel}", SanitizeTopicSegment(snapshot.ChannelName))
+                .Replace("{deviceId}", SanitizeTopicSegment(snapshot.DeviceId))
                 .Replace("{device}", SanitizeTopicSegment(snapshot.DeviceName))
+                .Replace("{groupId}", SanitizeTopicSegment(snapshot.GroupId))
                 .Replace("{group}", SanitizeTopicSegment(string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName))
+                .Replace("{tagId}", SanitizeTopicSegment(snapshot.TagId))
                 .Replace("{tag}", SanitizeTopicSegment(snapshot.TagName));
 
             while (topic.IndexOf("//", StringComparison.Ordinal) >= 0)
@@ -2897,6 +3141,7 @@ namespace IPC.EdgeGateway
             TagValueSnapshot snapshot = ruleEvent.Snapshot;
             return "{" +
                    "\"messageType\":\"ruleEvent\"," +
+                   "\"eventId\":\"" + JsonEscape(ruleEvent.EventId) + "\"," +
                    "\"eventType\":\"" + JsonEscape(ruleEvent.EventType) + "\"," +
                    "\"protocolVersion\":\"" + JsonEscape(_gatewayOptions.CloudProtocolVersion) + "\"," +
                    "\"gatewayId\":\"" + JsonEscape(_gatewayOptions.GatewayId) + "\"," +
@@ -2909,10 +3154,16 @@ namespace IPC.EdgeGateway
                    "\"state\":\"" + JsonEscape(ruleEvent.State) + "\"," +
                    "\"action\":\"" + JsonEscape(ruleEvent.EventType) + "\"," +
                    "\"message\":\"" + JsonEscape(ruleEvent.Message) + "\"," +
+                   "\"severity\":\"" + JsonEscape(ruleEvent.Severity) + "\"," +
                    "\"value\":" + ruleEvent.Value.ToString("R", CultureInfo.InvariantCulture) + "," +
                    "\"threshold\":" + ruleEvent.Threshold.ToString("R", CultureInfo.InvariantCulture) + "," +
+                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
+                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
+                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
                    "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
@@ -2955,8 +3206,13 @@ namespace IPC.EdgeGateway
 
             return "{" +
                    "\"role\":\"" + JsonEscape(sourceValue == null ? string.Empty : sourceValue.Role) + "\"," +
+                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
+                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
+                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
                    "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"value\":" + FormatJsonValue(snapshot.Value) + "," +
@@ -3002,12 +3258,14 @@ namespace IPC.EdgeGateway
 
             return new EdgeRuleRuntimeEvent
             {
+                EventId = source.EventId,
                 RuleId = source.RuleId,
                 RuleName = source.RuleName,
                 ConditionType = source.ConditionType,
                 EventType = source.EventType,
                 State = source.State,
                 Message = source.Message,
+                Severity = source.Severity,
                 Topic = source.Topic,
                 Payload = source.Payload,
                 Snapshot = source.Snapshot.Clone(),
@@ -3060,7 +3318,8 @@ namespace IPC.EdgeGateway
                 EvaluationCount = source.EvaluationCount,
                 TriggeredCount = source.TriggeredCount,
                 ClearedCount = source.ClearedCount,
-                FailedEvaluationCount = source.FailedEvaluationCount
+                FailedEvaluationCount = source.FailedEvaluationCount,
+                ActionFailureCount = source.ActionFailureCount
             };
 
             for (int i = 0; i < source.RecentEvents.Count; i++)
@@ -3072,8 +3331,8 @@ namespace IPC.EdgeGateway
         {
             if (qos < 0)
                 return 0;
-            if (qos > 1)
-                return 1;
+            if (qos > 2)
+                return 2;
             return qos;
         }
 
@@ -3085,7 +3344,9 @@ namespace IPC.EdgeGateway
                 return snapshot.PointCode.Trim();
 
             string group = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
-            return (NullToEmpty(snapshot.DeviceName).Trim() + "." + group + "." + NullToEmpty(snapshot.TagName).Trim()).Trim('.');
+            return (NullToEmpty(snapshot.ChannelName).Trim() + "." +
+                    NullToEmpty(snapshot.DeviceName).Trim() + "." + group + "." +
+                    NullToEmpty(snapshot.TagName).Trim()).Trim('.');
         }
 
         private static string SanitizeTopicSegment(string value)
@@ -3131,22 +3392,36 @@ namespace IPC.EdgeGateway
             public EdgeRuleState()
             {
                 ActiveState = string.Empty;
+                ActiveSeverity = string.Empty;
+                ActiveMessageOverride = string.Empty;
                 PendingState = string.Empty;
                 PendingClearState = string.Empty;
                 WindowSamples = new List<EdgeRuleWindowSample>();
             }
 
             public string ActiveState { get; set; }
+            public string ActiveSeverity { get; set; }
+            public string ActiveMessageOverride { get; set; }
             public DateTime ActiveSince { get; set; }
             public string PendingState { get; set; }
             public DateTime PendingSince { get; set; }
             public string PendingClearState { get; set; }
             public DateTime PendingClearSince { get; set; }
+            public TagValueSnapshot? LastEvaluationSnapshot { get; set; }
+            public double LastEvaluationValue { get; set; }
+            public double LastEvaluationThreshold { get; set; }
+            public DateTime LastPeriodicEvaluationTime { get; set; }
             public DateTime LastActiveEventTime { get; set; }
             public bool EscalationPublished { get; set; }
             public DateTime LastActionDispatchTime { get; set; }
             public DateTime ActionDispatchWindowStart { get; set; }
             public int ActionDispatchCount { get; set; }
+            public DateTime LastActiveActionDispatchTime { get; set; }
+            public DateTime ActiveActionDispatchWindowStart { get; set; }
+            public int ActiveActionDispatchCount { get; set; }
+            public DateTime LastClearActionDispatchTime { get; set; }
+            public DateTime ClearActionDispatchWindowStart { get; set; }
+            public int ClearActionDispatchCount { get; set; }
             public bool HasLastValue { get; set; }
             public double LastValue { get; set; }
             public DateTime LastTimestamp { get; set; }

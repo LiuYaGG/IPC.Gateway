@@ -50,6 +50,7 @@ namespace IPC.EdgeGateway
         public long TriggeredCount { get; set; }
         public long ClearedCount { get; set; }
         public long FailedEvaluationCount { get; set; }
+        public long ActionFailureCount { get; set; }
         public IList<EdgeRuleRuntimeEvent> RecentEvents { get; set; }
     }
 }

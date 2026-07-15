@@ -33,6 +33,11 @@ namespace IPC.Runtime.Api
     {
         public WriteTagResponse()
         {
+            ChannelId = string.Empty;
+            DeviceId = string.Empty;
+            GroupId = string.Empty;
+            TagId = string.Empty;
+            ChannelName = string.Empty;
             DeviceName = string.Empty;
             GroupName = string.Empty;
             TagName = string.Empty;
@@ -44,6 +49,11 @@ namespace IPC.Runtime.Api
         }
 
         public bool Success { get; set; }
+        public string ChannelId { get; set; }
+        public string DeviceId { get; set; }
+        public string GroupId { get; set; }
+        public string TagId { get; set; }
+        public string ChannelName { get; set; }
         public string DeviceName { get; set; }
         public string GroupName { get; set; }
         public string TagName { get; set; }

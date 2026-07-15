@@ -7,11 +7,16 @@ namespace IPC.Runtime.Engine
 {
     internal sealed class RuntimeSnapshotStore
     {
-        public bool TryGet(IDictionary<string, TagValueSnapshot> snapshots, string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
+        public bool TryGetById(
+            IDictionary<string, TagValueSnapshot> snapshots,
+            string channelId,
+            string deviceId,
+            string groupId,
+            string tagId,
+            out TagValueSnapshot? snapshot)
         {
-            string key = TagPath.Build(deviceName, groupName, tagName);
-            TagValueSnapshot? current;
-            if (snapshots.TryGetValue(key, out current) && current != null)
+            string key = TagPath.BuildIdentity(channelId, deviceId, groupId, tagId);
+            if (snapshots.TryGetValue(key, out TagValueSnapshot? current) && current != null)
             {
                 snapshot = current.Clone();
                 return true;
@@ -35,7 +40,7 @@ namespace IPC.Runtime.Engine
 
         public bool Upsert(IDictionary<string, TagValueSnapshot> snapshots, TagValueSnapshot snapshot, out TagValueSnapshot clone)
         {
-            string key = TagPath.Build(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+            string key = TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
             clone = snapshot.Clone();
 
             TagValueSnapshot? previous;

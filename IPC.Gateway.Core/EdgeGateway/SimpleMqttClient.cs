@@ -35,7 +35,7 @@ namespace IPC.EdgeGateway
     
     
     
-    internal sealed class SimpleMqttClient : IDisposable
+    public sealed class SimpleMqttClient : IDisposable
     {
         private readonly MqttGatewayOptions _options;
         private readonly object _sendSync;
@@ -72,12 +72,30 @@ namespace IPC.EdgeGateway
 
         public void ConnectAndReadLoop(string subscribeTopic, ManualResetEvent stopEvent, Action<SimpleMqttClient>? idleAction, MqttWillMessage? willMessage)
         {
+            ConnectAndReadLoop(new[] { subscribeTopic }, stopEvent, idleAction, willMessage);
+        }
+
+        public void ConnectAndReadLoop(
+            IList<string> subscribeTopics,
+            ManualResetEvent stopEvent,
+            Action<SimpleMqttClient>? idleAction,
+            MqttWillMessage? willMessage)
+        {
             if (stopEvent == null)
                 throw new ArgumentNullException("stopEvent");
 
             Connect(willMessage);
+            if (subscribeTopics == null || subscribeTopics.Count == 0)
+                throw new InvalidOperationException("MQTT subscribe topic list is empty.");
+            HashSet<string> distinctTopics = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string topic in subscribeTopics)
+            {
+                if (!string.IsNullOrWhiteSpace(topic) && distinctTopics.Add(topic.Trim()))
+                    Subscribe(topic.Trim());
+            }
+            if (distinctTopics.Count == 0)
+                throw new InvalidOperationException("MQTT subscribe topic list is empty.");
             RaiseConnected();
-            Subscribe(subscribeTopic);
             if (idleAction != null && !stopEvent.WaitOne(0))
                 idleAction(this);
             ReadLoop(stopEvent, idleAction);
@@ -272,10 +290,12 @@ namespace IPC.EdgeGateway
                 offset += 2;
             }
 
-            string payload = Encoding.UTF8.GetString(packet.Payload, offset, packet.Payload.Length - offset);
+            byte[] payloadBytes = new byte[packet.Payload.Length - offset];
+            Buffer.BlockCopy(packet.Payload, offset, payloadBytes, 0, payloadBytes.Length);
+            string payload = Encoding.UTF8.GetString(payloadBytes);
             EventHandler<MqttMessageEventArgs>? handler = MessageReceived;
             if (handler != null)
-                handler(this, new MqttMessageEventArgs(topic, payload));
+                handler(this, new MqttMessageEventArgs(topic, payload, payloadBytes));
 
             if (qos == 1)
             {
@@ -671,19 +691,26 @@ namespace IPC.EdgeGateway
     
     
     
-    internal sealed class MqttMessageEventArgs : EventArgs
+    public sealed class MqttMessageEventArgs : EventArgs
     {
         public MqttMessageEventArgs(string topic, string payload)
+            : this(topic, payload, Encoding.UTF8.GetBytes(payload ?? string.Empty))
+        {
+        }
+
+        public MqttMessageEventArgs(string topic, string payload, byte[] payloadBytes)
         {
             Topic = topic ?? string.Empty;
             Payload = payload ?? string.Empty;
+            PayloadBytes = payloadBytes ?? Array.Empty<byte>();
         }
 
         public string Topic { get; private set; }
         public string Payload { get; private set; }
+        public byte[] PayloadBytes { get; private set; }
     }
 
-    internal sealed class MqttWillMessage
+    public sealed class MqttWillMessage
     {
         public MqttWillMessage(string topic, byte[] payload, int qos, bool retain)
         {

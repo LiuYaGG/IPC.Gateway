@@ -28,6 +28,12 @@ public sealed class GatewayRuntimeDeviceStatusEntity
     [SugarColumn(ColumnName = "project_id", Length = 64, IsNullable = false)]
     public string ProjectId { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "channel_id", Length = 64, IsNullable = true)]
+    public string ChannelId { get; set; } = string.Empty;
+
+    [SugarColumn(ColumnName = "channel_name", Length = 128, IsNullable = true)]
+    public string ChannelName { get; set; } = string.Empty;
+
     [SugarColumn(ColumnName = "device_id", Length = 64, IsNullable = false)]
     public string DeviceId { get; set; } = string.Empty;
 

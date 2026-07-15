@@ -22,6 +22,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
         public Func<PlcDataType, string> GetTypeName { get; set; }
         public int MaxWordPoints { get; set; }
         public int MaxBitPoints { get; set; }
+        public int MaxGapPoints { get; set; }
     }
 
     internal sealed class MitsubishiAsyncBatchReadContext<TAddress>
@@ -37,6 +38,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
         public Func<PlcDataType, string> GetTypeName { get; set; }
         public int MaxWordPoints { get; set; }
         public int MaxBitPoints { get; set; }
+        public int MaxGapPoints { get; set; }
     }
 
     internal static class MitsubishiBatchReadExecutor
@@ -195,7 +197,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 {
                     BatchReadItem<TAddress> next = items[index];
                     int mergedEnd = Math.Max(segmentEnd, next.EndNumber);
-                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1;
+                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
                     bool withinLimit = mergedEnd - segmentStart + 1 <= maxPoints;
                     if (!contiguousOrOverlapping || !withinLimit)
                         break;
@@ -228,7 +230,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 {
                     BatchReadItem<TAddress> next = items[index];
                     int mergedEnd = Math.Max(segmentEnd, next.EndNumber);
-                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1;
+                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
                     bool withinLimit = mergedEnd - segmentStart + 1 <= maxPoints;
                     if (!contiguousOrOverlapping || !withinLimit)
                         break;
@@ -271,17 +273,17 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     throw;
-                if (!communicationError && endIndex - startIndex > 1)
+                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
                     return;
                 }
 
                 for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
+                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
             }
         }
 
@@ -328,17 +330,17 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     throw;
-                if (!communicationError && endIndex - startIndex > 1)
+                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
                 {
                     await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);
                     return;
                 }
 
                 for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
+                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
             }
         }
 

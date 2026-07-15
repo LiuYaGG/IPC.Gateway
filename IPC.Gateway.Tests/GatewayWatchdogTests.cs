@@ -84,6 +84,49 @@ public sealed class GatewayWatchdogTests
         Assert.True(scheduler.RecoveryRecommended);
     }
 
+    [Fact]
+    public void Evaluator_ResetsProgressBaseline_WhenSchedulerCounterIsReset()
+    {
+        GatewayWatchdogEvaluator evaluator = new GatewayWatchdogEvaluator(new GatewayWatchdogOptions
+        {
+            RuntimeNoProgressSeconds = 30
+        });
+        DateTime baseline = DateTime.Now;
+
+        evaluator.Evaluate(CreateRunningStatus(totalCompleted: 1000, runningCount: 1), baseline);
+        IList<GatewayWatchdogCheckResult> resetChecks = evaluator.Evaluate(
+            CreateRunningStatus(totalCompleted: 2, runningCount: 1),
+            baseline.AddSeconds(45));
+
+        GatewayWatchdogCheckResult resetScheduler = Assert.Single(resetChecks, item => item.Name == "scheduler");
+        Assert.Equal(GatewayWatchdogStates.Healthy, resetScheduler.State);
+        Assert.False(resetScheduler.RecoveryRecommended);
+
+        IList<GatewayWatchdogCheckResult> stalledChecks = evaluator.Evaluate(
+            CreateRunningStatus(totalCompleted: 2, runningCount: 1),
+            baseline.AddSeconds(80));
+        GatewayWatchdogCheckResult stalledScheduler = Assert.Single(stalledChecks, item => item.Name == "scheduler");
+        Assert.Equal(GatewayWatchdogStates.Unhealthy, stalledScheduler.State);
+        Assert.True(stalledScheduler.RecoveryRecommended);
+    }
+
+    [Fact]
+    public async Task RecoveryGate_BlocksOverlap_UntilActiveRecoveryActuallyCompletes()
+    {
+        GatewayWatchdogRecoveryGate gate = new GatewayWatchdogRecoveryGate();
+        TaskCompletionSource recovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Assert.True(gate.TryEnter());
+        Task gateRelease = gate.ReleaseWhenCompleted(recovery.Task);
+        Assert.False(gate.TryEnter());
+
+        recovery.SetResult();
+        await gateRelease;
+
+        Assert.True(gate.TryEnter());
+        gate.Release();
+    }
+
     private static GatewayRuntimeStatusDto CreateRunningStatus(long totalCompleted, int runningCount)
     {
         return new GatewayRuntimeStatusDto

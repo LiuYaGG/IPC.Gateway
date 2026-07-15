@@ -599,6 +599,76 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
+        internal void ApplyRuleProject(ProjectConfig project)
+        {
+            ProjectConfig normalizedProject = PrepareRuleProject(project, out ProjectConfigValidationResult validation);
+
+            _configurationMutationSemaphore.Wait();
+            try
+            {
+                lock (_syncRoot)
+                {
+                    _configurationStore.SaveProject(normalizedProject, "WebApi", "Save rule configuration");
+                    ApplyRuleEngineProject(normalizedProject, validation);
+                }
+            }
+            finally
+            {
+                _configurationMutationSemaphore.Release();
+            }
+        }
+
+        internal async Task ApplyRuleProjectAsync(ProjectConfig project)
+        {
+            ProjectConfig normalizedProject = PrepareRuleProject(project, out ProjectConfigValidationResult validation);
+
+            await _configurationMutationSemaphore.WaitAsync();
+            try
+            {
+                await _configurationStore.SaveProjectAsync(normalizedProject, "WebApi", "Save rule configuration");
+                lock (_syncRoot)
+                    ApplyRuleEngineProject(normalizedProject, validation);
+            }
+            finally
+            {
+                _configurationMutationSemaphore.Release();
+            }
+        }
+
+        private static ProjectConfig PrepareRuleProject(
+            ProjectConfig project,
+            out ProjectConfigValidationResult validation)
+        {
+            if (project == null)
+                throw new ArgumentNullException("project");
+
+            ProjectConfig normalizedProject = ProjectConfigCloner.Clone(project);
+            ProjectConfigStore.Normalize(normalizedProject);
+            validation = ProjectConfigValidator.Validate(normalizedProject);
+            if (!validation.IsValid)
+                throw new InvalidOperationException("Project configuration validation failed: " + string.Join("; ", validation.Errors.ToArray()));
+
+            return normalizedProject;
+        }
+
+        private void ApplyRuleEngineProject(
+            ProjectConfig project,
+            ProjectConfigValidationResult validation)
+        {
+            bool wasRunning = Runtime.IsRunning;
+            if (wasRunning)
+                _flowRuleEngine.Stop();
+
+            _project = ProjectConfigCloner.Clone(project);
+            _lastValidation = validation;
+            ReplaceFlowRuleEngine();
+
+            if (wasRunning)
+                _flowRuleEngine.Start();
+
+            _lastReloadTime = DateTime.Now;
+        }
+
         public void ReloadFromFile()
         {
             Reload(_configurationStore.LoadProject());
@@ -1290,7 +1360,26 @@ namespace IPC.Gateway.Core.Gateway
         private void ReplaceFlowRuleEngine()
         {
             IFlowRuleEngineService oldFlowRuleEngine = _flowRuleEngine;
+            FlowRuleEngineRuntimeState runtimeState;
+            try
+            {
+                runtimeState = oldFlowRuleEngine.CaptureRuntimeState();
+            }
+            catch (Exception ex)
+            {
+                runtimeState = new FlowRuleEngineRuntimeState();
+                IpcLogService.WriteError("Flow rule runtime state capture failed.", ex);
+            }
+
             _flowRuleEngine = CreateFlowRuleEngine();
+            try
+            {
+                _flowRuleEngine.RestoreRuntimeState(runtimeState);
+            }
+            catch (Exception ex)
+            {
+                IpcLogService.WriteError("Flow rule runtime state restore failed.", ex);
+            }
             oldFlowRuleEngine.Dispose();
         }
 
@@ -1470,7 +1559,7 @@ namespace IPC.Gateway.Core.Gateway
                 input.Id = existing.Id;
                 project.Rules[index] = input;
             }
-            Reload(project);
+            ApplyRuleProject(project);
         }
 
         private void DeleteRule(string idOrName)
@@ -1480,7 +1569,7 @@ namespace IPC.Gateway.Core.Gateway
             if (existing == null)
                 throw new InvalidOperationException("规则不存在：" + idOrName);
             project.Rules.Remove(existing);
-            Reload(project);
+            ApplyRuleProject(project);
         }
 
         private void UpsertFlowRule(FlowRuleDefinition input)
@@ -1512,7 +1601,7 @@ namespace IPC.Gateway.Core.Gateway
             }
 
             FlowRuleCompiler.SyncCompiledRule(project, input, previousCompiledRuleId);
-            Reload(project);
+            ApplyRuleProject(project);
         }
 
         private void DeleteFlowRule(string idOrName)
@@ -1524,7 +1613,7 @@ namespace IPC.Gateway.Core.Gateway
 
             FlowRuleCompiler.RemoveCompiledRule(project, existing);
             project.FlowRules.Remove(existing);
-            Reload(project);
+            ApplyRuleProject(project);
         }
 
         private async Task UpsertDeviceAsync(DeviceConfig input)
@@ -1671,7 +1760,7 @@ namespace IPC.Gateway.Core.Gateway
                 input.Id = existing.Id;
                 project.Rules[index] = input;
             }
-            await ReloadAsync(project);
+            await ApplyRuleProjectAsync(project);
         }
 
         private async Task DeleteRuleAsync(string idOrName)
@@ -1681,7 +1770,7 @@ namespace IPC.Gateway.Core.Gateway
             if (existing == null)
                 throw new InvalidOperationException("Rule was not found: " + idOrName);
             project.Rules.Remove(existing);
-            await ReloadAsync(project);
+            await ApplyRuleProjectAsync(project);
         }
 
         private async Task UpsertFlowRuleAsync(FlowRuleDefinition input)
@@ -1713,7 +1802,7 @@ namespace IPC.Gateway.Core.Gateway
             }
 
             FlowRuleCompiler.SyncCompiledRule(project, input, previousCompiledRuleId);
-            await ReloadAsync(project);
+            await ApplyRuleProjectAsync(project);
         }
 
         private async Task DeleteFlowRuleAsync(string idOrName)
@@ -1725,7 +1814,7 @@ namespace IPC.Gateway.Core.Gateway
 
             FlowRuleCompiler.RemoveCompiledRule(project, existing);
             project.FlowRules.Remove(existing);
-            await ReloadAsync(project);
+            await ApplyRuleProjectAsync(project);
         }
 
         private static ProjectConfig CreateDefaultProject()
@@ -1986,23 +2075,19 @@ namespace IPC.Gateway.Core.Gateway
             if (status == null)
                 return;
 
-            HashSet<string> activeDeviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> activeDeviceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> activeTagIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> activeTagPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            BuildActiveRuntimeScope(project, activeDeviceIds, activeDeviceNames, activeTagIds, activeTagPaths);
+            HashSet<string> activeDeviceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> activeTagKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            BuildActiveRuntimeScope(project, activeDeviceKeys, activeTagKeys);
 
-            status.Devices = FilterRuntimeDevices(status.Devices, activeDeviceIds, activeDeviceNames);
-            status.Tags = FilterRuntimeTags(status.Tags, activeTagIds, activeTagPaths);
-            status.RecentErrors = FilterRuntimeErrors(status.RecentErrors, activeDeviceNames);
+            status.Devices = FilterRuntimeDevices(status.Devices, activeDeviceKeys);
+            status.Tags = FilterRuntimeTags(status.Tags, activeTagKeys);
+            status.RecentErrors = FilterRuntimeErrors(status.RecentErrors, activeDeviceKeys);
         }
 
         private static void BuildActiveRuntimeScope(
             ProjectConfig? project,
-            HashSet<string> deviceIds,
-            HashSet<string> deviceNames,
-            HashSet<string> tagIds,
-            HashSet<string> tagPaths)
+            HashSet<string> deviceKeys,
+            HashSet<string> tagKeys)
         {
             if (project == null || project.Devices == null)
                 return;
@@ -2013,15 +2098,14 @@ namespace IPC.Gateway.Core.Gateway
                 if (device == null)
                     continue;
 
-                AddIfNotEmpty(deviceIds, device.Id);
-                AddIfNotEmpty(deviceNames, device.Name);
-                AddActiveTagScope(device, null, device.Tags, tagIds, tagPaths);
+                AddIfNotEmpty(deviceKeys, BuildDeviceIdentity(device.ChannelId, device.Id));
+                AddActiveTagScope(device, null, device.Tags, tagKeys);
 
                 if (device.Groups == null)
                     continue;
 
                 for (int g = 0; g < device.Groups.Count; g++)
-                    AddActiveTagScope(device, device.Groups[g], device.Groups[g]?.Tags, tagIds, tagPaths);
+                    AddActiveTagScope(device, device.Groups[g], device.Groups[g]?.Tags, tagKeys);
             }
         }
 
@@ -2029,8 +2113,7 @@ namespace IPC.Gateway.Core.Gateway
             DeviceConfig device,
             GroupConfig? group,
             IList<TagConfig>? tags,
-            HashSet<string> tagIds,
-            HashSet<string> tagPaths)
+            HashSet<string> tagKeys)
         {
             if (device == null || tags == null)
                 return;
@@ -2041,78 +2124,77 @@ namespace IPC.Gateway.Core.Gateway
                 if (tag == null)
                     continue;
 
-                AddIfNotEmpty(tagIds, tag.Id);
-                AddIfNotEmpty(tagPaths, TagPath.Build(device.Name, group == null ? string.Empty : group.Name, tag.Name));
-                AddIfNotEmpty(tagPaths, TagPath.Build(device.Id, group == null ? string.Empty : group.Id, tag.Name));
+                AddIfNotEmpty(tagKeys, TagPath.BuildIdentity(
+                    device.ChannelId,
+                    device.Id,
+                    group == null ? string.Empty : group.Id,
+                    tag.Id));
             }
         }
 
         private static IList<DeviceRuntimeStatus> FilterRuntimeDevices(
             IList<DeviceRuntimeStatus>? devices,
-            HashSet<string> activeDeviceIds,
-            HashSet<string> activeDeviceNames)
+            HashSet<string> activeDeviceKeys)
         {
-            if (devices == null || devices.Count == 0 || (activeDeviceIds.Count == 0 && activeDeviceNames.Count == 0))
+            if (devices == null || devices.Count == 0 || activeDeviceKeys.Count == 0)
                 return new List<DeviceRuntimeStatus>();
 
             return devices
                 .Where(device => device != null &&
-                    IsActiveRuntimeDevice(device, activeDeviceIds, activeDeviceNames))
+                    IsActiveRuntimeDevice(device, activeDeviceKeys))
                 .ToList();
         }
 
         private static IList<TagValueSnapshot> FilterRuntimeTags(
             IList<TagValueSnapshot>? tags,
-            HashSet<string> activeTagIds,
-            HashSet<string> activeTagPaths)
+            HashSet<string> activeTagKeys)
         {
-            if (tags == null || tags.Count == 0 || (activeTagIds.Count == 0 && activeTagPaths.Count == 0))
+            if (tags == null || tags.Count == 0 || activeTagKeys.Count == 0)
                 return new List<TagValueSnapshot>();
 
             return tags
                 .Where(tag => tag != null &&
-                    IsActiveRuntimeTag(tag, activeTagIds, activeTagPaths))
+                    IsActiveRuntimeTag(tag, activeTagKeys))
                 .ToList();
         }
 
         private static bool IsActiveRuntimeDevice(
             DeviceRuntimeStatus device,
-            HashSet<string> activeDeviceIds,
-            HashSet<string> activeDeviceNames)
+            HashSet<string> activeDeviceKeys)
         {
             if (device == null)
                 return false;
-            if (!string.IsNullOrWhiteSpace(device.DeviceId))
-                return activeDeviceIds.Contains(device.DeviceId);
-            return activeDeviceNames.Contains(device.DeviceName ?? string.Empty);
+            return activeDeviceKeys.Contains(BuildDeviceIdentity(device.ChannelId, device.DeviceId));
         }
 
         private static bool IsActiveRuntimeTag(
             TagValueSnapshot tag,
-            HashSet<string> activeTagIds,
-            HashSet<string> activeTagPaths)
+            HashSet<string> activeTagKeys)
         {
             if (tag == null)
                 return false;
-            if (!string.IsNullOrWhiteSpace(tag.TagId))
-                return activeTagIds.Contains(tag.TagId);
-            return activeTagPaths.Contains(TagPath.Build(tag.DeviceName, tag.GroupName, tag.TagName)) ||
-                   activeTagPaths.Contains(TagPath.Build(tag.DeviceId, tag.GroupId, tag.TagName));
+            return activeTagKeys.Contains(TagPath.BuildIdentity(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId));
         }
 
         private static IList<RuntimeErrorDetail> FilterRuntimeErrors(
             IList<RuntimeErrorDetail>? errors,
-            HashSet<string> activeDeviceNames)
+            HashSet<string> activeDeviceKeys)
         {
             if (errors == null || errors.Count == 0)
                 return new List<RuntimeErrorDetail>();
-            if (activeDeviceNames.Count == 0)
-                return errors.Where(error => error != null && string.IsNullOrWhiteSpace(error.DeviceName)).ToList();
+            if (activeDeviceKeys.Count == 0)
+                return errors.Where(error => error != null && string.IsNullOrWhiteSpace(error.DeviceId)).ToList();
 
             return errors
                 .Where(error => error != null &&
-                    (string.IsNullOrWhiteSpace(error.DeviceName) || activeDeviceNames.Contains(error.DeviceName)))
+                    (string.IsNullOrWhiteSpace(error.DeviceId) ||
+                     activeDeviceKeys.Contains(BuildDeviceIdentity(error.ChannelId, error.DeviceId))))
                 .ToList();
+        }
+
+        private static string BuildDeviceIdentity(string channelId, string deviceId)
+        {
+            return TagPath.Normalize(channelId) + "/" + TagPath.Normalize(deviceId);
         }
 
         private static void AddIfNotEmpty(HashSet<string> values, string value)

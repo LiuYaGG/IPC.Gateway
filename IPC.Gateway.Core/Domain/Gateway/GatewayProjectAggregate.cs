@@ -260,6 +260,12 @@ public sealed class GatewayProjectAggregate
         if (input == null)
             throw new ArgumentNullException(nameof(input));
 
+        if (input.Enabled &&
+            !string.Equals(input.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase))
+        {
+            FlowRuleGraphValidator.ValidateOrThrow(input);
+        }
+
         if (string.IsNullOrWhiteSpace(input.Id))
             input.Id = Guid.NewGuid().ToString("N");
         if (input.Version <= 0)
@@ -281,6 +287,12 @@ public sealed class GatewayProjectAggregate
     {
         if (input == null)
             throw new ArgumentNullException(nameof(input));
+
+        if (input.Enabled &&
+            !string.Equals(input.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase))
+        {
+            FlowRuleGraphValidator.ValidateOrThrow(input);
+        }
 
         FlowRuleDefinition rule = Require(FindFlowRule(ruleId), "Flow rule was not found.");
         string previousCompiledRuleId = rule.CompiledRuleId;

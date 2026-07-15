@@ -226,11 +226,13 @@ public sealed class SqlSugarRuntimeStateRepository
 
     private static GatewayRuntimeDeviceStatusEntity ToDeviceEntity(string projectId, DeviceRuntimeStatus status, DateTime updatedUtc)
     {
-        string deviceKey = BuildDeviceKey(status.DeviceId, status.DeviceName);
+        string deviceKey = BuildDeviceKey(status.ChannelId, status.DeviceId);
         return new GatewayRuntimeDeviceStatusEntity
         {
             Id = HashKey(projectId, "device", deviceKey),
             ProjectId = projectId,
+            ChannelId = status.ChannelId ?? string.Empty,
+            ChannelName = status.ChannelName ?? string.Empty,
             DeviceId = status.DeviceId ?? string.Empty,
             DeviceName = status.DeviceName ?? string.Empty,
             Protocol = status.Protocol ?? string.Empty,
@@ -258,6 +260,8 @@ public sealed class SqlSugarRuntimeStateRepository
         {
             Id = HashKey(projectId, "tag", tagKey),
             ProjectId = projectId,
+            ChannelId = snapshot.ChannelId ?? string.Empty,
+            ChannelName = snapshot.ChannelName ?? string.Empty,
             DeviceId = snapshot.DeviceId ?? string.Empty,
             DeviceName = snapshot.DeviceName ?? string.Empty,
             GroupId = snapshot.GroupId ?? string.Empty,
@@ -285,11 +289,16 @@ public sealed class SqlSugarRuntimeStateRepository
         DateTime timestampUtc = ToUtc(error.Timestamp);
         return new GatewayRuntimeErrorEntity
         {
-            Id = HashKey(projectId, "error", error.Category, error.DeviceName, error.GroupName, error.TagName, error.Message, timestampUtc.Ticks.ToString()),
+            Id = HashKey(projectId, "error", error.Category, error.ChannelId, error.DeviceId, error.GroupId, error.TagId, error.Message, timestampUtc.Ticks.ToString()),
             ProjectId = projectId,
             Category = error.Category ?? string.Empty,
+            ChannelId = error.ChannelId ?? string.Empty,
+            ChannelName = error.ChannelName ?? string.Empty,
+            DeviceId = error.DeviceId ?? string.Empty,
             DeviceName = error.DeviceName ?? string.Empty,
+            GroupId = error.GroupId ?? string.Empty,
             GroupName = error.GroupName ?? string.Empty,
+            TagId = error.TagId ?? string.Empty,
             TagName = error.TagName ?? string.Empty,
             Message = error.Message ?? string.Empty,
             Suggestion = error.Suggestion ?? string.Empty,
@@ -303,6 +312,8 @@ public sealed class SqlSugarRuntimeStateRepository
     {
         return new DeviceRuntimeStatus
         {
+            ChannelId = entity.ChannelId ?? string.Empty,
+            ChannelName = entity.ChannelName ?? string.Empty,
             DeviceId = entity.DeviceId ?? string.Empty,
             DeviceName = entity.DeviceName ?? string.Empty,
             Protocol = entity.Protocol ?? string.Empty,
@@ -332,6 +343,8 @@ public sealed class SqlSugarRuntimeStateRepository
         string valueText = entity.ValueText ?? string.Empty;
         return new TagValueSnapshot
         {
+            ChannelId = entity.ChannelId ?? string.Empty,
+            ChannelName = entity.ChannelName ?? string.Empty,
             DeviceId = entity.DeviceId ?? string.Empty,
             GroupId = entity.GroupId ?? string.Empty,
             TagId = entity.TagId ?? string.Empty,
@@ -360,8 +373,13 @@ public sealed class SqlSugarRuntimeStateRepository
         return new RuntimeErrorDetail
         {
             Category = entity.Category ?? string.Empty,
+            ChannelId = entity.ChannelId ?? string.Empty,
+            ChannelName = entity.ChannelName ?? string.Empty,
+            DeviceId = entity.DeviceId ?? string.Empty,
             DeviceName = entity.DeviceName ?? string.Empty,
+            GroupId = entity.GroupId ?? string.Empty,
             GroupName = entity.GroupName ?? string.Empty,
+            TagId = entity.TagId ?? string.Empty,
             TagName = entity.TagName ?? string.Empty,
             Message = entity.Message ?? string.Empty,
             Suggestion = entity.Suggestion ?? string.Empty,
@@ -375,16 +393,18 @@ public sealed class SqlSugarRuntimeStateRepository
         return string.IsNullOrWhiteSpace(projectId) ? "default" : projectId.Trim();
     }
 
-    private static string BuildDeviceKey(string deviceId, string deviceName)
+    private static string BuildDeviceKey(string channelId, string deviceId)
     {
-        return string.IsNullOrWhiteSpace(deviceId) ? deviceName ?? string.Empty : deviceId;
+        return string.Join("/", channelId ?? string.Empty, deviceId ?? string.Empty);
     }
 
     private static string BuildTagKey(TagValueSnapshot snapshot)
     {
-        if (!string.IsNullOrWhiteSpace(snapshot.TagId))
-            return snapshot.TagId;
-        return string.Join("|", snapshot.DeviceName ?? string.Empty, snapshot.GroupName ?? string.Empty, snapshot.TagName ?? string.Empty);
+        return string.Join("/",
+            snapshot.ChannelId ?? string.Empty,
+            snapshot.DeviceId ?? string.Empty,
+            snapshot.GroupId ?? string.Empty,
+            snapshot.TagId ?? string.Empty);
     }
 
     private static string HashKey(params string[] parts)

@@ -33,6 +33,8 @@ namespace IPC.Runtime.Values
     {
         public DeviceRuntimeStatus()
         {
+            ChannelId = string.Empty;
+            ChannelName = string.Empty;
             DeviceId = string.Empty;
             DeviceName = string.Empty;
             Protocol = string.Empty;
@@ -47,6 +49,8 @@ namespace IPC.Runtime.Values
             ProtocolCircuitBreaker = new CircuitBreakerStatus { Name = "ProtocolDriver", Enabled = true };
         }
 
+        public string ChannelId { get; set; }
+        public string ChannelName { get; set; }
         public string DeviceId { get; set; }
         public string DeviceName { get; set; }
         public string Protocol { get; set; }

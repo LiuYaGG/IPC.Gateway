@@ -16,6 +16,8 @@ namespace IPC.Runtime.Engine
         private Thread? _thread;
         private bool _stopping;
         private int _activeDispatches;
+        private long _droppedCount;
+        private int _maxObservedPendingCount;
         private bool _disposed;
 
         public TagValueChangedWorker(string threadName, int queueLimit, Action<TagValueSnapshot> handler, Action<Exception>? errorHandler = null)
@@ -32,6 +34,24 @@ namespace IPC.Runtime.Engine
             {
                 lock (_syncRoot)
                     return _queue.Count;
+            }
+        }
+
+        public long DroppedCount
+        {
+            get
+            {
+                lock (_syncRoot)
+                    return _droppedCount;
+            }
+        }
+
+        public int MaxObservedPendingCount
+        {
+            get
+            {
+                lock (_syncRoot)
+                    return _maxObservedPendingCount;
             }
         }
 
@@ -62,9 +82,14 @@ namespace IPC.Runtime.Engine
                     return;
 
                 if (_queue.Count >= _queueLimit)
+                {
                     _queue.Dequeue();
+                    _droppedCount++;
+                }
 
                 _queue.Enqueue(clone);
+                if (_queue.Count > _maxObservedPendingCount)
+                    _maxObservedPendingCount = _queue.Count;
                 Monitor.Pulse(_syncRoot);
             }
         }

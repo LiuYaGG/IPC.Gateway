@@ -16,6 +16,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         public Func<ModbusArea, string> GetTypeName { get; set; }
         public int MaxReadBits { get; set; }
         public int MaxReadRegisters { get; set; }
+        public int MaxGapPoints { get; set; }
     }
 
     internal static class ModbusBatchReadExecutor
@@ -103,7 +104,7 @@ namespace IPC.Plc.Communication.ModbusTcp
                 {
                     BatchReadItem next = items[index];
                     int mergedEnd = Math.Max(segmentEnd, next.EndAddress);
-                    bool contiguousOrOverlapping = next.StartAddress <= segmentEnd + 1;
+                    bool contiguousOrOverlapping = next.StartAddress <= segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
                     bool withinLimit = mergedEnd - segmentStart + 1 <= maxPoints;
                     if (!contiguousOrOverlapping || !withinLimit)
                         break;
@@ -145,17 +146,21 @@ namespace IPC.Plc.Communication.ModbusTcp
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
+                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(failureScope))
                     throw;
-                if (!communicationError && endIndex - startIndex > 1)
+                if (failureScope == PlcReadFailureScope.Device)
+                    throw new PlcProtocolException(failureScope, ex.Message, innerException: ex);
+                if (failureScope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
                     return;
                 }
 
                 for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
+                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, failureScope);
             }
         }
 

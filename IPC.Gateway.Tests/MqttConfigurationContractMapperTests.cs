@@ -58,6 +58,22 @@ public sealed class MqttConfigurationContractMapperTests
         Assert.Equal("certs/ca.pem", options.CaCertificatePath);
     }
 
+    [Fact]
+    public void RoundTrip_PreservesSparkplugCommandAndPrimaryHostSettings()
+    {
+        MqttGatewayOptions source = new()
+        {
+            SparkplugEnableCommands = false,
+            SparkplugPrimaryHostId = "Primary-Host-01"
+        };
+
+        MqttGatewayOptions restored = GatewayConfigurationContractMapper.ToConfig(
+            GatewayConfigurationContractMapper.ToDto(source));
+
+        Assert.False(restored.SparkplugEnableCommands);
+        Assert.Equal("Primary-Host-01", restored.SparkplugPrimaryHostId);
+    }
+
     private static MqttGatewayOptions CreateTlsOptions()
     {
         return new MqttGatewayOptions

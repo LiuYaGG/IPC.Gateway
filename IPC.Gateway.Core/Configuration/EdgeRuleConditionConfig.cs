@@ -33,6 +33,11 @@ namespace IPC.Runtime.Configuration
         public EdgeRuleConditionConfig()
         {
             Id = Guid.NewGuid().ToString("N");
+            SourceChannelId = string.Empty;
+            SourceChannelName = string.Empty;
+            SourceDeviceId = string.Empty;
+            SourceGroupId = string.Empty;
+            SourceTagId = string.Empty;
             SourcePointCode = string.Empty;
             SourceDeviceName = string.Empty;
             SourceGroupName = string.Empty;
@@ -47,6 +52,11 @@ namespace IPC.Runtime.Configuration
         }
 
         public string Id { get; set; }
+        public string SourceChannelId { get; set; }
+        public string SourceChannelName { get; set; }
+        public string SourceDeviceId { get; set; }
+        public string SourceGroupId { get; set; }
+        public string SourceTagId { get; set; }
         public string SourcePointCode { get; set; }
         public string SourceDeviceName { get; set; }
         public string SourceGroupName { get; set; }

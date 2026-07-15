@@ -4,7 +4,7 @@ namespace IPC.Plc.Communication.ModbusTcp;
 
 /// <summary>
 /// Keeps the gateway's Modbus limits and byte representation independent from
-/// the NModbus transport used by TCP and RTU drivers.
+/// the NModbus transport used by TCP, RTU and ASCII drivers.
 /// </summary>
 public sealed class NModbusMasterAdapter : IDisposable
 {
@@ -15,18 +15,49 @@ public sealed class NModbusMasterAdapter : IDisposable
 
     private readonly IModbusMaster _master;
     private readonly byte _unitId;
-    private readonly SemaphoreSlim _operationLock = new(1, 1);
+    private readonly SemaphoreSlim _operationLock;
+    private readonly bool _ownsMaster;
+    private readonly bool _ownsOperationLock;
     private bool _disposed;
 
     public NModbusMasterAdapter(IModbusMaster master, byte unitId, int timeoutMilliseconds)
+        : this(master, unitId, timeoutMilliseconds, new SemaphoreSlim(1, 1), true, true)
+    {
+    }
+
+    private NModbusMasterAdapter(
+        IModbusMaster master,
+        byte unitId,
+        int timeoutMilliseconds,
+        SemaphoreSlim operationLock,
+        bool ownsMaster,
+        bool ownsOperationLock)
     {
         _master = master ?? throw new ArgumentNullException(nameof(master));
         _unitId = unitId;
+        _operationLock = operationLock ?? throw new ArgumentNullException(nameof(operationLock));
+        _ownsMaster = ownsMaster;
+        _ownsOperationLock = ownsOperationLock;
 
         int timeout = timeoutMilliseconds > 0 ? timeoutMilliseconds : 3000;
         _master.Transport.ReadTimeout = timeout;
         _master.Transport.WriteTimeout = timeout;
         _master.Transport.Retries = 0;
+    }
+
+    public static NModbusMasterAdapter CreateShared(
+        IModbusMaster master,
+        byte unitId,
+        int timeoutMilliseconds,
+        SemaphoreSlim operationLock)
+    {
+        return new NModbusMasterAdapter(
+            master,
+            unitId,
+            timeoutMilliseconds,
+            operationLock,
+            false,
+            false);
     }
 
     public bool[] ReadBits(bool discreteInputs, int startAddress, int count)
@@ -267,8 +298,10 @@ public sealed class NModbusMasterAdapter : IDisposable
             return;
 
         _disposed = true;
-        _master.Dispose();
-        _operationLock.Dispose();
+        if (_ownsMaster)
+            _master.Dispose();
+        if (_ownsOperationLock)
+            _operationLock.Dispose();
     }
 
     private void WriteRegisterSegments(int startAddress, ushort[] values)

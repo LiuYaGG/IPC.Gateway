@@ -60,6 +60,26 @@ public sealed class SparkplugTopicBuilder
         return Build("DDEATH", deviceId);
     }
 
+    public string NodeCommand()
+    {
+        return Build("NCMD", string.Empty);
+    }
+
+    public string DeviceCommand(string deviceId)
+    {
+        return Build("DCMD", deviceId);
+    }
+
+    public string DeviceCommandFilter()
+    {
+        return Build("DCMD", string.Empty) + "/+";
+    }
+
+    public string PrimaryHostState(string primaryHostId)
+    {
+        return Namespace + "/STATE/" + Normalize(primaryHostId, "PrimaryHost");
+    }
+
     private string Build(string messageType, string deviceId)
     {
         string topic = Namespace + "/" + GroupId + "/" + Normalize(messageType, "NDATA") + "/" + EdgeNodeId;

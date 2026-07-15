@@ -31,7 +31,7 @@ const emit = defineEmits<{
 const visibleErrors = computed(() => props.errors.slice(0, 8))
 
 function errorKey(error: RuntimeErrorDetail) {
-  return `${error.timestamp}-${error.category}-${error.deviceName}-${error.tagName}-${error.message}`
+  return `${error.timestamp}-${error.category}-${error.channelId}-${error.deviceId}-${error.groupId}-${error.tagId}-${error.message}`
 }
 </script>
 

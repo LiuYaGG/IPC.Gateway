@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.IO.Ports;
 using System.Text;
+using System.Threading;
 using IPC.Gateway.LegacyProtocolPlugins;
 using IPC.Plc.Communication.Core;
 
@@ -12,7 +14,15 @@ namespace IPC.Plc.Communication.CanOpen
     {
         private readonly PlcConnectionOptions _options;
         private readonly int _canBitRate;
+        private readonly object _writeSync = new object();
+        private readonly ConcurrentDictionary<int, ConcurrentQueue<CanFrame>> _receivedFrames = new ConcurrentDictionary<int, ConcurrentQueue<CanFrame>>();
+        private readonly AutoResetEvent _frameReceived = new AutoResetEvent(false);
         private SerialPort _port;
+        private Thread _readerThread;
+        private volatile bool _readerRunning;
+        private Exception _readerFault;
+
+        public event Action<CanFrame> FrameReceived;
 
         public SlcanAdapter(PlcConnectionOptions options, int canBitRate)
         {
@@ -45,6 +55,7 @@ namespace IPC.Plc.Communication.CanOpen
             SendCommand("S" + MapBitRate(_canBitRate));
             SendCommand("O");
             DrainPendingFrames();
+            StartReader(_port);
         }
 
         public void Close()
@@ -54,6 +65,7 @@ namespace IPC.Plc.Communication.CanOpen
             if (port == null)
                 return;
 
+            _readerRunning = false;
             try
             {
                 if (port.IsOpen)
@@ -63,7 +75,14 @@ namespace IPC.Plc.Communication.CanOpen
             {
             }
 
+            try { port.Close(); } catch { }
+            _frameReceived.Set();
+            Thread reader = _readerThread;
+            _readerThread = null;
+            if (reader != null && reader.IsAlive && !ReferenceEquals(reader, Thread.CurrentThread))
+                reader.Join(1000);
             port.Dispose();
+            _receivedFrames.Clear();
         }
 
         public void SendFrame(CanFrame frame)
@@ -82,7 +101,8 @@ namespace IPC.Plc.Communication.CanOpen
             for (int i = 0; i < frame.Data.Length; i++)
                 builder.Append(frame.Data[i].ToString("X2", CultureInfo.InvariantCulture));
             builder.Append('\r');
-            _port.Write(builder.ToString());
+            lock (_writeSync)
+                _port.Write(builder.ToString());
         }
 
         public CanFrame ReceiveFrame(int expectedIdentifier)
@@ -90,23 +110,99 @@ namespace IPC.Plc.Communication.CanOpen
             if (!IsOpen)
                 Open();
 
-            while (true)
+            int timeout = _options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000;
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeout);
+            while (DateTime.UtcNow < deadline)
             {
-                string line = ReadFrameLine();
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                CanFrame frame;
-                if (!TryParseFrame(line, out frame))
-                    continue;
-                if (expectedIdentifier < 0 || frame.Identifier == expectedIdentifier)
+                if (TryDequeue(expectedIdentifier, out CanFrame frame))
                     return frame;
+                if (_readerFault != null)
+                    throw new IOException("SLCAN receive loop stopped.", _readerFault);
+                int remaining = Math.Max(1, (int)(deadline - DateTime.UtcNow).TotalMilliseconds);
+                _frameReceived.WaitOne(remaining);
+            }
+            throw new TimeoutException("SLCAN receive timed out.");
+        }
+
+        public void DiscardFrames(int identifier)
+        {
+            if (!_receivedFrames.TryGetValue(identifier, out ConcurrentQueue<CanFrame> queue))
+                return;
+            while (queue.TryDequeue(out _))
+            {
             }
         }
 
         public void Dispose()
         {
             Close();
+            _frameReceived.Dispose();
+        }
+
+        private void StartReader(SerialPort port)
+        {
+            _readerFault = null;
+            _readerRunning = true;
+            _readerThread = new Thread(() => ReaderLoop(port))
+            {
+                IsBackground = true,
+                Name = "CANopen-SLCAN-Receive"
+            };
+            _readerThread.Start();
+        }
+
+        private void ReaderLoop(SerialPort port)
+        {
+            while (_readerRunning)
+            {
+                try
+                {
+                    string line = port.ReadLine();
+                    if (!TryParseFrame(line, out CanFrame frame))
+                        continue;
+
+                    try { FrameReceived?.Invoke(frame); } catch { }
+                    if (frame.Identifier >= 0x580 && frame.Identifier <= 0x5FF)
+                    {
+                        ConcurrentQueue<CanFrame> queue = _receivedFrames.GetOrAdd(
+                            frame.Identifier,
+                            _ => new ConcurrentQueue<CanFrame>());
+                        queue.Enqueue(frame);
+                    }
+                    _frameReceived.Set();
+                }
+                catch (TimeoutException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    if (_readerRunning)
+                        _readerFault = ex;
+                    break;
+                }
+            }
+            _readerRunning = false;
+            _frameReceived.Set();
+        }
+
+        private bool TryDequeue(int expectedIdentifier, out CanFrame frame)
+        {
+            if (expectedIdentifier >= 0)
+            {
+                if (_receivedFrames.TryGetValue(expectedIdentifier, out ConcurrentQueue<CanFrame> queue) &&
+                    queue.TryDequeue(out frame))
+                    return true;
+                frame = default;
+                return false;
+            }
+
+            foreach (ConcurrentQueue<CanFrame> queue in _receivedFrames.Values)
+            {
+                if (queue.TryDequeue(out frame))
+                    return true;
+            }
+            frame = default;
+            return false;
         }
 
         private void SendCommand(string command)

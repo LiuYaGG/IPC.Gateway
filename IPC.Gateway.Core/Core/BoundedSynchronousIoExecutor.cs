@@ -6,13 +6,22 @@ using System.Threading.Tasks;
 
 namespace IPC.Plc.Communication.Core
 {
-    internal sealed class BoundedSynchronousIoExecutor : IDisposable
+    public sealed class BoundedSynchronousIoExecutor : IDisposable
     {
         private readonly BlockingCollection<IWorkItem> _queue;
         private readonly List<Thread> _workers;
         private int _disposed;
 
         public BoundedSynchronousIoExecutor(int workerCount, int capacity)
+            : this(workerCount, capacity, "PLC synchronous I/O", false)
+        {
+        }
+
+        public BoundedSynchronousIoExecutor(
+            int workerCount,
+            int capacity,
+            string workerName,
+            bool singleThreadedApartment)
         {
             if (workerCount <= 0)
                 throw new ArgumentOutOfRangeException(nameof(workerCount));
@@ -26,8 +35,10 @@ namespace IPC.Plc.Communication.Core
                 Thread worker = new Thread(WorkerLoop)
                 {
                     IsBackground = true,
-                    Name = "PLC synchronous I/O " + (index + 1)
+                    Name = (string.IsNullOrWhiteSpace(workerName) ? "PLC synchronous I/O" : workerName) + " " + (index + 1)
                 };
+                if (singleThreadedApartment && OperatingSystem.IsWindows())
+                    worker.SetApartmentState(ApartmentState.STA);
                 _workers.Add(worker);
                 worker.Start();
             }

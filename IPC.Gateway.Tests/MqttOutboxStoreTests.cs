@@ -200,7 +200,7 @@ public sealed class MqttOutboxStoreTests
             Assert.Equal(string.Empty, options.Username);
             Assert.Equal(string.Empty, options.Password);
             Assert.Equal("ipc/write/#", options.SubscribeTopic);
-            Assert.Equal("ipc/data/{device}/{group}/{tag}", options.PublishTopicTemplate);
+            Assert.Equal("ipc/data/{channel}/{device}/{group}/{tag}", options.PublishTopicTemplate);
             Assert.Equal("gateway/{gatewayId}/heartbeat", options.HeartbeatTopic);
             Assert.Equal("gateway/{gatewayId}/status", options.StatusTopic);
             Assert.Equal("gateway/{gatewayId}/reply/{requestId}", options.CommandReplyTopicTemplate);
@@ -213,7 +213,7 @@ public sealed class MqttOutboxStoreTests
             Assert.Equal(86400, options.PublishUnchangedHeartbeatSeconds);
             Assert.Equal("Classic", options.PublishMode);
             Assert.Equal("spBv1.0", options.SparkplugNamespace);
-            Assert.Equal("{group}/{tag}", options.SparkplugMetricNameTemplate);
+            Assert.Equal("{channel}/{group}/{tag}", options.SparkplugMetricNameTemplate);
         }
         finally
         {

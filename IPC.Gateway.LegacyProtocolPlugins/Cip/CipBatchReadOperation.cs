@@ -30,6 +30,7 @@ namespace IPC.Plc.Communication.Cip
         public PlcReadResult Result { get; private set; }
         public string ErrorMessage { get; private set; }
         public bool IsCommunicationError { get; private set; }
+        public PlcReadFailureScope FailureScope { get; private set; }
 
         public bool Success
         {
@@ -41,12 +42,21 @@ namespace IPC.Plc.Communication.Cip
             Result = result;
             ErrorMessage = string.Empty;
             IsCommunicationError = false;
+            FailureScope = PlcReadFailureScope.None;
         }
 
         public void SetFailure(string errorMessage, bool isCommunicationError)
         {
+            SetFailure(
+                errorMessage,
+                isCommunicationError ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+        }
+
+        public void SetFailure(string errorMessage, PlcReadFailureScope failureScope)
+        {
             ErrorMessage = errorMessage ?? string.Empty;
-            IsCommunicationError = isCommunicationError;
+            FailureScope = failureScope == PlcReadFailureScope.None ? PlcReadFailureScope.Tag : failureScope;
+            IsCommunicationError = PlcBatchReadResult.IsConnectionFailureScope(FailureScope);
         }
     }
 

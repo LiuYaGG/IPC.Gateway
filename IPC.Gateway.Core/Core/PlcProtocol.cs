@@ -20,6 +20,7 @@ namespace IPC.Plc.Communication.Core
     public enum PlcProtocol
     {
         RockwellCip,
+        RockwellPccc,
         SiemensS7,
         MitsubishiMc,
         MitsubishiMc1E,
@@ -35,6 +36,13 @@ namespace IPC.Plc.Communication.Core
         OpcUa,
         OpcDa,
         VirtualPlc,
-        Plugin
+        Plugin,
+        ModbusAscii,
+        BeckhoffAds,
+        Snmp,
+        MqttClient,
+        Dnp3,
+        EtherNetIp,
+        Cjt1882018
     }
 }

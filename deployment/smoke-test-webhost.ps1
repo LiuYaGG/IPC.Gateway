@@ -52,7 +52,7 @@ function Invoke-HttpJson {
     try {
         $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 10
     }
-    catch [Microsoft.PowerShell.Commands.HttpResponseException] {
+    catch {
         $response = $_.Exception.Response
     }
 
@@ -144,25 +144,39 @@ $startInfo.CreateNoWindow = $true
 $startInfo.RedirectStandardOutput = $false
 $startInfo.RedirectStandardError = $false
 $startInfo.RedirectStandardInput = $false
-$startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Production"
-$startInfo.Environment["DOTNET_ENVIRONMENT"] = "Production"
-$startInfo.Environment["ASPNETCORE_URLS"] = $Url
-$startInfo.Environment["Gateway__Database__Provider"] = "Sqlite"
-$startInfo.Environment["Gateway__Database__Database"] = $databasePath
-$startInfo.Environment["Gateway__Database__AutoCreateDatabase"] = "true"
-$startInfo.Environment["Gateway__Auth__Secret"] = $AuthSecret
-$startInfo.Environment["Gateway__Auth__BootstrapAdminUsername"] = $BootstrapAdminUsername
-$startInfo.Environment["Gateway__Auth__BootstrapAdminPassword"] = $BootstrapAdminPassword
-$startInfo.Environment["Gateway__History__Directory"] = $historyPath
-$startInfo.Environment["Gateway__Mqtt__OutboxDirectory"] = $outboxPath
-$startInfo.Environment["Gateway__StorageHealth__DegradedAvailableMegabytes"] = "1"
-$startInfo.Environment["Gateway__StorageHealth__UnhealthyAvailableMegabytes"] = "1"
+$environmentOverrides = [ordered]@{
+    "ASPNETCORE_ENVIRONMENT" = "Production"
+    "DOTNET_ENVIRONMENT" = "Production"
+    "ASPNETCORE_URLS" = $Url
+    "Gateway__Database__Provider" = "Sqlite"
+    "Gateway__Database__Database" = $databasePath
+    "Gateway__Database__ConnectionString" = "Data Source=$databasePath;Pooling=False"
+    "Gateway__Database__AutoCreateDatabase" = "true"
+    "Gateway__Auth__Secret" = $AuthSecret
+    "Gateway__Auth__BootstrapAdminUsername" = $BootstrapAdminUsername
+    "Gateway__Auth__BootstrapAdminPassword" = $BootstrapAdminPassword
+    "Gateway__History__Directory" = $historyPath
+    "Gateway__Mqtt__OutboxDirectory" = $outboxPath
+    "Gateway__StorageHealth__DegradedAvailableMegabytes" = "1"
+    "Gateway__StorageHealth__UnhealthyAvailableMegabytes" = "1"
+}
+$originalProcessEnvironment = @{}
 
 $process = [System.Diagnostics.Process]::new()
 $process.StartInfo = $startInfo
 $process.EnableRaisingEvents = $true
 
 try {
+    foreach ($entry in $environmentOverrides.GetEnumerator()) {
+        $originalProcessEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable(
+            $entry.Key,
+            [EnvironmentVariableTarget]::Process)
+        [Environment]::SetEnvironmentVariable(
+            $entry.Key,
+            [string]$entry.Value,
+            [EnvironmentVariableTarget]::Process)
+    }
+
     if (-not $process.Start()) {
         throw "Failed to start published WebHost."
     }
@@ -200,5 +214,12 @@ finally {
         }
         catch {
         }
+    }
+
+    foreach ($entry in $originalProcessEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable(
+            $entry.Key,
+            $entry.Value,
+            [EnvironmentVariableTarget]::Process)
     }
 }

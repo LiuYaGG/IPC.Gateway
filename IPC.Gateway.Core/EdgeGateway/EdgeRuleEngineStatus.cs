@@ -45,6 +45,12 @@ namespace IPC.EdgeGateway
         public long TriggeredCount { get; set; }
         public long ClearedCount { get; set; }
         public long FailedEvaluationCount { get; set; }
+        public long ActionFailureCount { get; set; }
+        public int PendingActionCount { get; set; }
+        public long DroppedActionCount { get; set; }
+        public int PendingInputEventCount { get; set; }
+        public int MaxObservedPendingInputEventCount { get; set; }
+        public long DroppedInputEventCount { get; set; }
         public DateTime LastEvaluationTime { get; set; }
         public DateTime LastEventTime { get; set; }
         public DateTime LastErrorTime { get; set; }

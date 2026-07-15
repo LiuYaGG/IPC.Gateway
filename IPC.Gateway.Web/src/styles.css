@@ -15,6 +15,37 @@
   position: sticky;
   top: 0;
   z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(170px, auto) minmax(300px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.flow-rules-status .rules-status__metrics,
+.flow-rules-status .rules-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.flow-rules-status .rules-status__metrics span {
+  white-space: nowrap;
+  color: #475569;
+}
+
+.flow-rules-status .rules-status__metrics .is-danger {
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.flow-rules-status .rules-status-actions {
+  justify-content: flex-end;
 }
 
 .flow-rule-table {
@@ -1187,7 +1218,44 @@ h2 {
 
 .connection-fields {
   display: grid;
-  gap: 2px;
+  gap: 12px;
+}
+
+.connection-parameter-section {
+  min-width: 0;
+}
+
+.connection-parameter-section__title {
+  margin: 2px 0 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e5eaed;
+  color: #34444d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connection-parameter--wide {
+  grid-column: 1 / -1;
+}
+
+.connection-parameter__control {
+  width: 100%;
+  min-width: 0;
+}
+
+.connection-parameter__help {
+  margin-top: 6px;
+  color: #75838b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.s7-compatibility-notice {
+  margin-top: 4px;
+}
+
+.protocol-compatibility-notice {
+  margin-top: 4px;
 }
 
 .drawer-footer {
@@ -1722,7 +1790,7 @@ h2 {
 
 .tag-selector__filters {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1735,7 +1803,7 @@ h2 {
 
 .tag-selector__summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2382,6 +2450,15 @@ h2 {
 }
 
 @media (max-width: 1180px) {
+  .flow-rules-status {
+    grid-template-columns: 1fr auto;
+  }
+
+  .flow-rules-status .rules-status__metrics {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .flow-editor-shell {
     grid-template-columns: 1fr;
   }
@@ -2393,6 +2470,20 @@ h2 {
 }
 
 @media (max-width: 760px) {
+  .flow-rules-status {
+    position: static;
+    grid-template-columns: 1fr;
+  }
+
+  .flow-rules-status .rules-status__metrics {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .flow-rules-status .rules-status-actions {
+    justify-content: flex-start;
+  }
+
   .dashboard-hero,
   .dashboard-rings,
   .dashboard-live-metrics {

@@ -20,7 +20,7 @@ using System.Text;
 
 namespace IPC.Gateway.Mqtt.Sparkplug;
 
-public static class SparkplugPayloadEncoder
+public static partial class SparkplugPayloadEncoder
 {
     public static byte[] Encode(SparkplugPayload payload)
     {
@@ -34,6 +34,10 @@ public static class SparkplugPayloadEncoder
             WriteBytesField(stream, 2, metric);
         }
         WriteUInt64Field(stream, 3, payload.Sequence);
+        if (!string.IsNullOrWhiteSpace(payload.Uuid))
+            WriteStringField(stream, 4, payload.Uuid);
+        if (payload.Body.Length > 0)
+            WriteBytesField(stream, 5, payload.Body);
 
         return stream.ToArray();
     }
@@ -50,10 +54,16 @@ public static class SparkplugPayloadEncoder
 
         WriteUInt64Field(stream, 3, ToUnixMilliseconds(metric.Timestamp));
         WriteUInt64Field(stream, 4, (uint)metric.DataType);
+        if (metric.IsHistorical)
+            WriteBoolField(stream, 5, true);
+        if (metric.IsTransient)
+            WriteBoolField(stream, 6, true);
         if (metric.IsNull)
             WriteBoolField(stream, 7, true);
-        if (metric.Properties.Count > 0)
-            WriteBytesField(stream, 9, EncodePropertySet(metric.Properties));
+        if (metric.MetaData != null)
+            WriteBytesField(stream, 8, EncodeMetaData(metric.MetaData));
+        if (metric.Properties.Count > 0 || metric.TypedProperties.Values.Count > 0)
+            WriteBytesField(stream, 9, EncodeProperties(metric));
 
         if (!metric.IsNull)
             WriteMetricValue(stream, metric);
@@ -96,8 +106,23 @@ public static class SparkplugPayloadEncoder
             case SparkplugDataType.File:
                 WriteBytesField(stream, 16, value as byte[] ?? Array.Empty<byte>());
                 break;
+            case SparkplugDataType.DataSet:
+                WriteBytesField(stream, 17, EncodeDataSet(metric.DataSetValue ?? value as SparkplugDataSet ?? new SparkplugDataSet()));
+                break;
+            case SparkplugDataType.Template:
+                WriteBytesField(stream, 18, EncodeTemplate(metric.TemplateValue ?? value as SparkplugTemplate ?? new SparkplugTemplate()));
+                break;
+            case SparkplugDataType.PropertySet:
+                WriteBytesField(stream, 19, EncodePropertySet(value as SparkplugPropertySet ?? new SparkplugPropertySet()));
+                break;
+            case SparkplugDataType.PropertySetList:
+                WriteBytesField(stream, 20, EncodePropertySetList(value as SparkplugPropertySetList ?? new SparkplugPropertySetList()));
+                break;
             default:
-                WriteStringField(stream, 15, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+                if (IsArrayDataType(metric.DataType))
+                    WriteBytesField(stream, 17, EncodeArrayDataSet(metric.DataType, value));
+                else
+                    WriteStringField(stream, 15, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
                 break;
         }
     }

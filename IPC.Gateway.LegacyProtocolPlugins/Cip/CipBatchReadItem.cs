@@ -29,6 +29,9 @@ namespace IPC.Plc.Communication.Cip
             if (request.ElementOffset < 0)
                 throw new ArgumentOutOfRangeException("ElementOffset");
 
+            if (CipExplicitAddress.IsExplicit(request.Address))
+                return CreateExplicitItem(index, request, context);
+
             if (request.DataType == PlcDataType.BoolArray)
                 return CreatePackedBoolItem(index, request, context, false);
 
@@ -52,6 +55,9 @@ namespace IPC.Plc.Communication.Cip
             if (request.ElementOffset < 0)
                 throw new ArgumentOutOfRangeException("ElementOffset");
 
+            if (CipExplicitAddress.IsExplicit(request.Address))
+                return CreateExplicitItem(index, request, context);
+
             if (request.DataType == PlcDataType.BoolArray)
                 return CreatePackedBoolItem(index, request, context, false);
 
@@ -74,7 +80,7 @@ namespace IPC.Plc.Communication.Cip
             {
                 CipBatchReadOperation operation = Operations[i];
                 if (!operation.Success)
-                    return PlcBatchReadResult.FromFailure(Request, operation.ErrorMessage, operation.IsCommunicationError);
+                    return PlcBatchReadResult.FromFailure(Request, operation.ErrorMessage, operation.FailureScope);
             }
 
             try
@@ -113,6 +119,26 @@ namespace IPC.Plc.Communication.Cip
                 indexedBool ? CipBatchReadKind.IndexedBool : CipBatchReadKind.PackedBool,
                 firstBit);
             item.AddOperation(context, BuildArrayElementTagAlways(baseTag, firstWord), PlcDataType.Int32Array, wordCount);
+            return item;
+        }
+
+        private static CipBatchReadItem CreateExplicitItem(
+            int index,
+            PlcBatchReadRequest request,
+            CipBatchReadContext context)
+        {
+            CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.Direct, 0);
+            item.AddOperation(context, request.Address, request.DataType, request.ElementCount);
+            return item;
+        }
+
+        private static CipBatchReadItem CreateExplicitItem(
+            int index,
+            PlcBatchReadRequest request,
+            CipAsyncBatchReadContext context)
+        {
+            CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.Direct, 0);
+            item.AddOperation(context, request.Address, request.DataType, request.ElementCount);
             return item;
         }
 

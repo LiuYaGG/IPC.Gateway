@@ -140,7 +140,7 @@ public sealed class DeviceReloadOptimizationTests
             return status != null &&
                    status.IsConnected &&
                    status.SuccessfulReads > 0 &&
-                   engine.TryGetSnapshot("ReuseDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+                   TryGetSnapshot(engine, "ReuseDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
                    snapshot != null &&
                    snapshot.Quality == TagQuality.Good;
         }, TimeSpan.FromSeconds(3));
@@ -259,7 +259,7 @@ public sealed class DeviceReloadOptimizationTests
         DeviceRuntimeStatus disabledStatus = GetDeviceStatus(engine, "ToggleRuntimeDevice")!;
         Assert.Equal("Disabled", disabledStatus.Status);
         Assert.False(disabledStatus.IsConnected);
-        Assert.True(engine.TryGetSnapshot("ToggleRuntimeDevice", string.Empty, "TagA", out TagValueSnapshot? disabledSnapshot));
+        Assert.True(TryGetSnapshot(engine, "ToggleRuntimeDevice", string.Empty, "TagA", out TagValueSnapshot? disabledSnapshot));
         Assert.NotNull(disabledSnapshot);
         Assert.Equal(TagQuality.Disabled, disabledSnapshot!.Quality);
 
@@ -290,17 +290,26 @@ public sealed class DeviceReloadOptimizationTests
                status.IsConnected &&
                status.Status == "Online" &&
                status.SuccessfulReads > 0 &&
-               engine.TryGetSnapshot(deviceName, string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+               TryGetSnapshot(engine, deviceName, string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
                snapshot != null &&
                snapshot.Quality == TagQuality.Good;
     }
 
     private static bool IsTagGood(RuntimeEngine engine, string deviceName, string tagName, string valueText)
     {
-        return engine.TryGetSnapshot(deviceName, string.Empty, tagName, out TagValueSnapshot? snapshot) &&
+        return TryGetSnapshot(engine, deviceName, string.Empty, tagName, out TagValueSnapshot? snapshot) &&
                snapshot != null &&
                snapshot.Quality == TagQuality.Good &&
                string.Equals(snapshot.ValueText, valueText, StringComparison.Ordinal);
+    }
+
+    private static bool TryGetSnapshot(RuntimeEngine engine, string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
+    {
+        snapshot = engine.GetSnapshots().FirstOrDefault(item =>
+            string.Equals(item.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.GroupName, groupName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.TagName, tagName, StringComparison.OrdinalIgnoreCase));
+        return snapshot != null;
     }
 
     private static void PutStateInError(DeviceRuntimeState state, string message)

@@ -3,7 +3,7 @@ import { distributeY } from './topologyLayout'
 export interface TopologyLaneSource {
   key: string
   deviceKey: string
-  protocol: string
+  channelKey: string
   tagCount: number
 }
 
@@ -11,13 +11,13 @@ export interface TopologyLanePlan {
   height: number
   groupY: Map<string, number>
   deviceY: Map<string, number>
-  protocolY: Map<string, number>
+  channelY: Map<string, number>
 }
 
-export function buildTopologyLanePlan(sources: TopologyLaneSource[], protocols: string[], showTagNodes: boolean): TopologyLanePlan {
+export function buildTopologyLanePlan(sources: TopologyLaneSource[], channels: string[], showTagNodes: boolean): TopologyLanePlan {
   const groupY = new Map<string, number>()
   const deviceBands = new Map<string, number[]>()
-  const protocolBands = new Map<string, number[]>()
+  const channelBands = new Map<string, number[]>()
   let cursor = 120
 
   for (const source of sources) {
@@ -27,7 +27,7 @@ export function buildTopologyLanePlan(sources: TopologyLaneSource[], protocols: 
     const y = Math.round(cursor + laneHeight / 2)
     groupY.set(source.key, y)
     addBand(deviceBands, source.deviceKey, y)
-    addBand(protocolBands, source.protocol, y)
+    addBand(channelBands, source.channelKey, y)
     cursor += laneHeight
   }
 
@@ -36,8 +36,8 @@ export function buildTopologyLanePlan(sources: TopologyLaneSource[], protocols: 
     height,
     groupY,
     deviceY: averageBands(deviceBands),
-    protocolY: protocols.length
-      ? averageProtocolBands(protocolBands, protocols, height)
+    channelY: channels.length
+      ? averageChannelBands(channelBands, channels, height)
       : new Map<string, number>()
   }
 }
@@ -56,11 +56,11 @@ function averageBands(map: Map<string, number[]>) {
   return result
 }
 
-function averageProtocolBands(map: Map<string, number[]>, protocols: string[], height: number) {
+function averageChannelBands(map: Map<string, number[]>, channels: string[], height: number) {
   const result = averageBands(map)
-  protocols.forEach((protocol, index) => {
-    if (!result.has(protocol)) {
-      result.set(protocol, distributeY(index, protocols.length, height))
+  channels.forEach((channel, index) => {
+    if (!result.has(channel)) {
+      result.set(channel, distributeY(index, channels.length, height))
     }
   })
   return result

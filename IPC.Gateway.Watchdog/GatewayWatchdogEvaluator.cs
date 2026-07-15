@@ -67,7 +67,8 @@ public sealed class GatewayWatchdogEvaluator
     private GatewayWatchdogCheckResult CheckScheduler(GatewayRuntimeStatusDto status, DateTime now)
     {
         long completed = status.Scheduler.TotalCompleted;
-        bool progressed = _lastSchedulerCompleted < 0 || completed > _lastSchedulerCompleted;
+        bool counterReset = _lastSchedulerCompleted >= 0 && completed < _lastSchedulerCompleted;
+        bool progressed = _lastSchedulerCompleted < 0 || completed > _lastSchedulerCompleted || counterReset;
         if (progressed)
         {
             _lastSchedulerCompleted = completed;

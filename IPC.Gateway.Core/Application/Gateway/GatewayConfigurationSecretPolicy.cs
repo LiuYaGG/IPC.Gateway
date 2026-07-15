@@ -53,6 +53,8 @@ internal static class GatewayConfigurationSecretPolicy
         {
             if (!string.IsNullOrEmpty(action.EmailPassword))
                 action.EmailPassword = RedactedSecret;
+            action.WebhookUrl = WebhookSecretProtector.SanitizeUrl(action.WebhookUrl);
+            action.WebhookHeaders = WebhookSecretProtector.SanitizeHeaders(action.WebhookHeaders);
         }
 
         return rule;
@@ -73,6 +75,8 @@ internal static class GatewayConfigurationSecretPolicy
         {
             if (!string.IsNullOrEmpty(node.EmailPassword))
                 node.EmailPassword = RedactedSecret;
+            node.WebhookUrl = WebhookSecretProtector.SanitizeUrl(node.WebhookUrl);
+            node.WebhookHeaders = WebhookSecretProtector.SanitizeHeaders(node.WebhookHeaders);
         }
 
         return rule;
@@ -176,11 +180,11 @@ internal static class GatewayConfigurationSecretPolicy
         rule.Actions ??= new List<EdgeRuleActionDto>();
         foreach (EdgeRuleActionDto action in rule.Actions)
         {
-            if (!IsRedactedSecret(action.EmailPassword))
-                continue;
-
             EdgeRuleActionDto? currentAction = FindAction(current?.Actions, action);
-            action.EmailPassword = currentAction?.EmailPassword ?? string.Empty;
+            if (IsRedactedSecret(action.EmailPassword))
+                action.EmailPassword = currentAction?.EmailPassword ?? string.Empty;
+            action.WebhookUrl = WebhookSecretProtector.PreserveUrl(action.WebhookUrl, currentAction?.WebhookUrl);
+            action.WebhookHeaders = WebhookSecretProtector.PreserveHeaders(action.WebhookHeaders, currentAction?.WebhookHeaders);
         }
     }
 
@@ -189,11 +193,11 @@ internal static class GatewayConfigurationSecretPolicy
         rule.Nodes ??= new List<FlowRuleNodeDto>();
         foreach (FlowRuleNodeDto node in rule.Nodes)
         {
-            if (!IsRedactedSecret(node.EmailPassword))
-                continue;
-
             FlowRuleNodeDto? currentNode = FindNode(current?.Nodes, node);
-            node.EmailPassword = currentNode?.EmailPassword ?? string.Empty;
+            if (IsRedactedSecret(node.EmailPassword))
+                node.EmailPassword = currentNode?.EmailPassword ?? string.Empty;
+            node.WebhookUrl = WebhookSecretProtector.PreserveUrl(node.WebhookUrl, currentNode?.WebhookUrl);
+            node.WebhookHeaders = WebhookSecretProtector.PreserveHeaders(node.WebhookHeaders, currentNode?.WebhookHeaders);
         }
     }
 

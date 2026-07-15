@@ -229,10 +229,11 @@ namespace IPC.Plc.Communication.OmronFins
             if (text == null)
                 text = string.Empty;
 
-            byte[] result = new byte[DefaultStringBytes];
             byte[] bytes = Encoding.ASCII.GetBytes(text);
-            int length = Math.Min(bytes.Length, result.Length);
-            Buffer.BlockCopy(bytes, 0, result, 0, length);
+            int byteCountWithTerminator = checked(bytes.Length + 1);
+            int paddedLength = (byteCountWithTerminator + 1) & ~1;
+            byte[] result = new byte[paddedLength];
+            Buffer.BlockCopy(bytes, 0, result, 0, bytes.Length);
             return result;
         }
 

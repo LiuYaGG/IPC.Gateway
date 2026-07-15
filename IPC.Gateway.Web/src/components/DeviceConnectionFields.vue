@@ -1,48 +1,99 @@
 <template>
   <div class="connection-fields">
     <template v-if="connectionParameters.length">
-      <div class="form-grid">
-        <el-form-item
-          v-for="(parameter, parameterIndex) in connectionParameters"
-          :key="parameter.key"
-          :label="parameter.label || parameter.key"
-          :required="parameter.required"
-        >
-          <el-input-number
-            v-if="parameterType(parameter) === 'number'"
-            :model-value="numberParameterValue(parameter)"
-            :min="parameter.min ?? undefined"
-            :max="parameter.max ?? undefined"
-            :disabled="parameter.readOnly"
-            @update:model-value="updateNumberParameter(parameter, $event)"
-          />
-          <el-select
-            v-else-if="parameterType(parameter) === 'select'"
-            :model-value="textParameterValue(parameter)"
-            :disabled="parameter.readOnly"
-            @update:model-value="updateTextParameter(parameter, $event)"
+      <section
+        v-for="(parameterGroup, groupIndex) in connectionParameterGroups"
+        :key="parameterGroup.name || `default-${groupIndex}`"
+        class="connection-parameter-section"
+      >
+        <div v-if="parameterGroup.name" class="connection-parameter-section__title">
+          {{ parameterGroup.name }}
+        </div>
+        <div class="form-grid">
+          <el-form-item
+            v-for="(parameter, parameterIndex) in parameterGroup.parameters"
+            :key="parameter.key"
+            :label="parameter.label || parameter.key"
+            :required="parameter.required"
+            :class="{ 'connection-parameter--wide': parameterType(parameter) === 'textarea' }"
           >
-            <el-option v-for="item in parameter.options" :key="item" :label="item" :value="item" />
-          </el-select>
-          <el-switch
-            v-else-if="parameterType(parameter) === 'switch'"
-            :model-value="switchParameterValue(parameter)"
-            :disabled="parameter.readOnly"
-            @update:model-value="updateSwitchParameter(parameter, $event)"
-          />
-          <el-input
-            v-else
-            :model-value="textParameterValue(parameter)"
-            :type="parameterType(parameter) === 'password' ? 'password' : parameterType(parameter) === 'textarea' ? 'textarea' : 'text'"
-            :placeholder="parameter.placeholder"
-            :disabled="parameter.readOnly"
-            :show-password="parameterType(parameter) === 'password'"
-            :name="connectionInputName(parameterIndex)"
-            :autocomplete="connectionInputAutocomplete(parameter)"
-            @update:model-value="updateTextParameter(parameter, $event)"
-          />
-        </el-form-item>
-      </div>
+            <div class="connection-parameter__control">
+              <el-input-number
+                v-if="parameterType(parameter) === 'number'"
+                :model-value="numberParameterValue(parameter)"
+                :min="parameter.min ?? undefined"
+                :max="parameter.max ?? undefined"
+                :disabled="parameter.readOnly"
+                @update:model-value="updateNumberParameter(parameter, $event)"
+              />
+              <el-select
+                v-else-if="parameterType(parameter) === 'select'"
+                :model-value="textParameterValue(parameter)"
+                :disabled="parameter.readOnly"
+                @update:model-value="updateTextParameter(parameter, $event)"
+              >
+                <el-option v-for="item in parameter.options" :key="item" :label="item" :value="item" />
+              </el-select>
+              <el-switch
+                v-else-if="parameterType(parameter) === 'switch'"
+                :model-value="switchParameterValue(parameter)"
+                :disabled="parameter.readOnly"
+                @update:model-value="updateSwitchParameter(parameter, $event)"
+              />
+              <el-input
+                v-else
+                :model-value="textParameterValue(parameter)"
+                :type="parameterType(parameter) === 'password' ? 'password' : parameterType(parameter) === 'textarea' ? 'textarea' : 'text'"
+                :rows="parameterType(parameter) === 'textarea' ? 2 : undefined"
+                :placeholder="parameter.placeholder"
+                :disabled="parameter.readOnly"
+                :show-password="parameterType(parameter) === 'password'"
+                :name="connectionInputName(groupIndex * 100 + parameterIndex)"
+                :autocomplete="connectionInputAutocomplete(parameter)"
+                @update:model-value="updateTextParameter(parameter, $event)"
+              />
+              <div v-if="parameter.helpText" class="connection-parameter__help">
+                {{ parameter.helpText }}
+              </div>
+            </div>
+          </el-form-item>
+        </div>
+      </section>
+      <el-alert
+        v-if="protocol === 'SiemensS7'"
+        class="s7-compatibility-notice"
+        title="经典 S7 兼容说明"
+        description="支持 DB、M、I/Q、E/A、V 区绝对地址。S7-1200/1500 需要允许 PUT/GET，并将目标 DB 设为非优化访问；优化 DB、符号变量或安全通信请使用 OPC UA。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-if="protocol === 'EtherNetIp' && etherNetIpIoMode === 'implicit'"
+        class="protocol-compatibility-notice"
+        title="Class 1 周期 I/O 地址"
+        description="输入标签使用 Input:字节偏移[.位]，输出标签使用 Output:字节偏移[.位]。装配实例、数据长度、RPI 与实时格式必须和目标设备的 EDS/手册一致。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-if="protocol === 'CanOpen'"
+        class="protocol-compatibility-notice"
+        title="CANopen 服务地址"
+        description="支持 SDO、TPDO/RPDO、Heartbeat、EMCY、NMT、SYNC 和 TIME；PDO 字节布局需要与设备对象字典及映射参数保持一致。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-if="protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018'"
+        class="protocol-compatibility-notice"
+        title="表地址、数据标识、表类型在标签配置中维护。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
     </template>
 
     <template v-else-if="protocol === 'VirtualPlc'">
@@ -130,6 +181,14 @@
           placeholder='例如：{"sourceNode":1,"destinationNode":10,"network":0}'
         />
       </el-form-item>
+      <el-alert
+        v-if="protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018'"
+        class="protocol-compatibility-notice"
+        title="当前表计驱动使用串口服务器 TCP 透明传输；表地址、数据标识、表类型在标签配置中维护。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
     </template>
 
     <template v-else-if="isSerialProtocol(protocol)">
@@ -158,7 +217,7 @@
         </el-form-item>
       </div>
 
-      <div v-if="['ModbusRtu', 'MitsubishiSerial', 'MitsubishiQlSerial'].includes(protocol)" class="form-grid">
+      <div v-if="['ModbusRtu', 'ModbusAscii', 'MitsubishiSerial', 'MitsubishiQlSerial'].includes(protocol)" class="form-grid">
         <el-form-item label="字序">
           <el-select v-model="device.connection.wordOrder">
             <el-option v-for="item in wordOrderOptions" :key="item" :label="item" :value="item" />
@@ -177,7 +236,7 @@
       </el-form-item>
 
       <el-alert
-        v-if="protocol === 'Dlt6452007' || protocol === 'Cjt1882004'"
+        v-if="protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018'"
         title="表地址、数据标识、表类型仍在标签配置里维护。"
         type="info"
         :closable="false"
@@ -253,6 +312,37 @@ const props = defineProps<{
 }>()
 
 const connectionParameters = computed(() => (props.parameters ?? []).filter(parameter => parameter.key))
+const etherNetIpIoMode = computed(() => String(getParameterValueByKey('driverOptions.eipIoMode') || 'Explicit').toLowerCase())
+const visibleConnectionParameters = computed(() => connectionParameters.value.filter(parameter => {
+  if (parameter.key === 'driverOptions.cipRoutePath') {
+    return String(getParameterValueByKey('driverOptions.cipRouteMode') || 'Slot').toLowerCase() === 'custom'
+  }
+  if ((props.protocol === 'RockwellCip' || props.protocol === 'EtherNetIp') && parameter.key === 'slot') {
+    return String(getParameterValueByKey('driverOptions.cipRouteMode') || 'Slot').toLowerCase() === 'slot'
+  }
+  if (props.protocol === 'EtherNetIp' && parameter.key.startsWith('driverOptions.eip') && parameter.key !== 'driverOptions.eipIoMode') {
+    return etherNetIpIoMode.value === 'implicit'
+  }
+  if (props.protocol === 'SiemensS7') {
+    const customTsap = String(getParameterValueByKey('driverOptions.s7TsapMode') || 'RackSlot').toLowerCase() === 'custom'
+    if (parameter.key === 'driverOptions.s7LocalTsap' || parameter.key === 'driverOptions.s7RemoteTsap') return customTsap
+    if (parameter.key === 'rack' || parameter.key === 'slot' || parameter.key === 'driverOptions.s7ConnectionType') return !customTsap
+  }
+  return true
+}))
+const connectionParameterGroups = computed(() => {
+  const groups: Array<{ name: string; parameters: GatewayConnectionParameterDefinition[] }> = []
+  for (const parameter of visibleConnectionParameters.value) {
+    const name = parameter.group || ''
+    let group = groups.find(item => item.name === name)
+    if (!group) {
+      group = { name, parameters: [] }
+      groups.push(group)
+    }
+    group.parameters.push(parameter)
+  }
+  return groups
+})
 const opcUaSecurityPolicies = ['None', 'Basic128Rsa15', 'Basic256', 'Basic256Sha256', 'Aes128_Sha256_RsaOaep', 'Aes256_Sha256_RsaPss']
 const opcUaMessageSecurityModes = ['None', 'Sign', 'SignAndEncrypt']
 
@@ -269,9 +359,9 @@ const networkHostPlaceholder = computed(() => {
 })
 
 const networkPortLabel = computed(() => props.protocol === 'OmronFins' ? 'FINS端口' : props.protocol === 'BacnetIp' ? 'BACnet/IP 端口' : '端口')
-const transportLocked = computed(() => props.protocol === 'ModbusTcp' || props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'OpcUa' || props.protocol === 'BacnetIp')
-const serialHostLabel = computed(() => props.protocol === 'CanOpen' ? 'CAN适配器串口' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '采集串口' : '串口')
-const serialPortLabel = computed(() => props.protocol === 'CanOpen' ? '适配器波特率' : props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' ? '表计波特率' : '波特率')
+const transportLocked = computed(() => props.protocol === 'ModbusTcp' || props.protocol === 'SiemensS7' || props.protocol === 'RockwellCip' || props.protocol === 'EtherNetIp' || props.protocol === 'RockwellPccc' || props.protocol === 'BeckhoffAds' || props.protocol === 'Snmp' || props.protocol === 'MqttClient' || props.protocol === 'Dnp3' || props.protocol === 'OpcUa' || props.protocol === 'BacnetIp' || props.protocol === 'Dlt6452007' || props.protocol === 'Cjt1882004' || props.protocol === 'Cjt1882018')
+const serialHostLabel = computed(() => props.protocol === 'CanOpen' ? 'CAN适配器串口' : '串口')
+const serialPortLabel = computed(() => props.protocol === 'CanOpen' ? '适配器波特率' : '波特率')
 watch(
   () => [props.protocol, props.device.connection.transport] as const,
   ([protocol, transport]) => {
@@ -354,11 +444,33 @@ function getParameterValue(parameter: GatewayConnectionParameterDefinition) {
   return (props.device.connection as unknown as Record<string, unknown>)[key]
 }
 
+function getParameterValueByKey(key: string) {
+  if (key.startsWith('driverOptions.')) {
+    const options = readDriverOptions()
+    return options[key.slice('driverOptions.'.length)]
+  }
+  return (props.device.connection as unknown as Record<string, unknown>)[key]
+}
+
 function updateParameterValue(parameter: GatewayConnectionParameterDefinition, value: unknown) {
   const key = parameter.key
   if (key.startsWith('driverOptions.')) {
     const options = readDriverOptions()
-    options[key.slice('driverOptions.'.length)] = value
+    const optionKey = key.slice('driverOptions.'.length)
+    options[optionKey] = value
+    if (optionKey === 'controllerProfile' && String(value).toLowerCase() === 'micro800') {
+      if (!options.cipRouteMode || String(options.cipRouteMode).toLowerCase() === 'slot') options.cipRouteMode = 'Direct'
+      if (!options.cipMaxRequestBytes || Number(options.cipMaxRequestBytes) === 400) options.cipMaxRequestBytes = 240
+      if (!options.cipMaxServicesPerPacket || Number(options.cipMaxServicesPerPacket) === 16) options.cipMaxServicesPerPacket = 1
+    }
+    if (optionKey === 'controllerProfile' && String(value).toLowerCase() === 'generic') {
+      if (!options.cipRouteMode || String(options.cipRouteMode).toLowerCase() === 'slot') options.cipRouteMode = 'Direct'
+      if (!options.cipMaxRequestBytes || Number(options.cipMaxRequestBytes) === 240) options.cipMaxRequestBytes = 400
+      if (!options.cipMaxServicesPerPacket || Number(options.cipMaxServicesPerPacket) === 1) options.cipMaxServicesPerPacket = 16
+    }
+    if (optionKey === 'controllerProfile' && props.protocol === 'SiemensS7') {
+      applyS7ProfileDefaults(String(value), options)
+    }
     props.device.connection.driverOptionsJson = JSON.stringify(options)
     return
   }
@@ -374,5 +486,17 @@ function readDriverOptions() {
   } catch {
     return {}
   }
+}
+
+function applyS7ProfileDefaults(profile: string, options: Record<string, unknown>) {
+  const normalized = profile.trim().toUpperCase()
+  props.device.connection.rack = 0
+  if (normalized === 'S7-200 SMART') props.device.connection.slot = 0
+  else if (normalized === 'S7-300') props.device.connection.slot = 2
+  else if (normalized === 'S7-400') props.device.connection.slot = 3
+  else props.device.connection.slot = 1
+
+  if (normalized === 'LOGO!') options.s7TsapMode = 'Custom'
+  else if (!options.s7TsapMode || String(options.s7TsapMode).toLowerCase() === 'custom') options.s7TsapMode = 'RackSlot'
 }
 </script>

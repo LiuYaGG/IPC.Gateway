@@ -10,6 +10,11 @@
         <span>启用 {{ enabledCount }}</span>
         <span>Active {{ status?.activeRuleCount ?? 0 }}</span>
         <span>评估 {{ status?.evaluationCount ?? 0 }}</span>
+        <span>待处理 {{ status?.pendingInputEventCount ?? 0 }}/{{ status?.pendingActionCount ?? 0 }}</span>
+        <span :class="{ 'is-danger': (status?.droppedInputEventCount ?? 0) + (status?.droppedActionCount ?? 0) > 0 }">
+          丢弃 {{ (status?.droppedInputEventCount ?? 0) + (status?.droppedActionCount ?? 0) }}
+        </span>
+        <span :class="{ 'is-danger': (status?.actionFailureCount ?? 0) > 0 }">动作失败 {{ status?.actionFailureCount ?? 0 }}</span>
       </div>
       <div class="rules-status-actions">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
@@ -271,7 +276,10 @@ const debugNodeIds = computed(() => {
   if (recent?.pointCode) {
     for (const node of form.value.nodes) {
       if (sameText(node.pointCode, recent.pointCode)) ids.add(node.id)
-      if (sameText(node.tagName, recent.tagName) && sameText(node.deviceName, recent.deviceName)) ids.add(node.id)
+      if (sameText(node.channelId, recent.channelId) &&
+          sameText(node.deviceId, recent.deviceId) &&
+          sameText(node.groupId, recent.groupId) &&
+          sameText(node.tagId, recent.tagId)) ids.add(node.id)
     }
   }
 
@@ -479,7 +487,10 @@ function validateConnection(sourceNodeId: string, targetNodeId: string) {
   if (form.value.edges.some(edge => edge.sourceNodeId === sourceNodeId && edge.targetNodeId === targetNodeId)) return '这条连线已经存在'
   if (target.nodeType === 'TagInput') return '标签输入节点只能作为起点'
   if (isTerminalActionNode(source)) return '通知和发布动作不能再连接到下游节点'
-  if (source.nodeType === 'Logic' && target.nodeType === 'Logic') return '逻辑节点之间不需要直接相连'
+  if (['Logic', 'Sequence'].includes(source.nodeType) && ['Logic', 'Sequence'].includes(target.nodeType)) return '汇合节点之间不能直接相连'
+  if (['Logic', 'Sequence'].includes(target.nodeType) && !['Condition', 'Threshold'].includes(source.nodeType)) {
+    return 'AND/OR 和顺序/时序节点当前只接受基础条件'
+  }
   if (createsCycle(sourceNodeId, targetNodeId)) return '这条连线会形成环路'
   return ''
 }

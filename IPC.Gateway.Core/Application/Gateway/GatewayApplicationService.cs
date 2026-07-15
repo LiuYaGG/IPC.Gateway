@@ -82,6 +82,8 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
         IEnumerable<TagValueSnapshotDto> tags = GetStatus().Tags;
 
         tags = tags.Where(tag =>
+            Matches(tag.ChannelId, query.ChannelId) &&
+            Matches(tag.ChannelName, query.ChannelName) &&
             Matches(tag.DeviceId, query.DeviceId) &&
             Matches(tag.DeviceName, query.DeviceName) &&
             Matches(tag.GroupId, query.GroupId) &&
@@ -228,6 +230,10 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
         command ??= new WriteTagCommand();
         WriteTagRequest request = new WriteTagRequest
         {
+            ChannelId = command.ChannelId ?? string.Empty,
+            DeviceId = command.DeviceId ?? string.Empty,
+            GroupId = command.GroupId ?? string.Empty,
+            TagId = command.TagId ?? string.Empty,
             DeviceName = command.DeviceName ?? string.Empty,
             GroupName = command.GroupName ?? string.Empty,
             TagName = command.TagName ?? string.Empty,

@@ -27,15 +27,22 @@ public sealed class SparkplugMetric
         DataType = SparkplugDataType.String;
         Timestamp = DateTimeOffset.UtcNow;
         Properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        TypedProperties = new SparkplugPropertySet();
     }
 
     public string Name { get; set; }
     public ulong? Alias { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public SparkplugDataType DataType { get; set; }
+    public bool IsHistorical { get; set; }
+    public bool IsTransient { get; set; }
     public bool IsNull { get; set; }
     public object? Value { get; set; }
+    public SparkplugMetaData? MetaData { get; set; }
+    public SparkplugDataSet? DataSetValue { get; set; }
+    public SparkplugTemplate? TemplateValue { get; set; }
     public IDictionary<string, string> Properties { get; }
+    public SparkplugPropertySet TypedProperties { get; }
 
     public static SparkplugMetric String(string name, string value)
     {

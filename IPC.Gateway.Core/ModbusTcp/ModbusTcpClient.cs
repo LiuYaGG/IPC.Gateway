@@ -43,6 +43,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         private const int MaxWriteRegisters = NModbusMasterAdapter.MaxWriteRegisters;
 
         private readonly PlcConnectionOptions _options;
+        private readonly ModbusDriverOptions _driverOptions;
         private TcpClient? _tcpClient;
         private NetworkStream? _stream;
         private NModbusMasterAdapter? _adapter;
@@ -53,6 +54,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             if (options == null)
                 throw new ArgumentNullException("options");
             _options = options;
+            _driverOptions = ModbusDriverOptions.Parse(options.DriverOptionsJson);
         }
 
         public bool IsConnected
@@ -67,25 +69,9 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         public void Connect()
         {
-            Disconnect();
-
-            int port = _options.Port <= 0 ? 502 : _options.Port;
-            _tcpClient = new TcpClient();
-            try
-            {
-                _tcpClient.ReceiveTimeout = _options.TimeoutMilliseconds;
-                _tcpClient.SendTimeout = _options.TimeoutMilliseconds;
-                _tcpClient.Connect(_options.Host, port);
-                _stream = _tcpClient.GetStream();
-                _stream.ReadTimeout = _options.TimeoutMilliseconds;
-                _stream.WriteTimeout = _options.TimeoutMilliseconds;
-                _adapter = CreateAdapter(_tcpClient);
-            }
-            catch
-            {
-                Disconnect();
-                throw;
-            }
+            using CancellationTokenSource timeout = new CancellationTokenSource(
+                _options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000);
+            ConnectAsync(timeout.Token).AsTask().GetAwaiter().GetResult();
         }
 
         public async ValueTask ConnectAsync(CancellationToken cancellationToken)
@@ -290,7 +276,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 GetTypeCode = GetTypeCode,
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
-                MaxReadRegisters = MaxReadRegisters
+                MaxReadRegisters = MaxReadRegisters,
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints
             });
         }
 
@@ -306,7 +293,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 GetTypeCode = GetTypeCode,
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
-                MaxReadRegisters = MaxReadRegisters
+                MaxReadRegisters = MaxReadRegisters,
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints
             }, cancellationToken).ConfigureAwait(false);
         }
 

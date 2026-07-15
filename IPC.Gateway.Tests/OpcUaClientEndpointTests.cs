@@ -1,9 +1,11 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using IPC.Gateway.Core.Application.Gateway.Contracts;
 using IPC.Plc.Communication.Core;
 using IPC.Plc.Communication.OpcUa;
-using Opc.UaFx;
+using Opc.Ua;
 
 namespace IPC.Gateway.Tests;
 
@@ -27,24 +29,24 @@ public sealed class OpcUaClientEndpointTests
     }
 
     [Theory]
-    [InlineData("None", "None", OpcSecurityAlgorithm.None, OpcSecurityMode.None)]
-    [InlineData("Basic128Rsa15", "Sign", OpcSecurityAlgorithm.Basic128Rsa15, OpcSecurityMode.Sign)]
-    [InlineData("Basic256", "SignAndEncrypt", OpcSecurityAlgorithm.Basic256, OpcSecurityMode.SignAndEncrypt)]
-    [InlineData("Basic256Sha256", "SignAndEncrypt", OpcSecurityAlgorithm.Basic256Sha256, OpcSecurityMode.SignAndEncrypt)]
-    [InlineData("Aes128_Sha256_RsaOaep", "SignAndEncrypt", OpcSecurityAlgorithm.Aes128_Sha256_RsaOaep, OpcSecurityMode.SignAndEncrypt)]
-    [InlineData("Aes256_Sha256_RsaPss", "SignAndEncrypt", OpcSecurityAlgorithm.Aes256_Sha256_RsaPss, OpcSecurityMode.SignAndEncrypt)]
+    [InlineData("None", "None", SecurityPolicies.None, MessageSecurityMode.None)]
+    [InlineData("Basic128Rsa15", "Sign", SecurityPolicies.Basic128Rsa15, MessageSecurityMode.Sign)]
+    [InlineData("Basic256", "SignAndEncrypt", SecurityPolicies.Basic256, MessageSecurityMode.SignAndEncrypt)]
+    [InlineData("Basic256Sha256", "SignAndEncrypt", SecurityPolicies.Basic256Sha256, MessageSecurityMode.SignAndEncrypt)]
+    [InlineData("Aes128_Sha256_RsaOaep", "SignAndEncrypt", SecurityPolicies.Aes128_Sha256_RsaOaep, MessageSecurityMode.SignAndEncrypt)]
+    [InlineData("Aes256_Sha256_RsaPss", "SignAndEncrypt", SecurityPolicies.Aes256_Sha256_RsaPss, MessageSecurityMode.SignAndEncrypt)]
     public void BuildSecurityPolicy_UsesConfiguredPolicyAndMode(
         string policy,
         string mode,
-        OpcSecurityAlgorithm expectedAlgorithm,
-        OpcSecurityMode expectedMode)
+        string expectedPolicyUri,
+        MessageSecurityMode expectedMode)
     {
         using OpcUaClient client = CreateClient(policy, mode);
 
-        OpcSecurityPolicy result = InvokeBuildSecurityPolicy(client);
+        EndpointDescription result = InvokeBuildSecurityPolicy(client);
 
-        Assert.Equal(expectedAlgorithm, result.Algorithm);
-        Assert.Equal(expectedMode, result.Mode);
+        Assert.Equal(expectedPolicyUri, result.SecurityPolicyUri);
+        Assert.Equal(expectedMode, result.SecurityMode);
     }
 
     [Theory]
@@ -101,6 +103,46 @@ public sealed class OpcUaClientEndpointTests
     }
 
     [Fact]
+    public void TrustServerCertificate_IsIdempotentWhenCertificateAlreadyExists()
+    {
+        string trustStorePath = Path.Combine(Path.GetTempPath(), "ipc-opcua-trust-" + Guid.NewGuid().ToString("N"));
+        using RSA key = RSA.Create(2048);
+        CertificateRequest request = new(
+            "CN=IPC OPC UA Test Server",
+            key,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        using X509Certificate2 certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            DateTimeOffset.UtcNow.AddDays(1));
+        ApplicationConfiguration configuration = new()
+        {
+            SecurityConfiguration = new SecurityConfiguration
+            {
+                TrustedPeerCertificates = new CertificateTrustList
+                {
+                    StoreType = CertificateStoreType.Directory,
+                    StorePath = trustStorePath
+                }
+            }
+        };
+        EndpointDescription endpoint = new() { ServerCertificate = certificate.RawData };
+
+        try
+        {
+            InvokeTrustServerCertificate(configuration, endpoint);
+            InvokeTrustServerCertificate(configuration, endpoint);
+
+            Assert.Single(Directory.GetFiles(trustStorePath, "*.der", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(trustStorePath))
+                Directory.Delete(trustStorePath, true);
+        }
+    }
+
+    [Fact]
     public void BatchReadExceptionClassifier_SplitsUnavailableErrorsWhenSessionIsConnected()
     {
         Exception exception = new InvalidOperationException("OPC UA node is unavailable.");
@@ -151,11 +193,23 @@ public sealed class OpcUaClientEndpointTests
         });
     }
 
-    private static OpcSecurityPolicy InvokeBuildSecurityPolicy(OpcUaClient client)
+    private static EndpointDescription InvokeBuildSecurityPolicy(OpcUaClient client)
     {
         MethodInfo? method = typeof(OpcUaClient).GetMethod("BuildSecurityPolicy", BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(method);
-        return (OpcSecurityPolicy)method!.Invoke(client, Array.Empty<object>())!;
+        return (EndpointDescription)method!.Invoke(client, Array.Empty<object>())!;
+    }
+
+    private static void InvokeTrustServerCertificate(
+        ApplicationConfiguration configuration,
+        EndpointDescription endpoint)
+    {
+        Type factory = typeof(OpcUaClient).Assembly.GetType(
+            "IPC.Plc.Communication.OpcUa.OpcUaFoundationSessionFactory",
+            throwOnError: true)!;
+        MethodInfo? method = factory.GetMethod("TrustServerCertificate", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        method!.Invoke(null, new object[] { configuration, endpoint });
     }
 
     private static bool InvokeShouldSplitBatchReadException(Exception exception, bool sessionConnected, int count)

@@ -150,6 +150,7 @@ namespace IPC.Runtime.Configuration
 
             NormalizeRules(config.Rules);
             NormalizeFlowRules(config.FlowRules);
+            ProjectRuleTagIdentityNormalizer.Normalize(config);
             SyncFlowRuleCompiledRules(config);
         }
 
@@ -166,6 +167,11 @@ namespace IPC.Runtime.Configuration
                 if (string.IsNullOrWhiteSpace(rule.Id))
                     rule.Id = Guid.NewGuid().ToString("N");
                 rule.Name = rule.Name ?? string.Empty;
+                rule.SourceChannelId = rule.SourceChannelId ?? string.Empty;
+                rule.SourceChannelName = rule.SourceChannelName ?? string.Empty;
+                rule.SourceDeviceId = rule.SourceDeviceId ?? string.Empty;
+                rule.SourceGroupId = rule.SourceGroupId ?? string.Empty;
+                rule.SourceTagId = rule.SourceTagId ?? string.Empty;
                 rule.SourcePointCode = rule.SourcePointCode ?? string.Empty;
                 rule.SourceDeviceName = rule.SourceDeviceName ?? string.Empty;
                 rule.SourceGroupName = rule.SourceGroupName ?? string.Empty;
@@ -189,6 +195,11 @@ namespace IPC.Runtime.Configuration
                 rule.StateClearValue = rule.StateClearValue ?? string.Empty;
                 if (rule.StateTimeoutSeconds < 0)
                     rule.StateTimeoutSeconds = 0;
+                rule.RelatedChannelId = rule.RelatedChannelId ?? string.Empty;
+                rule.RelatedChannelName = rule.RelatedChannelName ?? string.Empty;
+                rule.RelatedDeviceId = rule.RelatedDeviceId ?? string.Empty;
+                rule.RelatedGroupId = rule.RelatedGroupId ?? string.Empty;
+                rule.RelatedTagId = rule.RelatedTagId ?? string.Empty;
                 rule.RelatedDeviceName = rule.RelatedDeviceName ?? string.Empty;
                 rule.RelatedGroupName = rule.RelatedGroupName ?? string.Empty;
                 rule.RelatedTagName = rule.RelatedTagName ?? string.Empty;
@@ -196,6 +207,11 @@ namespace IPC.Runtime.Configuration
                 rule.RelatedDataType = rule.RelatedDataType ?? string.Empty;
                 rule.ContextName = string.IsNullOrWhiteSpace(rule.ContextName) ? "Context" : rule.ContextName;
                 rule.ContextExpectedValue = rule.ContextExpectedValue ?? string.Empty;
+                rule.ContextChannelId = rule.ContextChannelId ?? string.Empty;
+                rule.ContextChannelName = rule.ContextChannelName ?? string.Empty;
+                rule.ContextDeviceId = rule.ContextDeviceId ?? string.Empty;
+                rule.ContextGroupId = rule.ContextGroupId ?? string.Empty;
+                rule.ContextTagId = rule.ContextTagId ?? string.Empty;
                 rule.ContextDeviceName = rule.ContextDeviceName ?? string.Empty;
                 rule.ContextGroupName = rule.ContextGroupName ?? string.Empty;
                 rule.ContextTagName = rule.ContextTagName ?? string.Empty;
@@ -319,6 +335,11 @@ namespace IPC.Runtime.Configuration
                     continue;
                 if (string.IsNullOrWhiteSpace(condition.Id))
                     condition.Id = Guid.NewGuid().ToString("N");
+                condition.SourceChannelId = condition.SourceChannelId ?? string.Empty;
+                condition.SourceChannelName = condition.SourceChannelName ?? string.Empty;
+                condition.SourceDeviceId = condition.SourceDeviceId ?? string.Empty;
+                condition.SourceGroupId = condition.SourceGroupId ?? string.Empty;
+                condition.SourceTagId = condition.SourceTagId ?? string.Empty;
                 condition.SourcePointCode = condition.SourcePointCode ?? string.Empty;
                 condition.SourceDeviceName = condition.SourceDeviceName ?? string.Empty;
                 condition.SourceGroupName = condition.SourceGroupName ?? string.Empty;
@@ -394,6 +415,11 @@ namespace IPC.Runtime.Configuration
                     node.Id = Guid.NewGuid().ToString("N");
                 node.NodeType = string.IsNullOrWhiteSpace(node.NodeType) ? FlowRuleNodeTypes.Condition : node.NodeType;
                 node.Label = node.Label ?? string.Empty;
+                node.ChannelId = node.ChannelId ?? string.Empty;
+                node.ChannelName = node.ChannelName ?? string.Empty;
+                node.DeviceId = node.DeviceId ?? string.Empty;
+                node.GroupId = node.GroupId ?? string.Empty;
+                node.TagId = node.TagId ?? string.Empty;
                 node.DeviceName = node.DeviceName ?? string.Empty;
                 node.GroupName = node.GroupName ?? string.Empty;
                 node.TagName = node.TagName ?? string.Empty;
@@ -419,6 +445,11 @@ namespace IPC.Runtime.Configuration
                 node.StateClearValue = node.StateClearValue ?? string.Empty;
                 if (node.StateTimeoutSeconds < 0)
                     node.StateTimeoutSeconds = 0;
+                node.RelatedChannelId = node.RelatedChannelId ?? string.Empty;
+                node.RelatedChannelName = node.RelatedChannelName ?? string.Empty;
+                node.RelatedDeviceId = node.RelatedDeviceId ?? string.Empty;
+                node.RelatedGroupId = node.RelatedGroupId ?? string.Empty;
+                node.RelatedTagId = node.RelatedTagId ?? string.Empty;
                 node.RelatedDeviceName = node.RelatedDeviceName ?? string.Empty;
                 node.RelatedGroupName = node.RelatedGroupName ?? string.Empty;
                 node.RelatedTagName = node.RelatedTagName ?? string.Empty;
@@ -428,6 +459,11 @@ namespace IPC.Runtime.Configuration
                 node.ContextName = string.IsNullOrWhiteSpace(node.ContextName) ? "Context" : node.ContextName;
                 node.ContextExpectedValue = node.ContextExpectedValue ?? string.Empty;
                 node.ContextOperator = string.IsNullOrWhiteSpace(node.ContextOperator) ? EdgeRuleComparisonOperator.Equal.ToString() : node.ContextOperator;
+                node.ContextChannelId = node.ContextChannelId ?? string.Empty;
+                node.ContextChannelName = node.ContextChannelName ?? string.Empty;
+                node.ContextDeviceId = node.ContextDeviceId ?? string.Empty;
+                node.ContextGroupId = node.ContextGroupId ?? string.Empty;
+                node.ContextTagId = node.ContextTagId ?? string.Empty;
                 node.ContextDeviceName = node.ContextDeviceName ?? string.Empty;
                 node.ContextGroupName = node.ContextGroupName ?? string.Empty;
                 node.ContextTagName = node.ContextTagName ?? string.Empty;

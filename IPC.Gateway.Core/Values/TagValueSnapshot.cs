@@ -33,6 +33,8 @@ namespace IPC.Runtime.Values
     {
         public TagValueSnapshot()
         {
+            ChannelId = string.Empty;
+            ChannelName = string.Empty;
             DeviceId = string.Empty;
             DeviceProtocol = string.Empty;
             GroupId = string.Empty;
@@ -60,6 +62,8 @@ namespace IPC.Runtime.Values
             TagState = "Unknown";
         }
 
+        public string ChannelId { get; set; }
+        public string ChannelName { get; set; }
         public string DeviceId { get; set; }
         public string DeviceProtocol { get; set; }
         public string GroupId { get; set; }

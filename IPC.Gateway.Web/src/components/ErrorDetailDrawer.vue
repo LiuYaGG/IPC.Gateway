@@ -14,6 +14,8 @@
       <h3>{{ error.message || '-' }}</h3>
 
       <dl>
+        <dt>通道</dt>
+        <dd>{{ error.channelName || '-' }}</dd>
         <dt>设备</dt>
         <dd>{{ error.deviceName || '-' }}</dd>
         <dt>分组</dt>

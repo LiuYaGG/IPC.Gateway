@@ -67,6 +67,12 @@ namespace IPC.Plc.Communication.Metering.Cjt188
                 throw new FormatException("CJ/T188-2004响应帧校验失败。");
             if (frame[1] != requestAddress.MeterType)
                 throw new FormatException("CJ/T188-2004响应仪表类型与请求不一致。");
+            byte[] expectedAddress = requestAddress.GetAddressBytes();
+            for (int i = 0; i < expectedAddress.Length; i++)
+            {
+                if (frame[2 + i] != expectedAddress[i])
+                    throw new FormatException("CJ/T188-2004响应仪表地址与请求不一致。");
+            }
 
             byte control = frame[9];
             if ((control & 0x40) == 0x40)
@@ -75,15 +81,18 @@ namespace IPC.Plc.Communication.Metering.Cjt188
                 throw new InvalidOperationException("CJ/T188-2004响应控制码不正确: 0x" + control.ToString("X2"));
 
             int length = frame[10];
-            if (length < 2 || frame.Length != length + 13)
+            if (length < 3 || frame.Length != length + 13)
                 throw new FormatException("CJ/T188-2004响应数据长度错误。");
 
             byte[] expectedDi = requestAddress.GetDataIdentifierBytes();
             if (frame[11] != expectedDi[0] || frame[12] != expectedDi[1])
                 throw new FormatException("CJ/T188-2004响应数据标识与请求不一致。");
 
-            byte[] value = new byte[length - 2];
-            Array.Copy(frame, 13, value, 0, value.Length);
+            if (frame[13] != 0x00)
+                throw new FormatException("CJ/T188 响应序号与请求不一致。");
+
+            byte[] value = new byte[length - 3];
+            Array.Copy(frame, 14, value, 0, value.Length);
             return value;
         }
 

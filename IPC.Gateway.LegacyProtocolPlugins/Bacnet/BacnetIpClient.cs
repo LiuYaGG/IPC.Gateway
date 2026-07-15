@@ -6,15 +6,17 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
 using System.IO.BACnet;
 
 namespace IPC.Plc.Communication.Bacnet
 {
-    public sealed class BacnetIpClient : IPlcClient, IPlcBatchReadClient
+    public sealed class BacnetIpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcSubscriptionClient
     {
         private readonly PlcConnectionOptions _options;
         private readonly BacnetDriverOptions _driverOptions;
+        private SharedBacnetIpChannelLease _channelLease;
         private BacnetClient _client;
         private BacnetAddress _address;
 
@@ -26,7 +28,7 @@ namespace IPC.Plc.Communication.Bacnet
 
         public bool IsConnected
         {
-            get { return _client != null; }
+            get { return _channelLease != null && _channelLease.IsOpen; }
         }
 
         public PlcProtocol Protocol
@@ -44,39 +46,72 @@ namespace IPC.Plc.Communication.Bacnet
                 throw new InvalidOperationException("BACnet/IP host cannot be empty.");
 
             int remotePort = _options.Port > 0 ? _options.Port : 47808;
-            int timeout = _options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000;
             string endpoint = host.IndexOf(':') >= 0 ? host : host + ":" + remotePort.ToString(CultureInfo.InvariantCulture);
-
-            BacnetIpUdpProtocolTransport transport = new BacnetIpUdpProtocolTransport(
-                _driverOptions.LocalPort,
-                _driverOptions.UseExclusivePort,
-                _driverOptions.DontFragment,
-                _driverOptions.MaxPayload,
-                _driverOptions.LocalEndpointIp);
-
-            BacnetClient client = new BacnetClient(transport, timeout, _driverOptions.Retries);
             try
             {
-                client.WritePriority = (uint)_driverOptions.WritePriority;
-                client.Start();
-
-                _address = new BacnetAddress(BacnetAddressTypes.IP, endpoint, 0);
-                _client = client;
+                _channelLease = SharedBacnetIpChannelRegistry.Acquire(
+                    _options,
+                    _driverOptions.LocalPort,
+                    _driverOptions.UseExclusivePort,
+                    _driverOptions.DontFragment,
+                    _driverOptions.MaxPayload,
+                    _driverOptions.LocalEndpointIp,
+                    _driverOptions.Retries,
+                    _driverOptions.BbmdAddress,
+                    _driverOptions.BbmdPort,
+                    _driverOptions.BbmdTtlSeconds);
+                _client = _channelLease.Client;
+                BacnetAddress configuredAddress = new BacnetAddress(BacnetAddressTypes.IP, endpoint, 0);
+                _address = ResolveRemoteAddress(configuredAddress);
             }
             catch
             {
-                client.Dispose();
+                _channelLease?.Dispose();
+                _channelLease = null;
+                _client = null;
                 throw;
             }
         }
 
         public void Disconnect()
         {
-            BacnetClient client = _client;
+            SharedBacnetIpChannelLease channelLease = _channelLease;
+            _channelLease = null;
             _client = null;
             _address = null;
-            if (client != null)
-                client.Dispose();
+            if (channelLease != null)
+                channelLease.Dispose();
+        }
+
+        private BacnetAddress ResolveRemoteAddress(BacnetAddress configuredAddress)
+        {
+            if (_driverOptions.DeviceInstance < 0)
+                return configuredAddress;
+
+            BacnetAddress discovered = null;
+            using ManualResetEventSlim received = new ManualResetEventSlim(false);
+            BacnetClient.IamHandler handler = (sender, address, deviceId, maxApdu, segmentation, vendorId) =>
+            {
+                if (deviceId != (uint)_driverOptions.DeviceInstance)
+                    return;
+                discovered = address;
+                received.Set();
+            };
+
+            _client.OnIam += handler;
+            try
+            {
+                lock (_channelLease.SyncRoot)
+                    _client.WhoIs(_driverOptions.DeviceInstance, _driverOptions.DeviceInstance, null, null);
+                int timeout = _options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000;
+                if (!received.Wait(timeout) || discovered == null)
+                    throw new TimeoutException($"BACnet device instance {_driverOptions.DeviceInstance} did not answer Who-Is.");
+                return discovered;
+            }
+            finally
+            {
+                _client.OnIam -= handler;
+            }
         }
 
         public PlcReadResult Read(string address, PlcDataType dataType, int elementCount, int elementOffset)
@@ -85,7 +120,10 @@ namespace IPC.Plc.Communication.Bacnet
             BacnetTagAddress tagAddress = BacnetTagAddress.Parse(address);
             IList<BacnetValue> values;
             uint arrayIndex = tagAddress.HasArrayIndex ? tagAddress.ArrayIndex : uint.MaxValue;
-            if (!_client.ReadPropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId, out values, 0, arrayIndex))
+            bool success;
+            lock (_channelLease.SyncRoot)
+                success = _client.ReadPropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId, out values, 0, arrayIndex);
+            if (!success)
                 throw new TimeoutException("BACnet read property request timed out.");
 
             object value = ConvertReadValues(values, dataType, elementCount);
@@ -103,7 +141,10 @@ namespace IPC.Plc.Communication.Bacnet
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<BacnetBatchItem> items = BuildBatchItems(requests, results);
-            List<List<BacnetBatchItem>> chunks = BuildBatchChunks(items, _driverOptions.MaxBatchObjects);
+            List<List<BacnetBatchItem>> chunks = BuildBatchChunks(
+                items,
+                _driverOptions.MaxBatchObjects,
+                _driverOptions.MaxPayload);
 
             for (int i = 0; i < chunks.Count; i++)
                 ExecuteBatchChunk(chunks[i], results);
@@ -122,19 +163,33 @@ namespace IPC.Plc.Communication.Bacnet
             EnsureConnected();
             BacnetTagAddress tagAddress = BacnetTagAddress.Parse(address);
             BacnetValue value = CreateWriteValue(tagAddress, dataType, valueText);
-            if (!_client.WritePropertyRequest(
-                _address,
-                tagAddress.ObjectId,
-                tagAddress.PropertyId,
-                new[] { value },
-                0,
-                (byte)_driverOptions.WritePriority))
+            bool success;
+            lock (_channelLease.SyncRoot)
+                success = _client.WritePropertyRequest(
+                    _address,
+                    tagAddress.ObjectId,
+                    tagAddress.PropertyId,
+                    new[] { value },
+                    0,
+                    (byte)_driverOptions.WritePriority);
+            if (!success)
                 throw new TimeoutException("BACnet write property request timed out.");
         }
 
         public void Dispose()
         {
             Disconnect();
+        }
+
+        public ValueTask<IPlcSubscription> SubscribeAsync(
+            IList<PlcSubscriptionRequest> requests,
+            PlcSubscriptionOptions options,
+            Func<PlcSubscriptionUpdate, ValueTask> onUpdate,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureConnected();
+            return new ValueTask<IPlcSubscription>(new BacnetCovSubscription(this, requests, onUpdate));
         }
 
         private List<BacnetBatchItem> BuildBatchItems(IList<PlcBatchReadRequest> requests, PlcBatchReadResult[] results)
@@ -162,7 +217,10 @@ namespace IPC.Plc.Communication.Bacnet
             return items;
         }
 
-        private static List<List<BacnetBatchItem>> BuildBatchChunks(List<BacnetBatchItem> items, int maxObjects)
+        private static List<List<BacnetBatchItem>> BuildBatchChunks(
+            List<BacnetBatchItem> items,
+            int maxObjects,
+            int maxPayload)
         {
             List<List<BacnetBatchItem>> chunks = new List<List<BacnetBatchItem>>();
             if (items == null || items.Count == 0)
@@ -171,20 +229,26 @@ namespace IPC.Plc.Communication.Bacnet
             int limit = Math.Max(1, maxObjects);
             List<BacnetBatchItem> current = new List<BacnetBatchItem>();
             HashSet<string> objectKeys = new HashSet<string>(StringComparer.Ordinal);
+            int estimatedBytes = 24;
 
             for (int i = 0; i < items.Count; i++)
             {
                 BacnetBatchItem item = items[i];
                 bool newObject = !objectKeys.Contains(item.ObjectKey);
-                if (current.Count > 0 && newObject && objectKeys.Count >= limit)
+                int itemBytes = newObject ? 18 : 10;
+                if (current.Count > 0 &&
+                    ((newObject && objectKeys.Count >= limit) ||
+                     estimatedBytes + itemBytes > Math.Max(128, maxPayload - 64)))
                 {
                     chunks.Add(current);
                     current = new List<BacnetBatchItem>();
                     objectKeys.Clear();
+                    estimatedBytes = 24;
                 }
 
                 current.Add(item);
                 objectKeys.Add(item.ObjectKey);
+                estimatedBytes += itemBytes;
             }
 
             if (current.Count > 0)
@@ -202,20 +266,35 @@ namespace IPC.Plc.Communication.Bacnet
             {
                 IList<BacnetReadAccessSpecification> specifications = BuildReadAccessSpecifications(items);
                 IList<BacnetReadAccessResult> response;
-                if (!_client.ReadPropertyMultipleRequest(_address, specifications, out response))
+                bool success;
+                lock (_channelLease.SyncRoot)
+                    success = _client.ReadPropertyMultipleRequest(_address, specifications, out response);
+                if (!success)
                     throw new TimeoutException("BACnet read property multiple request timed out.");
                 ApplyBatchResponse(items, response, results);
             }
             catch (Exception ex)
             {
-                if (IsCommunicationException(ex))
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
+                    ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                 {
                     for (int i = 0; i < items.Count; i++)
-                        results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, PlcReadFailureScope.Transport);
+                        results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
                     return;
                 }
 
-                RetryBatchItemsIndividually(items, results);
+                if (items.Count > 1)
+                {
+                    int middle = items.Count / 2;
+                    ExecuteBatchChunk(items.GetRange(0, middle), results);
+                    ExecuteBatchChunk(items.GetRange(middle, items.Count - middle), results);
+                }
+                else
+                {
+                    RetryBatchItemsIndividually(items, results);
+                }
             }
         }
 
@@ -715,6 +794,213 @@ namespace IPC.Plc.Communication.Bacnet
             }
         }
 
+        private sealed class BacnetCovSubscription : IPlcSubscription
+        {
+            private const uint LifetimeSeconds = 300;
+            private static int _nextProcessIdentifier;
+
+            private readonly BacnetIpClient _owner;
+            private readonly Func<PlcSubscriptionUpdate, ValueTask> _onUpdate;
+            private readonly object _syncRoot = new object();
+            private readonly uint _processIdentifier;
+            private readonly Timer _renewTimer;
+            private Dictionary<string, PlcSubscriptionRequest> _requests =
+                new Dictionary<string, PlcSubscriptionRequest>(StringComparer.OrdinalIgnoreCase);
+            private Dictionary<string, BacnetObjectId> _objects =
+                new Dictionary<string, BacnetObjectId>(StringComparer.Ordinal);
+            private bool _disposed;
+
+            public BacnetCovSubscription(
+                BacnetIpClient owner,
+                IList<PlcSubscriptionRequest> requests,
+                Func<PlcSubscriptionUpdate, ValueTask> onUpdate)
+            {
+                _owner = owner;
+                _onUpdate = onUpdate ?? throw new ArgumentNullException(nameof(onUpdate));
+                _processIdentifier = unchecked((uint)Interlocked.Increment(ref _nextProcessIdentifier));
+                _owner._client.OnCOVNotification += OnCovNotification;
+                ReplaceRequests(requests);
+                SubscribeObjects(false);
+                _renewTimer = new Timer(_ => Renew(), null, TimeSpan.FromSeconds(240), TimeSpan.FromSeconds(240));
+            }
+
+            public bool IsActive => !_disposed && _owner.IsConnected;
+
+            public IReadOnlyCollection<string> MonitoredKeys
+            {
+                get
+                {
+                    lock (_syncRoot)
+                        return _requests.Keys.ToArray();
+                }
+            }
+
+            public ValueTask UpdateAsync(
+                IList<PlcSubscriptionRequest> requests,
+                PlcSubscriptionOptions options,
+                CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_syncRoot)
+                {
+                    ThrowIfDisposed();
+                    SubscribeObjects(true);
+                    ReplaceRequests(requests);
+                    SubscribeObjects(false);
+                }
+                return ValueTask.CompletedTask;
+            }
+
+            public void Dispose()
+            {
+                lock (_syncRoot)
+                {
+                    if (_disposed)
+                        return;
+                    _disposed = true;
+                    _renewTimer?.Dispose();
+                    SubscribeObjects(true);
+                    _owner._client.OnCOVNotification -= OnCovNotification;
+                    _requests.Clear();
+                    _objects.Clear();
+                }
+            }
+
+            private void ReplaceRequests(IList<PlcSubscriptionRequest> requests)
+            {
+                Dictionary<string, PlcSubscriptionRequest> next =
+                    new Dictionary<string, PlcSubscriptionRequest>(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, BacnetObjectId> objects =
+                    new Dictionary<string, BacnetObjectId>(StringComparer.Ordinal);
+                if (requests != null)
+                {
+                    for (int index = 0; index < requests.Count; index++)
+                    {
+                        PlcSubscriptionRequest request = requests[index];
+                        if (request == null)
+                            continue;
+                        BacnetTagAddress address = BacnetTagAddress.Parse(request.Address);
+                        next[request.Key] = request;
+                        objects[GetObjectKey(address.ObjectId)] = address.ObjectId;
+                    }
+                }
+                _requests = next;
+                _objects = objects;
+            }
+
+            private void SubscribeObjects(bool cancellation)
+            {
+                if (_owner._client == null || _owner._address == null)
+                    return;
+                foreach (BacnetObjectId objectId in _objects.Values)
+                {
+                    bool success;
+                    lock (_owner._channelLease.SyncRoot)
+                    {
+                        success = _owner._client.SubscribeCOVRequest(
+                            _owner._address,
+                            objectId,
+                            _processIdentifier,
+                            cancellation,
+                            false,
+                            cancellation ? 0u : LifetimeSeconds,
+                            0);
+                    }
+                    if (!success && !cancellation)
+                        PublishObjectFailure(objectId, "BACnet设备不支持该对象的COV订阅，已转入轮询恢复。");
+                }
+            }
+
+            private void Renew()
+            {
+                lock (_syncRoot)
+                {
+                    if (_disposed || !_owner.IsConnected)
+                        return;
+                    SubscribeObjects(false);
+                }
+            }
+
+            private void OnCovNotification(
+                BacnetClient sender,
+                BacnetAddress address,
+                byte invokeId,
+                uint subscriberProcessIdentifier,
+                BacnetObjectId initiatingDeviceIdentifier,
+                BacnetObjectId monitoredObjectIdentifier,
+                uint timeRemaining,
+                bool needConfirm,
+                ICollection<BacnetPropertyValue> values,
+                BacnetMaxSegments maxSegments)
+            {
+                if (_disposed || subscriberProcessIdentifier != _processIdentifier)
+                    return;
+                if (!string.Equals(address?.ToString(), _owner._address?.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                string objectKey = GetObjectKey(monitoredObjectIdentifier);
+                List<BacnetPropertyValue> properties = values?.ToList() ?? new List<BacnetPropertyValue>();
+                PlcSubscriptionRequest[] requests;
+                lock (_syncRoot)
+                {
+                    requests = _requests.Values
+                        .Where(request => GetObjectKey(BacnetTagAddress.Parse(request.Address).ObjectId) == objectKey)
+                        .ToArray();
+                }
+
+                for (int index = 0; index < requests.Length; index++)
+                {
+                    PlcSubscriptionRequest request = requests[index];
+                    try
+                    {
+                        BacnetTagAddress tagAddress = BacnetTagAddress.Parse(request.Address);
+                        if (!TryFindPropertyValue(properties, tagAddress, out BacnetPropertyValue propertyValue))
+                            continue;
+                        object value = ConvertReadValues(propertyValue.value, request.DataType, request.ElementCount);
+                        Publish(PlcSubscriptionUpdate.FromSuccess(
+                            request,
+                            new PlcReadResult(0, request.DataType.ToString(), value)));
+                    }
+                    catch (Exception ex)
+                    {
+                        Publish(PlcSubscriptionUpdate.FromFailure(request, ex.Message, PlcReadFailureScope.Tag));
+                    }
+                }
+            }
+
+            private void PublishObjectFailure(BacnetObjectId objectId, string message)
+            {
+                string objectKey = GetObjectKey(objectId);
+                foreach (PlcSubscriptionRequest request in _requests.Values)
+                {
+                    if (GetObjectKey(BacnetTagAddress.Parse(request.Address).ObjectId) == objectKey)
+                        Publish(PlcSubscriptionUpdate.FromFailure(request, message, PlcReadFailureScope.Tag));
+                }
+            }
+
+            private void Publish(PlcSubscriptionUpdate update)
+            {
+                try
+                {
+                    ValueTask task = _onUpdate(update);
+                    if (!task.IsCompletedSuccessfully)
+                        _ = task.AsTask().ContinueWith(completed => _ = completed.Exception,
+                            CancellationToken.None,
+                            TaskContinuationOptions.OnlyOnFaulted,
+                            TaskScheduler.Default);
+                }
+                catch
+                {
+                }
+            }
+
+            private void ThrowIfDisposed()
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(BacnetCovSubscription));
+            }
+        }
+
         private sealed class BacnetDriverOptions
         {
             public int LocalPort { get; private set; } = 0;
@@ -725,6 +1011,10 @@ namespace IPC.Plc.Communication.Bacnet
             public int Retries { get; private set; } = 1;
             public int WritePriority { get; private set; } = 16;
             public int MaxBatchObjects { get; private set; } = 16;
+            public int DeviceInstance { get; private set; } = -1;
+            public string BbmdAddress { get; private set; } = string.Empty;
+            public int BbmdPort { get; private set; } = 47808;
+            public int BbmdTtlSeconds { get; private set; } = 600;
 
             public static BacnetDriverOptions Parse(string json)
             {
@@ -744,6 +1034,10 @@ namespace IPC.Plc.Communication.Bacnet
                     options.Retries = ReadInt(root, "retries", options.Retries, 0, 10);
                     options.WritePriority = ReadInt(root, "writePriority", options.WritePriority, 1, 16);
                     options.MaxBatchObjects = ReadInt(root, "maxBatchObjects", options.MaxBatchObjects, 1, 128);
+                    options.DeviceInstance = ReadInt(root, "deviceInstance", options.DeviceInstance, -1, 4194303);
+                    options.BbmdAddress = ReadString(root, "bbmdAddress", options.BbmdAddress);
+                    options.BbmdPort = ReadInt(root, "bbmdPort", options.BbmdPort, 1, 65535);
+                    options.BbmdTtlSeconds = ReadInt(root, "bbmdTtlSeconds", options.BbmdTtlSeconds, 30, 65535);
                 }
                 catch (JsonException)
                 {

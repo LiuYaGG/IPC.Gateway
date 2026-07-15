@@ -40,11 +40,16 @@ public sealed class PlcWriteRegressionTests
             }
         };
 
+        ProjectConfig project = new ProjectConfig { Devices = new List<DeviceConfig> { device } };
+        ProjectConfigStore.Normalize(project);
         using RuntimeEngine engine = new RuntimeEngine(new RuntimeSchedulerOptions { SchedulerIntervalMs = 60000 });
-        engine.Start(new ProjectConfig { Devices = new List<DeviceConfig> { device } });
+        engine.Start(project);
 
         WriteTagResponse response = engine.WriteTag(new WriteTagRequest
         {
+            ChannelId = device.ChannelId,
+            DeviceId = device.Id,
+            TagId = device.Tags[0].Id,
             DeviceName = device.Name,
             TagName = "ScaledTag",
             DataType = PlcDataType.Int16.ToString(),
@@ -52,7 +57,7 @@ public sealed class PlcWriteRegressionTests
         });
 
         Assert.True(response.Success, response.ErrorMessage);
-        Assert.True(engine.TryGetSnapshot(device.Name, string.Empty, "ScaledTag", out var snapshot));
+        Assert.True(engine.TryGetSnapshotById(device.ChannelId, device.Id, string.Empty, device.Tags[0].Id, out var snapshot));
         Assert.NotNull(snapshot);
         Assert.Equal("5", snapshot!.RawValueText);
         Assert.Equal("20.00", snapshot.ValueText);
@@ -61,6 +66,7 @@ public sealed class PlcWriteRegressionTests
     [Theory]
     [InlineData(PlcProtocol.ModbusTcp, "Unit ID")]
     [InlineData(PlcProtocol.ModbusRtu, "Slave ID")]
+    [InlineData(PlcProtocol.ModbusAscii, "Slave ID")]
     public void ModbusConnectionParameters_ExposeSlaveAddress(PlcProtocol protocol, string expectedLabel)
     {
         PlcConnectionParameterDefinition parameter = Assert.Single(
@@ -71,6 +77,17 @@ public sealed class PlcWriteRegressionTests
         Assert.Equal("1", parameter.DefaultValue);
         Assert.Equal(1D, parameter.Min);
         Assert.Equal(247D, parameter.Max);
+    }
+
+    [Fact]
+    public void ModbusAsciiConnectionParameters_UseConventionalSerialDefaults()
+    {
+        IList<PlcConnectionParameterDefinition> parameters =
+            PlcConnectionParameterCatalog.ForProtocol(PlcProtocol.ModbusAscii);
+
+        Assert.Equal("7", Assert.Single(parameters, item => item.Key == "dataBits").DefaultValue);
+        Assert.Equal("Even", Assert.Single(parameters, item => item.Key == "serialParity").DefaultValue);
+        Assert.Equal("One", Assert.Single(parameters, item => item.Key == "serialStopBits").DefaultValue);
     }
 
     [Fact]
@@ -118,11 +135,16 @@ public sealed class PlcWriteRegressionTests
             }
         };
 
+        ProjectConfig project = new ProjectConfig { Devices = new List<DeviceConfig> { device } };
+        ProjectConfigStore.Normalize(project);
         using RuntimeEngine engine = new RuntimeEngine(new RuntimeSchedulerOptions { SchedulerIntervalMs = 60000 });
-        engine.Start(new ProjectConfig { Devices = new List<DeviceConfig> { device } });
+        engine.Start(project);
 
         WriteTagResponse response = engine.WriteTag(new WriteTagRequest
         {
+            ChannelId = device.ChannelId,
+            DeviceId = device.Id,
+            TagId = device.Tags[0].Id,
             DeviceName = device.Name,
             TagName = "TagA",
             DataType = PlcDataType.Int16.ToString(),

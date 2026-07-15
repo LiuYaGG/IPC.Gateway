@@ -1,7 +1,10 @@
 <template>
   <div class="tag-selector">
     <div class="tag-selector__filters">
-      <el-select v-model="deviceFilter" clearable filterable placeholder="设备" @change="changeDeviceFilter">
+      <el-select v-model="channelFilter" clearable filterable placeholder="通道" @change="changeChannelFilter">
+        <el-option v-for="item in channelOptions" :key="item.id" :label="item.name" :value="item.id" />
+      </el-select>
+      <el-select v-model="deviceFilter" clearable filterable placeholder="设备" :disabled="!channelFilter" @change="changeDeviceFilter">
         <el-option v-for="item in deviceOptions" :key="item.id" :label="item.name" :value="item.id" />
       </el-select>
       <el-select
@@ -34,6 +37,7 @@
     </el-select>
 
     <div v-if="selectedTag" class="tag-selector__summary">
+      <div><span>通道名</span><strong>{{ selectedTag.channelName || '-' }}</strong></div>
       <div><span>设备名</span><strong>{{ selectedTag.deviceName || '-' }}</strong></div>
       <div><span>分组名</span><strong>{{ selectedTag.groupLabel }}</strong></div>
       <div><span>标签名</span><strong>{{ selectedTag.tagName || '-' }}</strong></div>
@@ -60,17 +64,20 @@ const emit = defineEmits<{
 }>()
 
 const selectedKey = ref(props.modelValue)
+const channelFilter = ref('')
 const deviceFilter = ref('')
 const groupFilter = ref('')
 
 const allTags = computed(() => buildTagSelections(props.project))
 const selectedTag = computed(() => allTags.value.find(item => item.key === selectedKey.value) ?? null)
-const deviceOptions = computed(() => props.project?.devices ?? [])
+const channelOptions = computed(() => props.project?.channels ?? [])
+const deviceOptions = computed(() => (props.project?.devices ?? []).filter(item => item.channelId === channelFilter.value))
 const groupOptions = computed(() => {
   const device = props.project?.devices?.find(item => item.id === deviceFilter.value)
   return device?.groups ?? []
 })
 const filteredTags = computed(() => allTags.value.filter(item => {
+  if (channelFilter.value && item.channelId !== channelFilter.value) return false
   if (deviceFilter.value && item.deviceId !== deviceFilter.value) return false
   if (groupFilter.value === DIRECT_TAG_GROUP_KEY) return !item.groupId
   if (groupFilter.value && item.groupId !== groupFilter.value) return false
@@ -91,6 +98,12 @@ function changeDeviceFilter() {
   clearSelection()
 }
 
+function changeChannelFilter() {
+  deviceFilter.value = ''
+  groupFilter.value = ''
+  clearSelection()
+}
+
 function changeGroupFilter() {
   clearSelection()
 }
@@ -100,6 +113,7 @@ function changeTag(value: string) {
   emit('update:modelValue', selectedKey.value)
   const selection = allTags.value.find(item => item.key === selectedKey.value) ?? null
   if (selection) {
+    channelFilter.value = selection.channelId
     deviceFilter.value = selection.deviceId
     groupFilter.value = selection.groupId || DIRECT_TAG_GROUP_KEY
   }
@@ -115,6 +129,7 @@ function clearSelection() {
 function syncFiltersFromSelection(options: { resetWhenNoSelection: boolean } = { resetWhenNoSelection: true }) {
   if (!selectedKey.value) {
     if (options.resetWhenNoSelection) {
+      channelFilter.value = ''
       deviceFilter.value = ''
       groupFilter.value = ''
       return
@@ -126,11 +141,19 @@ function syncFiltersFromSelection(options: { resetWhenNoSelection: boolean } = {
 
   const selection = allTags.value.find(item => item.key === selectedKey.value)
   if (!selection) return
+  channelFilter.value = selection.channelId
   deviceFilter.value = selection.deviceId
   groupFilter.value = selection.groupId || DIRECT_TAG_GROUP_KEY
 }
 
 function keepValidFilters() {
+  if (!channelFilter.value || !channelOptions.value.some(item => item.id === channelFilter.value)) {
+    channelFilter.value = ''
+    deviceFilter.value = ''
+    groupFilter.value = ''
+    return
+  }
+
   if (!deviceFilter.value) {
     groupFilter.value = ''
     return

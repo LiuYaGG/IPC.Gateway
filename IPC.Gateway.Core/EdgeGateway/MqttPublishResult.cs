@@ -26,7 +26,7 @@ namespace IPC.EdgeGateway
     
     
     
-    internal sealed class MqttPublishResult
+    public sealed class MqttPublishResult
     {
         public MqttPublishResult()
         {

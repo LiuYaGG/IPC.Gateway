@@ -9,6 +9,12 @@ namespace IPC.Plc.Communication.CanOpen
         public int CanBitRate { get; private set; } = 500000;
         public int DefaultNodeId { get; private set; } = 1;
         public int MaxBatchItems { get; private set; } = 32;
+        public bool ProbeNodeOnConnect { get; private set; } = true;
+        public bool StartNodeOnConnect { get; private set; }
+        public bool ResetCommunicationOnConnect { get; private set; }
+        public int HeartbeatTimeoutMilliseconds { get; private set; } = 3000;
+        public int PdoMaxAgeMilliseconds { get; private set; } = 3000;
+        public int SyncIntervalMilliseconds { get; private set; }
 
         public static CanOpenDriverOptions Parse(string json)
         {
@@ -23,6 +29,12 @@ namespace IPC.Plc.Communication.CanOpen
                 options.CanBitRate = ReadInt(root, "canBitRate", options.CanBitRate, 10000, 1000000);
                 options.DefaultNodeId = ReadInt(root, "defaultNodeId", options.DefaultNodeId, 1, 127);
                 options.MaxBatchItems = ReadInt(root, "maxBatchItems", options.MaxBatchItems, 1, 256);
+                options.ProbeNodeOnConnect = ReadBool(root, "probeNodeOnConnect", options.ProbeNodeOnConnect);
+                options.StartNodeOnConnect = ReadBool(root, "startNodeOnConnect", options.StartNodeOnConnect);
+                options.ResetCommunicationOnConnect = ReadBool(root, "resetCommunicationOnConnect", options.ResetCommunicationOnConnect);
+                options.HeartbeatTimeoutMilliseconds = ReadInt(root, "heartbeatTimeoutMilliseconds", options.HeartbeatTimeoutMilliseconds, 100, 60000);
+                options.PdoMaxAgeMilliseconds = ReadInt(root, "pdoMaxAgeMilliseconds", options.PdoMaxAgeMilliseconds, 0, 60000);
+                options.SyncIntervalMilliseconds = ReadInt(root, "syncIntervalMilliseconds", options.SyncIntervalMilliseconds, 0, 60000);
             }
             catch (JsonException)
             {
@@ -44,6 +56,19 @@ namespace IPC.Plc.Communication.CanOpen
                 return Math.Min(max, Math.Max(min, number));
 
             return fallback;
+        }
+
+        private static bool ReadBool(JsonElement root, string name, bool fallback)
+        {
+            if (!root.TryGetProperty(name, out JsonElement value))
+                return fallback;
+            if (value.ValueKind == JsonValueKind.True)
+                return true;
+            if (value.ValueKind == JsonValueKind.False)
+                return false;
+            return value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out bool result)
+                ? result
+                : fallback;
         }
     }
 }

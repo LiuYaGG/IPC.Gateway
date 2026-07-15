@@ -9,7 +9,8 @@ public sealed class GatewayTagBulkService
 {
     private static readonly string[] Headers =
     {
-        "deviceName", "groupName", "tagName", "address", "dataType", "scanRateMs",
+        "channelId", "channelName", "deviceId", "deviceName", "groupId", "groupName", "tagId", "tagName",
+        "address", "dataType", "scanRateMs",
         "enabled", "mqttPublishEnabled", "unit", "pointCode", "accessMode", "description"
     };
 
@@ -20,23 +21,27 @@ public sealed class GatewayTagBulkService
         _gateway = gateway;
     }
 
-    public string ExportCsv(string deviceId)
+    public string ExportCsv(string channelId, string deviceId)
     {
         ProjectConfigurationDto project = _gateway.GetProject();
         StringBuilder builder = new StringBuilder();
         builder.AppendLine(string.Join(",", Headers));
 
-        foreach (DeviceConfigurationDto device in project.Devices.Where(device => MatchesFilter(device.Id, deviceId)))
+        Dictionary<string, ChannelConfigurationDto> channels = project.Channels
+            .ToDictionary(channel => channel.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (DeviceConfigurationDto device in project.Devices.Where(device =>
+                     MatchesFilter(device.ChannelId, channelId) && MatchesFilter(device.Id, deviceId)))
         {
-            AppendTags(builder, device, string.Empty, device.Tags);
+            channels.TryGetValue(device.ChannelId, out ChannelConfigurationDto? channel);
+            AppendTags(builder, channel, device, null, device.Tags);
             foreach (GroupConfigurationDto group in device.Groups)
-                AppendTags(builder, device, group.Name, group.Tags);
+                AppendTags(builder, channel, device, group, group.Tags);
         }
 
         return builder.ToString();
     }
 
-    public GatewayTagImportResult ImportCsv(string csv, string deviceId)
+    public GatewayTagImportResult ImportCsv(string csv, string channelId, string deviceId)
     {
         ProjectConfigurationDto project = _gateway.GetProject();
         GatewayTagImportResult result = new GatewayTagImportResult();
@@ -55,21 +60,31 @@ public sealed class GatewayTagBulkService
                 continue;
 
             result.TotalRows++;
-            ImportRow(project, headerMap, row, deviceId, result, i + 1);
+            ImportRow(project, headerMap, row, channelId, deviceId, result, i + 1);
         }
 
         _gateway.SaveProject(ToSaveCommand(project));
         return result;
     }
 
-    private static void AppendTags(StringBuilder builder, DeviceConfigurationDto device, string groupName, IEnumerable<TagConfigurationDto> tags)
+    private static void AppendTags(
+        StringBuilder builder,
+        ChannelConfigurationDto? channel,
+        DeviceConfigurationDto device,
+        GroupConfigurationDto? group,
+        IEnumerable<TagConfigurationDto> tags)
     {
         foreach (TagConfigurationDto tag in tags)
         {
             string[] row =
             {
+                device.ChannelId,
+                channel?.Name ?? string.Empty,
+                device.Id,
                 device.Name,
-                groupName,
+                group?.Id ?? string.Empty,
+                group?.Name ?? string.Empty,
+                tag.Id,
                 tag.Name,
                 tag.Address,
                 tag.DataType,
@@ -85,29 +100,39 @@ public sealed class GatewayTagBulkService
         }
     }
 
-    private static void ImportRow(ProjectConfigurationDto project, Dictionary<string, int> headerMap, string[] row, string deviceId, GatewayTagImportResult result, int rowNumber)
+    private static void ImportRow(
+        ProjectConfigurationDto project,
+        Dictionary<string, int> headerMap,
+        string[] row,
+        string selectedChannelId,
+        string selectedDeviceId,
+        GatewayTagImportResult result,
+        int rowNumber)
     {
-        string deviceName = Read(row, headerMap, "deviceName");
-        DeviceConfigurationDto? device = FindDevice(project, deviceId, deviceName);
+        string channelId = Read(row, headerMap, "channelId");
+        string deviceId = Read(row, headerMap, "deviceId");
+        DeviceConfigurationDto? device = FindDevice(project, selectedChannelId, selectedDeviceId, channelId, deviceId);
         if (device == null)
         {
-            result.Warnings.Add("Row " + rowNumber + ": device was not found.");
+            result.Warnings.Add("Row " + rowNumber + ": channel/device identity was not found.");
             return;
         }
 
+        string tagId = Read(row, headerMap, "tagId");
         string tagName = Read(row, headerMap, "tagName");
-        if (string.IsNullOrWhiteSpace(tagName))
+        if (string.IsNullOrWhiteSpace(tagId) || string.IsNullOrWhiteSpace(tagName))
         {
-            result.Warnings.Add("Row " + rowNumber + ": tagName is required.");
+            result.Warnings.Add("Row " + rowNumber + ": tagId and tagName are required.");
             return;
         }
 
+        string groupId = Read(row, headerMap, "groupId");
         string groupName = Read(row, headerMap, "groupName");
-        IList<TagConfigurationDto> targetTags = ResolveTargetTags(device, groupName);
-        TagConfigurationDto? existing = targetTags.FirstOrDefault(tag => string.Equals(tag.Name, tagName, StringComparison.OrdinalIgnoreCase));
+        IList<TagConfigurationDto> targetTags = ResolveTargetTags(device, groupId, groupName);
+        TagConfigurationDto? existing = targetTags.FirstOrDefault(tag => string.Equals(tag.Id, tagId, StringComparison.OrdinalIgnoreCase));
         if (existing == null)
         {
-            targetTags.Add(CreateTag(device, groupName, row, headerMap, tagName));
+            targetTags.Add(CreateTag(device, groupId, row, headerMap, tagId, tagName));
             result.AddedCount++;
         }
         else
@@ -117,19 +142,19 @@ public sealed class GatewayTagBulkService
         }
     }
 
-    private static IList<TagConfigurationDto> ResolveTargetTags(DeviceConfigurationDto device, string groupName)
+    private static IList<TagConfigurationDto> ResolveTargetTags(DeviceConfigurationDto device, string groupId, string groupName)
     {
-        if (string.IsNullOrWhiteSpace(groupName))
+        if (string.IsNullOrWhiteSpace(groupId))
             return device.Tags;
 
-        GroupConfigurationDto? group = device.Groups.FirstOrDefault(item => string.Equals(item.Name, groupName, StringComparison.OrdinalIgnoreCase));
+        GroupConfigurationDto? group = device.Groups.FirstOrDefault(item => string.Equals(item.Id, groupId, StringComparison.OrdinalIgnoreCase));
         if (group == null)
         {
             group = new GroupConfigurationDto
             {
-                Id = Guid.NewGuid().ToString("N"),
+                Id = groupId.Trim(),
                 DeviceId = device.Id,
-                Name = groupName.Trim(),
+                Name = string.IsNullOrWhiteSpace(groupName) ? "导入分组" : groupName.Trim(),
                 Enabled = true,
                 ScanRateMs = device.DefaultScanRateMs
             };
@@ -139,13 +164,19 @@ public sealed class GatewayTagBulkService
         return group.Tags;
     }
 
-    private static TagConfigurationDto CreateTag(DeviceConfigurationDto device, string groupName, string[] row, Dictionary<string, int> headerMap, string tagName)
+    private static TagConfigurationDto CreateTag(
+        DeviceConfigurationDto device,
+        string groupId,
+        string[] row,
+        Dictionary<string, int> headerMap,
+        string tagId,
+        string tagName)
     {
         TagConfigurationDto tag = new TagConfigurationDto
         {
-            Id = Guid.NewGuid().ToString("N"),
+            Id = tagId.Trim(),
             DeviceId = device.Id,
-            GroupId = string.Empty,
+            GroupId = groupId.Trim(),
             Name = tagName.Trim(),
             Protocol = device.Protocol,
             DataType = "Int16",
@@ -154,18 +185,13 @@ public sealed class GatewayTagBulkService
             ScanRateMs = device.DefaultScanRateMs
         };
 
-        if (!string.IsNullOrWhiteSpace(groupName))
-        {
-            GroupConfigurationDto? group = device.Groups.FirstOrDefault(item => string.Equals(item.Name, groupName, StringComparison.OrdinalIgnoreCase));
-            tag.GroupId = group?.Id ?? string.Empty;
-        }
-
         ApplyTag(tag, row, headerMap);
         return tag;
     }
 
     private static void ApplyTag(TagConfigurationDto tag, string[] row, Dictionary<string, int> headerMap)
     {
+        tag.Name = ReadOrDefault(row, headerMap, "tagName", tag.Name);
         tag.Address = ReadOrDefault(row, headerMap, "address", tag.Address);
         tag.DataType = ReadOrDefault(row, headerMap, "dataType", tag.DataType);
         tag.Unit = ReadOrDefault(row, headerMap, "unit", tag.Unit);
@@ -231,13 +257,28 @@ public sealed class GatewayTagBulkService
         return map;
     }
 
-    private static DeviceConfigurationDto? FindDevice(ProjectConfigurationDto project, string deviceId, string deviceName)
+    private static DeviceConfigurationDto? FindDevice(
+        ProjectConfigurationDto project,
+        string selectedChannelId,
+        string selectedDeviceId,
+        string rowChannelId,
+        string rowDeviceId)
     {
-        if (!string.IsNullOrWhiteSpace(deviceId))
-            return project.Devices.FirstOrDefault(item => string.Equals(item.Id, deviceId, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(deviceName))
-            return project.Devices.FirstOrDefault(item => string.Equals(item.Name, deviceName.Trim(), StringComparison.OrdinalIgnoreCase));
-        return project.Devices.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(selectedChannelId) && !string.IsNullOrWhiteSpace(rowChannelId) &&
+            !string.Equals(selectedChannelId, rowChannelId, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (!string.IsNullOrWhiteSpace(selectedDeviceId) && !string.IsNullOrWhiteSpace(rowDeviceId) &&
+            !string.Equals(selectedDeviceId, rowDeviceId, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string channelId = string.IsNullOrWhiteSpace(selectedChannelId) ? rowChannelId : selectedChannelId;
+        string deviceId = string.IsNullOrWhiteSpace(selectedDeviceId) ? rowDeviceId : selectedDeviceId;
+        if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(deviceId))
+            return null;
+
+        return project.Devices.FirstOrDefault(item =>
+            string.Equals(item.ChannelId, channelId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.Id, deviceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool MatchesFilter(string value, string expected)
@@ -290,6 +331,7 @@ public sealed class GatewayTagBulkService
         {
             ProjectId = project.ProjectId,
             Name = project.Name,
+            Channels = project.Channels,
             Devices = project.Devices,
             Rules = project.Rules,
             FlowRules = project.FlowRules

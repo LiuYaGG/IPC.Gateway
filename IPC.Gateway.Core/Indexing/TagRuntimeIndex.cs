@@ -31,17 +31,17 @@ namespace IPC.Runtime.Indexing
     
     public sealed class TagRuntimeIndex
     {
-        private readonly Dictionary<string, TagConfig> _tagsByPath;
+        private readonly Dictionary<string, TagConfig> _tagsByIdentity;
 
         public TagRuntimeIndex(ProjectConfig config)
         {
-            _tagsByPath = new Dictionary<string, TagConfig>();
+            _tagsByIdentity = new Dictionary<string, TagConfig>();
             Rebuild(config);
         }
 
         public void Rebuild(ProjectConfig config)
         {
-            _tagsByPath.Clear();
+            _tagsByIdentity.Clear();
             if (config == null || config.Devices == null)
                 return;
 
@@ -61,8 +61,8 @@ namespace IPC.Runtime.Indexing
 
                         tag.DeviceId = device.Id;
                         tag.GroupId = string.Empty;
-                        string key = TagPath.Build(device.Name, string.Empty, tag.Name);
-                        _tagsByPath[key] = tag;
+                        string key = TagPath.BuildIdentity(device.ChannelId, device.Id, string.Empty, tag.Id);
+                        _tagsByIdentity[key] = tag;
                     }
                 }
 
@@ -83,16 +83,16 @@ namespace IPC.Runtime.Indexing
 
                         tag.DeviceId = device.Id;
                         tag.GroupId = group.Id;
-                        string key = TagPath.Build(device.Name, group.Name, tag.Name);
-                        _tagsByPath[key] = tag;
+                        string key = TagPath.BuildIdentity(device.ChannelId, device.Id, group.Id, tag.Id);
+                        _tagsByIdentity[key] = tag;
                     }
                 }
             }
         }
 
-        public bool TryGetTag(string deviceName, string groupName, string tagName, out TagConfig? tag)
+        public bool TryGetTag(string channelId, string deviceId, string groupId, string tagId, out TagConfig? tag)
         {
-            return _tagsByPath.TryGetValue(TagPath.Build(deviceName, groupName, tagName), out tag);
+            return _tagsByIdentity.TryGetValue(TagPath.BuildIdentity(channelId, deviceId, groupId, tagId), out tag);
         }
     }
 }

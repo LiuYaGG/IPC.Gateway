@@ -48,11 +48,19 @@ namespace IPC.Plc.Communication.Cip
         public const ushort LReal = 0x00CB;
         public const ushort String = 0x00D0;
         public const ushort Dword = 0x00D3;
+        public const ushort ShortString = 0x00DA;
+        public const ushort AbbreviatedStructure = 0x02A0;
 
         public static ushort FromPlcDataType(PlcDataType dataType)
         {
             switch (dataType)
             {
+                case PlcDataType.Int8:
+                case PlcDataType.Int8Array:
+                    return Sint;
+                case PlcDataType.UInt8:
+                case PlcDataType.UInt8Array:
+                    return Usint;
                 case PlcDataType.Bool:
                 case PlcDataType.BoolArray:
                     return Bool;
@@ -117,6 +125,10 @@ namespace IPC.Plc.Communication.Cip
                     return "STRING";
                 case Dword:
                     return "DWORD";
+                case ShortString:
+                    return "SHORT_STRING";
+                case AbbreviatedStructure:
+                    return "ABBREVIATED_STRUCTURE";
                 default:
                     return "0x" + typeCode.ToString("X4");
             }

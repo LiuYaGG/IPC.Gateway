@@ -5,23 +5,25 @@ export function normalizeKey(value: string | null | undefined) {
   return String(value || '').trim().toLowerCase()
 }
 
-export function deviceRuntimeKey(device: Pick<DeviceRuntimeStatus, 'deviceId' | 'deviceName'>) {
-  return `${normalizeKey(device.deviceId)}|${normalizeKey(device.deviceName)}`
+export function deviceRuntimeKey(device: Pick<DeviceRuntimeStatus, 'channelId' | 'deviceId'>) {
+  return `${normalizeKey(device.channelId)}/${normalizeKey(device.deviceId)}`
 }
 
-export function tagSnapshotKey(tag: Pick<TagValueSnapshot, 'deviceId' | 'groupId' | 'tagId' | 'deviceName' | 'groupName' | 'tagName'>) {
+export function tagSnapshotKey(tag: Pick<TagValueSnapshot, 'channelId' | 'deviceId' | 'groupId' | 'tagId'>) {
   return [
-    normalizeKey(tag.deviceId || tag.deviceName),
-    normalizeKey(tag.groupId || tag.groupName),
-    normalizeKey(tag.tagId || tag.tagName)
+    normalizeKey(tag.channelId),
+    normalizeKey(tag.deviceId),
+    normalizeKey(tag.groupId),
+    normalizeKey(tag.tagId)
   ].join('/')
 }
 
 export function tagConfigKey(device: DeviceConfig, groupId: string, tag: TagConfig) {
   return [
-    normalizeKey(tag.deviceId || device.id || device.name),
+    normalizeKey(device.channelId),
+    normalizeKey(tag.deviceId || device.id),
     normalizeKey(tag.groupId || groupId),
-    normalizeKey(tag.id || tag.name)
+    normalizeKey(tag.id)
   ].join('/')
 }
 
@@ -54,14 +56,16 @@ export function mergeTone(items: TopologyTone[]): TopologyTone {
   return 'normal'
 }
 
-export function filterErrors(errors: RuntimeErrorDetail[], deviceName?: string, groupName?: string, tagName?: string) {
-  const device = normalizeKey(deviceName)
-  const group = normalizeKey(groupName)
-  const tag = normalizeKey(tagName)
+export function filterErrors(errors: RuntimeErrorDetail[], channelId?: string, deviceId?: string, groupId?: string, tagId?: string) {
+  const channel = normalizeKey(channelId)
+  const device = normalizeKey(deviceId)
+  const group = normalizeKey(groupId)
+  const tag = normalizeKey(tagId)
   return errors.filter(error => {
-    if (device && normalizeKey(error.deviceName) !== device) return false
-    if (group && normalizeKey(error.groupName) !== group) return false
-    if (tag && normalizeKey(error.tagName) !== tag) return false
+    if (channel && normalizeKey(error.channelId) !== channel) return false
+    if (device && normalizeKey(error.deviceId) !== device) return false
+    if (group && normalizeKey(error.groupId) !== group) return false
+    if (tag && normalizeKey(error.tagId) !== tag) return false
     return true
   })
 }

@@ -655,8 +655,8 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         options.SparkplugNamespace = MqttGatewayOptions.NormalizeText(options.SparkplugNamespace, "spBv1.0");
         options.SparkplugGroupId = MqttGatewayOptions.NormalizeText(options.SparkplugGroupId, string.IsNullOrWhiteSpace(options.GatewayId) ? "IPC-Gateway" : options.GatewayId);
         options.SparkplugEdgeNodeId = MqttGatewayOptions.NormalizeText(options.SparkplugEdgeNodeId, string.IsNullOrWhiteSpace(options.ClientId) ? "EdgeNode" : options.ClientId);
-        options.SparkplugDeviceIdSource = MqttGatewayOptions.NormalizeText(options.SparkplugDeviceIdSource, "DeviceName");
-        options.SparkplugMetricNameTemplate = MqttGatewayOptions.NormalizeText(options.SparkplugMetricNameTemplate, "{group}/{tag}");
+        options.SparkplugDeviceIdSource = MqttGatewayOptions.NormalizeText(options.SparkplugDeviceIdSource, "DeviceId");
+        options.SparkplugMetricNameTemplate = MqttGatewayOptions.NormalizeText(options.SparkplugMetricNameTemplate, "{channel}/{group}/{tag}");
         options.SparkplugDeathQos = MqttGatewayOptions.ClampQos(options.SparkplugDeathQos);
         options.SparkplugBirthQos = MqttGatewayOptions.ClampQos(options.SparkplugBirthQos);
         options.Password = options.Password ?? string.Empty;

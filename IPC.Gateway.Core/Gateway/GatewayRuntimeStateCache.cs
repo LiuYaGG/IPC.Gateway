@@ -36,7 +36,6 @@ public sealed class GatewayRuntimeStateCache : IDisposable
     private readonly Dictionary<string, TagValueSnapshot> _tags = new Dictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RuntimeErrorDetail> _errors = new Dictionary<string, RuntimeErrorDetail>(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _activeDeviceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _activeDeviceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _activeTagKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     private IRuntimeService? _runtime;
@@ -290,7 +289,7 @@ public sealed class GatewayRuntimeStateCache : IDisposable
         {
             if (device == null)
                 continue;
-            _devices[GetDeviceKey(device.DeviceId, device.DeviceName)] = CloneDevice(device);
+            _devices[GetDeviceKey(device.ChannelId, device.DeviceId)] = CloneDevice(device);
         }
     }
 
@@ -354,7 +353,6 @@ public sealed class GatewayRuntimeStateCache : IDisposable
     private void SetActiveProjectNoLock(ProjectConfig project)
     {
         _activeDeviceKeys.Clear();
-        _activeDeviceNames.Clear();
         _activeTagKeys.Clear();
 
         if (project == null || project.Devices == null)
@@ -365,8 +363,7 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             if (device == null)
                 continue;
 
-            AddIfNotEmpty(_activeDeviceKeys, GetDeviceKey(device.Id, device.Name));
-            AddIfNotEmpty(_activeDeviceNames, device.Name);
+            AddIfNotEmpty(_activeDeviceKeys, GetDeviceKey(device.ChannelId, device.Id));
             CollectTagKeysNoLock(device, null, device.Tags);
 
             if (device.Groups == null)
@@ -392,9 +389,11 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             if (tag == null)
                 continue;
 
-            AddIfNotEmpty(_activeTagKeys, tag.Id);
-            AddIfNotEmpty(_activeTagKeys, TagPath.Build(device.Name, group == null ? string.Empty : group.Name, tag.Name));
-            AddIfNotEmpty(_activeTagKeys, TagPath.Build(device.Id, group == null ? string.Empty : group.Id, tag.Name));
+            AddIfNotEmpty(_activeTagKeys, TagPath.BuildIdentity(
+                device.ChannelId,
+                device.Id,
+                group == null ? string.Empty : group.Id,
+                tag.Id));
         }
     }
 
@@ -438,13 +437,13 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             removed = true;
         }
 
-        if (_activeDeviceNames.Count > 0)
+        if (_activeDeviceKeys.Count > 0)
         {
             foreach (string key in _errors.Keys.ToList())
             {
                 RuntimeErrorDetail error = _errors[key];
-                if (!string.IsNullOrWhiteSpace(error.DeviceName) &&
-                    !_activeDeviceNames.Contains(error.DeviceName))
+                if (!string.IsNullOrWhiteSpace(error.DeviceId) &&
+                    !_activeDeviceKeys.Contains(GetDeviceKey(error.ChannelId, error.DeviceId)))
                 {
                     _errors.Remove(key);
                     removed = true;
@@ -465,19 +464,14 @@ public sealed class GatewayRuntimeStateCache : IDisposable
     {
         if (device == null)
             return false;
-        if (!string.IsNullOrWhiteSpace(device.DeviceId))
-            return _activeDeviceKeys.Contains(device.DeviceId);
-        return _activeDeviceKeys.Contains(device.DeviceName ?? string.Empty);
+        return _activeDeviceKeys.Contains(GetDeviceKey(device.ChannelId, device.DeviceId));
     }
 
     private bool IsActiveTagNoLock(TagValueSnapshot tag)
     {
         if (tag == null)
             return false;
-        if (!string.IsNullOrWhiteSpace(tag.TagId))
-            return _activeTagKeys.Contains(tag.TagId);
-        return _activeTagKeys.Contains(TagPath.Build(tag.DeviceName, tag.GroupName, tag.TagName)) ||
-               _activeTagKeys.Contains(TagPath.Build(tag.DeviceId, tag.GroupId, tag.TagName));
+        return _activeTagKeys.Contains(GetTagKey(tag));
     }
 
     private void FlushIfDue()
@@ -597,6 +591,8 @@ public sealed class GatewayRuntimeStateCache : IDisposable
     {
         return new DeviceRuntimeStatus
         {
+            ChannelId = source.ChannelId ?? string.Empty,
+            ChannelName = source.ChannelName ?? string.Empty,
             DeviceId = source.DeviceId ?? string.Empty,
             DeviceName = source.DeviceName ?? string.Empty,
             Protocol = source.Protocol ?? string.Empty,
@@ -645,9 +641,9 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             : project.ProjectId.Trim();
     }
 
-    private static string GetDeviceKey(string deviceId, string deviceName)
+    private static string GetDeviceKey(string channelId, string deviceId)
     {
-        return string.IsNullOrWhiteSpace(deviceId) ? deviceName ?? string.Empty : deviceId;
+        return TagPath.Normalize(channelId) + "/" + TagPath.Normalize(deviceId);
     }
 
     private static void AddIfNotEmpty(HashSet<string> set, string value)
@@ -658,18 +654,17 @@ public sealed class GatewayRuntimeStateCache : IDisposable
 
     private static string GetTagKey(TagValueSnapshot snapshot)
     {
-        if (!string.IsNullOrWhiteSpace(snapshot.TagId))
-            return snapshot.TagId;
-        return TagPath.Build(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+        return TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
     }
 
     private static string GetErrorKey(RuntimeErrorDetail error)
     {
         return string.Join("|",
             error.Category ?? string.Empty,
-            error.DeviceName ?? string.Empty,
-            error.GroupName ?? string.Empty,
-            error.TagName ?? string.Empty,
+            error.ChannelId ?? string.Empty,
+            error.DeviceId ?? string.Empty,
+            error.GroupId ?? string.Empty,
+            error.TagId ?? string.Empty,
             error.Message ?? string.Empty,
             error.Timestamp.Ticks.ToString());
     }

@@ -252,6 +252,26 @@ namespace IPC.EdgeGateway
             }
         }
 
+        public int DeleteByTopicPrefix(string topicPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(topicPrefix))
+                return 0;
+
+            lock (_syncRoot)
+            {
+                int deleted = 0;
+                List<MqttOutboxEntry> entries = LoadAllEntries();
+                foreach (MqttOutboxEntry entry in entries)
+                {
+                    if (!entry.Message.Topic.StartsWith(topicPrefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    DeleteFile(entry.FilePath);
+                    deleted++;
+                }
+                return deleted;
+            }
+        }
+
         public MqttOutboxCleanupResult Cleanup(int maxMessages, long maxBytes, TimeSpan retention)
         {
             return Cleanup(maxMessages, maxBytes, retention, retention);

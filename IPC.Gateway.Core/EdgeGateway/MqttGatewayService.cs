@@ -39,7 +39,7 @@ namespace IPC.EdgeGateway
     
     
     
-    public sealed class MqttGatewayService : IDisposable
+    public sealed partial class MqttGatewayService : IDisposable
     {
         private readonly object _syncRoot;
         private readonly IRuntimeService _runtime;
@@ -284,7 +284,7 @@ namespace IPC.EdgeGateway
                     {
                         int birthSequence = BeginSparkplugSession();
                         MqttWillMessage? willMessage = BuildSparkplugNodeDeathWill(birthSequence);
-                        client.ConnectAndReadLoop(_options.SubscribeTopic, stopEvent, OnClientIdle, willMessage);
+                        client.ConnectAndReadLoop(BuildSubscribeTopics(), stopEvent, OnClientIdle, willMessage);
                     }
                     catch (Exception ex)
                     {
@@ -366,6 +366,9 @@ namespace IPC.EdgeGateway
 
             try
             {
+                if (TryHandleSparkplugMessage(e))
+                    return;
+
                 if (IsRemoteConfigurationMessage(e.Topic, e.Payload))
                 {
                     if (_remoteConfigurationHandler == null)
@@ -927,36 +930,40 @@ namespace IPC.EdgeGateway
                 parts = trimmed;
             }
 
-            if (parts.Length != 2 && parts.Length != 3)
+            if (parts.Length != 3 && parts.Length != 4)
             {
-                error = "MQTT write topic must be {prefix}/{device}/{tag}, {prefix}/{device}/{group}/{tag}, or {prefix}/write/{device}/{tag}.";
+                error = "MQTT write topic must be {prefix}/{channelId}/{deviceId}/{tagId} or {prefix}/{channelId}/{deviceId}/{groupId}/{tagId}.";
                 return false;
             }
 
-            string deviceName = parts[0];
-            string groupName = parts.Length == 3 ? parts[1] : string.Empty;
-            string tagName = parts.Length == 3 ? parts[2] : parts[1];
+            string channelId = parts[0];
+            string deviceId = parts[1];
+            string groupId = parts.Length == 4 ? parts[2] : string.Empty;
+            string tagId = parts.Length == 4 ? parts[3] : parts[2];
             string valueText;
             string dataType;
             ExtractPayload(payload, out valueText, out dataType);
 
-            if (string.IsNullOrWhiteSpace(dataType))
+            TagValueSnapshot? snapshot;
+            if (!_runtime.TryGetSnapshotById(channelId, deviceId, groupId, tagId, out snapshot) || snapshot == null)
             {
-                TagValueSnapshot? snapshot;
-                if (!_runtime.TryGetSnapshot(deviceName, groupName, tagName, out snapshot) || snapshot == null)
-                {
-                    error = "Tag was not found, and MQTT payload did not include dataType.";
-                    return false;
-                }
-
-                dataType = snapshot.DataType;
+                error = "Tag was not found for the supplied channel/device/group/tag IDs.";
+                return false;
             }
+
+            if (string.IsNullOrWhiteSpace(dataType))
+                dataType = snapshot.DataType;
 
             request = new WriteTagRequest
             {
-                DeviceName = deviceName,
-                GroupName = groupName,
-                TagName = tagName,
+                ChannelId = channelId,
+                ChannelName = snapshot.ChannelName,
+                DeviceId = deviceId,
+                GroupId = groupId,
+                TagId = tagId,
+                DeviceName = snapshot.DeviceName,
+                GroupName = snapshot.GroupName,
+                TagName = snapshot.TagName,
                 DataType = dataType,
                 ValueText = valueText,
                 Value = valueText
@@ -1087,10 +1094,10 @@ namespace IPC.EdgeGateway
 
         private static string BuildPublishStateKey(TagValueSnapshot snapshot)
         {
-            string device = string.IsNullOrWhiteSpace(snapshot.DeviceId) ? snapshot.DeviceName : snapshot.DeviceId;
-            string group = string.IsNullOrWhiteSpace(snapshot.GroupId) ? snapshot.GroupName : snapshot.GroupId;
-            string tag = string.IsNullOrWhiteSpace(snapshot.TagId) ? snapshot.TagName : snapshot.TagId;
-            return NormalizeStatePart(device) + "\u001F" + NormalizeStatePart(group) + "\u001F" + NormalizeStatePart(tag);
+            return NormalizeStatePart(snapshot.ChannelId) + "\u001F" +
+                   NormalizeStatePart(snapshot.DeviceId) + "\u001F" +
+                   NormalizeStatePart(snapshot.GroupId) + "\u001F" +
+                   NormalizeStatePart(snapshot.TagId);
         }
 
         private static string BuildPublishStateSignature(TagValueSnapshot snapshot)
@@ -1116,7 +1123,7 @@ namespace IPC.EdgeGateway
         private string BuildPublishTopic(TagValueSnapshot snapshot)
         {
             string template = string.IsNullOrWhiteSpace(_options.PublishTopicTemplate)
-                ? "ipc/data/{device}/{group}/{tag}"
+                ? "ipc/data/{channel}/{device}/{group}/{tag}"
                 : _options.PublishTopicTemplate.Trim();
 
             string groupName = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
@@ -1125,8 +1132,13 @@ namespace IPC.EdgeGateway
                 .Replace("{gatewayId}", SanitizeTopicSegment(_options.GatewayId))
                 .Replace("{gatewayName}", SanitizeTopicSegment(_options.GatewayName))
                 .Replace("{site}", SanitizeTopicSegment(_options.SiteName))
+                .Replace("{channelId}", SanitizeTopicSegment(snapshot.ChannelId))
+                .Replace("{channel}", SanitizeTopicSegment(snapshot.ChannelName))
+                .Replace("{deviceId}", SanitizeTopicSegment(snapshot.DeviceId))
                 .Replace("{device}", SanitizeTopicSegment(snapshot.DeviceName))
+                .Replace("{groupId}", SanitizeTopicSegment(string.IsNullOrWhiteSpace(snapshot.GroupId) ? "_" : snapshot.GroupId))
                 .Replace("{group}", SanitizeTopicSegment(groupName))
+                .Replace("{tagId}", SanitizeTopicSegment(snapshot.TagId))
                 .Replace("{tag}", SanitizeTopicSegment(snapshot.TagName))
                 .Replace("{pointCode}", SanitizeTopicSegment(pointCode))
                 .Replace("{quality}", SanitizeTopicSegment(snapshot.Quality.ToString()))
@@ -1146,8 +1158,13 @@ namespace IPC.EdgeGateway
                    "\"gatewayName\":\"" + JsonEscape(_options.GatewayName) + "\"," +
                    "\"siteName\":\"" + JsonEscape(_options.SiteName) + "\"," +
                    "\"configVersion\":" + MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion).ToString(CultureInfo.InvariantCulture) + "," +
+                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
+                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
+                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
                    "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
@@ -1221,7 +1238,7 @@ namespace IPC.EdgeGateway
                    ",\"failedPublishes\":" + status.FailedPublishes.ToString(CultureInfo.InvariantCulture) +
                    ",\"publishConsecutiveFailureCount\":" + status.PublishConsecutiveFailureCount.ToString(CultureInfo.InvariantCulture) +
                    ",\"publishRetryBackoffSeconds\":" + status.PublishRetryBackoffSeconds.ToString(CultureInfo.InvariantCulture) + "}," +
-                   "\"devices\":" + BuildDeviceStatusJson(devices) +
+                   "\"channels\":" + BuildChannelStatusJson(devices) +
                    "}";
         }
 
@@ -1240,7 +1257,7 @@ namespace IPC.EdgeGateway
                 return snapshot.PointCode.Trim();
 
             string group = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
-            return (NormalizeStatePart(snapshot.DeviceName).Trim() + "." + group + "." + NormalizeStatePart(snapshot.TagName).Trim()).Trim('.');
+            return (NormalizeStatePart(snapshot.ChannelName).Trim() + "." + NormalizeStatePart(snapshot.DeviceName).Trim() + "." + group + "." + NormalizeStatePart(snapshot.TagName).Trim()).Trim('.');
         }
 
         private string BuildAlarmPayload(TagValueSnapshot snapshot, MqttAlarmEvaluation evaluation)
@@ -1263,8 +1280,13 @@ namespace IPC.EdgeGateway
                    "\"" + valueField + "\":" + valueText + "," +
                    "\"value\":" + valueText + "," +
                    "\"threshold\":" + thresholdText + "," +
+                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
+                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
+                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
                    "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
@@ -1336,6 +1358,7 @@ namespace IPC.EdgeGateway
                 _currentSparkplugBirthSequence++;
                 if (_currentSparkplugBirthSequence > 255)
                     _currentSparkplugBirthSequence = 0;
+                _sparkplugPayloadSequence = 255;
                 return _currentSparkplugBirthSequence;
             }
         }
@@ -1376,6 +1399,7 @@ namespace IPC.EdgeGateway
             try
             {
                 SparkplugTopicBuilder topicBuilder = CreateSparkplugTopicBuilder();
+                _outboxStore.DeleteByTopicPrefix(topicBuilder.Namespace + "/" + topicBuilder.GroupId + "/");
                 int birthSequence;
                 lock (_syncRoot)
                     birthSequence = _currentSparkplugBirthSequence;
@@ -1528,7 +1552,11 @@ namespace IPC.EdgeGateway
             SparkplugMetric metric = SparkplugMetric.FromText(BuildSparkplugMetricName(snapshot), snapshot.DataType, snapshot.ValueText);
             metric.Timestamp = ToSparkplugTimestamp(snapshot.Timestamp);
             if (_options.SparkplugUseAliases)
+            {
                 metric.Alias = BuildSparkplugMetricAlias(snapshot);
+                if (!birth)
+                    metric.Name = string.Empty;
+            }
             if (_options.SparkplugIncludeProperties)
                 AddSparkplugMetricProperties(metric, snapshot, birth);
             return metric;
@@ -1536,6 +1564,8 @@ namespace IPC.EdgeGateway
 
         private void AddSparkplugMetricProperties(SparkplugMetric metric, TagValueSnapshot snapshot, bool birth)
         {
+            metric.Properties["channelId"] = snapshot.ChannelId ?? string.Empty;
+            metric.Properties["channelName"] = snapshot.ChannelName ?? string.Empty;
             metric.Properties["deviceId"] = snapshot.DeviceId ?? string.Empty;
             metric.Properties["deviceName"] = snapshot.DeviceName ?? string.Empty;
             metric.Properties["deviceProtocol"] = snapshot.DeviceProtocol ?? string.Empty;
@@ -1566,7 +1596,7 @@ namespace IPC.EdgeGateway
             if (snapshot == null)
                 return "Device";
 
-            string source = MqttGatewayOptions.NormalizeText(_options.SparkplugDeviceIdSource, "DeviceName");
+            string source = MqttGatewayOptions.NormalizeText(_options.SparkplugDeviceIdSource, "DeviceId");
             string value = source.Equals("DeviceId", StringComparison.OrdinalIgnoreCase)
                 ? snapshot.DeviceId
                 : snapshot.DeviceName;
@@ -1577,11 +1607,16 @@ namespace IPC.EdgeGateway
 
         private string BuildSparkplugMetricName(TagValueSnapshot snapshot)
         {
-            string template = MqttGatewayOptions.NormalizeText(_options.SparkplugMetricNameTemplate, "{group}/{tag}");
+            string template = MqttGatewayOptions.NormalizeText(_options.SparkplugMetricNameTemplate, "{channel}/{group}/{tag}");
             string groupName = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
             string metric = template
+                .Replace("{channelId}", SanitizeTopicSegment(snapshot.ChannelId))
+                .Replace("{channel}", SanitizeTopicSegment(snapshot.ChannelName))
+                .Replace("{deviceId}", SanitizeTopicSegment(snapshot.DeviceId))
                 .Replace("{device}", SanitizeTopicSegment(snapshot.DeviceName))
+                .Replace("{groupId}", SanitizeTopicSegment(string.IsNullOrWhiteSpace(snapshot.GroupId) ? "_" : snapshot.GroupId))
                 .Replace("{group}", SanitizeTopicSegment(groupName))
+                .Replace("{tagId}", SanitizeTopicSegment(snapshot.TagId))
                 .Replace("{tag}", SanitizeTopicSegment(snapshot.TagName))
                 .Replace("{pointCode}", SanitizeTopicSegment(GetPointCode(snapshot)))
                 .Replace("{dataType}", SanitizeTopicSegment(snapshot.DataType));
@@ -1668,14 +1703,17 @@ namespace IPC.EdgeGateway
                 if (snapshot == null)
                     continue;
 
-                string key = string.IsNullOrWhiteSpace(snapshot.DeviceId) ? snapshot.DeviceName : snapshot.DeviceId;
-                if (string.IsNullOrWhiteSpace(key) || string.Equals(snapshot.Source, "RuleEngine", StringComparison.OrdinalIgnoreCase))
+                string key = NormalizeStatePart(snapshot.ChannelId) + "\u001F" + NormalizeStatePart(snapshot.DeviceId);
+                if (string.IsNullOrWhiteSpace(snapshot.ChannelId) || string.IsNullOrWhiteSpace(snapshot.DeviceId) ||
+                    string.Equals(snapshot.Source, "RuleEngine", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 DeviceStatusCounter? counter;
                 if (!devices.TryGetValue(key, out counter) || counter == null)
                 {
                     counter = new DeviceStatusCounter();
+                    counter.ChannelId = snapshot.ChannelId;
+                    counter.ChannelName = snapshot.ChannelName;
                     counter.DeviceId = snapshot.DeviceId;
                     counter.DeviceName = snapshot.DeviceName;
                     counter.Protocol = snapshot.DeviceProtocol;
@@ -1700,6 +1738,32 @@ namespace IPC.EdgeGateway
             return devices;
         }
 
+        private static string BuildChannelStatusJson(Dictionary<string, DeviceStatusCounter> devices)
+        {
+            if (devices == null || devices.Count == 0)
+                return "[]";
+
+            List<IGrouping<string, DeviceStatusCounter>> channels = devices.Values
+                .GroupBy(device => NormalizeStatePart(device.ChannelId) + "\u001F" + NormalizeStatePart(device.ChannelName), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.First().ChannelName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            List<string> items = new List<string>();
+            foreach (IGrouping<string, DeviceStatusCounter> channel in channels)
+            {
+                DeviceStatusCounter first = channel.First();
+                Dictionary<string, DeviceStatusCounter> channelDevices = channel
+                    .ToDictionary(device => device.DeviceId, StringComparer.OrdinalIgnoreCase);
+                items.Add("{" +
+                          "\"channelId\":\"" + JsonEscape(first.ChannelId) + "\"," +
+                          "\"channelName\":\"" + JsonEscape(first.ChannelName) + "\"," +
+                          "\"deviceCount\":" + channelDevices.Count.ToString(CultureInfo.InvariantCulture) + "," +
+                          "\"devices\":" + BuildDeviceStatusJson(channelDevices) +
+                          "}");
+            }
+
+            return "[" + string.Join(",", items.ToArray()) + "]";
+        }
+
         private static string BuildDeviceStatusJson(Dictionary<string, DeviceStatusCounter> devices)
         {
             if (devices == null || devices.Count == 0)
@@ -1718,6 +1782,8 @@ namespace IPC.EdgeGateway
                 string state = device.GoodTags > 0 ? "Online" : (device.BadTags > 0 ? "Error" : "NoData");
                 double successRate = device.TotalTags == 0 ? 0D : Math.Round(device.GoodTags * 100D / device.TotalTags, 2);
                 items.Add("{" +
+                          "\"channelId\":\"" + JsonEscape(device.ChannelId) + "\"," +
+                          "\"channelName\":\"" + JsonEscape(device.ChannelName) + "\"," +
                           "\"deviceId\":\"" + JsonEscape(device.DeviceId) + "\"," +
                           "\"deviceName\":\"" + JsonEscape(device.DeviceName) + "\"," +
                           "\"protocol\":\"" + JsonEscape(device.Protocol) + "\"," +
@@ -1741,6 +1807,7 @@ namespace IPC.EdgeGateway
         private static void AddTagStatus(DeviceStatusCounter device, TagValueSnapshot snapshot)
         {
             TagStatusCounter tag = new TagStatusCounter();
+            tag.ChannelId = snapshot.ChannelId;
             tag.TagId = snapshot.TagId;
             tag.DeviceId = snapshot.DeviceId;
             tag.GroupId = snapshot.GroupId;
@@ -1754,7 +1821,7 @@ namespace IPC.EdgeGateway
             tag.MqttPublishEnabled = snapshot.MqttPublishEnabled;
             tag.Alarm = snapshot.Alarm;
 
-            if (string.IsNullOrWhiteSpace(snapshot.GroupName))
+            if (string.IsNullOrWhiteSpace(snapshot.GroupId))
             {
                 device.Tags.Add(tag);
                 return;
@@ -1763,8 +1830,7 @@ namespace IPC.EdgeGateway
             GroupStatusCounter? group = null;
             for (int i = 0; i < device.Groups.Count; i++)
             {
-                if (string.Equals(device.Groups[i].GroupName, snapshot.GroupName, StringComparison.OrdinalIgnoreCase) ||
-                    (!string.IsNullOrWhiteSpace(snapshot.GroupId) && string.Equals(device.Groups[i].GroupId, snapshot.GroupId, StringComparison.OrdinalIgnoreCase)))
+                if (string.Equals(device.Groups[i].GroupId, snapshot.GroupId, StringComparison.OrdinalIgnoreCase))
                 {
                     group = device.Groups[i];
                     break;
@@ -1836,6 +1902,7 @@ namespace IPC.EdgeGateway
             {
                 TagStatusCounter tag = tags[i];
                 items.Add("{" +
+                          "\"channelId\":\"" + JsonEscape(tag.ChannelId) + "\"," +
                           "\"tagId\":\"" + JsonEscape(tag.TagId) + "\"," +
                           "\"deviceId\":\"" + JsonEscape(tag.DeviceId) + "\"," +
                           "\"groupId\":\"" + JsonEscape(tag.GroupId) + "\"," +
@@ -2050,6 +2117,8 @@ namespace IPC.EdgeGateway
         {
             public DeviceStatusCounter()
             {
+                ChannelId = string.Empty;
+                ChannelName = string.Empty;
                 DeviceId = string.Empty;
                 DeviceName = string.Empty;
                 Protocol = string.Empty;
@@ -2059,6 +2128,8 @@ namespace IPC.EdgeGateway
                 Groups = new List<GroupStatusCounter>();
             }
 
+            public string ChannelId { get; set; }
+            public string ChannelName { get; set; }
             public string DeviceId { get; set; }
             public string DeviceName { get; set; }
             public string Protocol { get; set; }
@@ -2101,6 +2172,7 @@ namespace IPC.EdgeGateway
         {
             public TagStatusCounter()
             {
+                ChannelId = string.Empty;
                 TagId = string.Empty;
                 DeviceId = string.Empty;
                 GroupId = string.Empty;
@@ -2114,6 +2186,7 @@ namespace IPC.EdgeGateway
                 Alarm = new TagAlarmConfig();
             }
 
+            public string ChannelId { get; set; }
             public string TagId { get; set; }
             public string DeviceId { get; set; }
             public string GroupId { get; set; }

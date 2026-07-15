@@ -87,7 +87,7 @@ namespace IPC.Gateway.Core.Gateway
             options.ServerCertificateThumbprint = options.ServerCertificateThumbprint ?? string.Empty;
             options.CaCertificatePath = options.CaCertificatePath ?? string.Empty;
             options.SubscribeTopic = string.IsNullOrWhiteSpace(options.SubscribeTopic) ? "ipc/write/#" : options.SubscribeTopic.Trim();
-            options.PublishTopicTemplate = string.IsNullOrWhiteSpace(options.PublishTopicTemplate) ? "ipc/data/{device}/{group}/{tag}" : options.PublishTopicTemplate.Trim();
+            options.PublishTopicTemplate = string.IsNullOrWhiteSpace(options.PublishTopicTemplate) ? "ipc/data/{channel}/{device}/{group}/{tag}" : options.PublishTopicTemplate.Trim();
             options.HeartbeatTopic = string.IsNullOrWhiteSpace(options.HeartbeatTopic) ? "gateway/{gatewayId}/heartbeat" : options.HeartbeatTopic.Trim();
             options.StatusTopic = string.IsNullOrWhiteSpace(options.StatusTopic) ? "gateway/{gatewayId}/status" : options.StatusTopic.Trim();
             options.CommandReplyTopicTemplate = string.IsNullOrWhiteSpace(options.CommandReplyTopicTemplate) ? "gateway/{gatewayId}/reply/{requestId}" : options.CommandReplyTopicTemplate.Trim();
@@ -112,8 +112,8 @@ namespace IPC.Gateway.Core.Gateway
             options.SparkplugNamespace = MqttGatewayOptions.NormalizeText(options.SparkplugNamespace, "spBv1.0");
             options.SparkplugGroupId = MqttGatewayOptions.NormalizeText(options.SparkplugGroupId, options.GatewayId);
             options.SparkplugEdgeNodeId = MqttGatewayOptions.NormalizeText(options.SparkplugEdgeNodeId, options.ClientId);
-            options.SparkplugDeviceIdSource = MqttGatewayOptions.NormalizeText(options.SparkplugDeviceIdSource, "DeviceName");
-            options.SparkplugMetricNameTemplate = MqttGatewayOptions.NormalizeText(options.SparkplugMetricNameTemplate, "{group}/{tag}");
+            options.SparkplugDeviceIdSource = MqttGatewayOptions.NormalizeText(options.SparkplugDeviceIdSource, "DeviceId");
+            options.SparkplugMetricNameTemplate = MqttGatewayOptions.NormalizeText(options.SparkplugMetricNameTemplate, "{channel}/{group}/{tag}");
             options.SparkplugDeathQos = MqttGatewayOptions.ClampQos(options.SparkplugDeathQos);
             options.SparkplugBirthQos = MqttGatewayOptions.ClampQos(options.SparkplugBirthQos);
             return options;

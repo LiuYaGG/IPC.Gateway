@@ -34,7 +34,7 @@ namespace IPC.Plc.Communication.VirtualPlc
     
     
     
-    public sealed class VirtualPlcClient : IPlcClient, IAsyncPlcClient
+    public sealed class VirtualPlcClient : IPlcClient, IAsyncPlcClient, IPlcBatchReadClient, IAsyncPlcBatchReadClient
     {
         private static readonly object StoreLock = new object();
         private static readonly Dictionary<string, Dictionary<string, object>> Stores = new Dictionary<string, Dictionary<string, object>>();
@@ -113,6 +113,45 @@ namespace IPC.Plc.Communication.VirtualPlc
         {
             cancellationToken.ThrowIfCancellationRequested();
             return new ValueTask<PlcReadResult>(Read(address, dataType, elementCount, elementOffset));
+        }
+
+        public IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests)
+        {
+            List<PlcBatchReadResult> results = new List<PlcBatchReadResult>(requests?.Count ?? 0);
+            if (requests == null || requests.Count == 0)
+                return results;
+
+            EnsureConnected();
+            lock (StoreLock)
+            {
+                Dictionary<string, object> store = Stores[_storeKey];
+                for (int i = 0; i < requests.Count; i++)
+                {
+                    PlcBatchReadRequest request = requests[i] ?? new PlcBatchReadRequest(string.Empty, PlcDataType.Int16, 1, 0);
+                    try
+                    {
+                        string key = NormalizeAddress(request.Address);
+                        store.TryGetValue(key, out object? storedValue);
+                        object value = ConvertForRead(storedValue, request.DataType, request.ElementCount);
+                        results.Add(PlcBatchReadResult.FromSuccess(
+                            request,
+                            new PlcReadResult(0, request.DataType.ToString(), value)));
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add(PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Tag));
+                    }
+                }
+            }
+            return results;
+        }
+
+        public ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
+            IList<PlcBatchReadRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ValueTask<IList<PlcBatchReadResult>>(ReadMany(requests));
         }
 
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)

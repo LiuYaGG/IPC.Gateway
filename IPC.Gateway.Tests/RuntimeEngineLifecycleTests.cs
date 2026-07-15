@@ -32,7 +32,7 @@ public sealed class RuntimeEngineLifecycleTests
     {
         using RuntimeEngine engine = new RuntimeEngine(CreateQuietSchedulerOptions());
 
-        bool found = engine.TryGetSnapshot("Device", "Group", "Tag", out TagValueSnapshot? snapshot);
+        bool found = TryGetSnapshot(engine, "Device", "Group", "Tag", out TagValueSnapshot? snapshot);
 
         Assert.False(found);
         Assert.Null(snapshot);
@@ -151,7 +151,7 @@ public sealed class RuntimeEngineLifecycleTests
             if (client == null || client.BatchReadCount <= 0 || client.ScalarReadCount != 0)
                 return false;
 
-            return engine.TryGetSnapshot("BatchDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+            return TryGetSnapshot(engine, "BatchDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
                    snapshot != null &&
                    snapshot.Quality == TagQuality.Good &&
                    snapshot.ValueText == "11";
@@ -186,9 +186,9 @@ public sealed class RuntimeEngineLifecycleTests
             if (client == null || client.BatchReadCount != 1 || client.ScalarReadCount != 0)
                 return false;
 
-            return engine.TryGetSnapshot("MixedBatchDevice", string.Empty, "DeviceTag", out TagValueSnapshot? deviceTag) &&
-                   engine.TryGetSnapshot("MixedBatchDevice", "GroupA", "GroupTagA", out TagValueSnapshot? groupTagA) &&
-                   engine.TryGetSnapshot("MixedBatchDevice", "GroupA", "GroupTagB", out TagValueSnapshot? groupTagB) &&
+            return TryGetSnapshot(engine, "MixedBatchDevice", string.Empty, "DeviceTag", out TagValueSnapshot? deviceTag) &&
+                   TryGetSnapshot(engine, "MixedBatchDevice", "GroupA", "GroupTagA", out TagValueSnapshot? groupTagA) &&
+                   TryGetSnapshot(engine, "MixedBatchDevice", "GroupA", "GroupTagB", out TagValueSnapshot? groupTagB) &&
                    deviceTag != null &&
                    groupTagA != null &&
                    groupTagB != null &&
@@ -227,7 +227,7 @@ public sealed class RuntimeEngineLifecycleTests
             if (client == null || client.AsyncBatchReadCount <= 0 || client.SyncReadCount != 0)
                 return false;
 
-            return engine.TryGetSnapshot("BatchDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+            return TryGetSnapshot(engine, "BatchDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
                    snapshot != null &&
                    snapshot.Quality == TagQuality.Good &&
                    snapshot.ValueText == "31";
@@ -276,7 +276,7 @@ public sealed class RuntimeEngineLifecycleTests
         driver.Client!.Publish("A", (short)44);
 
         bool pushed = SpinWait.SpinUntil(() =>
-            engine.TryGetSnapshot("SubscriptionDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+            TryGetSnapshot(engine, "SubscriptionDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
             snapshot != null &&
             snapshot.Quality == TagQuality.Good &&
             snapshot.ValueText == "44",
@@ -340,13 +340,13 @@ public sealed class RuntimeEngineLifecycleTests
         driver.Client.Publish("B", (short)42);
 
         bool oldTagStillUpdates = SpinWait.SpinUntil(() =>
-            engine.TryGetSnapshot("SubscriptionUpdateDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+            TryGetSnapshot(engine, "SubscriptionUpdateDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
             snapshot != null &&
             snapshot.Quality == TagQuality.Good &&
             snapshot.ValueText == "31",
             TimeSpan.FromSeconds(3));
         bool newTagUpdates = SpinWait.SpinUntil(() =>
-            engine.TryGetSnapshot("SubscriptionUpdateDevice", string.Empty, "TagB", out TagValueSnapshot? snapshot) &&
+            TryGetSnapshot(engine, "SubscriptionUpdateDevice", string.Empty, "TagB", out TagValueSnapshot? snapshot) &&
             snapshot != null &&
             snapshot.Quality == TagQuality.Good &&
             snapshot.ValueText == "42",
@@ -452,7 +452,7 @@ public sealed class RuntimeEngineLifecycleTests
             if (offlineDriver.ConnectAttempts <= 0)
                 return false;
 
-            return engine.TryGetSnapshot("ReachablePriorityDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
+            return TryGetSnapshot(engine, "ReachablePriorityDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot) &&
                    snapshot != null &&
                    snapshot.Quality == TagQuality.Good &&
                    snapshot.ValueText == "11";
@@ -602,7 +602,7 @@ public sealed class RuntimeEngineLifecycleTests
             return status != null && status.FailedReads >= 2;
         }, TimeSpan.FromSeconds(3));
         DeviceRuntimeStatus? deviceStatus = engine.GetDeviceStatuses().FirstOrDefault(item => item.DeviceName == "OpcUaStyleDevice");
-        bool snapshotFound = engine.TryGetSnapshot("OpcUaStyleDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot);
+        bool snapshotFound = TryGetSnapshot(engine, "OpcUaStyleDevice", string.Empty, "TagA", out TagValueSnapshot? snapshot);
 
         engine.Stop();
 
@@ -756,6 +756,7 @@ public sealed class RuntimeEngineLifecycleTests
         });
         ProjectConfig project = CreateSingleTagProject(driverId, "OpcUaWriteStyleDevice");
         project.Devices[0].DefaultScanRateMs = 20;
+        ProjectConfigStore.Normalize(project);
 
         engine.Start(project);
 
@@ -766,6 +767,9 @@ public sealed class RuntimeEngineLifecycleTests
         }, TimeSpan.FromSeconds(2));
         WriteTagResponse response = engine.WriteTag(new WriteTagRequest
         {
+            ChannelId = project.Devices[0].ChannelId,
+            DeviceId = project.Devices[0].Id,
+            TagId = project.Devices[0].Tags[0].Id,
             DeviceName = "OpcUaWriteStyleDevice",
             TagName = "TagA",
             DataType = PlcDataType.Int16.ToString(),
@@ -792,6 +796,15 @@ public sealed class RuntimeEngineLifecycleTests
         {
             SchedulerIntervalMs = 60000
         };
+    }
+
+    private static bool TryGetSnapshot(RuntimeEngine engine, string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
+    {
+        snapshot = engine.GetSnapshots().FirstOrDefault(item =>
+            string.Equals(item.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.GroupName, groupName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.TagName, tagName, StringComparison.OrdinalIgnoreCase));
+        return snapshot != null;
     }
 
     private static ProjectConfig CreateStaggeredUdpProject(int deviceCount)

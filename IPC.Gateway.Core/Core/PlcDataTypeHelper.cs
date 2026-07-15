@@ -33,6 +33,8 @@ namespace IPC.Plc.Communication.Core
         public static bool IsArray(PlcDataType dataType)
         {
             return dataType == PlcDataType.BoolArray ||
+                   dataType == PlcDataType.Int8Array ||
+                   dataType == PlcDataType.UInt8Array ||
                    dataType == PlcDataType.Int16Array ||
                    dataType == PlcDataType.UInt16Array ||
                    dataType == PlcDataType.Int32Array ||
@@ -51,6 +53,10 @@ namespace IPC.Plc.Communication.Core
             {
                 case PlcDataType.Bool:
                 case PlcDataType.BoolArray:
+                case PlcDataType.Int8:
+                case PlcDataType.Int8Array:
+                case PlcDataType.UInt8:
+                case PlcDataType.UInt8Array:
                 case PlcDataType.Coil:
                 case PlcDataType.CoilArray:
                 case PlcDataType.DiscreteInput:
@@ -88,6 +94,10 @@ namespace IPC.Plc.Communication.Core
             {
                 case PlcDataType.BoolArray:
                     return new bool[length];
+                case PlcDataType.Int8Array:
+                    return new sbyte[length];
+                case PlcDataType.UInt8Array:
+                    return new byte[length];
                 case PlcDataType.Int16Array:
                     return new short[length];
                 case PlcDataType.UInt16Array:

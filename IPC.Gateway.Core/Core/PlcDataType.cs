@@ -41,6 +41,10 @@ namespace IPC.Plc.Communication.Core
         Coil,
         CoilArray,
         DiscreteInput,
-        DiscreteInputArray
+        DiscreteInputArray,
+        Int8,
+        UInt8,
+        Int8Array,
+        UInt8Array
     }
 }

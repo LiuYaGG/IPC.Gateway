@@ -16,7 +16,7 @@ namespace IPC.Runtime.Configuration
             Enabled = true;
             Protocol = PlcProtocol.ModbusTcp;
             DriverId = string.Empty;
-            MaxConcurrentDevicePolls = 4;
+            MaxConcurrentDevicePolls = 64;
             SchedulingWeight = 1;
         }
 

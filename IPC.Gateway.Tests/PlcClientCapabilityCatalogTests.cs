@@ -20,10 +20,12 @@ public sealed class PlcClientCapabilityCatalogTests
         Assert.False(capabilities.SupportsConcurrentRequests);
     }
 
-    [Fact]
-    public void ForProtocol_ClassifiesSerialProtocolsAsDedicatedThread()
+    [Theory]
+    [InlineData(PlcProtocol.ModbusRtu)]
+    [InlineData(PlcProtocol.ModbusAscii)]
+    public void ForProtocol_ClassifiesSerialProtocolsAsDedicatedThread(PlcProtocol protocol)
     {
-        PlcClientCapabilities capabilities = PlcClientCapabilityCatalog.ForProtocol(PlcProtocol.ModbusRtu);
+        PlcClientCapabilities capabilities = PlcClientCapabilityCatalog.ForProtocol(protocol);
 
         Assert.Equal(PlcClientAsyncKind.DedicatedThread, capabilities.AsyncKind);
         Assert.False(capabilities.SupportsNativeAsync);

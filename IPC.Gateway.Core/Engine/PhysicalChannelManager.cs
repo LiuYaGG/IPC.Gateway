@@ -47,7 +47,9 @@ namespace IPC.Runtime.Engine
                        "|" + connection.SerialParity + "|" + connection.SerialStopBits;
             }
 
-            if (device.Protocol == PlcProtocol.Dlt6452007 || device.Protocol == PlcProtocol.Cjt1882004)
+            if (device.Protocol == PlcProtocol.Dlt6452007 ||
+                device.Protocol == PlcProtocol.Cjt1882004 ||
+                device.Protocol == PlcProtocol.Cjt1882018)
                 return "meter|" + connection.Transport + "|" + endpoint;
 
             if (device.Protocol == PlcProtocol.OpcDa)
@@ -60,6 +62,7 @@ namespace IPC.Runtime.Engine
         private static bool IsSerialOrBusProtocol(PlcProtocol protocol)
         {
             return protocol == PlcProtocol.ModbusRtu ||
+                   protocol == PlcProtocol.ModbusAscii ||
                    protocol == PlcProtocol.MitsubishiSerial ||
                    protocol == PlcProtocol.MitsubishiQlSerial ||
                    protocol == PlcProtocol.CanOpen;

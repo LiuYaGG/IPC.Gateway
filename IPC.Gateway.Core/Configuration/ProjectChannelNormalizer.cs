@@ -30,6 +30,9 @@ namespace IPC.Runtime.Configuration
                     : channel.Name.Trim();
                 names.Add(channel.Name);
                 channel.MaxConcurrentDevicePolls = Math.Clamp(channel.MaxConcurrentDevicePolls, 1, 256);
+                if (channel.Id.StartsWith("auto-", StringComparison.OrdinalIgnoreCase) &&
+                    channel.MaxConcurrentDevicePolls == 4)
+                    channel.MaxConcurrentDevicePolls = 64;
                 channel.SchedulingWeight = Math.Clamp(channel.SchedulingWeight, 1, 100);
 
                 channelsById[channel.Id] = channel;

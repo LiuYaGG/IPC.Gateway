@@ -1,8 +1,7 @@
 import type { DeviceConfig, GroupConfig, TagAlarmConfig, TagConfig, ScalingConfig, DataCleaningConfig } from '../api'
 
-export const dataTypeOptions = [
+const standardScalarDataTypeOptions = [
   'Bool',
-  'Byte',
   'Int16',
   'UInt16',
   'Int32',
@@ -12,15 +11,143 @@ export const dataTypeOptions = [
   'String'
 ]
 
+const fullScalarDataTypeOptions = [
+  'Bool',
+  'Int16',
+  'UInt16',
+  'Int32',
+  'UInt32',
+  'Int64',
+  'UInt64',
+  'Float',
+  'Double',
+  'String'
+]
+
+const cipScalarDataTypeOptions = [
+  'Bool',
+  'Int8',
+  'UInt8',
+  'Int16',
+  'UInt16',
+  'Int32',
+  'UInt32',
+  'Int64',
+  'UInt64',
+  'Float',
+  'Double',
+  'String'
+]
+
+const dnp3ScalarDataTypeOptions = cipScalarDataTypeOptions.filter(item => item !== 'String')
+
+const compactScalarDataTypeOptions = [
+  'Bool',
+  'Int16',
+  'UInt16',
+  'Int32',
+  'UInt32',
+  'Float',
+  'String'
+]
+
+const meterScalarDataTypeOptions = standardScalarDataTypeOptions.filter(item => item !== 'Bool')
+
+const arrayDataTypeOptions = [
+  'BoolArray',
+  'Int16Array',
+  'UInt16Array',
+  'Int32Array',
+  'UInt32Array',
+  'Int64Array',
+  'UInt64Array',
+  'FloatArray',
+  'DoubleArray'
+]
+
+const cipArrayDataTypeOptions = [
+  'BoolArray',
+  'Int8Array',
+  'UInt8Array',
+  'Int16Array',
+  'UInt16Array',
+  'Int32Array',
+  'UInt32Array',
+  'Int64Array',
+  'UInt64Array',
+  'FloatArray',
+  'DoubleArray'
+]
+
+const arrayCapableProtocols = new Set([
+  'RockwellCip',
+  'EtherNetIp',
+  'CanOpen',
+  'BeckhoffAds',
+  'MqttClient',
+  'SiemensS7',
+  'MitsubishiMc',
+  'MitsubishiMc1E',
+  'MitsubishiSerial',
+  'MitsubishiQlSerial',
+  'OmronFins',
+  'ModbusTcp',
+  'ModbusRtu',
+  'ModbusAscii',
+  'OpcUa',
+  'OpcDa',
+  'VirtualPlc'
+])
+
+const fullScalarProtocols = new Set([
+  ...arrayCapableProtocols,
+  'BacnetIp'
+])
+
+export interface DataTypeOptionGroup {
+  label: string
+  options: string[]
+}
+
+export function dataTypeOptionGroups(protocol: string): DataTypeOptionGroup[] {
+  const usesByteTypes = protocol === 'RockwellCip' || protocol === 'EtherNetIp' || protocol === 'CanOpen' || protocol === 'BeckhoffAds'
+  const scalarOptions = protocol === 'Dnp3'
+    ? dnp3ScalarDataTypeOptions
+    : usesByteTypes || protocol === 'Snmp' || protocol === 'MqttClient'
+    ? cipScalarDataTypeOptions
+    : fullScalarProtocols.has(protocol)
+    ? fullScalarDataTypeOptions
+    : protocol === 'RockwellPccc'
+      ? compactScalarDataTypeOptions
+      : protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018'
+        ? meterScalarDataTypeOptions
+        : standardScalarDataTypeOptions
+  const groups: DataTypeOptionGroup[] = [
+    { label: '标量类型', options: [...scalarOptions] }
+  ]
+
+  if (arrayCapableProtocols.has(protocol)) {
+    groups.push({
+      label: '数组类型',
+      options: [...(usesByteTypes ? cipArrayDataTypeOptions : arrayDataTypeOptions)]
+    })
+  }
+  if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii' || protocol === 'VirtualPlc') {
+    groups.push({ label: '位类型', options: ['Coil', 'CoilArray'] })
+  }
+  return groups
+}
+
 export const accessModeOptions = ['ReadOnly', 'ReadWrite', 'WriteOnly']
 
 export const meterProtocolOptions = [
   { label: 'DL/T 645-2007', value: 'Dlt6452007' },
-  { label: 'CJ/T 188-2004', value: 'Cjt1882004' }
+  { label: 'CJ/T 188-2004', value: 'Cjt1882004' },
+  { label: 'CJ/T 188-2018', value: 'Cjt1882018' }
 ]
 
 const dlt645MeterTypes = ['电能表', '多功能电表', '智能电表']
-const cjt188MeterTypes = ['水表', '热量表', '燃气表', '冷量表']
+const cjt188MeterTypes = ['水表', '热水表', '直饮水表', '中水表', '热量表', '冷量表', '冷热量表', '燃气表']
 
 export function createGroupDraft(device: DeviceConfig): GroupConfig {
   return normalizeGroup({
@@ -123,12 +250,12 @@ export function normalizeTag(tag: TagConfig): TagConfig {
 }
 
 export function isMeterProtocol(protocol: string) {
-  return protocol === 'Dlt6452007' || protocol === 'Cjt1882004'
+  return protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018'
 }
 
 export function meterTypeOptions(protocol: string) {
   if (protocol === 'Dlt6452007') return dlt645MeterTypes
-  if (protocol === 'Cjt1882004') return cjt188MeterTypes
+  if (protocol === 'Cjt1882004' || protocol === 'Cjt1882018') return cjt188MeterTypes
   return []
 }
 
@@ -137,14 +264,21 @@ export function defaultMeterType(protocol: string) {
 }
 
 export function tagAddressPlaceholder(protocol: string) {
-  if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu') return '例如：40001、00001、3:40001'
-  if (protocol === 'SiemensS7') return '例如：DB1.DBW0、M0.0'
+  if (protocol === 'RockwellCip') return '符号标签：Program:MainProgram.TagName、MyArray[0]'
+  if (protocol === 'EtherNetIp') return '显式消息：@0x01/1/7、Assembly:100；隐式 I/O：Input:0.0、Output:0'
+  if (protocol === 'BeckhoffAds') return '例如：MAIN.Counter、MAIN.Values[0]、GVL.Temperature'
+  if (protocol === 'Snmp') return '例如：1.3.6.1.2.1.1.3.0（sysUpTime）'
+  if (protocol === 'MqttClient') return 'Text：factory/line1/value；JSON：factory/line1/data|temperature；Sparkplug B：spBv1.0/group/DDATA/node/device|metric'
+  if (protocol === 'Dnp3') return '例如：Binary:0、Analog:12、Counter:3、BinaryOutput:5'
+  if (protocol === 'RockwellPccc') return '例如：N7:0、B3:0/1、T4:0.ACC'
+  if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii') return '例如：40001、00001、3:40001'
+  if (protocol === 'SiemensS7') return '例如：DB1.DBW0、M0.0、E0.0、A0.0、V100'
   if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E' || protocol === 'MitsubishiSerial' || protocol === 'MitsubishiQlSerial') return '例如：D100、M100、X0'
-  if (protocol === 'CanOpen') return '例如：1:0x6041:0 或 0x6041:0'
-  if (protocol === 'OmronFins') return '例如：D100、CIO100'
+  if (protocol === 'CanOpen') return 'SDO：1:0x6041:0；PDO：TPDO1:1:0.0、RPDO1:1:0；服务：Heartbeat:1、EMCY:1、NMT:1、SYNC、TIME'
+  if (protocol === 'OmronFins') return '例如：D100、CIO100.00、W20、H10、E0_100、T0、C0、TU0'
   if (protocol === 'BacnetIp') return '例如：analogInput:1、analogValue:2:presentValue、binaryOutput:3'
   if (protocol === 'Dlt6452007') return '可留空，优先使用表地址和数据标识'
-  if (protocol === 'Cjt1882004') return '可留空，优先使用表地址、数据标识和表类型'
+  if (protocol === 'Cjt1882004' || protocol === 'Cjt1882018') return '可留空，优先使用表地址、数据标识和表类型'
   if (protocol === 'OpcUa') return '例如：ns=2;s=Channel.Device.Tag'
   if (protocol === 'OpcDa') return '例如：Random.Int4'
   return '例如：D100'
@@ -152,13 +286,13 @@ export function tagAddressPlaceholder(protocol: string) {
 
 export function meterAddressPlaceholder(protocol: string) {
   if (protocol === 'Dlt6452007') return '例如：000000000001'
-  if (protocol === 'Cjt1882004') return '例如：000000000001'
+  if (protocol === 'Cjt1882004' || protocol === 'Cjt1882018') return '例如：000000000001'
   return '表计通信地址'
 }
 
 export function meterDataIdentifierPlaceholder(protocol: string) {
   if (protocol === 'Dlt6452007') return '例如：00010000'
-  if (protocol === 'Cjt1882004') return '例如：901F、1F90'
+  if (protocol === 'Cjt1882004' || protocol === 'Cjt1882018') return '例如：901F、1F90'
   return '数据标识'
 }
 

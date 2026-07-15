@@ -18,6 +18,9 @@ public sealed class GatewayConfigurationSecretPolicyTests
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.Devices[0].Connection.Password);
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.Rules[0].Actions[0].EmailPassword);
         Assert.Equal(GatewayConfigurationSecretPolicy.RedactedSecret, sanitized.FlowRules[0].Nodes[0].EmailPassword);
+        Assert.Contains("access_token=********", sanitized.Rules[0].Actions[0].WebhookUrl, StringComparison.Ordinal);
+        Assert.Contains("Authorization: ********", sanitized.Rules[0].Actions[0].WebhookHeaders, StringComparison.Ordinal);
+        Assert.Contains("sign=********", sanitized.FlowRules[0].Nodes[0].WebhookUrl, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -49,7 +52,9 @@ public sealed class GatewayConfigurationSecretPolicyTests
                         new EdgeRuleActionDto
                         {
                             Id = "action-1",
-                            EmailPassword = GatewayConfigurationSecretPolicy.RedactedSecret
+                            EmailPassword = GatewayConfigurationSecretPolicy.RedactedSecret,
+                            WebhookUrl = "https://hooks.example.com/send?access_token=********",
+                            WebhookHeaders = "Authorization: ********"
                         }
                     }
                 }
@@ -65,7 +70,9 @@ public sealed class GatewayConfigurationSecretPolicyTests
                         new FlowRuleNodeDto
                         {
                             Id = "node-1",
-                            EmailPassword = GatewayConfigurationSecretPolicy.RedactedSecret
+                            EmailPassword = GatewayConfigurationSecretPolicy.RedactedSecret,
+                            WebhookUrl = "https://hooks.example.com/send?sign=********",
+                            WebhookHeaders = "X-Api-Key: ********"
                         }
                     }
                 }
@@ -77,6 +84,10 @@ public sealed class GatewayConfigurationSecretPolicyTests
         Assert.Equal("device-password", command.Devices[0].Connection.Password);
         Assert.Equal("rule-email-password", command.Rules[0].Actions[0].EmailPassword);
         Assert.Equal("flow-email-password", command.FlowRules[0].Nodes[0].EmailPassword);
+        Assert.EndsWith("access_token=rule-token", command.Rules[0].Actions[0].WebhookUrl, StringComparison.Ordinal);
+        Assert.Equal("Authorization: Bearer rule-secret", command.Rules[0].Actions[0].WebhookHeaders);
+        Assert.EndsWith("sign=flow-signature", command.FlowRules[0].Nodes[0].WebhookUrl, StringComparison.Ordinal);
+        Assert.Equal("X-Api-Key: flow-key", command.FlowRules[0].Nodes[0].WebhookHeaders);
     }
 
     [Fact]
@@ -162,7 +173,9 @@ public sealed class GatewayConfigurationSecretPolicyTests
                         new EdgeRuleActionDto
                         {
                             Id = "action-1",
-                            EmailPassword = "rule-email-password"
+                            EmailPassword = "rule-email-password",
+                            WebhookUrl = "https://hooks.example.com/send?access_token=rule-token",
+                            WebhookHeaders = "Authorization: Bearer rule-secret"
                         }
                     }
                 }
@@ -179,7 +192,9 @@ public sealed class GatewayConfigurationSecretPolicyTests
                         {
                             Id = "node-1",
                             Label = "Email",
-                            EmailPassword = "flow-email-password"
+                            EmailPassword = "flow-email-password",
+                            WebhookUrl = "https://hooks.example.com/send?sign=flow-signature",
+                            WebhookHeaders = "X-Api-Key: flow-key"
                         }
                     }
                 }

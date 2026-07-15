@@ -723,8 +723,13 @@ namespace IPC.EdgeGateway
             string source = ExtractJsonValue(json, "source");
             string topic = ExtractJsonValue(json, "topic");
             string pointCode = ExtractJsonValue(json, "pointCode");
+            string channelId = ExtractJsonValue(json, "channelId");
+            string channel = ExtractJsonValue(json, "channel");
+            string deviceId = ExtractJsonValue(json, "deviceId");
             string device = ExtractJsonValue(json, "device");
+            string groupId = ExtractJsonValue(json, "groupId");
             string group = ExtractJsonValue(json, "group");
+            string tagId = ExtractJsonValue(json, "tagId");
             string tag = ExtractJsonValue(json, "tag");
             string valueText = ExtractJsonValue(json, "valueText");
             string message = ExtractJsonValue(json, "message");
@@ -744,7 +749,16 @@ namespace IPC.EdgeGateway
                 Type = type,
                 Source = string.IsNullOrWhiteSpace(pointCode) ? source : pointCode,
                 Summary = summary,
-                Detail = "device=" + device + " group=" + group + " tag=" + tag + " topic=" + topic
+                Detail = "channel=" + channel + " device=" + device + " group=" + group + " tag=" + tag + " topic=" + topic,
+                ChannelId = channelId,
+                ChannelName = channel,
+                DeviceId = deviceId,
+                DeviceName = device,
+                GroupId = groupId,
+                GroupName = group,
+                TagId = tagId,
+                TagName = tag,
+                PointCode = pointCode
             };
         }
 
@@ -931,8 +945,13 @@ namespace IPC.EdgeGateway
 
         private static string BuildSnapshotFields(TagValueSnapshot snapshot, string unit)
         {
-            return "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+            return "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
+                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
+                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
+                   "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
+                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
+                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
@@ -950,7 +969,9 @@ namespace IPC.EdgeGateway
                 return snapshot.PointCode.Trim();
 
             string group = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
-            return (NullToEmpty(snapshot.DeviceName).Trim() + "." + group + "." + NullToEmpty(snapshot.TagName).Trim()).Trim('.');
+            return (NullToEmpty(snapshot.ChannelName).Trim() + "." +
+                    NullToEmpty(snapshot.DeviceName).Trim() + "." + group + "." +
+                    NullToEmpty(snapshot.TagName).Trim()).Trim('.');
         }
 
         private static string TrimPayload(string payload)

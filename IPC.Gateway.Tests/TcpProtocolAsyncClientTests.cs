@@ -35,7 +35,7 @@ public sealed class TcpProtocolAsyncClientTests
         {
             Protocol = expectedProtocol,
             Host = "127.0.0.1",
-            Port = expectedProtocol == PlcProtocol.RockwellCip ? 44818 : 5000,
+            Port = expectedProtocol == PlcProtocol.RockwellCip || expectedProtocol == PlcProtocol.RockwellPccc ? 44818 : 5000,
             TimeoutMilliseconds = 100,
             Transport = transport
         });
@@ -85,5 +85,6 @@ public sealed class TcpProtocolAsyncClientTests
         yield return new object[] { new MitsubishiMc1EProtocolDriver(), PlcProtocol.MitsubishiMc1E, NetworkTransport.Tcp };
         yield return new object[] { new MitsubishiMc1EProtocolDriver(), PlcProtocol.MitsubishiMc1E, NetworkTransport.Udp };
         yield return new object[] { new RockwellCipProtocolDriver(), PlcProtocol.RockwellCip, NetworkTransport.Tcp };
+        yield return new object[] { new RockwellPcccProtocolDriver(), PlcProtocol.RockwellPccc, NetworkTransport.Tcp };
     }
 }

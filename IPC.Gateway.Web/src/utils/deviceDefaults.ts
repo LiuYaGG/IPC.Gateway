@@ -5,10 +5,18 @@ export const protocolOptions = [
   { label: 'Virtual PLC', value: 'VirtualPlc', category: 'simulated' },
   { label: 'Modbus TCP', value: 'ModbusTcp', category: 'network' },
   { label: 'Modbus RTU', value: 'ModbusRtu', category: 'serial' },
+  { label: 'Modbus ASCII', value: 'ModbusAscii', category: 'serial' },
   { label: 'DL/T 645-2007', value: 'Dlt6452007', category: 'meter' },
   { label: 'CJ/T 188-2004', value: 'Cjt1882004', category: 'meter' },
+  { label: 'CJ/T 188-2018', value: 'Cjt1882018', category: 'meter' },
   { label: 'Siemens S7', value: 'SiemensS7', category: 'network' },
   { label: 'Rockwell CIP', value: 'RockwellCip', category: 'network' },
+  { label: 'EtherNet/IP', value: 'EtherNetIp', category: 'network' },
+  { label: 'Beckhoff TwinCAT ADS', value: 'BeckhoffAds', category: 'network' },
+  { label: 'SNMP v1/v2c/v3', value: 'Snmp', category: 'network' },
+  { label: 'MQTT / Sparkplug B 南向', value: 'MqttClient', category: 'network' },
+  { label: 'DNP3 TCP Master', value: 'Dnp3', category: 'network' },
+  { label: 'Rockwell PCCC', value: 'RockwellPccc', category: 'network' },
   { label: 'Mitsubishi MC', value: 'MitsubishiMc', category: 'network' },
   { label: 'Mitsubishi 1E', value: 'MitsubishiMc1E', category: 'network' },
   { label: 'Mitsubishi Serial', value: 'MitsubishiSerial', category: 'serial' },
@@ -108,18 +116,21 @@ export function protocolLabel(protocol: string) {
 }
 
 export function isSerialProtocol(protocol: string) {
-  return ['ModbusRtu', 'MitsubishiSerial', 'MitsubishiQlSerial', 'CanOpen', 'Dlt6452007', 'Cjt1882004'].includes(protocol)
+  return ['ModbusRtu', 'ModbusAscii', 'MitsubishiSerial', 'MitsubishiQlSerial', 'CanOpen'].includes(protocol)
 }
 
 export function isNetworkProtocol(protocol: string) {
-  return ['ModbusTcp', 'SiemensS7', 'RockwellCip', 'MitsubishiMc', 'MitsubishiMc1E', 'OmronFins', 'BacnetIp', 'OpcUa'].includes(protocol)
+  return ['ModbusTcp', 'SiemensS7', 'RockwellCip', 'EtherNetIp', 'RockwellPccc', 'BeckhoffAds', 'Snmp', 'MqttClient', 'Dnp3', 'MitsubishiMc', 'MitsubishiMc1E', 'OmronFins', 'BacnetIp', 'OpcUa', 'Dlt6452007', 'Cjt1882004', 'Cjt1882018'].includes(protocol)
 }
 
 export function defaultPortForProtocolTransport(protocol: string, transport = 'Tcp') {
+  if (protocol === 'SiemensS7') return 102
   if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') {
     return transport.toLowerCase() === 'udp' ? 5000 : 5001
   }
   if (protocol === 'BacnetIp') return 47808
+  if (protocol === 'RockwellCip' || protocol === 'EtherNetIp' || protocol === 'RockwellPccc') return 44818
+  if (protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018') return 4001
   return undefined
 }
 
@@ -135,13 +146,47 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
     connection.transport = 'Tcp'
   }
   else if (protocol === 'SiemensS7') {
-    setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
-    connection.rack = connection.rack ?? 0
-    connection.slot = connection.slot || 1
-  } else if (protocol === 'RockwellCip') setNetworkDefaults(connection, '127.0.0.1', 44818, 'Tcp', overwriteNetwork)
+    setNetworkDefaults(connection, '127.0.0.1', 102, 'Tcp', overwriteNetwork)
+    connection.rack = overwriteNetwork ? 0 : connection.rack ?? 0
+    connection.slot = overwriteNetwork ? 1 : connection.slot || 1
+    const defaults = '{"controllerProfile":"Auto","s7TsapMode":"RackSlot","s7ConnectionType":"PG","s7LocalTsap":"0100","s7RemoteTsap":"0101","s7MaxItemsPerRequest":20}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  } else if (protocol === 'RockwellCip' || protocol === 'RockwellPccc') setNetworkDefaults(connection, '127.0.0.1', 44818, 'Tcp', overwriteNetwork)
+  else if (protocol === 'EtherNetIp') {
+    setNetworkDefaults(connection, '127.0.0.1', 44818, 'Tcp', overwriteNetwork)
+    const defaults = '{"cipRouteMode":"Direct","cipRoutePath":"","cipMaxItemsPerRequest":20,"eipIoMode":"Explicit","eipOutputAssembly":100,"eipInputAssembly":101,"eipConfigurationAssembly":1,"eipOutputLength":0,"eipInputLength":0,"eipRpiMilliseconds":100,"eipOutputRealTimeFormat":"Header32Bit","eipInputRealTimeFormat":"Modeless","eipInputConnectionType":"PointToPoint","eipInputDataOffset":8,"eipOutputDataOffset":0,"eipIoStaleTimeoutMilliseconds":1000}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
+  else if (protocol === 'BeckhoffAds') {
+    setNetworkDefaults(connection, '127.0.0.1', 48898, 'Tcp', overwriteNetwork)
+    const defaults = '{"amsNetId":"","adsPort":851,"adsStringLength":80,"adsMaxBatchItems":100}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
+  else if (protocol === 'Snmp') {
+    setNetworkDefaults(connection, '127.0.0.1', 161, 'Udp', overwriteNetwork)
+    const defaults = '{"snmpVersion":"V2c","snmpCommunity":"public","snmpUserName":"","snmpAuthProtocol":"None","snmpAuthPassword":"","snmpPrivacyProtocol":"None","snmpPrivacyPassword":"","snmpContextName":"","snmpMaxOidsPerRequest":40}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
+  else if (protocol === 'MqttClient') {
+    setNetworkDefaults(connection, '127.0.0.1', 1883, 'Tcp', overwriteNetwork)
+    const defaults = '{"mqttClientId":"IPC-Gateway-Southbound","mqttSubscribeFilter":"#","mqttPayloadMode":"Text","mqttUseTls":false,"mqttAllowUntrustedCertificates":false,"mqttQos":0,"mqttMaxValueAgeSeconds":0}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
+  else if (protocol === 'Dnp3') {
+    setNetworkDefaults(connection, '127.0.0.1', 20000, 'Tcp', overwriteNetwork)
+    const defaults = '{"dnp3LocalAddress":1,"dnp3RemoteAddress":1024,"dnp3ScanGapLimit":32,"dnp3SelectBeforeOperate":true,"dnp3StartupIntegrity":true,"dnp3EnableUnsolicited":true,"dnp3EventScanIntervalSeconds":5,"dnp3IntegrityScanIntervalSeconds":900,"dnp3CacheMaxAgeMilliseconds":0,"dnp3TimeSyncMode":"None"}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
   else if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') setNetworkDefaults(connection, '127.0.0.1', defaultPortForProtocolTransport(protocol, 'Tcp') ?? 5001, 'Tcp', overwriteNetwork)
-  else if (protocol === 'OmronFins') setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp', overwriteNetwork)
+  else if (protocol === 'OmronFins') {
+    setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp', overwriteNetwork)
+    const defaults = '{"controllerProfile":"Auto","sourceNode":0,"destinationNode":0,"sourceNetwork":0,"network":0,"sourceUnit":0,"destinationUnit":0,"maxWordCount":240,"maxBitCount":480,"maxGapWords":4,"maxEmBank":24,"udpReadRetries":1}'
+    connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
+  }
   else if (protocol === 'BacnetIp') setNetworkDefaults(connection, '127.0.0.1', 47808, 'Udp', overwriteNetwork)
+  else if (protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018') {
+    setNetworkDefaults(connection, '127.0.0.1', 4001, 'Tcp', overwriteNetwork)
+  }
   else if (protocol === 'OpcUa') setNetworkDefaults(connection, 'opc.tcp://127.0.0.1', 49320, 'Tcp', overwriteNetwork)
   else if (protocol === 'OpcDa') {
     connection.host = connection.host || 'localhost'
@@ -150,13 +195,14 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
   } else if (isSerialProtocol(protocol)) {
     connection.host = overwriteNetwork ? 'COM1' : connection.host || 'COM1'
     connection.port = overwriteNetwork ? (protocol === 'CanOpen' ? 115200 : 9600) : connection.port || (protocol === 'CanOpen' ? 115200 : 9600)
-    connection.dataBits = overwriteNetwork ? 8 : connection.dataBits || 8
-    connection.serialParity = overwriteNetwork ? 'None' : connection.serialParity || 'None'
+    const ascii = protocol === 'ModbusAscii'
+    connection.dataBits = overwriteNetwork ? (ascii ? 7 : 8) : connection.dataBits || (ascii ? 7 : 8)
+    connection.serialParity = overwriteNetwork ? (ascii ? 'Even' : 'None') : connection.serialParity || (ascii ? 'Even' : 'None')
     connection.serialStopBits = overwriteNetwork ? 'One' : connection.serialStopBits || 'One'
     if (protocol === 'CanOpen') {
       connection.driverOptionsJson = overwriteNetwork
-        ? '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32}'
-        : connection.driverOptionsJson || '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32}'
+        ? '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32,"probeNodeOnConnect":true,"startNodeOnConnect":false,"resetCommunicationOnConnect":false,"heartbeatTimeoutMilliseconds":3000,"pdoMaxAgeMilliseconds":3000,"syncIntervalMilliseconds":0}'
+        : connection.driverOptionsJson || '{"adapter":"SLCAN","canBitRate":500000,"defaultNodeId":1,"maxBatchItems":32,"probeNodeOnConnect":true,"startNodeOnConnect":false,"resetCommunicationOnConnect":false,"heartbeatTimeoutMilliseconds":3000,"pdoMaxAgeMilliseconds":3000,"syncIntervalMilliseconds":0}'
     }
   } else if (protocol === 'Plugin') {
     connection.driverId = connection.driverId || ''

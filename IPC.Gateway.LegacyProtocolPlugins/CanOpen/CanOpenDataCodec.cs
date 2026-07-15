@@ -13,6 +13,10 @@ namespace IPC.Plc.Communication.CanOpen
             byte[] value = Pad(data, GetScalarByteCount(dataType));
             switch (ToScalarType(dataType))
             {
+                case PlcDataType.Int8:
+                    return unchecked((sbyte)value[0]);
+                case PlcDataType.UInt8:
+                    return value[0];
                 case PlcDataType.Bool:
                     return value[0] != 0;
                 case PlcDataType.Int16:
@@ -23,8 +27,14 @@ namespace IPC.Plc.Communication.CanOpen
                     return BitConverter.ToInt32(value, 0);
                 case PlcDataType.UInt32:
                     return BitConverter.ToUInt32(value, 0);
+                case PlcDataType.Int64:
+                    return BitConverter.ToInt64(value, 0);
+                case PlcDataType.UInt64:
+                    return BitConverter.ToUInt64(value, 0);
                 case PlcDataType.Float:
                     return BitConverter.ToSingle(value, 0);
+                case PlcDataType.Double:
+                    return BitConverter.ToDouble(value, 0);
                 case PlcDataType.String:
                     return Encoding.ASCII.GetString(data ?? new byte[0]).TrimEnd('\0');
                 default:
@@ -37,6 +47,10 @@ namespace IPC.Plc.Communication.CanOpen
             string text = valueText ?? string.Empty;
             switch (ToScalarType(dataType))
             {
+                case PlcDataType.Int8:
+                    return new[] { unchecked((byte)sbyte.Parse(text, CultureInfo.InvariantCulture)) };
+                case PlcDataType.UInt8:
+                    return new[] { byte.Parse(text, CultureInfo.InvariantCulture) };
                 case PlcDataType.Bool:
                     return new[] { ParseBoolean(text) ? (byte)1 : (byte)0 };
                 case PlcDataType.Int16:
@@ -47,13 +61,16 @@ namespace IPC.Plc.Communication.CanOpen
                     return BitConverter.GetBytes(int.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.UInt32:
                     return BitConverter.GetBytes(uint.Parse(text, CultureInfo.InvariantCulture));
+                case PlcDataType.Int64:
+                    return BitConverter.GetBytes(long.Parse(text, CultureInfo.InvariantCulture));
+                case PlcDataType.UInt64:
+                    return BitConverter.GetBytes(ulong.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.Float:
                     return BitConverter.GetBytes(float.Parse(text, CultureInfo.InvariantCulture));
+                case PlcDataType.Double:
+                    return BitConverter.GetBytes(double.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.String:
-                    byte[] bytes = Encoding.ASCII.GetBytes(text);
-                    if (bytes.Length > 4)
-                        throw new NotSupportedException("CANopen expedited SDO string writes are limited to 4 bytes.");
-                    return bytes;
+                    return Encoding.ASCII.GetBytes(text);
                 default:
                     throw new NotSupportedException("CANopen expedited SDO does not support data type " + dataType + ".");
             }
@@ -69,6 +86,10 @@ namespace IPC.Plc.Communication.CanOpen
                 case PlcDataType.DiscreteInput:
                 case PlcDataType.DiscreteInputArray:
                     return PlcDataType.Bool;
+                case PlcDataType.Int8Array:
+                    return PlcDataType.Int8;
+                case PlcDataType.UInt8Array:
+                    return PlcDataType.UInt8;
                 case PlcDataType.Int16Array:
                     return PlcDataType.Int16;
                 case PlcDataType.UInt16Array:
@@ -77,8 +98,14 @@ namespace IPC.Plc.Communication.CanOpen
                     return PlcDataType.Int32;
                 case PlcDataType.UInt32Array:
                     return PlcDataType.UInt32;
+                case PlcDataType.Int64Array:
+                    return PlcDataType.Int64;
+                case PlcDataType.UInt64Array:
+                    return PlcDataType.UInt64;
                 case PlcDataType.FloatArray:
                     return PlcDataType.Float;
+                case PlcDataType.DoubleArray:
+                    return PlcDataType.Double;
                 default:
                     return dataType;
             }
@@ -89,6 +116,10 @@ namespace IPC.Plc.Communication.CanOpen
             PlcDataType scalarType = ToScalarType(dataType);
             switch (scalarType)
             {
+                case PlcDataType.Int8:
+                    return new sbyte[length];
+                case PlcDataType.UInt8:
+                    return new byte[length];
                 case PlcDataType.Bool:
                     return new bool[length];
                 case PlcDataType.Int16:
@@ -99,8 +130,14 @@ namespace IPC.Plc.Communication.CanOpen
                     return new int[length];
                 case PlcDataType.UInt32:
                     return new uint[length];
+                case PlcDataType.Int64:
+                    return new long[length];
+                case PlcDataType.UInt64:
+                    return new ulong[length];
                 case PlcDataType.Float:
                     return new float[length];
+                case PlcDataType.Double:
+                    return new double[length];
                 default:
                     throw new NotSupportedException("CANopen arrays do not support data type " + dataType + ".");
             }
@@ -110,6 +147,10 @@ namespace IPC.Plc.Communication.CanOpen
         {
             switch (ToScalarType(dataType))
             {
+                case PlcDataType.Int8:
+                    return "INTEGER8";
+                case PlcDataType.UInt8:
+                    return "UNSIGNED8";
                 case PlcDataType.Bool:
                     return "BOOLEAN";
                 case PlcDataType.Int16:
@@ -120,8 +161,14 @@ namespace IPC.Plc.Communication.CanOpen
                     return "INTEGER32";
                 case PlcDataType.UInt32:
                     return "UNSIGNED32";
+                case PlcDataType.Int64:
+                    return "INTEGER64";
+                case PlcDataType.UInt64:
+                    return "UNSIGNED64";
                 case PlcDataType.Float:
                     return "REAL32";
+                case PlcDataType.Double:
+                    return "REAL64";
                 case PlcDataType.String:
                     return "VISIBLE_STRING";
                 default:
@@ -129,11 +176,13 @@ namespace IPC.Plc.Communication.CanOpen
             }
         }
 
-        private static int GetScalarByteCount(PlcDataType dataType)
+        internal static int GetScalarByteCount(PlcDataType dataType)
         {
             switch (ToScalarType(dataType))
             {
                 case PlcDataType.Bool:
+                case PlcDataType.Int8:
+                case PlcDataType.UInt8:
                     return 1;
                 case PlcDataType.Int16:
                 case PlcDataType.UInt16:
@@ -142,6 +191,10 @@ namespace IPC.Plc.Communication.CanOpen
                 case PlcDataType.UInt32:
                 case PlcDataType.Float:
                     return 4;
+                case PlcDataType.Int64:
+                case PlcDataType.UInt64:
+                case PlcDataType.Double:
+                    return 8;
                 case PlcDataType.String:
                     return 0;
                 default:

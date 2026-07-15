@@ -39,6 +39,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
         private const int MaxBitPoints = 960;
 
         private readonly PlcConnectionOptions _options;
+        private readonly IMcFrameCodec _frameCodec;
+        private readonly int _maxBatchGapPoints;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private UdpClient _udpClient;
@@ -50,6 +52,9 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 throw new ArgumentNullException("options");
 
             _options = options;
+            McDriverOptions driverOptions = McDriverOptions.Parse(options);
+            _frameCodec = McFrameCodecFactory.Create(driverOptions);
+            _maxBatchGapPoints = driverOptions.MaxBatchGapPoints;
             if (_options.Port <= 0)
                 _options.Port = 5000;
         }
@@ -211,6 +216,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 },
                 MaxWordPoints = MaxWordPoints,
                 MaxBitPoints = MaxBitPoints,
+                MaxGapPoints = _maxBatchGapPoints,
                 GetTypeName = GetTypeName
             });
         }
@@ -237,6 +243,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 },
                 MaxWordPoints = MaxWordPoints,
                 MaxBitPoints = MaxBitPoints,
+                MaxGapPoints = _maxBatchGapPoints,
                 GetTypeName = GetTypeName
             }, cancellationToken).ConfigureAwait(false);
         }
@@ -683,31 +690,11 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private byte[] BuildRequest(ushort command, ushort subcommand, McAddress address, int points, byte[] data)
         {
-            MemoryStream body = new MemoryStream();
-            WriteUInt16(body, 0x0010);
-            WriteUInt16(body, command);
-            WriteUInt16(body, subcommand);
-            WriteDeviceAddress(body, address);
-            WriteUInt16(body, (ushort)points);
-            if (data != null && data.Length > 0)
-                body.Write(data, 0, data.Length);
-
-            byte[] bodyBytes = body.ToArray();
-            MemoryStream frame = new MemoryStream();
-            WriteUInt16(frame, 0x0050);
-            frame.WriteByte((byte)_options.Rack);
-            frame.WriteByte(0xFF);
-            WriteUInt16(frame, 0x03FF);
-            frame.WriteByte((byte)_options.Slot);
-            WriteUInt16(frame, (ushort)bodyBytes.Length);
-            frame.Write(bodyBytes, 0, bodyBytes.Length);
-            return frame.ToArray();
+            return _frameCodec.BuildRequest(command, subcommand, address, points, data);
         }
 
         private byte[] Send(byte[] request, bool allowUdpReadRetry)
         {
-            try
-            {
             if (!IsConnected)
                 Connect();
 
@@ -719,39 +706,14 @@ namespace IPC.Plc.Communication.MitsubishiMc
             else
             {
                 _stream.Write(request, 0, request.Length);
-                byte[] header = ReadExact(9);
-                ushort dataLength = ReadUInt16(header, 7);
-                response = new byte[9 + dataLength];
-                Buffer.BlockCopy(header, 0, response, 0, 9);
+                byte[] header = ReadExact(_frameCodec.ResponseHeaderLength);
+                int dataLength = _frameCodec.GetResponseDataLength(header);
+                response = new byte[header.Length + dataLength];
+                Buffer.BlockCopy(header, 0, response, 0, header.Length);
                 byte[] body = ReadExact(dataLength);
-                Buffer.BlockCopy(body, 0, response, 9, dataLength);
+                Buffer.BlockCopy(body, 0, response, header.Length, dataLength);
             }
-
-            if (response.Length < 11)
-                throw new InvalidOperationException("MC 响应长度不足");
-
-            ushort subheader = ReadUInt16(response, 0);
-            if (subheader != 0x00D0)
-                throw new InvalidOperationException("MC 响应帧类型错误 0x" + subheader.ToString("X4"));
-
-            ushort dataLength2 = ReadUInt16(response, 7);
-            if (dataLength2 < 2 || response.Length < 9 + dataLength2)
-                throw new InvalidOperationException("MC 响应数据长度错误");
-
-            byte[] data = new byte[dataLength2];
-            Buffer.BlockCopy(response, 9, data, 0, dataLength2);
-            ushort endCode = ReadUInt16(data, 0);
-            if (endCode != 0)
-                throw new InvalidOperationException("MC 读取失败: 0x" + endCode.ToString("X4"));
-
-            byte[] result = new byte[data.Length - 2];
-            Buffer.BlockCopy(data, 2, result, 0, result.Length);
-            return result;
-            }
-            catch
-            {
-                throw;
-            }
+            return _frameCodec.ParseResponse(response, request);
         }
 
         private async ValueTask<byte[]> SendAsync(
@@ -759,10 +721,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
             bool allowUdpReadRetry,
             CancellationToken cancellationToken)
         {
-            try
-            {
-                if (!IsConnected)
-                    await ConnectAsync(cancellationToken).ConfigureAwait(false);
+            if (!IsConnected)
+                await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
                 byte[] response;
                 if (_options.Transport == NetworkTransport.Udp)
@@ -772,39 +732,14 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 else
                 {
                     await _stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
-                    byte[] header = await ReadExactAsync(9, cancellationToken).ConfigureAwait(false);
-                    ushort dataLength = ReadUInt16(header, 7);
-                    response = new byte[9 + dataLength];
-                    Buffer.BlockCopy(header, 0, response, 0, 9);
+                    byte[] header = await ReadExactAsync(_frameCodec.ResponseHeaderLength, cancellationToken).ConfigureAwait(false);
+                    int dataLength = _frameCodec.GetResponseDataLength(header);
+                    response = new byte[header.Length + dataLength];
+                    Buffer.BlockCopy(header, 0, response, 0, header.Length);
                     byte[] body = await ReadExactAsync(dataLength, cancellationToken).ConfigureAwait(false);
-                    Buffer.BlockCopy(body, 0, response, 9, dataLength);
+                    Buffer.BlockCopy(body, 0, response, header.Length, dataLength);
                 }
-
-                if (response.Length < 11)
-                    throw new InvalidOperationException("MC response is too short.");
-
-                ushort subheader = ReadUInt16(response, 0);
-                if (subheader != 0x00D0)
-                    throw new InvalidOperationException("MC response frame type is invalid: 0x" + subheader.ToString("X4"));
-
-                ushort dataLength2 = ReadUInt16(response, 7);
-                if (dataLength2 < 2 || response.Length < 9 + dataLength2)
-                    throw new InvalidOperationException("MC response data length is invalid.");
-
-                byte[] data = new byte[dataLength2];
-                Buffer.BlockCopy(response, 9, data, 0, dataLength2);
-                ushort endCode = ReadUInt16(data, 0);
-                if (endCode != 0)
-                    throw new InvalidOperationException("MC request failed: 0x" + endCode.ToString("X4"));
-
-                byte[] result = new byte[data.Length - 2];
-                Buffer.BlockCopy(data, 2, result, 0, result.Length);
-                return result;
-            }
-            catch
-            {
-                throw;
-            }
+            return _frameCodec.ParseResponse(response, request);
         }
 
         private byte[] SendUdp(byte[] request, bool allowReadRetry)
@@ -939,26 +874,6 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 offset += read;
             }
             return buffer;
-        }
-
-        private static void WriteDeviceAddress(Stream stream, McAddress address)
-        {
-            int number = address.DeviceNumber;
-            stream.WriteByte((byte)(number & 0xFF));
-            stream.WriteByte((byte)((number >> 8) & 0xFF));
-            stream.WriteByte((byte)((number >> 16) & 0xFF));
-            stream.WriteByte(address.DeviceCode);
-        }
-
-        private static ushort ReadUInt16(byte[] data, int offset)
-        {
-            return (ushort)(data[offset] | (data[offset + 1] << 8));
-        }
-
-        private static void WriteUInt16(Stream stream, ushort value)
-        {
-            stream.WriteByte((byte)(value & 0xFF));
-            stream.WriteByte((byte)((value >> 8) & 0xFF));
         }
 
         private static int GetWordCountForWrite(byte[] data)

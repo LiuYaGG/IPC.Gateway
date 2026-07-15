@@ -274,6 +274,8 @@ export interface CircuitBreakerStatus {
 }
 
 export interface DeviceRuntimeStatus {
+  channelId: string
+  channelName: string
   deviceId: string
   deviceName: string
   protocol: string
@@ -314,6 +316,8 @@ export interface DeviceRuntimeStatus {
 }
 
 export interface TagValueSnapshot {
+  channelId: string
+  channelName: string
   deviceId: string
   deviceProtocol: string
   groupId: string
@@ -346,8 +350,13 @@ export interface TagValueSnapshot {
 
 export interface RuntimeErrorDetail {
   category: string
+  channelId: string
+  channelName: string
+  deviceId: string
   deviceName: string
+  groupId: string
   groupName: string
+  tagId: string
   tagName: string
   message: string
   suggestion: string
@@ -493,6 +502,11 @@ export interface EdgeRuleConfig {
   name: string
   enabled: boolean
   conditionType: string
+  sourceChannelId: string
+  sourceChannelName: string
+  sourceDeviceId: string
+  sourceGroupId: string
+  sourceTagId: string
   sourcePointCode: string
   sourceDeviceName: string
   sourceGroupName: string
@@ -534,6 +548,11 @@ export interface EdgeRuleConfig {
   stateExpectedValue?: string
   stateClearValue?: string
   stateTimeoutSeconds?: number
+  relatedChannelId?: string
+  relatedChannelName?: string
+  relatedDeviceId?: string
+  relatedGroupId?: string
+  relatedTagId?: string
   relatedDeviceName?: string
   relatedGroupName?: string
   relatedTagName?: string
@@ -545,6 +564,11 @@ export interface EdgeRuleConfig {
   contextName?: string
   contextExpectedValue?: string
   contextOperator?: string
+  contextChannelId?: string
+  contextChannelName?: string
+  contextDeviceId?: string
+  contextGroupId?: string
+  contextTagId?: string
   contextDeviceName?: string
   contextGroupName?: string
   contextTagName?: string
@@ -618,6 +642,11 @@ export interface EdgeRuleActionConfig {
 
 export interface EdgeRuleCondition {
   id: string
+  sourceChannelId: string
+  sourceChannelName: string
+  sourceDeviceId: string
+  sourceGroupId: string
+  sourceTagId: string
   sourcePointCode: string
   sourceDeviceName: string
   sourceGroupName: string
@@ -655,6 +684,11 @@ export interface FlowRuleNode {
   label: string
   x: number
   y: number
+  channelId: string
+  channelName: string
+  deviceId: string
+  groupId: string
+  tagId: string
   deviceName: string
   groupName: string
   tagName: string
@@ -688,6 +722,11 @@ export interface FlowRuleNode {
   stateExpectedValue: string
   stateClearValue: string
   stateTimeoutSeconds: number
+  relatedChannelId: string
+  relatedChannelName: string
+  relatedDeviceId: string
+  relatedGroupId: string
+  relatedTagId: string
   relatedDeviceName: string
   relatedGroupName: string
   relatedTagName: string
@@ -699,6 +738,11 @@ export interface FlowRuleNode {
   contextName: string
   contextExpectedValue: string
   contextOperator: string
+  contextChannelId: string
+  contextChannelName: string
+  contextDeviceId: string
+  contextGroupId: string
+  contextTagId: string
   contextDeviceName: string
   contextGroupName: string
   contextTagName: string
@@ -1040,6 +1084,7 @@ export interface OpcUaServerRuntimeStatus {
   applicationName: string
   endpointUrl: string
   namespaceUri: string
+  channelNodeCount: number
   deviceNodeCount: number
   groupNodeCount: number
   tagNodeCount: number
@@ -1175,6 +1220,12 @@ export interface RuleEngineRuntimeStatus {
   triggeredCount: number
   clearedCount: number
   failedEvaluationCount: number
+  actionFailureCount: number
+  pendingActionCount: number
+  droppedActionCount: number
+  pendingInputEventCount: number
+  maxObservedPendingInputEventCount: number
+  droppedInputEventCount: number
   lastEvaluationTime: string
   lastEventTime: string
   lastErrorTime: string
@@ -1199,20 +1250,28 @@ export interface RuleEngineRuleRuntimeStatus {
   triggeredCount: number
   clearedCount: number
   failedEvaluationCount: number
+  actionFailureCount: number
   recentEvents: RuleEngineRuntimeEvent[]
 }
 
 export interface RuleEngineRuntimeEvent {
+  eventId: string
   ruleId: string
   ruleName: string
   conditionType: string
   eventType: string
   state: string
   message: string
+  severity: string
   topic: string
   pointCode: string
+  channelId: string
+  channelName: string
+  deviceId: string
   deviceName: string
+  groupId: string
   groupName: string
+  tagId: string
   tagName: string
   value: number
   threshold: number
@@ -1229,6 +1288,10 @@ export interface SyncPayload {
 }
 
 export interface WriteTagCommand {
+  channelId: string
+  deviceId: string
+  groupId: string
+  tagId: string
   deviceName: string
   groupName: string
   tagName: string
@@ -1239,6 +1302,11 @@ export interface WriteTagCommand {
 
 export interface WriteTagResult {
   success: boolean
+  channelId: string
+  channelName: string
+  deviceId: string
+  groupId: string
+  tagId: string
   deviceName: string
   groupName: string
   tagName: string
@@ -1863,8 +1931,11 @@ export async function applyDeviceTemplate(templateId: string, payload: GatewayDe
   return result.data
 }
 
-export async function exportTagsCsv(deviceId = '') {
-  const suffix = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+export async function exportTagsCsv(channelId = '', deviceId = '') {
+  const parameters = new URLSearchParams()
+  if (channelId) parameters.set('channelId', channelId)
+  if (deviceId) parameters.set('deviceId', deviceId)
+  const suffix = parameters.size ? `?${parameters.toString()}` : ''
   let response: Response
   try {
     response = await fetch(`/api/commercial/tags/export${suffix}`, {
@@ -1879,8 +1950,11 @@ export async function exportTagsCsv(deviceId = '') {
   return await response.blob()
 }
 
-export async function importTagsCsv(csv: string, deviceId = '') {
-  const suffix = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+export async function importTagsCsv(csv: string, channelId = '', deviceId = '') {
+  const parameters = new URLSearchParams()
+  if (channelId) parameters.set('channelId', channelId)
+  if (deviceId) parameters.set('deviceId', deviceId)
+  const suffix = parameters.size ? `?${parameters.toString()}` : ''
   const result = await request<ApiResult<GatewayTagImportResult>>(`/api/commercial/tags/import${suffix}`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/csv' },
@@ -1944,7 +2018,7 @@ function buildAuditLogParams(query: GatewayAuditLogQuery = {}) {
   return params
 }
 
-export async function loadTagSnapshots(query: Partial<Pick<TagValueSnapshot, 'deviceId' | 'deviceName' | 'groupId' | 'groupName' | 'tagId' | 'tagName'>> = {}) {
+export async function loadTagSnapshots(query: Partial<Pick<TagValueSnapshot, 'channelId' | 'channelName' | 'deviceId' | 'deviceName' | 'groupId' | 'groupName' | 'tagId' | 'tagName'>> = {}) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
     if (value) params.set(key, value)

@@ -57,7 +57,8 @@ namespace IPC.Plc.Communication.Core
 
         public static bool IsConnectionFailureScope(PlcReadFailureScope failureScope)
         {
-            return failureScope == PlcReadFailureScope.Session ||
+            return failureScope == PlcReadFailureScope.Device ||
+                   failureScope == PlcReadFailureScope.Session ||
                    failureScope == PlcReadFailureScope.Transport;
         }
 

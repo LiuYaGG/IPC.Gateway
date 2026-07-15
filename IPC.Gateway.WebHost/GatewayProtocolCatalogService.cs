@@ -7,15 +7,27 @@ namespace IPC.Gateway.WebHost;
 
 public sealed class GatewayProtocolCatalogService
 {
+    private static readonly HashSet<string> HiddenProtocols = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "MitsubishiSerial"
+    };
+
     public IReadOnlyList<GatewayProtocolCatalogItem> GetProtocols()
     {
         PlcDriverPluginRegistry.RefreshDefaultPlugins();
         return PlcDriverPluginRegistry.GetRegisteredDrivers()
-            .Where(driver => !string.IsNullOrWhiteSpace(driver.Protocol))
+            .Where(driver =>
+                !string.IsNullOrWhiteSpace(driver.Protocol) &&
+                IsVisibleProtocol(driver.Protocol))
             .Select(ToCatalogItem)
             .OrderBy(item => CategoryOrder(item.Category))
             .ThenBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    internal static bool IsVisibleProtocol(string protocol)
+    {
+        return !string.IsNullOrWhiteSpace(protocol) && !HiddenProtocols.Contains(protocol);
     }
 
     private static GatewayProtocolCatalogItem ToCatalogItem(PlcDriverPluginInfo driver)
@@ -81,7 +93,8 @@ public sealed class GatewayProtocolCatalogService
         return protocol switch
         {
             "VirtualPlc" => "simulated",
-            "ModbusRtu" or "MitsubishiSerial" or "MitsubishiQlSerial" or "Dlt6452007" or "Cjt1882004" => "serial",
+            "Dlt6452007" or "Cjt1882004" or "Cjt1882018" => "meter",
+            "ModbusRtu" or "ModbusAscii" or "MitsubishiSerial" or "MitsubishiQlSerial" => "serial",
             "OpcUa" or "OpcDa" => "opc",
             "Plugin" => "plugin",
             _ => "network"
@@ -94,9 +107,10 @@ public sealed class GatewayProtocolCatalogService
         {
             "simulated" => 0,
             "network" => 1,
-            "serial" => 2,
-            "opc" => 3,
-            "plugin" => 4,
+            "meter" => 2,
+            "serial" => 3,
+            "opc" => 4,
+            "plugin" => 5,
             _ => 9
         };
     }

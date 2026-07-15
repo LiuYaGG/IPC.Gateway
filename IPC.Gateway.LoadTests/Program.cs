@@ -57,7 +57,7 @@ Console.WriteLine("Devices={0}, TagsPerDevice={1}, DurationSeconds={2}, Workers=
     options.DeviceCount,
     options.TagsPerDevice,
     options.DurationSeconds,
-    options.MaxConcurrentDevicePolls);
+    runtime.MaxConcurrentDevicePolls);
 
 Stopwatch stopwatch = Stopwatch.StartNew();
 runtime.Start(project);
@@ -142,15 +142,18 @@ static void VerifyProtocolDrivers()
     RequireDriver(drivers, "builtin.modbus-tcp", PlcProtocol.ModbusTcp);
     RequireDriver(drivers, "builtin.dlt645-2007", PlcProtocol.Dlt6452007);
     RequireDriver(drivers, "builtin.cjt188-2004", PlcProtocol.Cjt1882004);
+    RequireDriver(drivers, "builtin.cjt188-2018", PlcProtocol.Cjt1882018);
     RequireDriver(drivers, "builtin.virtual-plc", PlcProtocol.VirtualPlc);
 
     VerifyClient(PlcProtocol.ModbusTcp);
     VerifyClient(PlcProtocol.Dlt6452007);
     VerifyClient(PlcProtocol.Cjt1882004);
+    VerifyClient(PlcProtocol.Cjt1882018);
     VerifyClient(PlcProtocol.VirtualPlc);
     VerifyClientByDriverId("builtin.modbus-tcp", PlcProtocol.ModbusTcp);
     VerifyClientByDriverId("builtin.dlt645-2007", PlcProtocol.Dlt6452007);
     VerifyClientByDriverId("builtin.cjt188-2004", PlcProtocol.Cjt1882004);
+    VerifyClientByDriverId("builtin.cjt188-2018", PlcProtocol.Cjt1882018);
 }
 
 static void RequireDriver(IList<PlcDriverPluginInfo> drivers, string driverId, PlcProtocol protocol)
@@ -276,6 +279,10 @@ static void VerifyLegacyProtocolPluginPackage()
     try
     {
         RequirePluginDriver(loadResult, "legacy.rockwell-cip", PlcProtocol.RockwellCip);
+        RequirePluginDriver(loadResult, "legacy.ethernet-ip", PlcProtocol.EtherNetIp);
+        RequirePluginDriver(loadResult, "legacy.dnp3", PlcProtocol.Dnp3);
+        RequirePluginDriver(loadResult, "legacy.canopen", PlcProtocol.CanOpen);
+        RequirePluginDriver(loadResult, "legacy.rockwell-pccc", PlcProtocol.RockwellPccc);
         RequirePluginDriver(loadResult, "legacy.siemens-s7", PlcProtocol.SiemensS7);
         RequirePluginDriver(loadResult, "legacy.mitsubishi-mc", PlcProtocol.MitsubishiMc);
         RequirePluginDriver(loadResult, "legacy.mitsubishi-mc-1e", PlcProtocol.MitsubishiMc1E);
@@ -287,6 +294,10 @@ static void VerifyLegacyProtocolPluginPackage()
         RequirePluginDriver(loadResult, "legacy.opc-da", PlcProtocol.OpcDa);
 
         VerifyLegacyClientByProtocol(PlcProtocol.RockwellCip);
+        VerifyLegacyClientByProtocol(PlcProtocol.EtherNetIp);
+        VerifyLegacyClientByProtocol(PlcProtocol.Dnp3);
+        VerifyLegacyClientByProtocol(PlcProtocol.CanOpen);
+        VerifyLegacyClientByProtocol(PlcProtocol.RockwellPccc);
         VerifyLegacyClientByProtocol(PlcProtocol.SiemensS7);
         VerifyLegacyClientByProtocol(PlcProtocol.MitsubishiMc);
         VerifyLegacyClientByProtocol(PlcProtocol.MitsubishiMc1E);
@@ -298,6 +309,10 @@ static void VerifyLegacyProtocolPluginPackage()
         VerifyLegacyClientByProtocol(PlcProtocol.OpcDa);
 
         VerifyClientByDriverId("legacy.rockwell-cip", PlcProtocol.RockwellCip);
+        VerifyClientByDriverId("legacy.ethernet-ip", PlcProtocol.EtherNetIp);
+        VerifyClientByDriverId("legacy.dnp3", PlcProtocol.Dnp3);
+        VerifyClientByDriverId("legacy.canopen", PlcProtocol.CanOpen);
+        VerifyClientByDriverId("legacy.rockwell-pccc", PlcProtocol.RockwellPccc);
         VerifyClientByDriverId("legacy.siemens-s7", PlcProtocol.SiemensS7);
         VerifyClientByDriverId("legacy.mitsubishi-mc", PlcProtocol.MitsubishiMc);
         VerifyClientByDriverId("legacy.mitsubishi-mc-1e", PlcProtocol.MitsubishiMc1E);

@@ -35,12 +35,14 @@ namespace IPC.EdgeGateway
     {
         public EdgeRuleRuntimeEvent()
         {
+            EventId = Guid.NewGuid().ToString("N");
             RuleId = string.Empty;
             RuleName = string.Empty;
             ConditionType = EdgeRuleConditionType.Threshold;
             EventType = string.Empty;
             State = string.Empty;
             Message = string.Empty;
+            Severity = "Warning";
             Topic = string.Empty;
             Payload = string.Empty;
             Snapshot = new TagValueSnapshot();
@@ -50,12 +52,14 @@ namespace IPC.EdgeGateway
             Timestamp = DateTime.Now;
         }
 
+        public string EventId { get; set; }
         public string RuleId { get; set; }
         public string RuleName { get; set; }
         public EdgeRuleConditionType ConditionType { get; set; }
         public string EventType { get; set; }
         public string State { get; set; }
         public string Message { get; set; }
+        public string Severity { get; set; }
         public string Topic { get; set; }
         public string Payload { get; set; }
         public TagValueSnapshot Snapshot { get; set; }

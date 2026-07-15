@@ -17,8 +17,8 @@
           <strong>{{ endpointPreview }}</strong>
         </div>
         <div>
-          <span>标签节点</span>
-          <strong>{{ status?.tagNodeCount ?? 0 }}</strong>
+          <span>通道 / 标签节点</span>
+          <strong>{{ status?.channelNodeCount ?? 0 }} / {{ status?.tagNodeCount ?? 0 }}</strong>
         </div>
         <div>
           <span>值更新</span>
@@ -137,6 +137,8 @@
             <div class="runtime-panel">
               <h3>节点统计</h3>
               <div class="status-list">
+                <span>通道节点</span>
+                <strong>{{ status?.channelNodeCount ?? 0 }}</strong>
                 <span>设备节点</span>
                 <strong>{{ status?.deviceNodeCount ?? 0 }}</strong>
                 <span>分组节点</span>

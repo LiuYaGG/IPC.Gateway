@@ -59,6 +59,7 @@ namespace IPC.EdgeGateway
         {
             if (flowRule == null ||
                 !flowRule.Enabled ||
+                string.Equals(flowRule.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(flowRule.Mode, FlowRuleModes.SimpleCompiled, StringComparison.OrdinalIgnoreCase) ||
                 string.IsNullOrWhiteSpace(flowRule.CompiledRuleId) ||
                 _projectConfig == null ||
@@ -85,7 +86,9 @@ namespace IPC.EdgeGateway
 
         private EdgeRuleConfig? CompileFlowRule(FlowRuleDefinition? flowRule)
         {
-            if (flowRule == null || !flowRule.Enabled)
+            if (flowRule == null ||
+                !flowRule.Enabled ||
+                string.Equals(flowRule.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase))
                 return null;
 
             if (string.Equals(flowRule.Mode, FlowRuleModes.SimpleCompiled, StringComparison.OrdinalIgnoreCase) &&
@@ -94,29 +97,39 @@ namespace IPC.EdgeGateway
                 return null;
             }
 
+            if (FlowRuleGraphValidator.Validate(flowRule).Count > 0)
+                return null;
+
+            FlowRuleGraphMap graph = new FlowRuleGraphMap(flowRule);
             List<FlowRuleNode> nodes = MaterializeFlowNodes(flowRule.Nodes);
-            List<FlowRuleNode> conditionNodes = nodes.Where(IsConditionLikeNode).ToList();
-            FlowRuleNode? qualityGateNode = nodes.FirstOrDefault(IsQualityGateNode);
-            if (conditionNodes.Count == 0 && qualityGateNode != null)
-                conditionNodes.Add(qualityGateNode);
             FlowRuleNode? sequenceNode = nodes.FirstOrDefault(IsSequenceNode);
-            if (sequenceNode != null)
-                conditionNodes = ResolveSequenceConditionNodes(sequenceNode, nodes, flowRule.Edges);
+            FlowRuleNode? logicNode = nodes.FirstOrDefault(IsLogicNode);
+            FlowRuleNode? resultNode = sequenceNode ?? logicNode;
+            List<FlowRuleNode> conditionNodes = resultNode == null
+                ? nodes.Where(IsConditionLikeNode).ToList()
+                : ResolveDirectConditionNodes(resultNode, graph);
+            if (resultNode == null && conditionNodes.Count == 0)
+                conditionNodes = nodes.Where(IsQualityGateNode).ToList();
             if (conditionNodes.Count == 0)
                 return null;
+
+            if (resultNode == null && conditionNodes.Count != 1)
+                return null;
+
+            resultNode ??= conditionNodes[0];
+            HashSet<string> descendants = graph.GetDescendantIds(resultNode.Id);
 
             FlowRuleNode firstCondition = conditionNodes[0];
             FlowRuleNode firstSource = ResolveSourceNode(firstCondition, nodes, flowRule.Edges) ?? firstCondition;
             FlowRuleNode? firstTransform = ResolveTransformNode(firstCondition, nodes, flowRule.Edges);
             FlowRuleNode? firstQualityGate = IsQualityGateNode(firstCondition)
                 ? firstCondition
-                : ResolveQualityGateNode(firstCondition, nodes, flowRule.Edges) ?? qualityGateNode;
-            FlowRuleNode? mqttNode = nodes.FirstOrDefault(IsMqttNode);
-            FlowRuleNode? durationNode = nodes.FirstOrDefault(IsDurationNode);
-            FlowRuleNode? logicNode = nodes.FirstOrDefault(IsLogicNode);
-            FlowRuleNode? lifecycleNode = nodes.FirstOrDefault(IsAlarmLifecycleNode);
-            FlowRuleNode? actionPolicyNode = nodes.FirstOrDefault(IsActionPolicyNode);
-            List<EdgeRuleActionConfig> actions = BuildActions(nodes);
+                : ResolveQualityGateNode(firstCondition, nodes, flowRule.Edges);
+            FlowRuleNode? mqttNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsMqttNode(node));
+            FlowRuleNode? durationNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsDurationNode(node));
+            FlowRuleNode? lifecycleNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsAlarmLifecycleNode(node));
+            FlowRuleNode? actionPolicyNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsActionPolicyNode(node));
+            List<EdgeRuleActionConfig> actions = BuildActions(nodes.Where(node => descendants.Contains(node.Id)).ToList());
 
             EdgeRuleConfig rule = new EdgeRuleConfig
             {
@@ -127,6 +140,11 @@ namespace IPC.EdgeGateway
                 ConditionType = sequenceNode != null
                     ? EdgeRuleConditionType.Sequence
                     : conditionNodes.Count > 1 ? EdgeRuleConditionType.Combination : ResolveConditionType(firstCondition),
+                SourceChannelId = FirstText(firstCondition.ChannelId, firstSource.ChannelId),
+                SourceChannelName = FirstText(firstCondition.ChannelName, firstSource.ChannelName),
+                SourceDeviceId = FirstText(firstCondition.DeviceId, firstSource.DeviceId),
+                SourceGroupId = FirstText(firstCondition.GroupId, firstSource.GroupId),
+                SourceTagId = FirstText(firstCondition.TagId, firstSource.TagId),
                 SourcePointCode = FirstText(firstCondition.PointCode, firstSource.PointCode),
                 SourceDeviceName = FirstText(firstCondition.DeviceName, firstSource.DeviceName),
                 SourceGroupName = FirstText(firstCondition.GroupName, firstSource.GroupName),
@@ -167,6 +185,11 @@ namespace IPC.EdgeGateway
                 StateExpectedValue = firstCondition.StateExpectedValue,
                 StateClearValue = firstCondition.StateClearValue,
                 StateTimeoutSeconds = firstCondition.StateTimeoutSeconds,
+                RelatedChannelId = firstCondition.RelatedChannelId,
+                RelatedChannelName = firstCondition.RelatedChannelName,
+                RelatedDeviceId = firstCondition.RelatedDeviceId,
+                RelatedGroupId = firstCondition.RelatedGroupId,
+                RelatedTagId = firstCondition.RelatedTagId,
                 RelatedDeviceName = firstCondition.RelatedDeviceName,
                 RelatedGroupName = firstCondition.RelatedGroupName,
                 RelatedTagName = firstCondition.RelatedTagName,
@@ -178,6 +201,11 @@ namespace IPC.EdgeGateway
                 ContextName = firstCondition.ContextName,
                 ContextExpectedValue = firstCondition.ContextExpectedValue,
                 ContextOperator = ParseEnum(firstCondition.ContextOperator, EdgeRuleComparisonOperator.Equal),
+                ContextChannelId = firstCondition.ContextChannelId,
+                ContextChannelName = firstCondition.ContextChannelName,
+                ContextDeviceId = firstCondition.ContextDeviceId,
+                ContextGroupId = firstCondition.ContextGroupId,
+                ContextTagId = firstCondition.ContextTagId,
                 ContextDeviceName = firstCondition.ContextDeviceName,
                 ContextGroupName = firstCondition.ContextGroupName,
                 ContextTagName = firstCondition.ContextTagName,
@@ -229,31 +257,23 @@ namespace IPC.EdgeGateway
             return rule;
         }
 
-        private static List<FlowRuleNode> ResolveSequenceConditionNodes(
-            FlowRuleNode sequenceNode,
-            IList<FlowRuleNode>? nodes,
-            IList<FlowRuleEdge>? edges)
+        private static List<FlowRuleNode> ResolveDirectConditionNodes(
+            FlowRuleNode resultNode,
+            FlowRuleGraphMap graph)
         {
-            if (sequenceNode == null || nodes == null || edges == null)
+            if (resultNode == null || graph == null)
                 return new List<FlowRuleNode>();
 
             List<FlowRuleNode> conditions = new List<FlowRuleNode>();
-            for (int i = 0; i < edges.Count; i++)
+            IList<FlowRuleEdge> incoming = graph.GetIncomingEdges(resultNode.Id);
+            for (int i = 0; i < incoming.Count; i++)
             {
-                FlowRuleEdge? edge = edges[i];
-                if (edge == null || !string.Equals(edge.TargetNodeId, sequenceNode.Id, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                FlowRuleNode? source = nodes.FirstOrDefault(node =>
-                    node != null && string.Equals(node.Id, edge.SourceNodeId, StringComparison.OrdinalIgnoreCase));
+                FlowRuleNode? source = graph.FindNode(incoming[i].SourceNodeId);
                 if (IsConditionLikeNode(source))
                     conditions.Add(source!);
             }
 
-            return conditions
-                .OrderBy(node => node.X)
-                .ThenBy(node => node.Y)
-                .ToList();
+            return conditions;
         }
 
         private static List<EdgeRuleConditionConfig> BuildConditions(
@@ -275,6 +295,11 @@ namespace IPC.EdgeGateway
                 conditions.Add(new EdgeRuleConditionConfig
                 {
                     Id = string.IsNullOrWhiteSpace(conditionNode.Id) ? Guid.NewGuid().ToString("N") : conditionNode.Id,
+                    SourceChannelId = FirstText(conditionNode.ChannelId, sourceNode.ChannelId),
+                    SourceChannelName = FirstText(conditionNode.ChannelName, sourceNode.ChannelName),
+                    SourceDeviceId = FirstText(conditionNode.DeviceId, sourceNode.DeviceId),
+                    SourceGroupId = FirstText(conditionNode.GroupId, sourceNode.GroupId),
+                    SourceTagId = FirstText(conditionNode.TagId, sourceNode.TagId),
                     SourcePointCode = FirstText(conditionNode.PointCode, sourceNode.PointCode),
                     SourceDeviceName = FirstText(conditionNode.DeviceName, sourceNode.DeviceName),
                     SourceGroupName = FirstText(conditionNode.GroupName, sourceNode.GroupName),

@@ -191,6 +191,9 @@ public sealed class FlowRuleEngineServiceTests
 
         harness.Raise("Temperature", -5D);
 
+        Assert.True(SpinWait.SpinUntil(
+            () => harness.Engine.GetStatus().Rules.Single().IsActive,
+            TimeSpan.FromSeconds(2)));
         EdgeRuleEngineStatus status = harness.Engine.GetStatus();
         Assert.True(status.Rules.Single().IsActive);
         Assert.Equal(1, status.TriggeredCount);
@@ -203,6 +206,9 @@ public sealed class FlowRuleEngineServiceTests
 
         harness.Raise("Temperature", 5D);
 
+        Assert.True(SpinWait.SpinUntil(
+            () => harness.Engine.GetStatus().FailedEvaluationCount > 0,
+            TimeSpan.FromSeconds(2)));
         EdgeRuleEngineStatus status = harness.Engine.GetStatus();
         Assert.Equal(0, status.TriggeredCount);
         Assert.Equal(1, status.FailedEvaluationCount);
@@ -342,6 +348,21 @@ public sealed class FlowRuleEngineServiceTests
     }
 
     [Fact]
+    public void FlowRule_StateMachine_WaitsForExplicitClearValue()
+    {
+        using FlowRuleHarness harness = FlowRuleHarness.Start(StateMachineFlowRule());
+
+        harness.RaiseText("MachineState", "RUN");
+        harness.RaiseText("MachineState", "PAUSE");
+        Assert.True(harness.Engine.GetStatus().Rules.Single().IsActive);
+
+        harness.RaiseText("MachineState", "STOP");
+        EdgeRuleEngineStatus status = harness.Engine.GetStatus();
+        Assert.False(status.Rules.Single().IsActive);
+        Assert.Equal(1, status.ClearedCount);
+    }
+
+    [Fact]
     public void FlowRule_CycleTime_TriggersWhenCycleIsTooSlow()
     {
         DateTime start = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Local);
@@ -391,6 +412,9 @@ public sealed class FlowRuleEngineServiceTests
 
         harness.Raise("Temperature", 10D);
 
+        Assert.True(SpinWait.SpinUntil(
+            () => harness.Engine.GetStatus().Rules.Single().IsActive,
+            TimeSpan.FromSeconds(2)));
         EdgeRuleEngineStatus status = harness.Engine.GetStatus();
         Assert.True(status.Rules.Single().IsActive);
         Assert.Equal("DeviceAnomaly", status.Rules.Single().ActiveState);
@@ -437,8 +461,9 @@ public sealed class FlowRuleEngineServiceTests
         EdgeRuleEngineStatus status = harness.Engine.GetStatus();
         Assert.True(status.Rules.Single().IsActive);
 
-        Thread.Sleep(1100);
-        harness.Raise("Temperature", 5D);
+        Assert.True(SpinWait.SpinUntil(
+            () => !harness.Engine.GetStatus().Rules.Single().IsActive,
+            TimeSpan.FromSeconds(2)));
 
         status = harness.Engine.GetStatus();
         Assert.False(status.Rules.Single().IsActive);
@@ -459,6 +484,17 @@ public sealed class FlowRuleEngineServiceTests
         Assert.Equal(2, updated.Version);
         Assert.Equal(2, updated.PublishedVersion);
         Assert.Equal(FlowRuleLifecycleStates.Published, updated.LifecycleState);
+    }
+
+    [Fact]
+    public void FlowRule_ArchivedRule_IsNotLoadedIntoRuntime()
+    {
+        FlowRuleDefinition rule = HysteresisFlowRule();
+        rule.LifecycleState = FlowRuleLifecycleStates.Archived;
+
+        using FlowRuleHarness harness = FlowRuleHarness.Start(rule);
+
+        Assert.Equal(0, harness.Engine.GetStatus().RuleCount);
     }
 
     [Fact]
@@ -553,11 +589,11 @@ public sealed class FlowRuleEngineServiceTests
             DataType = "Double"
         };
 
-        FlowRuleNode logic = new FlowRuleNode
+        FlowRuleNode transform = new FlowRuleNode
         {
-            Id = "logic",
-            NodeType = FlowRuleNodeTypes.Logic,
-            LogicalOperator = EdgeRuleLogicalOperator.And.ToString()
+            Id = "transform",
+            NodeType = FlowRuleNodeTypes.Transform,
+            TransformMultiplier = 1D
         };
 
         FlowRuleNode condition = new FlowRuleNode
@@ -584,11 +620,11 @@ public sealed class FlowRuleEngineServiceTests
             Name = "Indirect flow",
             Enabled = true,
             Mode = FlowRuleModes.Flow,
-            Nodes = { tag, logic, condition, mqtt },
+            Nodes = { tag, transform, condition, mqtt },
             Edges =
             {
-                new FlowRuleEdge { SourceNodeId = tag.Id, TargetNodeId = logic.Id },
-                new FlowRuleEdge { SourceNodeId = logic.Id, TargetNodeId = condition.Id },
+                new FlowRuleEdge { SourceNodeId = tag.Id, TargetNodeId = transform.Id },
+                new FlowRuleEdge { SourceNodeId = transform.Id, TargetNodeId = condition.Id },
                 new FlowRuleEdge { SourceNodeId = condition.Id, TargetNodeId = mqtt.Id }
             }
         };
@@ -900,7 +936,7 @@ public sealed class FlowRuleEngineServiceTests
             NodeType = FlowRuleNodeTypes.Condition,
             Operator = EdgeRuleComparisonOperator.GreaterThan.ToString(),
             CompareValue = 10D,
-            X = 260,
+            X = 480,
             Y = 80
         };
 
@@ -910,7 +946,7 @@ public sealed class FlowRuleEngineServiceTests
             NodeType = FlowRuleNodeTypes.Condition,
             Operator = EdgeRuleComparisonOperator.GreaterThan.ToString(),
             CompareValue = 20D,
-            X = 480,
+            X = 260,
             Y = 230
         };
 
@@ -1434,6 +1470,91 @@ public sealed class FlowRuleEngineServiceTests
         };
     }
 
+    private static void ApplyStableTestIdentities(ProjectConfig project)
+    {
+        foreach (FlowRuleDefinition rule in project.FlowRules ?? new List<FlowRuleDefinition>())
+        {
+            foreach (FlowRuleNode node in rule?.Nodes ?? new List<FlowRuleNode>())
+            {
+                if (node == null) continue;
+                AssignNodeIdentity(node);
+            }
+        }
+
+        foreach (EdgeRuleConfig rule in project.Rules ?? new List<EdgeRuleConfig>())
+        {
+            if (rule == null) continue;
+            AssignRuleIdentity(rule);
+        }
+    }
+
+    private static void AssignNodeIdentity(FlowRuleNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.TagName))
+        {
+            node.ChannelId = TestChannelId;
+            node.ChannelName = "Test Channel";
+            node.DeviceId = StableDeviceId(node.DeviceName);
+            node.GroupId = StableGroupId(node.GroupName);
+            node.TagId = StableTagId(node.DeviceName, node.GroupName, node.TagName);
+        }
+        if (!string.IsNullOrWhiteSpace(node.RelatedTagName))
+        {
+            node.RelatedChannelId = TestChannelId;
+            node.RelatedChannelName = "Test Channel";
+            node.RelatedDeviceId = StableDeviceId(node.RelatedDeviceName);
+            node.RelatedGroupId = StableGroupId(node.RelatedGroupName);
+            node.RelatedTagId = StableTagId(node.RelatedDeviceName, node.RelatedGroupName, node.RelatedTagName);
+        }
+        if (!string.IsNullOrWhiteSpace(node.ContextTagName))
+        {
+            node.ContextChannelId = TestChannelId;
+            node.ContextChannelName = "Test Channel";
+            node.ContextDeviceId = StableDeviceId(node.ContextDeviceName);
+            node.ContextGroupId = StableGroupId(node.ContextGroupName);
+            node.ContextTagId = StableTagId(node.ContextDeviceName, node.ContextGroupName, node.ContextTagName);
+        }
+    }
+
+    private static void AssignRuleIdentity(EdgeRuleConfig rule)
+    {
+        if (!string.IsNullOrWhiteSpace(rule.SourceTagName))
+        {
+            rule.SourceChannelId = TestChannelId;
+            rule.SourceChannelName = "Test Channel";
+            rule.SourceDeviceId = StableDeviceId(rule.SourceDeviceName);
+            rule.SourceGroupId = StableGroupId(rule.SourceGroupName);
+            rule.SourceTagId = StableTagId(rule.SourceDeviceName, rule.SourceGroupName, rule.SourceTagName);
+        }
+        if (!string.IsNullOrWhiteSpace(rule.RelatedTagName))
+        {
+            rule.RelatedChannelId = TestChannelId;
+            rule.RelatedDeviceId = StableDeviceId(rule.RelatedDeviceName);
+            rule.RelatedGroupId = StableGroupId(rule.RelatedGroupName);
+            rule.RelatedTagId = StableTagId(rule.RelatedDeviceName, rule.RelatedGroupName, rule.RelatedTagName);
+        }
+        if (!string.IsNullOrWhiteSpace(rule.ContextTagName))
+        {
+            rule.ContextChannelId = TestChannelId;
+            rule.ContextDeviceId = StableDeviceId(rule.ContextDeviceName);
+            rule.ContextGroupId = StableGroupId(rule.ContextGroupName);
+            rule.ContextTagId = StableTagId(rule.ContextDeviceName, rule.ContextGroupName, rule.ContextTagName);
+        }
+        foreach (EdgeRuleConditionConfig condition in rule.Conditions ?? new List<EdgeRuleConditionConfig>())
+        {
+            condition.SourceChannelId = TestChannelId;
+            condition.SourceDeviceId = StableDeviceId(condition.SourceDeviceName);
+            condition.SourceGroupId = StableGroupId(condition.SourceGroupName);
+            condition.SourceTagId = StableTagId(condition.SourceDeviceName, condition.SourceGroupName, condition.SourceTagName);
+        }
+    }
+
+    private const string TestChannelId = "channel:test";
+    private static string StableDeviceId(string value) => "device:" + (value ?? string.Empty).Trim().ToLowerInvariant();
+    private static string StableGroupId(string value) => string.IsNullOrWhiteSpace(value) ? string.Empty : "group:" + value.Trim().ToLowerInvariant();
+    private static string StableTagId(string device, string group, string tag) =>
+        "tag:" + string.Join("/", device ?? string.Empty, group ?? string.Empty, tag ?? string.Empty).Trim().ToLowerInvariant();
+
     private sealed class FlowRuleHarness : IDisposable
     {
         private readonly FakeRuntimeService _runtime;
@@ -1467,6 +1588,7 @@ public sealed class FlowRuleEngineServiceTests
 
         private static FlowRuleHarness StartProject(FakeRuntimeService runtime, ProjectConfig project, IModelInferenceService? modelInference)
         {
+            ApplyStableTestIdentities(project);
             FlowRuleEngineService engine = new FlowRuleEngineService(
                 runtime,
                 project,
@@ -1503,6 +1625,11 @@ public sealed class FlowRuleEngineServiceTests
         {
             _runtime.Raise(new TagValueSnapshot
             {
+                ChannelId = TestChannelId,
+                ChannelName = "Test Channel",
+                DeviceId = StableDeviceId(deviceName),
+                GroupId = StableGroupId(groupName),
+                TagId = StableTagId(deviceName, groupName, tagName),
                 DeviceName = deviceName,
                 GroupName = groupName,
                 TagName = tagName,
@@ -1521,6 +1648,11 @@ public sealed class FlowRuleEngineServiceTests
         {
             _runtime.Raise(new TagValueSnapshot
             {
+                ChannelId = TestChannelId,
+                ChannelName = "Test Channel",
+                DeviceId = StableDeviceId("Boiler"),
+                GroupId = StableGroupId("Main"),
+                TagId = StableTagId("Boiler", "Main", tagName),
                 DeviceName = "Boiler",
                 GroupName = "Main",
                 TagName = tagName,
@@ -1579,12 +1711,6 @@ public sealed class FlowRuleEngineServiceTests
         public void Start(ProjectConfig config) => IsRunning = true;
         public void Stop() => IsRunning = false;
         public void Raise(TagValueSnapshot snapshot) => TagValueChanged?.Invoke(this, new TagValueChangedEventArgs(snapshot));
-        public bool TryGetSnapshot(string deviceName, string groupName, string tagName, out TagValueSnapshot? snapshot)
-        {
-            snapshot = null;
-            return false;
-        }
-
         public IList<TagValueSnapshot> GetSnapshots() => new List<TagValueSnapshot>();
         public void RestoreSnapshots(IList<TagValueSnapshot> snapshots) { }
         public IList<DeviceRuntimeStatus> GetDeviceStatuses() => new List<DeviceRuntimeStatus>();
@@ -1593,8 +1719,8 @@ public sealed class FlowRuleEngineServiceTests
         public ReadTagResponse ReadCached(ReadTagRequest request) => new ReadTagResponse();
         public ReadTagsResponse ReadCached(ReadTagsRequest request) => new ReadTagsResponse();
         public ReadTagsResponse QueryCached(ReadTagRequest request) => new ReadTagsResponse();
-        public ReadTagsResponse ReadTagByDeviceCached(string deviceName, string tagName) => new ReadTagsResponse();
-        public ReadTagsResponse ReadGroupCached(string deviceName, string groupName) => new ReadTagsResponse();
+        public ReadTagsResponse ReadTagByDeviceCached(string channelId, string deviceId, string tagId) => new ReadTagsResponse();
+        public ReadTagsResponse ReadGroupCached(string channelId, string deviceId, string groupId) => new ReadTagsResponse();
         public WriteTagResponse WriteTag(WriteTagRequest request) => new WriteTagResponse();
         public void Dispose() { }
     }

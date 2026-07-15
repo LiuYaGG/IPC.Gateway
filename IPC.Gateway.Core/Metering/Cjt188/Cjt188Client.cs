@@ -38,7 +38,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
     public sealed class Cjt188Client : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
         private readonly PlcConnectionOptions _options;
-        private TcpClient? _tcpClient;
+        private SharedTransparentTcpLease? _channelLease;
         private NetworkStream? _stream;
 
         public Cjt188Client(PlcConnectionOptions options)
@@ -48,7 +48,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
 
         public bool IsConnected
         {
-            get { return _tcpClient != null && _tcpClient.Connected && _stream != null; }
+            get { return _channelLease?.IsConnected == true && _stream != null; }
         }
 
         public PlcProtocol Protocol
@@ -62,26 +62,15 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             if (string.IsNullOrWhiteSpace(_options.Host))
                 throw new InvalidOperationException("CJ/T188-2004 当前内置驱动使用 TCP 透明传输，请配置串口服务器 IP。");
 
-            int port = _options.Port <= 0 ? 4001 : _options.Port;
-            int timeout = _options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds;
-            TcpClient client = new TcpClient();
             try
             {
-                client.ReceiveTimeout = timeout;
-                client.SendTimeout = timeout;
-                client.Connect(_options.Host, port);
-
-                NetworkStream stream = client.GetStream();
-                stream.ReadTimeout = timeout;
-                stream.WriteTimeout = timeout;
-
-                _tcpClient = client;
-                _stream = stream;
+                _channelLease = SharedTransparentTcpChannelRegistry.Acquire(_options);
+                _stream = _channelLease.Stream;
             }
             catch
             {
-                client.Close();
-                _tcpClient = null;
+                _channelLease?.Dispose();
+                _channelLease = null;
                 _stream = null;
                 throw;
             }
@@ -94,26 +83,15 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             if (string.IsNullOrWhiteSpace(_options.Host))
                 throw new InvalidOperationException("CJ/T188-2004 TCP host is not configured.");
 
-            int port = _options.Port <= 0 ? 4001 : _options.Port;
-            int timeout = _options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds;
-            TcpClient client = new TcpClient();
             try
             {
-                client.ReceiveTimeout = timeout;
-                client.SendTimeout = timeout;
-                await client.ConnectAsync(_options.Host, port, cancellationToken).ConfigureAwait(false);
-
-                NetworkStream stream = client.GetStream();
-                stream.ReadTimeout = timeout;
-                stream.WriteTimeout = timeout;
-
-                _tcpClient = client;
-                _stream = stream;
+                _channelLease = await SharedTransparentTcpChannelRegistry.AcquireAsync(_options, cancellationToken).ConfigureAwait(false);
+                _stream = _channelLease.Stream;
             }
             catch
             {
-                client.Close();
-                _tcpClient = null;
+                _channelLease?.Dispose();
+                _channelLease = null;
                 _stream = null;
                 throw;
             }
@@ -121,16 +99,11 @@ namespace IPC.Plc.Communication.Metering.Cjt188
 
         public void Disconnect()
         {
-            if (_stream != null)
+            _stream = null;
+            if (_channelLease != null)
             {
-                _stream.Close();
-                _stream = null;
-            }
-
-            if (_tcpClient != null)
-            {
-                _tcpClient.Close();
-                _tcpClient = null;
+                _channelLease.Dispose();
+                _channelLease = null;
             }
         }
 
@@ -195,6 +168,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
 
         private byte[] ReadRawData(Cjt188Address address)
         {
+            using IDisposable operation = _channelLease!.Enter();
             byte[] request = Cjt188Frame.BuildReadRequest(address);
             NetworkStream stream = GetConnectedStream();
             stream.Write(request, 0, request.Length);
@@ -207,6 +181,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             Cjt188Address address,
             CancellationToken cancellationToken)
         {
+            using IDisposable operation = await _channelLease!.EnterAsync(cancellationToken).ConfigureAwait(false);
             byte[] request = Cjt188Frame.BuildReadRequest(address);
             NetworkStream stream = GetConnectedStream();
             await stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
@@ -247,6 +222,25 @@ namespace IPC.Plc.Communication.Metering.Cjt188
 
         private byte[] ReadResponse(NetworkStream stream)
         {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
+            while (DateTime.UtcNow <= deadline && stream.ReadByte() != 0x68)
+            {
+            }
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException("CJ/T188-2004 read timed out while waiting for frame start.");
+
+            byte[] header = new byte[11];
+            header[0] = 0x68;
+            ReadExact(stream, header, 1, 10);
+            byte[] frame = new byte[13 + header[10]];
+            Buffer.BlockCopy(header, 0, frame, 0, header.Length);
+            ReadExact(stream, frame, header.Length, frame.Length - header.Length);
+            return frame;
+        }
+
+#if false
+        private byte[] ReadResponseLegacy(NetworkStream stream)
+        {
             MemoryStream buffer = new MemoryStream();
             DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
             while (DateTime.UtcNow <= deadline)
@@ -276,7 +270,33 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             throw new TimeoutException("CJ/T188-2004读取超时。");
         }
 
+#endif
         private async ValueTask<byte[]> ReadResponseAsync(
+            NetworkStream stream,
+            CancellationToken cancellationToken)
+        {
+            byte[] one = new byte[1];
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
+            do
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (DateTime.UtcNow > deadline)
+                    throw new TimeoutException("CJ/T188-2004 read timed out while waiting for frame start.");
+                await ReadExactAsync(stream, one, 0, 1, cancellationToken).ConfigureAwait(false);
+            }
+            while (one[0] != 0x68);
+
+            byte[] header = new byte[11];
+            header[0] = 0x68;
+            await ReadExactAsync(stream, header, 1, 10, cancellationToken).ConfigureAwait(false);
+            byte[] frame = new byte[13 + header[10]];
+            Buffer.BlockCopy(header, 0, frame, 0, header.Length);
+            await ReadExactAsync(stream, frame, header.Length, frame.Length - header.Length, cancellationToken).ConfigureAwait(false);
+            return frame;
+        }
+
+#if false
+        private async ValueTask<byte[]> ReadResponseAsyncLegacy(
             NetworkStream stream,
             CancellationToken cancellationToken)
         {
@@ -311,6 +331,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             throw new TimeoutException("CJ/T188-2004 read timed out.");
         }
 
+#endif
         private static int FindStart(byte[] bytes)
         {
             for (int i = 0; i < bytes.Length; i++)
@@ -319,6 +340,35 @@ namespace IPC.Plc.Communication.Metering.Cjt188
                     return i;
             }
             return -1;
+        }
+
+        private static void ReadExact(NetworkStream stream, byte[] buffer, int offset, int count)
+        {
+            while (count > 0)
+            {
+                int read = stream.Read(buffer, offset, count);
+                if (read <= 0)
+                    throw new IOException("CJ/T188-2004 transparent TCP connection was closed.");
+                offset += read;
+                count -= read;
+            }
+        }
+
+        private static async ValueTask ReadExactAsync(
+            NetworkStream stream,
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            while (count > 0)
+            {
+                int read = await stream.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+                if (read <= 0)
+                    throw new IOException("CJ/T188-2004 transparent TCP connection was closed.");
+                offset += read;
+                count -= read;
+            }
         }
 
         private NetworkStream GetConnectedStream()

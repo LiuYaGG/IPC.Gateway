@@ -30,9 +30,9 @@ namespace IPC.Runtime.Indexing
     
     public static class TagPath
     {
-        public static string Build(string deviceName, string groupName, string tagName)
+        public static string BuildIdentity(string channelId, string deviceId, string groupId, string tagId)
         {
-            return Normalize(deviceName) + "/" + Normalize(groupName) + "/" + Normalize(tagName);
+            return Normalize(channelId) + "/" + Normalize(deviceId) + "/" + Normalize(groupId) + "/" + Normalize(tagId);
         }
 
         public static string Normalize(string value)

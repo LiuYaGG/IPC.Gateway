@@ -74,6 +74,8 @@ const LEGACY_DEFAULT_NODE_LABELS: Record<string, string> = {
   DebugProbe: 'Debug Probe'
 }
 const CONDITION_NODE_TYPES = new Set(['Condition', 'Threshold', 'Deadband', 'RateOfChange', 'Hysteresis', 'MultiLevelAlarm', 'Expression', 'QualityGate', 'SlidingWindow', 'WindowCalculation', 'Aggregation', 'Trend', 'StateMachine', 'CycleTime', 'ProcessTakt', 'AnomalyDetection', 'ModelInference', 'TagRelation', 'ContextGate'])
+const BASIC_CONDITION_NODE_TYPES = new Set(['Condition', 'Threshold'])
+const ACTION_NODE_TYPES = new Set(['MqttPublish', 'EmailNotify', 'WebhookCall', 'DebugProbe'])
 
 export const LEGACY_FLOW_NODE_TYPES = [
   { type: 'TagInput', label: '标签输入' },
@@ -121,6 +123,11 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     label,
     x: baseX,
     y: 110,
+    channelId: '',
+    channelName: '',
+    deviceId: '',
+    groupId: '',
+    tagId: '',
     deviceName: '',
     groupName: '',
     tagName: '',
@@ -154,6 +161,11 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     stateExpectedValue: '1',
     stateClearValue: '',
     stateTimeoutSeconds: 0,
+    relatedChannelId: '',
+    relatedChannelName: '',
+    relatedDeviceId: '',
+    relatedGroupId: '',
+    relatedTagId: '',
     relatedDeviceName: '',
     relatedGroupName: '',
     relatedTagName: '',
@@ -165,6 +177,11 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     contextName: 'Context',
     contextExpectedValue: '',
     contextOperator: 'Equal',
+    contextChannelId: '',
+    contextChannelName: '',
+    contextDeviceId: '',
+    contextGroupId: '',
+    contextTagId: '',
     contextDeviceName: '',
     contextGroupName: '',
     contextTagName: '',
@@ -254,6 +271,11 @@ export function cloneFlowRule(rule: FlowRuleDefinition): FlowRuleDefinition {
 }
 
 export function applyTagSelectionToNode(node: FlowRuleNode, selection: TagSelection | null) {
+  node.channelId = selection?.channelId ?? ''
+  node.channelName = selection?.channelName ?? ''
+  node.deviceId = selection?.deviceId ?? ''
+  node.groupId = selection?.groupId ?? ''
+  node.tagId = selection?.tagId ?? ''
   node.deviceName = selection?.deviceName ?? ''
   node.groupName = selection?.groupName ?? ''
   node.tagName = selection?.tagName ?? ''
@@ -261,14 +283,107 @@ export function applyTagSelectionToNode(node: FlowRuleNode, selection: TagSelect
   node.dataType = selection?.dataType ?? ''
 }
 
+function validateFlowGraph(rule: FlowRuleDefinition) {
+  const errors: string[] = []
+  const nodes = rule.nodes ?? []
+  const edges = rule.edges ?? []
+  const nodeById = new Map<string, FlowRuleNode>()
+  for (const node of nodes) {
+    if (!node.id?.trim()) errors.push('流程节点 ID 不能为空')
+    else if (nodeById.has(node.id)) errors.push(`流程节点 ID 重复：${node.id}`)
+    else nodeById.set(node.id, node)
+  }
+
+  const incoming = new Map<string, FlowRuleEdge[]>()
+  const outgoing = new Map<string, FlowRuleEdge[]>()
+  const edgePairs = new Set<string>()
+  for (const edge of edges) {
+    if (!nodeById.has(edge.sourceNodeId) || !nodeById.has(edge.targetNodeId)) {
+      errors.push('流程连线引用了不存在的节点')
+      continue
+    }
+    if (edge.sourceNodeId === edge.targetNodeId) errors.push('流程节点不能连接到自身')
+    const pair = `${edge.sourceNodeId}\u001f${edge.targetNodeId}`
+    if (edgePairs.has(pair)) errors.push('流程中存在重复连线')
+    edgePairs.add(pair)
+    if (!incoming.has(edge.targetNodeId)) incoming.set(edge.targetNodeId, [])
+    if (!outgoing.has(edge.sourceNodeId)) outgoing.set(edge.sourceNodeId, [])
+    incoming.get(edge.targetNodeId)!.push(edge)
+    outgoing.get(edge.sourceNodeId)!.push(edge)
+  }
+
+  const indegree = new Map(nodes.map(node => [node.id, incoming.get(node.id)?.length ?? 0]))
+  const queue = nodes.filter(node => (indegree.get(node.id) ?? 0) === 0).map(node => node.id)
+  let visited = 0
+  while (queue.length) {
+    const current = queue.shift()!
+    visited++
+    for (const edge of outgoing.get(current) ?? []) {
+      const count = (indegree.get(edge.targetNodeId) ?? 1) - 1
+      indegree.set(edge.targetNodeId, count)
+      if (count === 0) queue.push(edge.targetNodeId)
+    }
+  }
+  if (visited !== nodes.length) errors.push('流程规则不能包含环路')
+
+  let conditions = nodes.filter(node => CONDITION_NODE_TYPES.has(node.nodeType) && node.nodeType !== 'QualityGate')
+  if (!conditions.length) conditions = nodes.filter(node => node.nodeType === 'QualityGate')
+  const logicNodes = nodes.filter(node => node.nodeType === 'Logic')
+  const sequenceNodes = nodes.filter(node => node.nodeType === 'Sequence')
+  if (!conditions.length) errors.push('流程至少需要一个判断节点')
+  if (logicNodes.length > 1) errors.push('每条流程只支持一个 AND/OR 节点')
+  if (sequenceNodes.length > 1) errors.push('每条流程只支持一个顺序/时序节点')
+  if (logicNodes.length && sequenceNodes.length) errors.push('同一流程不能同时使用 AND/OR 和顺序/时序节点')
+
+  let resultNode = sequenceNodes[0] ?? logicNodes[0]
+  if (resultNode) {
+    const directConditions = (incoming.get(resultNode.id) ?? [])
+      .map(edge => nodeById.get(edge.sourceNodeId))
+      .filter((node): node is FlowRuleNode => !!node && conditions.includes(node))
+    if (directConditions.length < 2) errors.push(`${resultNode.nodeType === 'Sequence' ? '顺序/时序' : 'AND/OR'} 节点至少需要两个直接连接的条件`)
+    if (directConditions.some(node => !BASIC_CONDITION_NODE_TYPES.has(node.nodeType))) errors.push('组合与顺序节点当前只接受基础条件')
+    if (conditions.some(node => !directConditions.includes(node))) errors.push('组合流程中的条件必须直接连接到汇合节点')
+  } else if (conditions.length === 1) {
+    resultNode = conditions[0]
+  } else if (conditions.length > 1) {
+    errors.push('多个条件必须通过一个 AND/OR 或顺序/时序节点汇合')
+  }
+
+  const reachable = new Set<string>()
+  if (resultNode) {
+    const pending = [resultNode.id]
+    while (pending.length) {
+      const current = pending.pop()!
+      for (const edge of outgoing.get(current) ?? []) {
+        if (reachable.has(edge.targetNodeId)) continue
+        reachable.add(edge.targetNodeId)
+        pending.push(edge.targetNodeId)
+      }
+    }
+  }
+  for (const node of nodes) {
+    if (ACTION_NODE_TYPES.has(node.nodeType) && !reachable.has(node.id)) errors.push(`动作节点必须连接在判断结果之后：${node.label || node.nodeType}`)
+    if (ACTION_NODE_TYPES.has(node.nodeType) && (outgoing.get(node.id)?.length ?? 0) > 0) errors.push('动作节点不能再连接下游节点')
+    if (node.nodeType !== 'TagInput' && !hasTagSource(node) && (incoming.get(node.id)?.length ?? 0) === 0) {
+      errors.push(`流程节点未连接输入：${node.label || node.nodeType}`)
+    }
+  }
+  return errors
+}
+
 export function validateFlowRule(rule: FlowRuleDefinition) {
   const errors: string[] = []
   if (!rule.name?.trim()) errors.push('规则名称不能为空')
+  if (!rule.enabled) return errors
+  errors.push(...validateFlowGraph(rule))
   if (!rule.nodes?.some(node => node.nodeType === 'TagInput' || hasTagSource(node))) {
     errors.push('至少需要选择一个标签来源')
   }
 
   for (const node of rule.nodes ?? []) {
+    if (node.nodeType === 'TagInput' && !hasPrimaryTagSource(node)) {
+      errors.push(`${node.label || '标签输入'} 必须选择标签`)
+    }
     if (node.nodeType === 'Condition' && !Number.isFinite(Number(node.compareValue))) {
       errors.push(`${node.label || '基础条件'} 的比较值不合法`)
     }
@@ -320,6 +435,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!node.stateName?.trim()) errors.push('状态机状态名称不能为空')
       if (!node.stateExpectedValue?.trim()) errors.push('状态机目标状态值不能为空')
       if (!Number.isFinite(Number(node.stateTimeoutSeconds)) || Number(node.stateTimeoutSeconds) < 0) errors.push('状态机超时不能小于 0 秒')
+      if (node.stateClearValue?.trim() && node.stateClearValue.trim() === node.stateExpectedValue?.trim()) errors.push('状态机目标值与明确恢复值不能相同')
     }
     if (node.nodeType === 'CycleTime' || node.nodeType === 'ProcessTakt') {
       if (!hasPrimaryTagSource(node)) errors.push('节拍规则需要选择标签来源')
@@ -327,6 +443,10 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!node.cycleEndValue?.trim()) errors.push('节拍规则结束值不能为空')
       if (!Number.isFinite(Number(node.cycleMinSeconds)) || Number(node.cycleMinSeconds) < 0) errors.push('节拍规则最短周期不能小于 0')
       if (!Number.isFinite(Number(node.cycleMaxSeconds)) || Number(node.cycleMaxSeconds) < 0) errors.push('节拍规则最长周期不能小于 0')
+      if (node.cycleStartValue?.trim() === node.cycleEndValue?.trim()) errors.push('周期开始值与结束值不能相同')
+      if (Number(node.cycleMinSeconds) > 0 && Number(node.cycleMaxSeconds) > 0 && Number(node.cycleMinSeconds) > Number(node.cycleMaxSeconds)) {
+        errors.push('周期最小时间不能大于最大时间')
+      }
       if (node.nodeType === 'ProcessTakt') {
         if (!Number.isFinite(Number(node.taktTargetSeconds)) || Number(node.taktTargetSeconds) <= 0) errors.push('工艺节拍目标秒数必须大于 0')
         if (!Number.isFinite(Number(node.taktTolerancePercent)) || Number(node.taktTolerancePercent) < 0) errors.push('工艺节拍容差不能小于 0')
@@ -439,15 +559,15 @@ export function hasTagSource(node: FlowRuleNode) {
 }
 
 function hasPrimaryTagSource(node: FlowRuleNode) {
-  return !!(node.pointCode?.trim() || (node.deviceName?.trim() && node.tagName?.trim()))
+  return !!node.tagId?.trim()
 }
 
 function hasRelatedTagSource(node: FlowRuleNode) {
-  return !!(node.relatedPointCode?.trim() || (node.relatedDeviceName?.trim() && node.relatedTagName?.trim()))
+  return !!node.relatedTagId?.trim()
 }
 
 function hasContextTagSource(node: FlowRuleNode) {
-  return !!(node.contextPointCode?.trim() || (node.contextDeviceName?.trim() && node.contextTagName?.trim()))
+  return !!node.contextTagId?.trim()
 }
 
 export function nodeDisplayName(node: FlowRuleNode) {

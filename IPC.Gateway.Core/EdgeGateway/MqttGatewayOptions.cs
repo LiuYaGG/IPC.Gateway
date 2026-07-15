@@ -57,7 +57,7 @@ namespace IPC.EdgeGateway
             PublishSelectedTagsOnly = false;
             PublishChangedOnly = true;
             PublishUnchangedHeartbeatSeconds = 0;
-            PublishTopicTemplate = "ipc/data/{device}/{group}/{tag}";
+            PublishTopicTemplate = "ipc/data/{channel}/{device}/{group}/{tag}";
             PublishQos = 0;
             HeartbeatEnabled = true;
             HeartbeatIntervalSeconds = 60;
@@ -79,8 +79,8 @@ namespace IPC.EdgeGateway
             SparkplugNamespace = "spBv1.0";
             SparkplugGroupId = "IPC-Gateway";
             SparkplugEdgeNodeId = "EdgeNode";
-            SparkplugDeviceIdSource = "DeviceName";
-            SparkplugMetricNameTemplate = "{group}/{tag}";
+            SparkplugDeviceIdSource = "DeviceId";
+            SparkplugMetricNameTemplate = "{channel}/{group}/{tag}";
             SparkplugPublishNodeBirth = true;
             SparkplugPublishDeviceBirth = true;
             SparkplugPublishDeviceDeath = true;
@@ -88,6 +88,8 @@ namespace IPC.EdgeGateway
             SparkplugUseAliases = false;
             SparkplugDeathQos = 0;
             SparkplugBirthQos = 0;
+            SparkplugEnableCommands = true;
+            SparkplugPrimaryHostId = string.Empty;
         }
 
         public bool Enabled { get; set; }
@@ -145,6 +147,8 @@ namespace IPC.EdgeGateway
         public bool SparkplugUseAliases { get; set; }
         public int SparkplugDeathQos { get; set; }
         public int SparkplugBirthQos { get; set; }
+        public bool SparkplugEnableCommands { get; set; }
+        public string SparkplugPrimaryHostId { get; set; }
 
         public string BrokerAddress
         {
@@ -213,7 +217,9 @@ namespace IPC.EdgeGateway
                 SparkplugIncludeProperties = SparkplugIncludeProperties,
                 SparkplugUseAliases = SparkplugUseAliases,
                 SparkplugDeathQos = SparkplugDeathQos,
-                SparkplugBirthQos = SparkplugBirthQos
+                SparkplugBirthQos = SparkplugBirthQos,
+                SparkplugEnableCommands = SparkplugEnableCommands,
+                SparkplugPrimaryHostId = SparkplugPrimaryHostId
             };
         }
 

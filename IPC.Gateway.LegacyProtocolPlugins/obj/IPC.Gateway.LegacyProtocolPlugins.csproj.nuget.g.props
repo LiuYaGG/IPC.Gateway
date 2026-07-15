@@ -13,4 +13,7 @@
     <SourceRoot Include="C:\Users\liuYGG\.nuget\packages\" />
     <SourceRoot Include="C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages\" />
   </ItemGroup>
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Pkgopendnp3 Condition=" '$(Pkgopendnp3)' == '' ">C:\Users\liuYGG\.nuget\packages\opendnp3\3.1.2</Pkgopendnp3>
+  </PropertyGroup>
 </Project>

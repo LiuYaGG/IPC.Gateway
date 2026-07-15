@@ -44,33 +44,46 @@ namespace IPC.Plc.Communication.Cip
     {
         private const ushort CommandRegisterSession = 0x0065;
         private const ushort CommandUnregisterSession = 0x0066;
+        private const ushort CommandListIdentity = 0x0063;
         private const ushort CommandSendRRData = 0x006F;
         private const ushort CpfItemNullAddress = 0x0000;
         private const ushort CpfItemUnconnectedData = 0x00B2;
-        private const int MaxDataBytesPerPacket = 400;
-
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private uint _sessionHandle;
-        private readonly int _slot;
+        private long _senderContext;
+        private readonly byte[] _routePath;
+        private readonly int _maxRequestBytes;
+        private readonly int _maxServicesPerPacket;
 
         public CipClient(string host, int slot, int timeoutMilliseconds)
         {
             Host = host;
             Port = 44818;
             TimeoutMilliseconds = timeoutMilliseconds;
-            _slot = slot;
+            _routePath = CipRoutePath.Build(new CipDriverOptions(), slot);
+            _maxRequestBytes = 400;
+            _maxServicesPerPacket = 16;
         }
 
         public CipClient(PlcConnectionOptions options)
-            : this(options.Host, options.Slot, options.TimeoutMilliseconds)
         {
+            Host = options.Host;
             Port = options.Port;
+            TimeoutMilliseconds = options.TimeoutMilliseconds;
+            CipDriverOptions driverOptions = CipDriverOptions.Parse(options.DriverOptionsJson);
+            _routePath = CipRoutePath.Build(
+                driverOptions,
+                options.Slot,
+                options.Protocol == PlcProtocol.RockwellPccc || options.Protocol == PlcProtocol.EtherNetIp);
+            _maxRequestBytes = driverOptions.MaxRequestBytes;
+            _maxServicesPerPacket = driverOptions.MaxServicesPerPacket;
         }
 
         public string Host { get; private set; }
         public int Port { get; set; }
         public int TimeoutMilliseconds { get; private set; }
+        public CipDeviceIdentity ControllerIdentity { get; private set; }
         public bool IsConnected { get { return _tcpClient != null && _tcpClient.Connected && _sessionHandle != 0; } }
         public PlcProtocol Protocol { get { return PlcProtocol.RockwellCip; } }
 
@@ -96,12 +109,12 @@ namespace IPC.Plc.Communication.Cip
 
             return CipBatchReadExecutor.ReadMany(requests, new CipBatchReadContext
             {
-                BuildReadRequest = BuildReadTagRequest,
+                BuildReadRequest = BuildReadRequest,
                 SendConnectedMessage = SendConnectedMessage,
-                DecodeReadResponse = DecodeReadTagResponse,
+                DecodeReadResponse = DecodeReadResponse,
                 ReadTag = ReadTag,
-                MaxRequestBytes = MaxDataBytesPerPacket,
-                MaxServicesPerPacket = 16
+                MaxRequestBytes = _maxRequestBytes,
+                MaxServicesPerPacket = _maxServicesPerPacket
             });
         }
 
@@ -114,11 +127,11 @@ namespace IPC.Plc.Communication.Cip
 
             return await CipBatchReadExecutor.ReadManyAsync(requests, new CipAsyncBatchReadContext
             {
-                BuildReadRequest = BuildReadTagRequest,
+                BuildReadRequest = BuildReadRequest,
                 SendConnectedMessageAsync = SendConnectedMessageAsync,
-                DecodeReadResponse = DecodeReadTagResponse,
-                MaxRequestBytes = MaxDataBytesPerPacket,
-                MaxServicesPerPacket = 16
+                DecodeReadResponse = DecodeReadResponse,
+                MaxRequestBytes = _maxRequestBytes,
+                MaxServicesPerPacket = _maxServicesPerPacket
             }, cancellationToken).ConfigureAwait(false);
         }
 
@@ -137,6 +150,20 @@ namespace IPC.Plc.Communication.Cip
             return WriteTagAsync(address, dataType, valueText, elementOffset, cancellationToken);
         }
 
+        internal byte[] SendExplicitMessage(byte[] cipRequest)
+        {
+            if (cipRequest == null)
+                throw new ArgumentNullException(nameof(cipRequest));
+            return SendConnectedMessage(cipRequest);
+        }
+
+        internal ValueTask<byte[]> SendExplicitMessageAsync(byte[] cipRequest, CancellationToken cancellationToken)
+        {
+            if (cipRequest == null)
+                throw new ArgumentNullException(nameof(cipRequest));
+            return SendConnectedMessageAsync(cipRequest, cancellationToken);
+        }
+
         public void Connect()
         {
             if (IsConnected)
@@ -151,6 +178,7 @@ namespace IPC.Plc.Communication.Cip
             _tcpClient.SendTimeout = TimeoutMilliseconds;
             _stream = _tcpClient.GetStream();
 
+            TryReadControllerIdentity();
             byte[] body = new byte[] { 0x01, 0x00, 0x00, 0x00 };
             EncapsulationPacket packet = SendEncapsulation(CommandRegisterSession, 0, body);
             _sessionHandle = packet.SessionHandle;
@@ -169,6 +197,7 @@ namespace IPC.Plc.Communication.Cip
             _tcpClient.SendTimeout = TimeoutMilliseconds;
             _stream = _tcpClient.GetStream();
 
+            await TryReadControllerIdentityAsync(cancellationToken).ConfigureAwait(false);
             byte[] body = new byte[] { 0x01, 0x00, 0x00, 0x00 };
             EncapsulationPacket packet = await SendEncapsulationAsync(CommandRegisterSession, 0, body, cancellationToken).ConfigureAwait(false);
             _sessionHandle = packet.SessionHandle;
@@ -190,6 +219,7 @@ namespace IPC.Plc.Communication.Cip
             }
 
             _sessionHandle = 0;
+            ControllerIdentity = null;
             if (_stream != null)
                 _stream.Dispose();
             if (_tcpClient != null)
@@ -212,6 +242,7 @@ namespace IPC.Plc.Communication.Cip
             }
 
             _sessionHandle = 0;
+            ControllerIdentity = null;
             if (_stream != null)
                 _stream.Dispose();
             if (_tcpClient != null)
@@ -231,6 +262,9 @@ namespace IPC.Plc.Communication.Cip
                 throw new ArgumentOutOfRangeException("elementCount");
             if (elementOffset < 0)
                 throw new ArgumentOutOfRangeException("elementOffset");
+
+            if (CipExplicitAddress.IsExplicit(tagName))
+                return ReadAttribute(tagName, dataType, elementCount, elementOffset);
 
             if (dataType == PlcDataType.BoolArray)
                 return ReadPackedBoolArray(tagName, elementOffset, elementCount);
@@ -259,6 +293,9 @@ namespace IPC.Plc.Communication.Cip
                 throw new ArgumentOutOfRangeException("elementCount");
             if (elementOffset < 0)
                 throw new ArgumentOutOfRangeException("elementOffset");
+
+            if (CipExplicitAddress.IsExplicit(tagName))
+                return await ReadAttributeAsync(tagName, dataType, elementCount, elementOffset, cancellationToken).ConfigureAwait(false);
 
             if (dataType == PlcDataType.BoolArray)
                 return await ReadPackedBoolArrayAsync(tagName, elementOffset, elementCount, cancellationToken).ConfigureAwait(false);
@@ -321,8 +358,70 @@ namespace IPC.Plc.Communication.Cip
 
             ushort actualType = ReadUInt16(response, offset);
             byte[] data = Slice(response, offset + 2, response.Length - offset - 2);
+            if (dataType == PlcDataType.String && actualType == CipTypeCodes.AbbreviatedStructure)
+            {
+                if (data.Length < 2)
+                    throw new InvalidOperationException("Rockwell STRING结构响应缺少类型句柄。");
+                data = Slice(data, 2, data.Length - 2);
+            }
             object value = CipDataCodec.Decode(dataType, actualType, data, elementCount);
             return new PlcReadResult(actualType, CipTypeCodes.ToName(actualType), value);
+        }
+
+        private static byte[] BuildReadRequest(string address, PlcDataType dataType, int elementCount)
+        {
+            return CipExplicitAddress.IsExplicit(address)
+                ? BuildAttributeRequest(0x0E, address, null)
+                : BuildReadTagRequest(address, dataType, elementCount);
+        }
+
+        private static PlcReadResult DecodeReadResponse(
+            byte[] response,
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            if (!CipExplicitAddress.IsExplicit(address))
+                return DecodeReadTagResponse(response, dataType, elementCount);
+
+            int offset = ParseCipReply(response, 0x8E);
+            byte[] data = Slice(response, offset, response.Length - offset);
+            return CipExplicitDataCodec.Decode(dataType, data, elementCount, elementOffset);
+        }
+
+        private PlcReadResult ReadAttribute(
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset)
+        {
+            byte[] response = SendConnectedMessage(BuildAttributeRequest(0x0E, address, null));
+            return DecodeReadResponse(response, address, dataType, elementCount, elementOffset);
+        }
+
+        private async ValueTask<PlcReadResult> ReadAttributeAsync(
+            string address,
+            PlcDataType dataType,
+            int elementCount,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            byte[] request = BuildAttributeRequest(0x0E, address, null);
+            byte[] response = await SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
+            return DecodeReadResponse(response, address, dataType, elementCount, elementOffset);
+        }
+
+        private static byte[] BuildAttributeRequest(byte service, string address, byte[] data)
+        {
+            byte[] path = CipExplicitAddress.Parse(address).EncodePath();
+            using MemoryStream request = new MemoryStream();
+            request.WriteByte(service);
+            request.WriteByte((byte)(path.Length / 2));
+            request.Write(path, 0, path.Length);
+            if (data != null && data.Length > 0)
+                request.Write(data, 0, data.Length);
+            return request.ToArray();
         }
 
         public void WriteTag(string tagName, PlcDataType dataType, string valueText)
@@ -332,6 +431,12 @@ namespace IPC.Plc.Communication.Cip
 
         public void WriteTag(string tagName, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (CipExplicitAddress.IsExplicit(tagName))
+            {
+                WriteAttribute(tagName, dataType, valueText, elementOffset);
+                return;
+            }
+
             int elementCount = CipDataCodec.GetElementCount(dataType, valueText, 1);
             byte[] data = CipDataCodec.Encode(dataType, valueText);
             WriteTag(tagName, dataType, data, elementCount, elementOffset);
@@ -344,9 +449,35 @@ namespace IPC.Plc.Communication.Cip
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (CipExplicitAddress.IsExplicit(tagName))
+            {
+                await WriteAttributeAsync(tagName, dataType, valueText, elementOffset, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             int elementCount = CipDataCodec.GetElementCount(dataType, valueText, 1);
             byte[] data = CipDataCodec.Encode(dataType, valueText);
             await WriteTagAsync(tagName, dataType, data, elementCount, elementOffset, cancellationToken).ConfigureAwait(false);
+        }
+
+        private void WriteAttribute(string address, PlcDataType dataType, string valueText, int elementOffset)
+        {
+            byte[] data = CipExplicitDataCodec.Encode(dataType, valueText, elementOffset);
+            byte[] response = SendConnectedMessage(BuildAttributeRequest(0x10, address, data));
+            ParseCipReply(response, 0x90);
+        }
+
+        private async ValueTask WriteAttributeAsync(
+            string address,
+            PlcDataType dataType,
+            string valueText,
+            int elementOffset,
+            CancellationToken cancellationToken)
+        {
+            byte[] data = CipExplicitDataCodec.Encode(dataType, valueText, elementOffset);
+            byte[] request = BuildAttributeRequest(0x10, address, data);
+            byte[] response = await SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
+            ParseCipReply(response, 0x90);
         }
 
         public void WriteTag(string tagName, PlcDataType dataType, byte[] data, int elementCount)
@@ -719,15 +850,15 @@ namespace IPC.Plc.Communication.Cip
             return TrySplitTrailingSingleIndex(tagName, out baseTag, out index);
         }
 
-        private static bool NeedsSegmentation(PlcDataType dataType, int elementCount)
+        private bool NeedsSegmentation(PlcDataType dataType, int elementCount)
         {
             return PlcDataTypeHelper.IsArray(dataType) && elementCount > GetMaxElementsPerPacket(dataType);
         }
 
-        private static int GetMaxElementsPerPacket(PlcDataType dataType)
+        private int GetMaxElementsPerPacket(PlcDataType dataType)
         {
             int elementSize = PlcDataTypeHelper.GetElementSize(dataType);
-            return Math.Max(1, MaxDataBytesPerPacket / elementSize);
+            return Math.Max(1, _maxRequestBytes / elementSize);
         }
 
         private static string BuildArrayElementTag(string tagName, int elementOffset)
@@ -782,7 +913,7 @@ namespace IPC.Plc.Communication.Cip
             if (!IsConnected)
                 Connect();
 
-            byte[] unconnectedSend = BuildUnconnectedSend(cipRequest);
+            byte[] unconnectedSend = _routePath.Length == 0 ? cipRequest : BuildUnconnectedSend(cipRequest);
             MemoryStream body = new MemoryStream();
             WriteUInt32(body, 0);
             WriteUInt16(body, 0);
@@ -805,7 +936,7 @@ namespace IPC.Plc.Communication.Cip
             if (!IsConnected)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-            byte[] unconnectedSend = BuildUnconnectedSend(cipRequest);
+            byte[] unconnectedSend = _routePath.Length == 0 ? cipRequest : BuildUnconnectedSend(cipRequest);
             MemoryStream body = new MemoryStream();
             WriteUInt32(body, 0);
             WriteUInt16(body, 0);
@@ -836,20 +967,51 @@ namespace IPC.Plc.Communication.Cip
             stream.Write(cipRequest, 0, cipRequest.Length);
             if ((cipRequest.Length % 2) != 0)
                 stream.WriteByte(0);
-            stream.WriteByte(0x01);
+            stream.WriteByte((byte)(_routePath.Length / 2));
             stream.WriteByte(0x00);
-            stream.WriteByte(0x01);
-            stream.WriteByte((byte)_slot);
+            stream.Write(_routePath, 0, _routePath.Length);
             return stream.ToArray();
+        }
+
+        private void TryReadControllerIdentity()
+        {
+            try
+            {
+                EncapsulationPacket packet = SendEncapsulation(CommandListIdentity, 0, new byte[0]);
+                ControllerIdentity = CipDeviceIdentity.TryParse(packet.Body);
+            }
+            catch (InvalidOperationException)
+            {
+                ControllerIdentity = null;
+            }
+        }
+
+        private async ValueTask TryReadControllerIdentityAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                EncapsulationPacket packet = await SendEncapsulationAsync(
+                    CommandListIdentity,
+                    0,
+                    new byte[0],
+                    cancellationToken).ConfigureAwait(false);
+                ControllerIdentity = CipDeviceIdentity.TryParse(packet.Body);
+            }
+            catch (InvalidOperationException)
+            {
+                ControllerIdentity = null;
+            }
         }
 
         private EncapsulationPacket SendEncapsulation(ushort command, uint sessionHandle, byte[] body)
         {
+            ulong senderContext = unchecked((ulong)Interlocked.Increment(ref _senderContext));
             byte[] header = new byte[24];
             PutUInt16(header, 0, command);
             PutUInt16(header, 2, (ushort)body.Length);
             PutUInt32(header, 4, sessionHandle);
             PutUInt32(header, 8, 0);
+            PutUInt64(header, 12, senderContext);
             PutUInt32(header, 20, 0);
 
             _stream.Write(header, 0, header.Length);
@@ -861,11 +1023,15 @@ namespace IPC.Plc.Communication.Cip
             ushort length = ReadUInt16(responseHeader, 2);
             uint responseSession = ReadUInt32(responseHeader, 4);
             uint status = ReadUInt32(responseHeader, 8);
+            ulong responseContext = ReadUInt64(responseHeader, 12);
             byte[] responseBody = length == 0 ? new byte[0] : ReadExact(length);
 
+            ValidateEncapsulationResponse(sessionHandle, responseSession, senderContext, responseContext);
             if (responseCommand != command)
                 throw new InvalidOperationException("EtherNet/IP 响应命令不匹配。");
             if (status != 0)
+                throw CreateEncapsulationException(status, sessionHandle);
+            if (false)
                 throw new InvalidOperationException("EtherNet/IP 封装错误: 0x" + status.ToString("X8"));
 
             return new EncapsulationPacket(responseSession, responseBody);
@@ -877,11 +1043,13 @@ namespace IPC.Plc.Communication.Cip
             byte[] body,
             CancellationToken cancellationToken)
         {
+            ulong senderContext = unchecked((ulong)Interlocked.Increment(ref _senderContext));
             byte[] header = new byte[24];
             PutUInt16(header, 0, command);
             PutUInt16(header, 2, (ushort)body.Length);
             PutUInt32(header, 4, sessionHandle);
             PutUInt32(header, 8, 0);
+            PutUInt64(header, 12, senderContext);
             PutUInt32(header, 20, 0);
 
             await _stream.WriteAsync(header, 0, header.Length, cancellationToken).ConfigureAwait(false);
@@ -893,14 +1061,38 @@ namespace IPC.Plc.Communication.Cip
             ushort length = ReadUInt16(responseHeader, 2);
             uint responseSession = ReadUInt32(responseHeader, 4);
             uint status = ReadUInt32(responseHeader, 8);
+            ulong responseContext = ReadUInt64(responseHeader, 12);
             byte[] responseBody = length == 0 ? new byte[0] : await ReadExactAsync(length, cancellationToken).ConfigureAwait(false);
 
+            ValidateEncapsulationResponse(sessionHandle, responseSession, senderContext, responseContext);
             if (responseCommand != command)
                 throw new InvalidOperationException("EtherNet/IP response command does not match.");
             if (status != 0)
+                throw CreateEncapsulationException(status, sessionHandle);
+            if (false)
                 throw new InvalidOperationException("EtherNet/IP encapsulation error: 0x" + status.ToString("X8"));
 
             return new EncapsulationPacket(responseSession, responseBody);
+        }
+
+        private static void ValidateEncapsulationResponse(
+            uint requestedSession,
+            uint responseSession,
+            ulong requestedContext,
+            ulong responseContext)
+        {
+            if (requestedContext != responseContext)
+                throw new PlcProtocolException(PlcReadFailureScope.Session, "EtherNet/IP响应Sender Context不匹配。");
+            if (requestedSession != 0 && requestedSession != responseSession)
+                throw new PlcProtocolException(PlcReadFailureScope.Session, "EtherNet/IP响应Session Handle不匹配。");
+        }
+
+        private static PlcProtocolException CreateEncapsulationException(uint status, uint sessionHandle)
+        {
+            return new PlcProtocolException(
+                sessionHandle == 0 ? PlcReadFailureScope.Device : PlcReadFailureScope.Session,
+                "EtherNet/IP封装错误: 0x" + status.ToString("X8"),
+                "0x" + status.ToString("X8"));
         }
 
         private byte[] ExtractUnconnectedData(byte[] body)
@@ -954,6 +1146,12 @@ namespace IPC.Plc.Communication.Cip
                 throw new InvalidOperationException("CIP 附加状态长度无效。");
 
             if (generalStatus != 0)
+                throw new PlcProtocolException(
+                    CipStatusClassifier.Classify(generalStatus, false),
+                    "CIP错误: general status 0x" + generalStatus.ToString("X2") +
+                    ", additional: " + FormatAdditionalStatus(response, 4, additionalWords),
+                    "0x" + generalStatus.ToString("X2"));
+            if (false)
                 throw new InvalidOperationException("CIP 错误: general status 0x" + generalStatus.ToString("X2") + ", additional: " + FormatAdditionalStatus(response, 4, additionalWords));
 
             return offset;
@@ -1017,6 +1215,11 @@ namespace IPC.Plc.Communication.Cip
             return (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24));
         }
 
+        private static ulong ReadUInt64(byte[] data, int offset)
+        {
+            return ReadUInt32(data, offset) | ((ulong)ReadUInt32(data, offset + 4) << 32);
+        }
+
         private static void WriteUInt16(Stream stream, ushort value)
         {
             stream.WriteByte((byte)(value & 0xFF));
@@ -1043,6 +1246,12 @@ namespace IPC.Plc.Communication.Cip
             data[offset + 1] = (byte)((value >> 8) & 0xFF);
             data[offset + 2] = (byte)((value >> 16) & 0xFF);
             data[offset + 3] = (byte)((value >> 24) & 0xFF);
+        }
+
+        private static void PutUInt64(byte[] data, int offset, ulong value)
+        {
+            PutUInt32(data, offset, (uint)value);
+            PutUInt32(data, offset + 4, (uint)(value >> 32));
         }
 
         

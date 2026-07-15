@@ -31,11 +31,26 @@ public sealed class GatewayRuntimeErrorEntity
     [SugarColumn(ColumnName = "category", Length = 64, IsNullable = false)]
     public string Category { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "channel_id", Length = 64, IsNullable = true)]
+    public string ChannelId { get; set; } = string.Empty;
+
+    [SugarColumn(ColumnName = "channel_name", Length = 128, IsNullable = true)]
+    public string ChannelName { get; set; } = string.Empty;
+
+    [SugarColumn(ColumnName = "device_id", Length = 64, IsNullable = true)]
+    public string DeviceId { get; set; } = string.Empty;
+
     [SugarColumn(ColumnName = "device_name", Length = 128, IsNullable = true)]
     public string DeviceName { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "group_id", Length = 64, IsNullable = true)]
+    public string GroupId { get; set; } = string.Empty;
+
     [SugarColumn(ColumnName = "group_name", Length = 128, IsNullable = true)]
     public string GroupName { get; set; } = string.Empty;
+
+    [SugarColumn(ColumnName = "tag_id", Length = 64, IsNullable = true)]
+    public string TagId { get; set; } = string.Empty;
 
     [SugarColumn(ColumnName = "tag_name", Length = 128, IsNullable = true)]
     public string TagName { get; set; } = string.Empty;

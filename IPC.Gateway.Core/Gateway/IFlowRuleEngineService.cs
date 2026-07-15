@@ -27,6 +27,8 @@ namespace IPC.Gateway.Core.Gateway
         void Start();
         void Stop();
         EdgeRuleEngineStatus GetStatus();
+        FlowRuleEngineRuntimeState CaptureRuntimeState();
+        void RestoreRuntimeState(FlowRuleEngineRuntimeState state);
     }
 
     public interface IFlowRuleEngineFactory
@@ -67,6 +69,15 @@ namespace IPC.Gateway.Core.Gateway
         public EdgeRuleEngineStatus GetStatus()
         {
             return new EdgeRuleEngineStatus();
+        }
+
+        public FlowRuleEngineRuntimeState CaptureRuntimeState()
+        {
+            return new FlowRuleEngineRuntimeState();
+        }
+
+        public void RestoreRuntimeState(FlowRuleEngineRuntimeState state)
+        {
         }
 
         public void Dispose()

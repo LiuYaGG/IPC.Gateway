@@ -37,6 +37,11 @@ namespace IPC.Runtime.Configuration
             Name = "Rule";
             Enabled = true;
             ConditionType = EdgeRuleConditionType.Threshold;
+            SourceChannelId = string.Empty;
+            SourceChannelName = string.Empty;
+            SourceDeviceId = string.Empty;
+            SourceGroupId = string.Empty;
+            SourceTagId = string.Empty;
             SourcePointCode = string.Empty;
             SourceDeviceName = string.Empty;
             SourceGroupName = string.Empty;
@@ -77,6 +82,11 @@ namespace IPC.Runtime.Configuration
             StateExpectedValue = "1";
             StateClearValue = string.Empty;
             StateTimeoutSeconds = 0;
+            RelatedChannelId = string.Empty;
+            RelatedChannelName = string.Empty;
+            RelatedDeviceId = string.Empty;
+            RelatedGroupId = string.Empty;
+            RelatedTagId = string.Empty;
             RelatedDeviceName = string.Empty;
             RelatedGroupName = string.Empty;
             RelatedTagName = string.Empty;
@@ -88,6 +98,11 @@ namespace IPC.Runtime.Configuration
             ContextName = "Context";
             ContextExpectedValue = string.Empty;
             ContextOperator = EdgeRuleComparisonOperator.Equal;
+            ContextChannelId = string.Empty;
+            ContextChannelName = string.Empty;
+            ContextDeviceId = string.Empty;
+            ContextGroupId = string.Empty;
+            ContextTagId = string.Empty;
             ContextDeviceName = string.Empty;
             ContextGroupName = string.Empty;
             ContextTagName = string.Empty;
@@ -137,6 +152,11 @@ namespace IPC.Runtime.Configuration
         public string Name { get; set; }
         public bool Enabled { get; set; }
         public EdgeRuleConditionType ConditionType { get; set; }
+        public string SourceChannelId { get; set; }
+        public string SourceChannelName { get; set; }
+        public string SourceDeviceId { get; set; }
+        public string SourceGroupId { get; set; }
+        public string SourceTagId { get; set; }
         public string SourcePointCode { get; set; }
         public string SourceDeviceName { get; set; }
         public string SourceGroupName { get; set; }
@@ -179,6 +199,11 @@ namespace IPC.Runtime.Configuration
         public string StateExpectedValue { get; set; }
         public string StateClearValue { get; set; }
         public int StateTimeoutSeconds { get; set; }
+        public string RelatedChannelId { get; set; }
+        public string RelatedChannelName { get; set; }
+        public string RelatedDeviceId { get; set; }
+        public string RelatedGroupId { get; set; }
+        public string RelatedTagId { get; set; }
         public string RelatedDeviceName { get; set; }
         public string RelatedGroupName { get; set; }
         public string RelatedTagName { get; set; }
@@ -190,6 +215,11 @@ namespace IPC.Runtime.Configuration
         public string ContextName { get; set; }
         public string ContextExpectedValue { get; set; }
         public EdgeRuleComparisonOperator ContextOperator { get; set; }
+        public string ContextChannelId { get; set; }
+        public string ContextChannelName { get; set; }
+        public string ContextDeviceId { get; set; }
+        public string ContextGroupId { get; set; }
+        public string ContextTagId { get; set; }
         public string ContextDeviceName { get; set; }
         public string ContextGroupName { get; set; }
         public string ContextTagName { get; set; }

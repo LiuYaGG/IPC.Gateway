@@ -219,17 +219,17 @@ namespace IPC.Plc.Communication.SiemensS7
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     throw;
-                if (!communicationError && endIndex - startIndex > 1)
+                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
                 {
                     RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
                     return;
                 }
 
                 for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
+                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
             }
         }
 
@@ -267,17 +267,17 @@ namespace IPC.Plc.Communication.SiemensS7
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     throw;
-                if (!communicationError && endIndex - startIndex > 1)
+                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
                 {
                     await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);
                     return;
                 }
 
                 for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, communicationError);
+                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
             }
         }
 

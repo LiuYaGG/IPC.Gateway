@@ -158,28 +158,25 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
 
     private static string BuildTagKey(TagValueSnapshotDto tag)
     {
-        if (!string.IsNullOrWhiteSpace(tag.TagId))
-            return "id:" + tag.TagId.Trim();
-
-        return string.Join("/",
+        return "id:" + string.Join("/",
+            tag.ChannelId ?? string.Empty,
             tag.DeviceId ?? string.Empty,
-            tag.DeviceName ?? string.Empty,
             tag.GroupId ?? string.Empty,
-            tag.GroupName ?? string.Empty,
-            tag.TagName ?? string.Empty).Trim().ToLowerInvariant();
+            tag.TagId ?? string.Empty).Trim().ToLowerInvariant();
     }
 
     private static string BuildDeviceKey(DeviceRuntimeStatusDto device)
     {
-        if (!string.IsNullOrWhiteSpace(device.DeviceId))
-            return "id:" + device.DeviceId.Trim();
-
-        return "name:" + (device.DeviceName ?? string.Empty).Trim().ToLowerInvariant();
+        return "id:" + string.Join("/", device.ChannelId ?? string.Empty, device.DeviceId ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
     }
 
     private static string BuildDeviceFingerprint(DeviceRuntimeStatusDto device)
     {
         return string.Join("|",
+            device.ChannelId,
+            device.ChannelName,
             device.DeviceId,
             device.DeviceName,
             device.Enabled,

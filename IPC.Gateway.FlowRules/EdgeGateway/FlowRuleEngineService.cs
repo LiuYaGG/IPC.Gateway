@@ -75,7 +75,6 @@ namespace IPC.EdgeGateway
             {
                 if (_running)
                     return;
-                ReplaceInnerEngine();
                 _engine.StartDetached();
                 _running = true;
             }
@@ -105,7 +104,26 @@ namespace IPC.EdgeGateway
         {
             _tagValueWorker.Drain(TimeSpan.FromMilliseconds(500));
             lock (_syncRoot)
-                return _engine.GetStatus();
+            {
+                EdgeRuleEngineStatus status = _engine.GetStatus();
+                status.PendingInputEventCount = _tagValueWorker.PendingCount;
+                status.MaxObservedPendingInputEventCount = _tagValueWorker.MaxObservedPendingCount;
+                status.DroppedInputEventCount = _tagValueWorker.DroppedCount;
+                return status;
+            }
+        }
+
+        public FlowRuleEngineRuntimeState CaptureRuntimeState()
+        {
+            _tagValueWorker.Drain(TimeSpan.FromSeconds(1));
+            lock (_syncRoot)
+                return _engine.CaptureRuntimeState();
+        }
+
+        public void RestoreRuntimeState(FlowRuleEngineRuntimeState state)
+        {
+            lock (_syncRoot)
+                _engine.RestoreRuntimeState(state);
         }
 
         public void Dispose()

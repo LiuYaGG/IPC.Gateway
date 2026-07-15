@@ -73,7 +73,7 @@ public class ChannelConfigurationDto
     public bool Enabled { get; set; } = true;
     public string Protocol { get; set; } = "ModbusTcp";
     public string DriverId { get; set; } = string.Empty;
-    public int MaxConcurrentDevicePolls { get; set; } = 4;
+    public int MaxConcurrentDevicePolls { get; set; } = 64;
     public int SchedulingWeight { get; set; } = 1;
 }
 
@@ -215,6 +215,11 @@ public class EdgeRuleConfigurationDto
     public string Name { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
     public string ConditionType { get; set; } = "Threshold";
+    public string SourceChannelId { get; set; } = string.Empty;
+    public string SourceChannelName { get; set; } = string.Empty;
+    public string SourceDeviceId { get; set; } = string.Empty;
+    public string SourceGroupId { get; set; } = string.Empty;
+    public string SourceTagId { get; set; } = string.Empty;
     public string SourcePointCode { get; set; } = string.Empty;
     public string SourceDeviceName { get; set; } = string.Empty;
     public string SourceGroupName { get; set; } = string.Empty;
@@ -252,6 +257,11 @@ public class EdgeRuleConfigurationDto
     public string StateExpectedValue { get; set; } = "1";
     public string StateClearValue { get; set; } = string.Empty;
     public int StateTimeoutSeconds { get; set; }
+    public string RelatedChannelId { get; set; } = string.Empty;
+    public string RelatedChannelName { get; set; } = string.Empty;
+    public string RelatedDeviceId { get; set; } = string.Empty;
+    public string RelatedGroupId { get; set; } = string.Empty;
+    public string RelatedTagId { get; set; } = string.Empty;
     public string RelatedDeviceName { get; set; } = string.Empty;
     public string RelatedGroupName { get; set; } = string.Empty;
     public string RelatedTagName { get; set; } = string.Empty;
@@ -263,6 +273,11 @@ public class EdgeRuleConfigurationDto
     public string ContextName { get; set; } = "Context";
     public string ContextExpectedValue { get; set; } = string.Empty;
     public string ContextOperator { get; set; } = "Equal";
+    public string ContextChannelId { get; set; } = string.Empty;
+    public string ContextChannelName { get; set; } = string.Empty;
+    public string ContextDeviceId { get; set; } = string.Empty;
+    public string ContextGroupId { get; set; } = string.Empty;
+    public string ContextTagId { get; set; } = string.Empty;
     public string ContextDeviceName { get; set; } = string.Empty;
     public string ContextGroupName { get; set; } = string.Empty;
     public string ContextTagName { get; set; } = string.Empty;
@@ -342,6 +357,11 @@ public sealed class EdgeRuleActionDto
 public sealed class EdgeRuleConditionDto
 {
     public string Id { get; set; } = string.Empty;
+    public string SourceChannelId { get; set; } = string.Empty;
+    public string SourceChannelName { get; set; } = string.Empty;
+    public string SourceDeviceId { get; set; } = string.Empty;
+    public string SourceGroupId { get; set; } = string.Empty;
+    public string SourceTagId { get; set; } = string.Empty;
     public string SourcePointCode { get; set; } = string.Empty;
     public string SourceDeviceName { get; set; } = string.Empty;
     public string SourceGroupName { get; set; } = string.Empty;
@@ -381,6 +401,11 @@ public sealed class FlowRuleNodeDto
     public string Label { get; set; } = string.Empty;
     public double X { get; set; }
     public double Y { get; set; }
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
+    public string GroupId { get; set; } = string.Empty;
+    public string TagId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;
@@ -422,6 +447,11 @@ public sealed class FlowRuleNodeDto
     public string StateExpectedValue { get; set; } = "1";
     public string StateClearValue { get; set; } = string.Empty;
     public int StateTimeoutSeconds { get; set; }
+    public string RelatedChannelId { get; set; } = string.Empty;
+    public string RelatedChannelName { get; set; } = string.Empty;
+    public string RelatedDeviceId { get; set; } = string.Empty;
+    public string RelatedGroupId { get; set; } = string.Empty;
+    public string RelatedTagId { get; set; } = string.Empty;
     public string RelatedDeviceName { get; set; } = string.Empty;
     public string RelatedGroupName { get; set; } = string.Empty;
     public string RelatedTagName { get; set; } = string.Empty;
@@ -433,6 +463,11 @@ public sealed class FlowRuleNodeDto
     public string ContextName { get; set; } = "Context";
     public string ContextExpectedValue { get; set; } = string.Empty;
     public string ContextOperator { get; set; } = "Equal";
+    public string ContextChannelId { get; set; } = string.Empty;
+    public string ContextChannelName { get; set; } = string.Empty;
+    public string ContextDeviceId { get; set; } = string.Empty;
+    public string ContextGroupId { get; set; } = string.Empty;
+    public string ContextTagId { get; set; } = string.Empty;
     public string ContextDeviceName { get; set; } = string.Empty;
     public string ContextGroupName { get; set; } = string.Empty;
     public string ContextTagName { get; set; } = string.Empty;
@@ -574,6 +609,8 @@ public class MqttConfigurationDto
     public bool SparkplugUseAliases { get; set; }
     public int SparkplugDeathQos { get; set; }
     public int SparkplugBirthQos { get; set; }
+    public bool SparkplugEnableCommands { get; set; } = true;
+    public string SparkplugPrimaryHostId { get; set; } = string.Empty;
 }
 
 public class OpcUaServerConfigurationDto
@@ -676,6 +713,8 @@ public sealed class ProjectValidationResultDto
 
 public sealed class DeviceRuntimeStatusDto
 {
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string Protocol { get; set; } = string.Empty;
@@ -811,8 +850,13 @@ public sealed class SystemResourceStatusDto
 public sealed class RuntimeErrorDto
 {
     public string Category { get; set; } = string.Empty;
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
+    public string GroupId { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
+    public string TagId { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string Suggestion { get; set; } = string.Empty;
@@ -822,6 +866,8 @@ public sealed class RuntimeErrorDto
 
 public sealed class TagValueSnapshotDto
 {
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
     public string DeviceProtocol { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
@@ -926,6 +972,7 @@ public sealed class OpcUaServerRuntimeStatusDto
     public string ApplicationName { get; set; } = string.Empty;
     public string EndpointUrl { get; set; } = string.Empty;
     public string NamespaceUri { get; set; } = string.Empty;
+    public int ChannelNodeCount { get; set; }
     public int DeviceNodeCount { get; set; }
     public int GroupNodeCount { get; set; }
     public int TagNodeCount { get; set; }
@@ -995,6 +1042,12 @@ public sealed class RuleEngineRuntimeStatusDto
     public long TriggeredCount { get; set; }
     public long ClearedCount { get; set; }
     public long FailedEvaluationCount { get; set; }
+    public long ActionFailureCount { get; set; }
+    public int PendingActionCount { get; set; }
+    public long DroppedActionCount { get; set; }
+    public int PendingInputEventCount { get; set; }
+    public int MaxObservedPendingInputEventCount { get; set; }
+    public long DroppedInputEventCount { get; set; }
     public DateTime LastEvaluationTime { get; set; }
     public DateTime LastEventTime { get; set; }
     public DateTime LastErrorTime { get; set; }
@@ -1020,21 +1073,29 @@ public sealed class RuleEngineRuleRuntimeStatusDto
     public long TriggeredCount { get; set; }
     public long ClearedCount { get; set; }
     public long FailedEvaluationCount { get; set; }
+    public long ActionFailureCount { get; set; }
     public IList<RuleEngineRuntimeEventDto> RecentEvents { get; set; } = new List<RuleEngineRuntimeEventDto>();
 }
 
 public sealed class RuleEngineRuntimeEventDto
 {
+    public string EventId { get; set; } = string.Empty;
     public string RuleId { get; set; } = string.Empty;
     public string RuleName { get; set; } = string.Empty;
     public string ConditionType { get; set; } = string.Empty;
     public string EventType { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
     public string Topic { get; set; } = string.Empty;
     public string PointCode { get; set; } = string.Empty;
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
+    public string GroupId { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
+    public string TagId { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;
     public double Value { get; set; }
     public double Threshold { get; set; }
@@ -1069,6 +1130,8 @@ public sealed class CircuitBreakerStatusDto
 
 public sealed class RuntimeTagSnapshotQuery
 {
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
@@ -1079,6 +1142,10 @@ public sealed class RuntimeTagSnapshotQuery
 
 public sealed class WriteTagCommand
 {
+    public string ChannelId { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
+    public string GroupId { get; set; } = string.Empty;
+    public string TagId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;
@@ -1090,6 +1157,11 @@ public sealed class WriteTagCommand
 public sealed class WriteTagResultDto
 {
     public bool Success { get; set; }
+    public string ChannelId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
+    public string GroupId { get; set; } = string.Empty;
+    public string TagId { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;

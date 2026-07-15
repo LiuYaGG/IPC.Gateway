@@ -38,5 +38,20 @@ public enum SparkplugDataType : uint
     DataSet = 16,
     Bytes = 17,
     File = 18,
-    Template = 19
+    Template = 19,
+    PropertySet = 20,
+    PropertySetList = 21,
+    Int8Array = 22,
+    Int16Array = 23,
+    Int32Array = 24,
+    Int64Array = 25,
+    UInt8Array = 26,
+    UInt16Array = 27,
+    UInt32Array = 28,
+    UInt64Array = 29,
+    FloatArray = 30,
+    DoubleArray = 31,
+    BooleanArray = 32,
+    StringArray = 33,
+    DateTimeArray = 34
 }

@@ -56,13 +56,23 @@ namespace IPC.Runtime.Configuration
             }
 
             HashSet<string> deviceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> groupIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> tagIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < config.Devices.Count; i++)
-                ValidateDevice(config.Devices[i], i, deviceNames, result);
+                ValidateDevice(config.Devices[i], i, deviceIds, deviceNames, groupIds, tagIds, result);
 
             return result;
         }
 
-        private static void ValidateDevice(DeviceConfig device, int index, HashSet<string> deviceNames, ProjectConfigValidationResult result)
+        private static void ValidateDevice(
+            DeviceConfig device,
+            int index,
+            HashSet<string> deviceIds,
+            HashSet<string> deviceNames,
+            HashSet<string> groupIds,
+            HashSet<string> tagIds,
+            ProjectConfigValidationResult result)
         {
             string prefix = "设备[" + (index + 1) + "]";
             if (device == null)
@@ -75,6 +85,8 @@ namespace IPC.Runtime.Configuration
                 result.AddError(prefix + "名称不能为空。");
             else if (!deviceNames.Add(device.Name.Trim()))
                 result.AddError(prefix + "名称重复：" + device.Name);
+            if (string.IsNullOrWhiteSpace(device.Id) || !deviceIds.Add(device.Id.Trim()))
+                result.AddError(prefix + "ID不能为空或重复。");
 
             if (device.Connection == null)
                 result.AddError(prefix + "连接参数不能为空。");
@@ -94,7 +106,7 @@ namespace IPC.Runtime.Configuration
             if (device.Tags != null)
             {
                 for (int t = 0; t < device.Tags.Count; t++)
-                    ValidateTag(device, null, device.Tags[t], prefix + ".标签[" + (t + 1) + "]", tagNames, result);
+                    ValidateTag(device, null, device.Tags[t], prefix + ".标签[" + (t + 1) + "]", tagNames, tagIds, result);
             }
 
             if (device.Groups != null)
@@ -113,12 +125,14 @@ namespace IPC.Runtime.Configuration
                         result.AddError(groupPrefix + "名称不能为空。");
                     else if (!groupNames.Add(group.Name.Trim()))
                         result.AddError(groupPrefix + "名称重复：" + group.Name);
+                    if (string.IsNullOrWhiteSpace(group.Id) || !groupIds.Add(group.Id.Trim()))
+                        result.AddError(groupPrefix + "ID不能为空或重复。");
 
                     HashSet<string> groupTagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     if (group.Tags != null)
                     {
                         for (int t = 0; t < group.Tags.Count; t++)
-                            ValidateTag(device, group, group.Tags[t], groupPrefix + ".标签[" + (t + 1) + "]", groupTagNames, result);
+                            ValidateTag(device, group, group.Tags[t], groupPrefix + ".标签[" + (t + 1) + "]", groupTagNames, tagIds, result);
                     }
                 }
             }
@@ -133,7 +147,8 @@ namespace IPC.Runtime.Configuration
             if (device.Protocol == PlcProtocol.ModbusTcp ||
                 device.Protocol == PlcProtocol.BacnetIp ||
                 device.Protocol == PlcProtocol.Dlt6452007 ||
-                device.Protocol == PlcProtocol.Cjt1882004)
+                device.Protocol == PlcProtocol.Cjt1882004 ||
+                device.Protocol == PlcProtocol.Cjt1882018)
             {
                 if (string.IsNullOrWhiteSpace(connection.Host))
                     result.AddError(prefix + "主机地址不能为空。");
@@ -149,11 +164,26 @@ namespace IPC.Runtime.Configuration
                     result.AddError(prefix + "CANopen 适配器波特率必须大于0。");
             }
 
+            if (device.Protocol == PlcProtocol.ModbusRtu || device.Protocol == PlcProtocol.ModbusAscii)
+            {
+                if (string.IsNullOrWhiteSpace(connection.Host))
+                    result.AddError(prefix + "Modbus 串口不能为空。");
+                if (connection.Port <= 0)
+                    result.AddError(prefix + "Modbus 串口波特率必须大于0。");
+            }
+
             if (connection.TimeoutMilliseconds <= 0)
                 result.AddWarning(prefix + "超时时间未设置，将使用驱动默认值。");
         }
 
-        private static void ValidateTag(DeviceConfig device, GroupConfig? group, TagConfig tag, string prefix, HashSet<string> tagNames, ProjectConfigValidationResult result)
+        private static void ValidateTag(
+            DeviceConfig device,
+            GroupConfig? group,
+            TagConfig tag,
+            string prefix,
+            HashSet<string> tagNames,
+            HashSet<string> tagIds,
+            ProjectConfigValidationResult result)
         {
             if (tag == null)
             {
@@ -165,6 +195,8 @@ namespace IPC.Runtime.Configuration
                 result.AddError(prefix + "名称不能为空。");
             else if (!tagNames.Add(tag.Name.Trim()))
                 result.AddError(prefix + "名称重复：" + tag.Name);
+            if (string.IsNullOrWhiteSpace(tag.Id) || !tagIds.Add(tag.Id.Trim()))
+                result.AddError(prefix + "ID不能为空或重复。");
 
             if (tag.ElementCount <= 0)
                 result.AddWarning(prefix + "元素数量小于等于0，将按1处理。");
@@ -176,7 +208,9 @@ namespace IPC.Runtime.Configuration
             if (!tag.Enabled)
                 return;
 
-            if (device.Protocol == PlcProtocol.Dlt6452007 || device.Protocol == PlcProtocol.Cjt1882004)
+            if (device.Protocol == PlcProtocol.Dlt6452007 ||
+                device.Protocol == PlcProtocol.Cjt1882004 ||
+                device.Protocol == PlcProtocol.Cjt1882018)
             {
                 if (string.IsNullOrWhiteSpace(tag.Address))
                 {

@@ -140,6 +140,12 @@
                   <el-option label="设备 ID" value="DeviceId" />
                 </el-select>
               </el-form-item>
+              <el-form-item label="接收 NCMD / DCMD">
+                <el-switch v-model="mqtt.sparkplugEnableCommands" />
+              </el-form-item>
+              <el-form-item label="Primary Host ID">
+                <el-input v-model="mqtt.sparkplugPrimaryHostId" placeholder="留空表示不启用 Primary Host 仲裁" />
+              </el-form-item>
               <el-form-item label="Metric 名称模板">
                 <el-input v-model="mqtt.sparkplugMetricNameTemplate" />
               </el-form-item>
@@ -170,6 +176,9 @@
           <div class="stat-pairs sparkplug-topic-preview">
             <div><span>NBIRTH</span><strong>{{ status?.sparkplugNodeBirthTopic || nodeBirthPreview }}</strong></div>
             <div><span>NDEATH</span><strong>{{ status?.sparkplugNodeDeathTopic || nodeDeathPreview }}</strong></div>
+            <div><span>NCMD</span><strong>{{ nodeCommandPreview }}</strong></div>
+            <div><span>DCMD</span><strong>{{ deviceCommandPreview }}</strong></div>
+            <div><span>Primary Host STATE</span><strong>{{ primaryHostStatePreview }}</strong></div>
             <div><span>最近 Birth</span><strong>{{ formatDateTime(status?.lastSparkplugBirthTime) }}</strong></div>
             <div><span>最近 Death</span><strong>{{ formatDateTime(status?.lastSparkplugDeathTime) }}</strong></div>
             <div><span>DDATA 数量</span><strong>{{ status?.sparkplugDataCount ?? 0 }}</strong></div>
@@ -322,6 +331,13 @@ const brokerPreview = computed(() => {
 
 const nodeBirthPreview = computed(() => buildSparkplugTopic('NBIRTH'))
 const nodeDeathPreview = computed(() => buildSparkplugTopic('NDEATH'))
+const nodeCommandPreview = computed(() => buildSparkplugTopic('NCMD'))
+const deviceCommandPreview = computed(() => `${buildSparkplugTopic('DCMD')}/+`)
+const primaryHostStatePreview = computed(() => {
+  if (!props.mqtt?.sparkplugPrimaryHostId) return '未启用'
+  const namespaceName = sanitizeTopic(props.mqtt.sparkplugNamespace || 'spBv1.0')
+  return `${namespaceName}/STATE/${sanitizeTopic(props.mqtt.sparkplugPrimaryHostId)}`
+})
 
 function ensureSparkplugDefaults() {
   if (!props.mqtt) return
@@ -329,8 +345,8 @@ function ensureSparkplugDefaults() {
   props.mqtt.sparkplugNamespace ||= 'spBv1.0'
   props.mqtt.sparkplugGroupId ||= props.mqtt.gatewayId || 'IPC-Gateway'
   props.mqtt.sparkplugEdgeNodeId ||= props.mqtt.clientId || props.mqtt.gatewayId || 'EdgeNode'
-  props.mqtt.sparkplugDeviceIdSource ||= 'DeviceName'
-  props.mqtt.sparkplugMetricNameTemplate ||= '{group}/{tag}'
+  props.mqtt.sparkplugDeviceIdSource ||= 'DeviceId'
+  props.mqtt.sparkplugMetricNameTemplate ||= '{channel}/{group}/{tag}'
   props.mqtt.sparkplugPublishNodeBirth ??= true
   props.mqtt.sparkplugPublishDeviceBirth ??= true
   props.mqtt.sparkplugPublishDeviceDeath ??= true
@@ -338,6 +354,8 @@ function ensureSparkplugDefaults() {
   props.mqtt.sparkplugUseAliases ??= false
   props.mqtt.sparkplugBirthQos ??= 0
   props.mqtt.sparkplugDeathQos ??= 0
+  props.mqtt.sparkplugEnableCommands ??= true
+  props.mqtt.sparkplugPrimaryHostId ??= ''
 }
 
 function buildSparkplugTopic(messageType: string) {

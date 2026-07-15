@@ -59,49 +59,41 @@ namespace IPC.EdgeGateway
                 _tagNodes.Clear();
 
                 ProjectConfig project = _projectProvider() ?? new ProjectConfig();
-                FolderState root = CreateFolder(null, "gateway", string.IsNullOrWhiteSpace(project.Name) ? "IPC Gateway" : project.Name.Trim());
+                FolderState root = CreateFolder(
+                    null,
+                    "gateway:" + SafeId(project.ProjectId, "gateway"),
+                    string.IsNullOrWhiteSpace(project.Name) ? "IPC Gateway" : project.Name.Trim());
                 AddObjectsFolderReference(externalReferences, root);
 
+                int channelCount = 0;
                 int deviceCount = 0;
                 int groupCount = 0;
                 int tagCount = 0;
 
-                foreach (DeviceConfig device in project.Devices ?? new List<DeviceConfig>())
+                foreach (ChannelConfig channel in project.Channels ?? new List<ChannelConfig>())
                 {
-                    if (device == null)
+                    if (channel == null)
                         continue;
 
-                    deviceCount++;
-                    FolderState deviceFolder = CreateFolder(root, "device:" + SafeId(device.Id, device.Name), DisplayName(device.Name, "Device"));
+                    channelCount++;
+                    string channelId = SafeId(channel.Id, channel.Name);
+                    FolderState channelFolder = CreateFolder(
+                        root,
+                        "channel:" + channelId,
+                        DisplayName(channel.Name, "Channel"));
 
-                    foreach (TagConfig tag in device.Tags ?? new List<TagConfig>())
+                    foreach (DeviceConfig device in project.Devices ?? new List<DeviceConfig>())
                     {
-                        if (tag == null)
+                        if (device == null || !string.Equals(device.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        AddTagVariable(deviceFolder, device, null, tag);
-                        tagCount++;
-                    }
-
-                    foreach (GroupConfig group in device.Groups ?? new List<GroupConfig>())
-                    {
-                        if (group == null)
-                            continue;
-
-                        groupCount++;
-                        FolderState groupFolder = CreateFolder(deviceFolder, "group:" + SafeId(group.Id, group.Name), DisplayName(group.Name, "Group"));
-                        foreach (TagConfig tag in group.Tags ?? new List<TagConfig>())
-                        {
-                            if (tag == null)
-                                continue;
-
-                            AddTagVariable(groupFolder, device, group, tag);
-                            tagCount++;
-                        }
+                        deviceCount++;
+                        AddDeviceNodes(channelFolder, channel, device, ref groupCount, ref tagCount);
                     }
                 }
 
                 AddPredefinedNode(SystemContext, root);
+                _status.ChannelNodeCount = channelCount;
                 _status.DeviceNodeCount = deviceCount;
                 _status.GroupNodeCount = groupCount;
                 _status.TagNodeCount = tagCount;
@@ -161,19 +153,68 @@ namespace IPC.EdgeGateway
             return folder;
         }
 
-        private void AddTagVariable(NodeState parent, DeviceConfig device, GroupConfig? group, TagConfig tag)
+        private void AddDeviceNodes(
+            FolderState channelFolder,
+            ChannelConfig channel,
+            DeviceConfig device,
+            ref int groupCount,
+            ref int tagCount)
+        {
+            string channelId = SafeId(channel.Id, channel.Name);
+            string deviceId = SafeId(device.Id, device.Name);
+            FolderState deviceFolder = CreateFolder(
+                channelFolder,
+                "device:" + channelId + "/" + deviceId,
+                DisplayName(device.Name, "Device"));
+
+            foreach (TagConfig tag in device.Tags ?? new List<TagConfig>())
+            {
+                if (tag == null)
+                    continue;
+
+                AddTagVariable(deviceFolder, channel, device, null, tag);
+                tagCount++;
+            }
+
+            foreach (GroupConfig group in device.Groups ?? new List<GroupConfig>())
+            {
+                if (group == null)
+                    continue;
+
+                groupCount++;
+                FolderState groupFolder = CreateFolder(
+                    deviceFolder,
+                    "group:" + channelId + "/" + deviceId + "/" + SafeId(group.Id, group.Name),
+                    DisplayName(group.Name, "Group"));
+                foreach (TagConfig tag in group.Tags ?? new List<TagConfig>())
+                {
+                    if (tag == null)
+                        continue;
+
+                    AddTagVariable(groupFolder, channel, device, group, tag);
+                    tagCount++;
+                }
+            }
+        }
+
+        private void AddTagVariable(NodeState parent, ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
             string displayName = DisplayName(tag.Name, "Tag");
-            string key = BuildTagKey(device, group, tag);
+            string key = BuildTagKey(channel, device, group, tag);
+            string groupId = group == null ? "_" : SafeId(group.Id, group.Name);
             BaseDataVariableState variable = new BaseDataVariableState(parent)
             {
                 SymbolicName = SanitizeBrowseName(displayName),
                 ReferenceTypeId = ReferenceTypeIds.Organizes,
                 TypeDefinitionId = VariableTypeIds.BaseDataVariableType,
-                NodeId = new NodeId("tag:" + SafeId(tag.Id, displayName), NamespaceIndex),
+                NodeId = new NodeId(
+                    "tag:" + SafeId(channel.Id, channel.Name) + "/" +
+                    SafeId(device.Id, device.Name) + "/" + groupId + "/" +
+                    SafeId(tag.Id, displayName),
+                    NamespaceIndex),
                 BrowseName = new QualifiedName(SanitizeBrowseName(displayName), NamespaceIndex),
                 DisplayName = displayName,
-                Description = BuildDescription(device, group, tag),
+                Description = BuildDescription(channel, device, group, tag),
                 WriteMask = AttributeWriteMask.None,
                 UserWriteMask = AttributeWriteMask.None,
                 DataType = ResolveDataType(tag.DataType),
@@ -186,7 +227,12 @@ namespace IPC.EdgeGateway
                 Timestamp = DateTime.UtcNow
             };
 
-            if (_runtime.TryGetSnapshot(device.Name, group == null ? string.Empty : group.Name, tag.Name, out TagValueSnapshot? snapshot) && snapshot != null)
+            if (_runtime.TryGetSnapshotById(
+                    channel.Id,
+                    device.Id,
+                    group == null ? string.Empty : group.Id,
+                    tag.Id,
+                    out TagValueSnapshot? snapshot) && snapshot != null)
                 ApplySnapshot(variable, snapshot, notify: false);
 
             parent.AddChild(variable);
@@ -225,6 +271,10 @@ namespace IPC.EdgeGateway
                     return Math.Abs(numericBool) > double.Epsilon;
             }
 
+            if (dataType.Equals("Int8", StringComparison.OrdinalIgnoreCase) && sbyte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out sbyte int8Value))
+                return int8Value;
+            if (dataType.Equals("UInt8", StringComparison.OrdinalIgnoreCase) && byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte uint8Value))
+                return uint8Value;
             if (dataType.Equals("Int16", StringComparison.OrdinalIgnoreCase) && short.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out short int16Value))
                 return int16Value;
             if (dataType.Equals("UInt16", StringComparison.OrdinalIgnoreCase) && ushort.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort uint16Value))
@@ -256,6 +306,12 @@ namespace IPC.EdgeGateway
                 case PlcDataType.DiscreteInput:
                 case PlcDataType.DiscreteInputArray:
                     return DataTypeIds.Boolean;
+                case PlcDataType.Int8:
+                case PlcDataType.Int8Array:
+                    return DataTypeIds.SByte;
+                case PlcDataType.UInt8:
+                case PlcDataType.UInt8Array:
+                    return DataTypeIds.Byte;
                 case PlcDataType.Int16:
                 case PlcDataType.Int16Array:
                     return DataTypeIds.Int16;
@@ -288,6 +344,8 @@ namespace IPC.EdgeGateway
         private static bool IsArrayType(PlcDataType dataType)
         {
             return dataType == PlcDataType.BoolArray ||
+                   dataType == PlcDataType.Int8Array ||
+                   dataType == PlcDataType.UInt8Array ||
                    dataType == PlcDataType.Int16Array ||
                    dataType == PlcDataType.UInt16Array ||
                    dataType == PlcDataType.Int32Array ||
@@ -326,32 +384,30 @@ namespace IPC.EdgeGateway
             return timestamp.Kind == DateTimeKind.Utc ? timestamp : timestamp.ToUniversalTime();
         }
 
-        private static string BuildDescription(DeviceConfig device, GroupConfig? group, TagConfig tag)
+        private static string BuildDescription(ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
             string groupName = group == null ? string.Empty : group.Name;
             string pointCode = string.IsNullOrWhiteSpace(tag.PointCode) ? tag.Address : tag.PointCode;
-            return "Device=" + device.Name + "; Group=" + groupName + "; Address=" + tag.Address + "; PointCode=" + pointCode + "; DataType=" + tag.DataType;
+            return "Channel=" + channel.Name + "; Device=" + device.Name + "; Group=" + groupName +
+                   "; Address=" + tag.Address + "; PointCode=" + pointCode + "; DataType=" + tag.DataType;
         }
 
-        private static string BuildTagKey(DeviceConfig device, GroupConfig? group, TagConfig tag)
+        private static string BuildTagKey(ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
-            if (!string.IsNullOrWhiteSpace(tag.Id))
-                return "id:" + tag.Id.Trim();
-
-            return BuildPathKey(device.Name, group == null ? string.Empty : group.Name, tag.Name);
+            return BuildIdentityKey(channel.Id, device.Id, group == null ? string.Empty : group.Id, tag.Id);
         }
 
         private static string BuildSnapshotKey(TagValueSnapshot snapshot)
         {
-            if (!string.IsNullOrWhiteSpace(snapshot.TagId))
-                return "id:" + snapshot.TagId.Trim();
-
-            return BuildPathKey(snapshot.DeviceName, snapshot.GroupName, snapshot.TagName);
+            return BuildIdentityKey(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
         }
 
-        private static string BuildPathKey(string deviceName, string groupName, string tagName)
+        private static string BuildIdentityKey(string channelId, string deviceId, string groupId, string tagId)
         {
-            return "path:" + (deviceName ?? string.Empty).Trim() + "/" + (groupName ?? string.Empty).Trim() + "/" + (tagName ?? string.Empty).Trim();
+            return "id:" + (channelId ?? string.Empty).Trim() + "/" +
+                   (deviceId ?? string.Empty).Trim() + "/" +
+                   (groupId ?? string.Empty).Trim() + "/" +
+                   (tagId ?? string.Empty).Trim();
         }
 
         private static string SafeId(string id, string fallback)

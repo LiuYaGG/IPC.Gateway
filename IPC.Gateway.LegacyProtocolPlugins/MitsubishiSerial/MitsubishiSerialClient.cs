@@ -43,6 +43,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
         private const int MaxBitPoints = 256;
 
         private readonly PlcConnectionOptions _options;
+        private IPC.Gateway.LegacyProtocolPlugins.SharedSerialPortLease _channelLease;
         private SerialPort _serialPort;
 
         public MitsubishiSerialClient(PlcConnectionOptions options)
@@ -54,7 +55,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         public bool IsConnected
         {
-            get { return _serialPort != null && _serialPort.IsOpen; }
+            get { return _channelLease != null && _channelLease.IsOpen; }
         }
 
         public PlcProtocol Protocol
@@ -66,27 +67,19 @@ namespace IPC.Plc.Communication.MitsubishiSerial
         {
             Disconnect();
 
-            string portName = string.IsNullOrWhiteSpace(_options.Host) ? "COM1" : _options.Host.Trim();
-            int baudRate = _options.Port <= 0 ? 9600 : _options.Port;
-            int dataBits = _options.DataBits <= 0 ? 7 : _options.DataBits;
-            _serialPort = new SerialPort(
-                portName,
-                baudRate,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapParity(_options.SerialParity),
-                dataBits,
-                IPC.Gateway.LegacyProtocolPlugins.SerialPortOptionMapper.MapStopBits(_options.SerialStopBits));
-            _serialPort.ReadTimeout = _options.TimeoutMilliseconds;
-            _serialPort.WriteTimeout = _options.TimeoutMilliseconds;
-            _serialPort.Open();
+            _channelLease = IPC.Gateway.LegacyProtocolPlugins.SharedSerialPortRegistry.Acquire(
+                _options,
+                PlcProtocol.MitsubishiSerial,
+                7);
+            _serialPort = _channelLease.Port;
         }
 
         public void Disconnect()
         {
-            if (_serialPort != null)
+            if (_channelLease != null)
             {
-                if (_serialPort.IsOpen)
-                    _serialPort.Close();
-                _serialPort.Dispose();
+                _channelLease.Dispose();
+                _channelLease = null;
                 _serialPort = null;
             }
         }
@@ -335,6 +328,8 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         private string SendAscii(string command, MitsubishiSerialAddress address, int points, string data)
         {
+            lock (_channelLease.SyncRoot)
+            {
             string body = command + address.DeviceCode + address.DeviceNumber.ToString("X4", CultureInfo.InvariantCulture) + points.ToString("X2", CultureInfo.InvariantCulture) + (data ?? string.Empty);
             byte[] frame = BuildFrame(body);
             _serialPort.DiscardInBuffer();
@@ -366,6 +361,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
                 throw new InvalidOperationException("Mitsubishi 系列 BCC 校验失败");
 
             return Encoding.ASCII.GetString(content.ToArray());
+            }
         }
 
         private static byte[] BuildFrame(string body)
