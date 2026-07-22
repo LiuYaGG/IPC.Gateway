@@ -1,1 +1,0 @@
-﻿2026-06-23 22:43:28.239 [ERROR] Runtime state persist failed. SqlException: 违反了 PRIMARY KEY 约束“PK__gateway___3213E83F1EE6D6D4”。不能在对象“dbo.gateway_runtime_device_statuses”中插入重复键。重复键值为 (29e9a6176be3eb90edb3bdadc35361684019fc6cf3c24e15148a17bc7008c9e6)。  语句已终止。
