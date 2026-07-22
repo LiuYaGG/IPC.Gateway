@@ -75,6 +75,8 @@ namespace IPC.Plc.Communication.Core
                             string.Empty,
                             "例如：1,0/2,192.168.1.20/1,3",
                             "每个跳点使用“端口,链路地址”，多个跳点使用“/”分隔。"), "CIP路由"),
+                        InGroup(WithHelp(Select("driverOptions.cipBoolArrayMode", "BOOL数组存储", "PackedDint", new[] { "PackedDint", "NativeBool" }, false), "PackedDint 用于 Logix 压缩 BOOL 数组；NativeBool 用于逐元素返回 CIP BOOL 的设备或仿真器。"), "CIP数据格式"),
+                        InGroup(WithHelp(Select("driverOptions.cipStringFormat", "STRING写入格式", "Logix", new[] { "Logix", "CipString" }, false), "读取会自动兼容两种格式；写入标准 CIP 0xD0 STRING 时选择 CipString。"), "CIP数据格式"),
                         InGroup(Number("driverOptions.cipMaxRequestBytes", "单包最大字节", "400", 64, 4000, "byte"), "CIP高级设置"),
                         InGroup(Number("driverOptions.cipMaxServicesPerPacket", "单包最大服务数", "16", 1, 64, string.Empty), "CIP高级设置")
                     });

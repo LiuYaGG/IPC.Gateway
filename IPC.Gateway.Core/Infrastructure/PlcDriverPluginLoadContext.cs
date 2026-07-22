@@ -15,6 +15,9 @@
 * Copyright @ ipc 2026. All rights reserved.
 *******************************************************************
 //----------------------------------------------------------------*/
+using System;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using IPC.Plc.Communication.Core;
@@ -40,7 +43,40 @@ namespace IPC.Plc.Communication.Infrastructure
             string? assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
             if (assemblyPath == null)
                 return null;
+
+            if (IsDnp3ClrAssembly(assemblyName))
+                return LoadDnp3ClrAssemblyInDefaultContext(assemblyName, assemblyPath);
+
             return LoadFromAssemblyPath(assemblyPath);
+        }
+
+        private static bool IsDnp3ClrAssembly(AssemblyName assemblyName)
+        {
+            return string.Equals(assemblyName.Name, "DNP3CLRInterface", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(assemblyName.Name, "DNP3CLRAdapter", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Assembly LoadDnp3ClrAssemblyInDefaultContext(AssemblyName assemblyName, string assemblyPath)
+        {
+            if (string.Equals(assemblyName.Name, "DNP3CLRAdapter", StringComparison.OrdinalIgnoreCase))
+            {
+                string? directory = Path.GetDirectoryName(assemblyPath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    string contractPath = Path.Combine(directory, "DNP3CLRInterface.dll");
+                    if (File.Exists(contractPath))
+                        LoadInDefaultContext("DNP3CLRInterface", contractPath);
+                }
+            }
+
+            return LoadInDefaultContext(assemblyName.Name!, assemblyPath);
+        }
+
+        private static Assembly LoadInDefaultContext(string assemblyName, string assemblyPath)
+        {
+            Assembly? loaded = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(
+                item => string.Equals(item.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase));
+            return loaded ?? AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
         }
 
         protected override nint LoadUnmanagedDll(string unmanagedDllName)

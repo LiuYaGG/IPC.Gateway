@@ -24,7 +24,6 @@ public sealed class ModbusAsciiConfigurationTests
         using IPlcClient client = driver.CreateClient(new PlcConnectionOptions());
 
         Assert.Equal("legacy.modbus-ascii", driver.DriverId);
-        Assert.IsType<ModbusAsciiClient>(client);
         Assert.Equal(PlcProtocol.ModbusAscii, client.Protocol);
     }
 

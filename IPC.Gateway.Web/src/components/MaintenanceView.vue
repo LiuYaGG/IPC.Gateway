@@ -157,8 +157,20 @@
         <template #header>
           <div class="card-header">
             <div class="detail-title">
-              <span>商业授权</span>
-              <small>许可证状态、版本授权和现场限制</small>
+              <span>商业驱动授权</span>
+              <small>Legacy Protocol 商业驱动插件的一机一码授权</small>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" :icon="DocumentCopy" @click="copyLicenseRequestCode">复制申请码</el-button>
+              <el-upload
+                accept=".json"
+                :auto-upload="false"
+                :show-file-list="false"
+                :disabled="!canUpload || licenseInstalling"
+                :on-change="installLicenseFile"
+              >
+                <el-button size="small" type="primary" :loading="licenseInstalling" :disabled="!canUpload">导入许可证</el-button>
+              </el-upload>
             </div>
           </div>
         </template>
@@ -168,8 +180,18 @@
           </el-descriptions-item>
           <el-descriptions-item label="版本">{{ license?.edition || '-' }}</el-descriptions-item>
           <el-descriptions-item label="客户">{{ license?.customerName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="到期">{{ license?.expiresUtc ? formatDateTime(license.expiresUtc) : '-' }}</el-descriptions-item>
-          <el-descriptions-item label="限制">{{ licenseLimitText }}</el-descriptions-item>
+          <el-descriptions-item label="许可证">{{ license?.serialNumber || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="本机机器码">
+            <span class="machine-code">{{ license?.machineCode || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="机器绑定">
+            <el-tag :type="license?.machineMatched ? 'success' : license?.configured ? 'danger' : 'info'" effect="plain">
+              {{ license?.machineMatched ? '匹配' : license?.configured ? '不匹配' : '未授权' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="到期">{{ licenseExpiryText }}</el-descriptions-item>
+          <el-descriptions-item label="驱动权限">{{ licenseDriverEntitlementText }}</el-descriptions-item>
+          <el-descriptions-item label="说明">{{ license?.message || '-' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -409,6 +431,7 @@ import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Box, Clock, DocumentCopy, Download, FolderChecked, Refresh, RefreshLeft, Switch, UploadFilled } from '@element-plus/icons-vue'
 import {
   exportProjectBackup,
+  installLicense,
   loadCompatibilityMatrix,
   loadLicenseStatus,
   loadProtocolDrivers,
@@ -440,6 +463,7 @@ const uploading = ref(false)
 const snapshotLoading = ref(false)
 const backupLoading = ref(false)
 const restoreLoading = ref(false)
+const licenseInstalling = ref(false)
 const savingWatchdogConfig = ref(false)
 const preparingId = ref('')
 const status = ref<GatewayUpdateStatus | null>(null)
@@ -468,11 +492,20 @@ const latestRollbackLabel = computed(() => {
   const latest = status.value?.rollbackPoints?.[0]
   return latest ? formatDateTime(latest.createdTime) : '无快照'
 })
-const licenseLimitText = computed(() => {
+const licenseDriverEntitlementText = computed(() => {
   if (!license.value) return '-'
-  const devices = license.value.maxDevices > 0 ? `${license.value.maxDevices} 设备` : '设备不限'
-  const tags = license.value.maxTags > 0 ? `${license.value.maxTags} 点位` : '点位不限'
-  return `${devices} / ${tags}`
+  const features = license.value.features ?? []
+  if (features.some(item => item.toLowerCase() === 'commercial-drivers')) return '全部商业驱动'
+  const drivers = features
+    .filter(item => item.toLowerCase().startsWith('driver:') || item.toLowerCase().startsWith('legacy.'))
+    .map(item => item.replace(/^driver:/i, ''))
+  if (drivers.length > 0) return drivers.join('、')
+  return license.value.operational ? '兼容授权（全部商业驱动）' : '未授权'
+})
+const licenseExpiryText = computed(() => {
+  const expires = license.value?.expiresUtc
+  if (!expires || expires.startsWith('0001-01-01')) return '永久'
+  return formatDateTime(expires)
 })
 const pendingText = computed(() => {
   const action = status.value?.pendingAction
@@ -567,6 +600,33 @@ async function refresh() {
     ElMessage.error(error instanceof Error ? error.message : '安装升级状态加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function copyLicenseRequestCode() {
+  const requestCode = license.value?.requestCode
+  if (!requestCode) {
+    ElMessage.warning('申请码尚未生成')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(requestCode)
+    ElMessage.success('授权申请码已复制')
+  } catch {
+    ElMessage.error('复制失败，请检查浏览器剪贴板权限')
+  }
+}
+
+async function installLicenseFile(file: UploadFile) {
+  if (!file.raw) return
+  licenseInstalling.value = true
+  try {
+    license.value = await installLicense(await file.raw.text())
+    ElMessage.success('许可证已安装，商业驱动将在数秒内应用授权')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '许可证安装失败')
+  } finally {
+    licenseInstalling.value = false
   }
 }
 

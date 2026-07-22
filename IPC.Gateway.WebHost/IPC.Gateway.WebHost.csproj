@@ -4,15 +4,19 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <IncludeCommercialDriverPlugin Condition="'$(IncludeCommercialDriverPlugin)' == '' and Exists('..\IPC.Gateway.LegacyProtocolPlugins\IPC.Gateway.LegacyProtocolPlugins.csproj')">true</IncludeCommercialDriverPlugin>
+    <IncludeCommercialDriverPlugin Condition="'$(IncludeCommercialDriverPlugin)' == ''">false</IncludeCommercialDriverPlugin>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IPC.Gateway.Licensing\IPC.Gateway.Licensing.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
     <ProjectReference Include="..\IPC.Gateway.FlowRules\IPC.Gateway.FlowRules.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Inference\IPC.Gateway.Inference.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Watchdog\IPC.Gateway.Watchdog.csproj" />
     <ProjectReference Include="..\IPC.Gateway.LegacyProtocolPlugins\IPC.Gateway.LegacyProtocolPlugins.csproj"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="false"
+                      Condition="'$(IncludeCommercialDriverPlugin)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,7 +38,8 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="PublishProtocolDrivers" AfterTargets="Publish">
+  <Target Name="PublishProtocolDrivers" AfterTargets="Publish"
+          Condition="'$(IncludeCommercialDriverPlugin)' == 'true' and Exists('..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0')">
     <ItemGroup>
       <ProtocolDriverPublishFiles Include="..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\*.*"
                                   Exclude="..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.Core.*;..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.DataProcessing.*;..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.Mqtt.*" />

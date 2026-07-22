@@ -304,12 +304,15 @@ import {
   transportOptions,
   wordOrderOptions
 } from '../utils/deviceDefaults'
+import { applyRockwellControllerProfile, type RockwellLogixProfileSettings } from '../utils/rockwellProfile'
 
 const props = defineProps<{
   device: DeviceConfig
   protocol: string
   parameters?: GatewayConnectionParameterDefinition[]
 }>()
+
+let rememberedRockwellLogixSettings: RockwellLogixProfileSettings | undefined
 
 const connectionParameters = computed(() => (props.parameters ?? []).filter(parameter => parameter.key))
 const etherNetIpIoMode = computed(() => String(getParameterValueByKey('driverOptions.eipIoMode') || 'Explicit').toLowerCase())
@@ -457,16 +460,10 @@ function updateParameterValue(parameter: GatewayConnectionParameterDefinition, v
   if (key.startsWith('driverOptions.')) {
     const options = readDriverOptions()
     const optionKey = key.slice('driverOptions.'.length)
-    options[optionKey] = value
-    if (optionKey === 'controllerProfile' && String(value).toLowerCase() === 'micro800') {
-      if (!options.cipRouteMode || String(options.cipRouteMode).toLowerCase() === 'slot') options.cipRouteMode = 'Direct'
-      if (!options.cipMaxRequestBytes || Number(options.cipMaxRequestBytes) === 400) options.cipMaxRequestBytes = 240
-      if (!options.cipMaxServicesPerPacket || Number(options.cipMaxServicesPerPacket) === 16) options.cipMaxServicesPerPacket = 1
-    }
-    if (optionKey === 'controllerProfile' && String(value).toLowerCase() === 'generic') {
-      if (!options.cipRouteMode || String(options.cipRouteMode).toLowerCase() === 'slot') options.cipRouteMode = 'Direct'
-      if (!options.cipMaxRequestBytes || Number(options.cipMaxRequestBytes) === 240) options.cipMaxRequestBytes = 400
-      if (!options.cipMaxServicesPerPacket || Number(options.cipMaxServicesPerPacket) === 1) options.cipMaxServicesPerPacket = 16
+    if (optionKey === 'controllerProfile' && props.protocol === 'RockwellCip') {
+      rememberedRockwellLogixSettings = applyRockwellControllerProfile(options, value, rememberedRockwellLogixSettings)
+    } else {
+      options[optionKey] = value
     }
     if (optionKey === 'controllerProfile' && props.protocol === 'SiemensS7') {
       applyS7ProfileDefaults(String(value), options)

@@ -2146,7 +2146,8 @@ namespace IPC.Runtime.Engine
             deviceState.TotalReads++;
             if (update.Success && update.Result != null)
             {
-                ApplyReadSuccess(deviceState, group, tag, update.Result);
+                ApplyReadSuccess(deviceState, group, tag, update.Result, recordDeviceSuccess: false);
+                RecordDeviceCommunicationSuccess(deviceState, confirmedSubscriptionUpdate: true);
                 ScheduleNextSubscriptionFallback(device, group, tag, now);
                 return;
             }
@@ -2311,14 +2312,18 @@ namespace IPC.Runtime.Engine
             RecordDeviceFailureEvent(deviceState, delay);
         }
 
-        private string RecordDeviceStatusSample(DeviceRuntimeState deviceState, string candidateStatus)
+        private string RecordDeviceStatusSample(
+            DeviceRuntimeState deviceState,
+            string candidateStatus,
+            bool applyUdpRecoveryDebounce = true)
         {
             if (deviceState == null)
                 return string.Empty;
 
             int recoveryDebounceCount = _deviceStatusRecoveryDebounceCount;
             int recoveryDebounceMs = _deviceStatusRecoveryDebounceMs;
-            if (IsUdpTransport(deviceState) &&
+            if (applyUdpRecoveryDebounce &&
+                IsUdpTransport(deviceState) &&
                 string.Equals(candidateStatus, "Online", StringComparison.OrdinalIgnoreCase))
             {
                 recoveryDebounceCount = Math.Max(recoveryDebounceCount, UdpRecoveryDebounceCount);
@@ -2334,7 +2339,9 @@ namespace IPC.Runtime.Engine
                 recoveryDebounceMs);
         }
 
-        private void RecordDeviceCommunicationSuccess(DeviceRuntimeState deviceState)
+        private void RecordDeviceCommunicationSuccess(
+            DeviceRuntimeState deviceState,
+            bool confirmedSubscriptionUpdate = false)
         {
             int recoveredFailureCount = deviceState.ConsecutiveFailures;
             string previousConnectionError = deviceState.LastConnectionError ?? string.Empty;
@@ -2358,7 +2365,10 @@ namespace IPC.Runtime.Engine
             deviceState.NextRecoveryProbeUtc = DateTime.MinValue;
             deviceState.RecoveryState = wasIsolated ? "Recovered" : "Idle";
             deviceState.DeviceState = wasIsolated ? "Recovering" : "Online";
-            string status = RecordDeviceStatusSample(deviceState, "Online");
+            string status = RecordDeviceStatusSample(
+                deviceState,
+                "Online",
+                applyUdpRecoveryDebounce: !confirmedSubscriptionUpdate);
             if (IsOnlineDeviceStatus(status))
             {
                 if (deviceState.PendingRecoveryFailureCount > 0)

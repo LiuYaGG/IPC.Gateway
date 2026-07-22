@@ -32,7 +32,8 @@ public sealed class OpcUaPluginLoadTests
             });
 
             Assert.Equal(PlcProtocol.OpcUa, client.Protocol);
-            Assert.Equal("Opc.Ua.Client", client.GetType().GetField(
+            object innerClient = GetFieldValue(client, "Inner");
+            Assert.Equal("Opc.Ua.Client", innerClient.GetType().GetField(
                     "_session",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .FieldType.Assembly.GetName().Name);
@@ -41,5 +42,23 @@ public sealed class OpcUaPluginLoadTests
         {
             context.Unload();
         }
+    }
+
+    private static object GetFieldValue(object instance, string fieldName)
+    {
+        Type? type = instance.GetType();
+        while (type != null)
+        {
+            System.Reflection.FieldInfo? field = type.GetField(
+                fieldName,
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            if (field != null)
+                return field.GetValue(instance)!;
+            type = type.BaseType;
+        }
+
+        throw new InvalidOperationException($"Field '{fieldName}' was not found.");
     }
 }

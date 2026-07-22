@@ -1564,11 +1564,17 @@ export interface GatewayLicenseStatus {
   operational: boolean
   expired: boolean
   signatureVerified: boolean
+  machineMatched: boolean
   requireValidLicense: boolean
+  requireMachineBinding: boolean
   productId: string
+  machineCode: string
+  licensedMachineCode: string
+  requestCode: string
   customerName: string
   edition: string
   serialNumber: string
+  issuedUtc: string
   expiresUtc: string
   maxDevices: number
   maxTags: number
@@ -1991,6 +1997,16 @@ export async function restoreProjectBackup(json: string) {
 export async function loadLicenseStatus() {
   const result = await request<ApiResult<GatewayLicenseStatus>>('/api/commercial/license')
   if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'License status failed to load')
+  return result.data
+}
+
+export async function installLicense(licenseText: string) {
+  const result = await request<ApiResult<GatewayLicenseStatus>>('/api/commercial/license', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: licenseText
+  })
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'License installation failed')
   return result.data
 }
 

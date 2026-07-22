@@ -292,6 +292,54 @@ public sealed class RuntimeEngineLifecycleTests
     }
 
     [Fact]
+    public void Start_MarksUdpSubscriptionOnlineAfterConfirmedUpdate()
+    {
+        string driverId = "test.udp-subscription." + Guid.NewGuid().ToString("N");
+        SubscriptionTestDriver driver = new SubscriptionTestDriver(driverId, failBatchReads: true);
+        PlcDriverPluginRegistry.Register(driver);
+        using RuntimeEngine engine = new RuntimeEngine(new RuntimeSchedulerOptions
+        {
+            SchedulerIntervalMs = 20,
+            MaxConcurrentDevicePolls = 1,
+            PollTimeoutMs = 2000,
+            DeviceStatusRecoveryDebounceCount = 1,
+            DeviceStatusRecoveryDebounceMs = 0
+        });
+        ProjectConfig project = CreateSingleTagProject(
+            driverId,
+            "UdpSubscriptionDevice",
+            NetworkTransport.Udp);
+        project.Devices[0].DefaultScanRateMs = 20;
+
+        engine.Start(project);
+
+        bool subscribed = SpinWait.SpinUntil(() =>
+            driver.Client != null &&
+            driver.Client.SubscribeCount == 1 &&
+            driver.Client.MonitoredCount == 1,
+            TimeSpan.FromSeconds(3));
+
+        Assert.True(subscribed);
+        driver.Client!.Publish("A", (short)44);
+
+        bool online = SpinWait.SpinUntil(() =>
+        {
+            DeviceRuntimeStatus? status = engine.GetDeviceStatuses()
+                .FirstOrDefault(item => item.DeviceName == "UdpSubscriptionDevice");
+            return status != null &&
+                   status.IsConnected &&
+                   status.Status == "Online" &&
+                   status.SuccessfulReads == 1;
+        }, TimeSpan.FromSeconds(3));
+        int batchReadsBeforeStop = driver.Client.BatchReadCount;
+
+        engine.Stop();
+
+        Assert.True(online);
+        Assert.Equal(0, batchReadsBeforeStop);
+    }
+
+    [Fact]
     public void ApplyProject_AddsSubscriptionItemWithoutReconnectingDevice()
     {
         string driverId = "test.subscription-update." + Guid.NewGuid().ToString("N");

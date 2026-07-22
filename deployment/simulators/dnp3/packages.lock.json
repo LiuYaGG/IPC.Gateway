@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "opendnp3": {
+        "type": "Direct",
+        "requested": "[3.1.2, )",
+        "resolved": "3.1.2",
+        "contentHash": "jbudOxqKEaq+5vDv2SJ96w/PaKou05qJb9sJggjCJje33WVzQG/TYG5xQFzGLltE+1dif1YuSpxPethlN0e23A=="
+      }
+    },
+    "net10.0/win-x64": {}
+  }
+}

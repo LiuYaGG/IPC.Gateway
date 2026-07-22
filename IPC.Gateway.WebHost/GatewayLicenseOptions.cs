@@ -8,7 +8,10 @@ public sealed class GatewayLicenseOptions
     public string LicenseFile { get; set; } = string.Empty;
     public string LicenseText { get; set; } = string.Empty;
     public string TrustedPublicKeyPem { get; set; } = string.Empty;
+    public string TrustedPublicKeyFile { get; set; } = string.Empty;
     public bool RequireValidLicense { get; set; }
+    public bool RequireMachineBinding { get; set; } = true;
+    public string MachineIdOverride { get; set; } = string.Empty;
 
     public static GatewayLicenseOptions FromConfiguration(IConfiguration configuration)
     {
@@ -19,7 +22,10 @@ public sealed class GatewayLicenseOptions
             LicenseFile = section["LicenseFile"] ?? string.Empty,
             LicenseText = section["LicenseText"] ?? string.Empty,
             TrustedPublicKeyPem = section["TrustedPublicKeyPem"] ?? string.Empty,
-            RequireValidLicense = GetBool(section, "RequireValidLicense", false)
+            TrustedPublicKeyFile = section["TrustedPublicKeyFile"] ?? string.Empty,
+            RequireValidLicense = GetBool(section, "RequireValidLicense", false),
+            RequireMachineBinding = GetBool(section, "RequireMachineBinding", true),
+            MachineIdOverride = section["MachineIdOverride"] ?? string.Empty
         };
     }
 

@@ -217,6 +217,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
+
 app.MapGatewayAuthEndpoints();
 app.MapGatewaySecurityEndpoints();
 app.MapGatewayHealthEndpoints();

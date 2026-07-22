@@ -1,16 +1,18 @@
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+using IPC.Gateway.Licensing;
 
 namespace IPC.Gateway.WebHost;
 
 public sealed class GatewayLicenseService
 {
+    private const int MaxLicenseBytes = 256 * 1024;
     private readonly GatewayLicenseOptions _options;
+    private readonly string _machineCode;
 
     public GatewayLicenseService(GatewayLicenseOptions options)
     {
         _options = options ?? new GatewayLicenseOptions();
+        _machineCode = GatewayMachineIdentity.CreateMachineCode(_options.ProductId, _options.MachineIdOverride);
     }
 
     public GatewayLicenseStatus GetStatus()
@@ -19,49 +21,66 @@ public sealed class GatewayLicenseService
         if (string.IsNullOrWhiteSpace(licenseText))
             return CreateMissingStatus();
 
-        GatewayLicensePayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<GatewayLicensePayload>(
-                licenseText,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return Validate(GatewayLicenseCryptography.DeserializeLicense(licenseText));
         }
         catch (Exception ex)
         {
             return CreateInvalidStatus("License JSON is invalid: " + ex.Message);
         }
-
-        if (payload == null)
-            return CreateInvalidStatus("License payload is empty.");
-
-        return Validate(payload);
     }
 
-    public bool IsFeatureAllowed(string feature, out GatewayLicenseStatus status)
+    public string GetMachineCode() => _machineCode;
+
+    public string GetRequestCode()
     {
-        status = GetStatus();
-        if (!status.Operational)
-            return false;
-        if (string.IsNullOrWhiteSpace(feature))
-            return true;
-        return status.Features.Count == 0 || status.Features.Any(item => string.Equals(item, feature, StringComparison.OrdinalIgnoreCase));
+        return GatewayLicenseCryptography.EncodeRequest(new GatewayLicenseRequest
+        {
+            ProductId = _options.ProductId,
+            MachineCode = _machineCode,
+            MachineName = Environment.MachineName,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            GeneratedUtc = DateTime.UtcNow,
+            Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8))
+        });
     }
 
-    internal static string BuildSignaturePayload(GatewayLicensePayload payload)
+    public GatewayLicenseStatus Install(string licenseText)
     {
-        payload ??= new GatewayLicensePayload();
-        return string.Join(
-            "\n",
-            payload.ProductId ?? string.Empty,
-            payload.CustomerName ?? string.Empty,
-            payload.Edition ?? string.Empty,
-            payload.SerialNumber ?? string.Empty,
-            payload.IssuedUtc.ToUniversalTime().ToString("O"),
-            payload.ExpiresUtc.ToUniversalTime().ToString("O"),
-            payload.MaxDevices.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            payload.MaxTags.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            string.Join(",", (payload.Features ?? Array.Empty<string>()).OrderBy(item => item, StringComparer.OrdinalIgnoreCase)));
+        if (string.IsNullOrWhiteSpace(licenseText))
+            throw new ArgumentException("License content is empty.", nameof(licenseText));
+        if (System.Text.Encoding.UTF8.GetByteCount(licenseText) > MaxLicenseBytes)
+            throw new ArgumentException("License content is too large.", nameof(licenseText));
+        if (!string.IsNullOrWhiteSpace(_options.LicenseText))
+            throw new InvalidOperationException("LicenseText is configured and overrides file-based license installation.");
+        if (string.IsNullOrWhiteSpace(_options.LicenseFile))
+            throw new InvalidOperationException("LicenseFile is not configured.");
+
+        GatewayLicensePayload payload = GatewayLicenseCryptography.DeserializeLicense(licenseText);
+        GatewayLicenseStatus status = Validate(payload);
+        if (!status.Valid || !status.Operational)
+            throw new InvalidOperationException(status.Message);
+
+        string path = ResolvePath(_options.LicenseFile);
+        string? directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        string temporaryPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(temporaryPath, GatewayLicenseCryptography.SerializeLicense(payload));
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+                File.Delete(temporaryPath);
+        }
+        return GetStatus();
     }
+
+    internal static string BuildSignaturePayload(GatewayLicensePayload payload) => GatewayLicenseCryptography.BuildSignaturePayload(payload);
 
     private GatewayLicenseStatus Validate(GatewayLicensePayload payload)
     {
@@ -69,18 +88,28 @@ public sealed class GatewayLicenseService
         {
             Configured = true,
             ProductId = payload.ProductId ?? string.Empty,
+            MachineCode = _machineCode,
+            LicensedMachineCode = GatewayMachineIdentity.NormalizeMachineCode(payload.MachineCode),
             CustomerName = payload.CustomerName ?? string.Empty,
             Edition = string.IsNullOrWhiteSpace(payload.Edition) ? "Commercial" : payload.Edition,
             SerialNumber = payload.SerialNumber ?? string.Empty,
+            IssuedUtc = payload.IssuedUtc,
             ExpiresUtc = payload.ExpiresUtc,
             MaxDevices = payload.MaxDevices,
             MaxTags = payload.MaxTags,
             Features = (payload.Features ?? Array.Empty<string>()).ToList(),
-            RequireValidLicense = _options.RequireValidLicense
+            RequireValidLicense = _options.RequireValidLicense,
+            RequireMachineBinding = _options.RequireMachineBinding,
+            RequestCode = GetRequestCode()
         };
 
         if (!string.Equals(payload.ProductId, _options.ProductId, StringComparison.OrdinalIgnoreCase))
             return MarkInvalid(status, "License product does not match this gateway.");
+
+        if (payload.IssuedUtc != DateTime.MinValue && payload.IssuedUtc.ToUniversalTime() > DateTime.UtcNow.AddMinutes(10))
+            return MarkInvalid(status, "License issue time is in the future.");
+        if (payload.ExpiresUtc != DateTime.MinValue && payload.IssuedUtc != DateTime.MinValue && payload.ExpiresUtc <= payload.IssuedUtc)
+            return MarkInvalid(status, "License expiration time must be later than its issue time.");
 
         status.Expired = payload.ExpiresUtc != DateTime.MinValue && payload.ExpiresUtc.ToUniversalTime() < DateTime.UtcNow;
         if (status.Expired)
@@ -96,16 +125,15 @@ public sealed class GatewayLicenseService
             return status;
         }
 
-        if (string.IsNullOrWhiteSpace(_options.TrustedPublicKeyPem))
+        string trustedPublicKeyPem = ReadTrustedPublicKeyPem();
+        if (string.IsNullOrWhiteSpace(trustedPublicKeyPem))
             return MarkInvalid(status, "Trusted license public key is not configured.");
 
         try
         {
-            byte[] data = Encoding.UTF8.GetBytes(BuildSignaturePayload(payload));
-            byte[] signature = Convert.FromBase64String(payload.Signature.Trim());
             using RSA rsa = RSA.Create();
-            rsa.ImportFromPem(_options.TrustedPublicKeyPem);
-            status.SignatureVerified = rsa.VerifyData(data, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            rsa.ImportFromPem(trustedPublicKeyPem);
+            status.SignatureVerified = GatewayLicenseCryptography.Verify(payload, rsa);
         }
         catch (Exception ex)
         {
@@ -114,6 +142,15 @@ public sealed class GatewayLicenseService
 
         if (!status.SignatureVerified)
             return MarkInvalid(status, "License signature verification failed.");
+
+        status.MachineMatched = string.Equals(
+            GatewayMachineIdentity.NormalizeMachineCode(payload.MachineCode),
+            _machineCode,
+            StringComparison.Ordinal);
+        if (_options.RequireMachineBinding && !status.MachineMatched)
+            return MarkInvalid(status, string.IsNullOrWhiteSpace(payload.MachineCode)
+                ? "License is not bound to a machine."
+                : "License is bound to a different machine.");
 
         status.Valid = true;
         status.Operational = true;
@@ -126,9 +163,25 @@ public sealed class GatewayLicenseService
     {
         if (!string.IsNullOrWhiteSpace(_options.LicenseText))
             return _options.LicenseText;
-        if (!string.IsNullOrWhiteSpace(_options.LicenseFile) && File.Exists(_options.LicenseFile))
-            return File.ReadAllText(_options.LicenseFile);
+        string path = ResolvePath(_options.LicenseFile);
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            return File.ReadAllText(path);
         return string.Empty;
+    }
+
+    private string ReadTrustedPublicKeyPem()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.TrustedPublicKeyPem))
+            return _options.TrustedPublicKeyPem;
+        string path = ResolvePath(_options.TrustedPublicKeyFile);
+        return !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+    }
+
+    private static string ResolvePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+        return Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(path, AppContext.BaseDirectory);
     }
 
     private GatewayLicenseStatus CreateMissingStatus()
@@ -136,7 +189,10 @@ public sealed class GatewayLicenseService
         return new GatewayLicenseStatus
         {
             ProductId = _options.ProductId,
+            MachineCode = _machineCode,
+            RequestCode = GetRequestCode(),
             RequireValidLicense = _options.RequireValidLicense,
+            RequireMachineBinding = _options.RequireMachineBinding,
             Valid = !_options.RequireValidLicense,
             Operational = !_options.RequireValidLicense,
             Status = _options.RequireValidLicense ? "Missing" : "Community",
@@ -149,8 +205,11 @@ public sealed class GatewayLicenseService
         return MarkInvalid(new GatewayLicenseStatus
         {
             ProductId = _options.ProductId,
+            MachineCode = _machineCode,
+            RequestCode = GetRequestCode(),
             Configured = true,
-            RequireValidLicense = _options.RequireValidLicense
+            RequireValidLicense = _options.RequireValidLicense,
+            RequireMachineBinding = _options.RequireMachineBinding
         }, message);
     }
 

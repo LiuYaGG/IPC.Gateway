@@ -22,8 +22,19 @@ TestResults/
 IPC.Gateway.Web/dist/
 IPC.Gateway.Web/.vite/
 
+# Python cache
+**/__pycache__/
+*.pyc
+
 # Release packaging output
 artifacts/
+
+# Vendor-only commercial license issuer. Keep signing code and private keys out of this repository.
+IPC.Gateway.LicenseTool/
+IPC.Gateway.LicenseIssuerClient/
+IPC.Gateway.LegacyProtocolPlugins/
+**/ipc-gateway-issuer-private.pem
+**/ipc-gateway-license-IPCGW-*.json
 
 # Runtime data and local logs
 **/Data/

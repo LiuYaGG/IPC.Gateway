@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test:rockwell-profile": "node scripts/test-rockwell-profile.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",

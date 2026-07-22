@@ -749,6 +749,9 @@
           "opendnp3": "[3.1.2, )"
         }
       },
+      "ipc.gateway.licensing": {
+        "type": "Project"
+      },
       "ipc.gateway.mqtt": {
         "type": "Project"
       },
@@ -764,6 +767,7 @@
           "IPC.Gateway.Core": "[1.0.0, )",
           "IPC.Gateway.FlowRules": "[1.0.0, )",
           "IPC.Gateway.Inference": "[1.0.0, )",
+          "IPC.Gateway.Licensing": "[1.0.0, )",
           "IPC.Gateway.Watchdog": "[1.0.0, )",
           "Microsoft.Extensions.Hosting.Systemd": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.9, )"

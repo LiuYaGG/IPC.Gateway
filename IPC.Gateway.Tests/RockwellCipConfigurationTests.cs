@@ -15,6 +15,8 @@ public sealed class RockwellCipConfigurationTests
         Assert.Contains(parameters, item => item.Key == "slot" && item.Max == 255);
         Assert.Contains(parameters, item => item.Key == "driverOptions.cipRouteMode");
         Assert.Contains(parameters, item => item.Key == "driverOptions.cipRoutePath" && item.ParameterType == "textarea");
+        Assert.Contains(parameters, item => item.Key == "driverOptions.cipBoolArrayMode" && item.Options.Contains("NativeBool"));
+        Assert.Contains(parameters, item => item.Key == "driverOptions.cipStringFormat" && item.Options.Contains("CipString"));
     }
 
     [Theory]
@@ -120,5 +122,53 @@ public sealed class RockwellCipConfigurationTests
 
         Assert.Equal("Test", result.Value);
         Assert.Equal(CipTypeCodes.ShortString, result.TypeCode);
+    }
+
+    [Fact]
+    public void TagCodec_DecodesStandardCipStringWithTwoByteLength()
+    {
+        byte[] data = { 4, 0, (byte)'T', (byte)'e', (byte)'s', (byte)'t' };
+
+        object value = CipDataCodec.Decode(PlcDataType.String, CipTypeCodes.String, data, 1);
+
+        Assert.Equal("Test", value);
+    }
+
+    [Fact]
+    public void TagCodec_DecodesEmptyStandardCipString()
+    {
+        object value = CipDataCodec.Decode(PlcDataType.String, CipTypeCodes.String, new byte[] { 0, 0 }, 1);
+
+        Assert.Equal(string.Empty, value);
+    }
+
+    [Fact]
+    public void TagCodec_DecodesLogixStringWithoutUsingElementCountAsByteLimit()
+    {
+        byte[] data = { 4, 0, 0, 0, (byte)'T', (byte)'e', (byte)'s', (byte)'t' };
+
+        object value = CipDataCodec.Decode(PlcDataType.String, CipTypeCodes.AbbreviatedStructure, data, 1);
+
+        Assert.Equal("Test", value);
+    }
+
+    [Fact]
+    public void TagCodec_EncodesStandardCipStringWithTwoByteLengthAndPadding()
+    {
+        byte[] data = CipDataCodec.EncodeStandardCipString("ABC");
+
+        Assert.Equal(new byte[] { 3, 0, (byte)'A', (byte)'B', (byte)'C', 0 }, data);
+    }
+
+    [Fact]
+    public void TagCodec_DecodesNativeBoolArray()
+    {
+        object value = CipDataCodec.Decode(
+            PlcDataType.BoolArray,
+            CipTypeCodes.Bool,
+            new byte[] { 1, 0, 1, 0 },
+            4);
+
+        Assert.Equal(new[] { true, false, true, false }, Assert.IsType<bool[]>(value));
     }
 }

@@ -34,7 +34,9 @@ public sealed class GatewayRuntimeHostedService : IHostedService, IDisposable
     private readonly IGatewayApplicationService _gateway;
     private bool _disposed;
 
-    public GatewayRuntimeHostedService(IGatewayApplicationService gateway, ILogger<GatewayRuntimeHostedService> logger)
+    public GatewayRuntimeHostedService(
+        IGatewayApplicationService gateway,
+        ILogger<GatewayRuntimeHostedService> logger)
     {
         _logger = logger;
         _gateway = gateway;
