@@ -32,6 +32,9 @@ IPC.Gateway.Web/.vite/
 # Release packaging output
 artifacts/
 
+# Local documentation workspace
+docs/
+
 # Machine-local certificates, exports, and scratch files
 CertificateStores/
 outputs/
