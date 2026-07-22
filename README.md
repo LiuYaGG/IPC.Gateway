@@ -1,8 +1,12 @@
 # IPC Gateway
 联系方式：Q 2673904969
 
+体验网址: https://desktop-ou02rqa.tail35d594.ts.net/
+
 IPC Gateway 是面向制造业现场的边缘计算网关。当前项目提供 Web 管理界面、协议采集、规则引擎、MQTT/OPC UA 对外服务、历史库、权限审计、看门狗和离线升级能力。
 默认用户名admin，密码Gateway#12345678
+
+商业版支持所有插件
 
 ## 当前支持的主要操作
 

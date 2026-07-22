@@ -1101,6 +1101,16 @@
           "bin/placeholder/IPC.Gateway.Inference.dll": {}
         }
       },
+      "IPC.Gateway.Licensing/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "compile": {
+          "bin/placeholder/IPC.Gateway.Licensing.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/IPC.Gateway.Licensing.dll": {}
+        }
+      },
       "IPC.Gateway.Mqtt/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v10.0",
@@ -2433,6 +2443,11 @@
       "path": "../IPC.Gateway.Inference/IPC.Gateway.Inference.csproj",
       "msbuildProject": "../IPC.Gateway.Inference/IPC.Gateway.Inference.csproj"
     },
+    "IPC.Gateway.Licensing/1.0.0": {
+      "type": "project",
+      "path": "../IPC.Gateway.Licensing/IPC.Gateway.Licensing.csproj",
+      "msbuildProject": "../IPC.Gateway.Licensing/IPC.Gateway.Licensing.csproj"
+    },
     "IPC.Gateway.Mqtt/1.0.0": {
       "type": "project",
       "path": "../IPC.Gateway.Mqtt/IPC.Gateway.Mqtt.csproj",
@@ -2449,29 +2464,30 @@
       "IPC.Gateway.Core >= 1.0.0",
       "IPC.Gateway.FlowRules >= 1.0.0",
       "IPC.Gateway.Inference >= 1.0.0",
+      "IPC.Gateway.Licensing >= 1.0.0",
       "IPC.Gateway.Watchdog >= 1.0.0",
       "Microsoft.Extensions.Hosting.Systemd >= 10.0.9",
       "Microsoft.Extensions.Hosting.WindowsServices >= 10.0.9"
     ]
   },
   "packageFolders": {
-    "C:\\Users\\liuYGG\\.nuget\\packages\\": {},
+    "C:\\Users\\Administrator\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
+      "projectUniqueName": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
       "projectName": "IPC.Gateway.WebHost",
-      "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
-      "packagesPath": "C:\\Users\\liuYGG\\.nuget\\packages\\",
-      "outputPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\obj\\",
+      "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\IPC.Gateway.WebHost.csproj",
+      "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+      "outputPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.WebHost\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\liuYGG\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -2488,17 +2504,20 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
-              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+            "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+              "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
             },
-            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj": {
-              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj"
+            "E:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj": {
+              "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.FlowRules\\IPC.Gateway.FlowRules.csproj"
             },
-            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj": {
-              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj"
+            "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj": {
+              "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Inference\\IPC.Gateway.Inference.csproj"
             },
-            "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj": {
-              "projectPath": "F:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj"
+            "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Licensing\\IPC.Gateway.Licensing.csproj": {
+              "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Licensing\\IPC.Gateway.Licensing.csproj"
+            },
+            "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj": {
+              "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Watchdog\\IPC.Gateway.Watchdog.csproj"
             }
           }
         }
@@ -2551,7 +2570,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.301/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.AspNetCore": "(,10.0.32767]",
           "Microsoft.AspNetCore.Antiforgery": "(,10.0.32767]",

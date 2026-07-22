@@ -11,6 +11,7 @@
           "IPC.Gateway.Core": "1.0.0",
           "IPC.Gateway.FlowRules": "1.0.0",
           "IPC.Gateway.Inference": "1.0.0",
+          "IPC.Gateway.Licensing": "1.0.0",
           "IPC.Gateway.Watchdog": "1.0.0",
           "Microsoft.Extensions.Hosting.Systemd": "10.0.9",
           "Microsoft.Extensions.Hosting.WindowsServices": "10.0.9"
@@ -910,6 +911,14 @@
           }
         }
       },
+      "IPC.Gateway.Licensing/1.0.0": {
+        "runtime": {
+          "IPC.Gateway.Licensing.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
       "IPC.Gateway.Mqtt/1.0.0": {
         "runtime": {
           "IPC.Gateway.Mqtt.dll": {
@@ -1296,6 +1305,11 @@
       "sha512": ""
     },
     "IPC.Gateway.Inference/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "IPC.Gateway.Licensing/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

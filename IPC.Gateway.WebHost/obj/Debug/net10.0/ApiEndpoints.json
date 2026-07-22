@@ -451,6 +451,11 @@
     "Order": 0,
     "Parameters": [
       {
+        "Name": "channelId",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
         "Name": "deviceId",
         "Type": "System.String",
         "IsRequired": false
@@ -472,6 +477,11 @@
     "IsController": false,
     "Order": 0,
     "Parameters": [
+      {
+        "Name": "channelId",
+        "Type": "System.String",
+        "IsRequired": false
+      },
       {
         "Name": "deviceId",
         "Type": "System.String",
