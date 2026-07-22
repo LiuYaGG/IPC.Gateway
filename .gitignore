@@ -2,6 +2,9 @@
 .vs/
 .vscode/
 .idea/
+.agents/
+.codex/
+.codex-run/
 *.user
 *.suo
 *.userosscache
@@ -28,6 +31,11 @@ IPC.Gateway.Web/.vite/
 
 # Release packaging output
 artifacts/
+
+# Machine-local certificates, exports, and scratch files
+CertificateStores/
+outputs/
+tmp/
 
 # Vendor-only commercial license issuer. Keep signing code and private keys out of this repository.
 IPC.Gateway.LicenseTool/
