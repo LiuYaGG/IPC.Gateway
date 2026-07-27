@@ -76,6 +76,10 @@ public static class GatewayPermissions
     public const string EditProject = "project.edit";
     public const string ViewHistory = "history.view";
     public const string EditHistory = "history.edit";
+    public const string ViewScripts = "scripts.view";
+    public const string EditScripts = "scripts.edit";
+    public const string ExecuteScripts = "scripts.execute";
+    public const string ManageScriptDatabases = "scripts.databases.manage";
 
     public const string ViewUsers = "users.view";
     public const string CreateUser = "users.create";
@@ -108,11 +112,11 @@ public static class GatewayPermissions
         Action(DeleteTag, "删除标签", "设备管理", "删除标签。"),
         Action(WriteTag, "写入标签值", "设备管理", "在标签操作列执行写入。"),
 
-        Page(ViewFlowRules, "流程规则", "流程规则", "查看流程规则列表和编辑器。"),
-        Action(CreateFlowRule, "新增流程规则", "流程规则", "新增流程规则。"),
-        Action(EditFlowRule, "编辑流程规则", "流程规则", "编辑流程规则画布、节点、连线和调试配置。"),
-        Action(DeleteFlowRule, "删除流程规则", "流程规则", "删除流程规则。"),
-        Action(DebugFlowRule, "流程调试", "流程规则", "开启流程调试高亮、调试节点和调试辅助操作。"),
+        Page(ViewFlowRules, "规则引擎", "规则引擎", "查看规则引擎列表和编辑器。"),
+        Action(CreateFlowRule, "新增规则引擎", "规则引擎", "新增规则引擎。"),
+        Action(EditFlowRule, "编辑规则引擎", "规则引擎", "编辑规则引擎画布、节点、连线和调试配置。"),
+        Action(DeleteFlowRule, "删除规则引擎", "规则引擎", "删除规则引擎。"),
+        Action(DebugFlowRule, "流程调试", "规则引擎", "开启流程调试高亮、调试节点和调试辅助操作。"),
 
         Page(ViewMqtt, "MQTT", "MQTT", "查看 MQTT 配置和运行状态。"),
         Action(EditMqtt, "保存 MQTT 配置", "MQTT", "编辑并保存 MQTT 连接、主题、发布策略和离线缓存。"),
@@ -122,6 +126,11 @@ public static class GatewayPermissions
         Action(EditProject, "保存项目配置", "项目配置", "保存项目 JSON 配置、应用配置和回滚配置。"),
         Page(ViewHistory, "历史库", "历史库", "查看历史库配置和状态。"),
         Action(EditHistory, "保存历史库配置", "历史库", "编辑历史库配置和健康阈值。"),
+
+        Page(ViewScripts, "脚本中心", "脚本中心", "查看 .NET 脚本、运行状态和数据库写入队列。"),
+        Action(EditScripts, "编辑脚本", "脚本中心", "新增、修改、启停和删除 .NET 脚本。"),
+        Action(ExecuteScripts, "执行脚本", "脚本中心", "编译检查并手动执行 .NET 脚本。"),
+        Action(ManageScriptDatabases, "管理脚本数据库", "脚本中心", "管理外部数据库连接及仅允许 INSERT/UPDATE 的写入目标。"),
 
         Page(ViewAudit, "审计日志", "审计日志", "查看审计日志。"),
         Action(ExportAudit, "导出审计日志", "审计日志", "导出审计日志 CSV。"),

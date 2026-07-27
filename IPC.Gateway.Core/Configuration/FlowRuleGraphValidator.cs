@@ -144,7 +144,7 @@ namespace IPC.Runtime.Configuration
             List<string> errors = new List<string>();
             if (definition == null)
             {
-                errors.Add("流程规则不能为空。");
+                errors.Add("规则引擎不能为空。");
                 return errors;
             }
 
@@ -213,7 +213,7 @@ namespace IPC.Runtime.Configuration
                 }
             }
             if (visited != graph.Nodes.Count)
-                errors.Add("流程规则不能包含环路。");
+                errors.Add("规则引擎不能包含环路。");
         }
 
         private static void ValidateTopology(FlowRuleGraphMap graph, List<string> errors)

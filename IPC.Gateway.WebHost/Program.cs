@@ -19,6 +19,8 @@ using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Infrastructure;
 using IPC.Gateway.FlowRules;
 using IPC.Gateway.Inference;
+using IPC.Gateway.Scripting;
+using IPC.Gateway.Scripting.Abstractions;
 using IPC.Gateway.WebHost;
 using Microsoft.Extensions.Hosting.Systemd;
 using Microsoft.Extensions.FileProviders;
@@ -39,6 +41,7 @@ GatewayIndustrialSecurityOptions securityOptions = GatewayIndustrialSecurityOpti
 GatewayUpdateMaintenanceOptions updateOptions = GatewayUpdateMaintenanceOptions.FromConfiguration(builder.Configuration);
 GatewayObservabilityOptions observabilityOptions = GatewayObservabilityOptions.FromConfiguration(builder.Configuration);
 GatewayLicenseOptions licenseOptions = GatewayLicenseOptions.FromConfiguration(builder.Configuration);
+GatewayScriptingOptions scriptingOptions = GatewayScriptingSetup.FromConfiguration(builder.Configuration);
 builder.ConfigureGatewayTls(securityOptions);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -67,6 +70,9 @@ builder.Services.AddSingleton<GatewayProjectBackupService>();
 builder.Services.AddSingleton<GatewayCompatibilityService>();
 builder.Services.AddSingleton<GatewayRuntimeEventHub>();
 builder.Services.AddHostedService<GatewayRuntimeHostedService>();
+builder.Services.AddSingleton<IScriptSecretProtector, GatewayScriptSecretProtector>();
+builder.Services.AddSingleton<IScriptTagAccessor, GatewayScriptTagAccessor>();
+builder.Services.AddGatewayScripting(scriptingOptions);
 builder.Services.AddHostedService<GatewayRuntimePushHostedService>();
 builder.Services.AddGatewayWatchdog(builder.Configuration);
 
@@ -226,6 +232,7 @@ app.MapGatewayConfigurationEndpoints();
 app.MapGatewayCommercialEndpoints();
 app.MapGatewayUpdateEndpoints();
 app.MapGatewayWatchdogEndpoints();
+app.MapGatewayScriptEndpoints();
 app.MapFallback(async context =>
 {
     if (context.Request.Path.StartsWithSegments("/api"))

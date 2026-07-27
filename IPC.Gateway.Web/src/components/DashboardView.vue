@@ -81,7 +81,7 @@
       <MetricCard label="CPU" :value="`${cpuUsage}%`" :tone="cpuUsage < 80 ? 'good' : 'warn'" :icon="Odometer" />
       <MetricCard label="内存" :value="`${memoryUsage}%`" :tone="memoryUsage < 85 ? 'good' : 'warn'" :icon="Monitor" />
       <MetricCard label="MQTT" :value="mqttState" :tone="status?.mqtt?.isConnected ? 'good' : 'warn'" :icon="Promotion" />
-      <MetricCard label="流程规则" :value="ruleState" :tone="status?.flowRuleEngine?.isRunning ? 'good' : 'normal'" :icon="Operation" />
+      <MetricCard label="规则引擎" :value="ruleState" :tone="status?.flowRuleEngine?.isRunning ? 'good' : 'normal'" :icon="Operation" />
     </div>
 
     <el-card shadow="never" class="panel-card readiness-card">
@@ -417,7 +417,7 @@ const componentLabels: Record<string, string> = {
   mqttOutboxStorage: 'MQTT 缓存磁盘',
   history: '历史库',
   historyStorage: '历史库磁盘',
-  ruleEngine: '流程规则',
+  ruleEngine: '规则引擎',
   scheduler: '采集调度',
   systemResources: '系统资源'
 }

@@ -1616,7 +1616,7 @@ export interface GatewayProtocolDriverInfo {
   capabilities: GatewayProtocolCapabilities
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
     response = await fetch(url, {
@@ -2274,13 +2274,13 @@ export async function deleteRule(ruleId: string) {
 
 export async function loadFlowRuleEngineStatus() {
   const result = await request<ApiResult<RuleEngineRuntimeStatus>>('/api/config/flow-rules/status')
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '流程规则引擎状态加载失败')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '规则引擎状态加载失败')
   return result.data
 }
 
 export async function loadFlowRules() {
   const result = await request<ApiResult<FlowRuleDefinition[]>>('/api/config/flow-rules')
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '流程规则加载失败')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '规则引擎加载失败')
   return result.data
 }
 
@@ -2289,7 +2289,7 @@ export async function createFlowRule(rule: FlowRuleDefinition) {
     method: 'POST',
     body: JSON.stringify(rule)
   })
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '流程规则新增失败')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '规则引擎新增失败')
   return result.data
 }
 
@@ -2298,7 +2298,7 @@ export async function updateFlowRule(ruleId: string, rule: FlowRuleDefinition) {
     method: 'PUT',
     body: JSON.stringify(rule)
   })
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '流程规则更新失败')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '规则引擎更新失败')
   return result.data
 }
 
@@ -2306,7 +2306,7 @@ export async function deleteFlowRule(ruleId: string) {
   const result = await request<ApiResult<FlowRuleDefinition>>(`/api/config/flow-rules/${encodeURIComponent(ruleId)}`, {
     method: 'DELETE'
   })
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '流程规则删除失败')
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '规则引擎删除失败')
   return result.data
 }
 
@@ -2385,7 +2385,7 @@ function localizeErrorMessage(message: string | undefined): string {
   if (unsupportedWriteType) return `不支持写入的数据类型：${unsupportedWriteType[1]}。`
 
   const flowRuleMissing = /^Flow rule was not found: (.+)$/.exec(text)
-  if (flowRuleMissing) return `流程规则不存在：${flowRuleMissing[1]}`
+  if (flowRuleMissing) return `规则引擎不存在：${flowRuleMissing[1]}`
 
   const emptyConfiguration = /^(.+) configuration cannot be empty\.$/.exec(text)
   if (emptyConfiguration) return `${emptyConfiguration[1]} 配置不能为空。`

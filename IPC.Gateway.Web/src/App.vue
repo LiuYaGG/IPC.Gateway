@@ -80,11 +80,15 @@
           </el-menu-item>
           <el-menu-item v-if="canAccessView('flowRules')" index="flowRules">
             <el-icon><Share /></el-icon>
-            <span>流程规则</span>
+            <span>规则引擎</span>
           </el-menu-item>
           <el-menu-item v-if="canAccessView('history')" index="history">
             <el-icon><Document /></el-icon>
             <span>历史库</span>
+          </el-menu-item>
+          <el-menu-item v-if="canAccessView('scripts')" index="scripts">
+            <el-icon><Document /></el-icon>
+            <span>脚本中心</span>
           </el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="nav-communication">
@@ -218,6 +222,7 @@
           :can-save="hasPermission(PERMISSIONS.historyEdit)"
           @persist-history="persistHistory"
         />
+        <ScriptingView v-else-if="activeView === 'scripts'" :project="project" />
         <AuditView v-else-if="activeView === 'audit'" />
         <SecurityView v-else-if="activeView === 'security'" />
         <MaintenanceView v-else-if="activeView === 'maintenance'" />
@@ -287,6 +292,7 @@ import PermissionsView from './components/PermissionsView.vue'
 import ProjectView from './components/ProjectView.vue'
 import RolesView from './components/RolesView.vue'
 import SecurityView from './components/SecurityView.vue'
+import ScriptingView from './components/scripting/ScriptingView.vue'
 import UsersView from './components/UsersView.vue'
 import { formatDateTime } from './utils/format'
 import { createPermissionSet, PermissionContextKey, PERMISSIONS, normalizePermission } from './utils/permissions'
@@ -328,10 +334,11 @@ const pageTitle = computed(() => ({
   topology: '设备拓扑',
   dashboard: '运行总览',
   devices: '设备管理',
-  flowRules: '流程规则',
+  flowRules: '规则引擎',
   mqtt: 'MQTT',
   opcUa: 'OPC UA Server',
   history: '历史库',
+  scripts: '脚本中心',
   audit: '审计日志',
   security: '工业安全',
   maintenance: '安装升级',
@@ -350,6 +357,7 @@ const viewPermissions: Record<string, string[]> = {
   mqtt: [PERMISSIONS.mqttView],
   opcUa: [PERMISSIONS.opcUaView],
   history: [PERMISSIONS.historyView],
+  scripts: [PERMISSIONS.scriptsView],
   project: [PERMISSIONS.projectView],
   audit: [PERMISSIONS.auditView],
   security: [PERMISSIONS.securityView],
@@ -358,7 +366,7 @@ const viewPermissions: Record<string, string[]> = {
   roles: [PERMISSIONS.rolesView],
   permissions: [PERMISSIONS.permissionsView]
 }
-const viewOrder = ['bigScreen', 'topology', 'dashboard', 'devices', 'flowRules', 'history', 'mqtt', 'opcUa', 'project', 'audit', 'security', 'maintenance', 'users', 'roles', 'permissions']
+const viewOrder = ['bigScreen', 'topology', 'dashboard', 'devices', 'flowRules', 'history', 'scripts', 'mqtt', 'opcUa', 'project', 'audit', 'security', 'maintenance', 'users', 'roles', 'permissions']
 
 provide(PermissionContextKey, {
   permissions: currentPermissions,

@@ -204,20 +204,20 @@ public static class GatewayConfigurationEndpoints
             await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanWriteTag, "当前用户没有标签写入权限。", () => gateway.WriteTagAsync(command)));
 
         group.MapGet("/flow-rules", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
-            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看流程规则配置权限。", () =>
+            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看规则引擎配置权限。", () =>
                 GatewayConfigurationSecurity.SanitizeFlowRules(gateway.GetFlowRules())));
 
         group.MapGet("/flow-rules/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
-            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看流程规则状态权限。", () => gateway.GetStatus().FlowRuleEngine));
+            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看规则引擎状态权限。", () => gateway.GetStatus().FlowRuleEngine));
 
         group.MapPost("/flow-rules", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, SaveFlowRuleDefinitionCommand command) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanCreateFlowRule, "当前用户没有新增流程规则权限。", () => gateway.AddFlowRuleAsync(command)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanCreateFlowRule, "当前用户没有新增规则引擎权限。", () => gateway.AddFlowRuleAsync(command)));
 
         group.MapPut("/flow-rules/{ruleId}", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, string ruleId, SaveFlowRuleDefinitionCommand command) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditFlowRule, "当前用户没有编辑流程规则权限。", () => gateway.UpdateFlowRuleAsync(ruleId, command)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditFlowRule, "当前用户没有编辑规则引擎权限。", () => gateway.UpdateFlowRuleAsync(ruleId, command)));
 
         group.MapDelete("/flow-rules/{ruleId}", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, string ruleId) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanDeleteFlowRule, "当前用户没有删除流程规则权限。", () => gateway.DeleteFlowRuleAsync(ruleId)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanDeleteFlowRule, "当前用户没有删除规则引擎权限。", () => gateway.DeleteFlowRuleAsync(ruleId)));
 
         group.MapGet("/mqtt", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
             ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewMqtt, "当前用户没有查看 MQTT 配置权限。", () =>

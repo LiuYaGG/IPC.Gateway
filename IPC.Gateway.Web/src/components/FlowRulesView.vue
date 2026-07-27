@@ -18,7 +18,7 @@
       </div>
       <div class="rules-status-actions">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button v-if="canCreateFlowRule" type="primary" :icon="Plus" @click="openCreate">新增流程规则</el-button>
+        <el-button v-if="canCreateFlowRule" type="primary" :icon="Plus" @click="openCreate">新增规则引擎</el-button>
       </div>
     </div>
 
@@ -54,7 +54,7 @@
       </el-table-column>
     </el-table>
 
-    <el-drawer v-model="drawerVisible" class="flow-rule-drawer" size="94%" :title="form?.id ? '编辑流程规则' : '新增流程规则'">
+    <el-drawer v-model="drawerVisible" class="flow-rule-drawer" size="94%" :title="form?.id ? '编辑规则引擎' : '新增规则引擎'">
       <template v-if="form">
         <div class="flow-rule-formbar">
           <el-form label-position="top" class="flow-rule-meta">
@@ -313,7 +313,7 @@ async function load() {
     rules.value = (await loadFlowRules()).map(cloneFlowRule)
   } catch (error) {
     rules.value = (props.project?.flowRules ?? []).map(cloneFlowRule)
-    ElMessage.warning(error instanceof Error ? error.message : '流程规则加载失败')
+    ElMessage.warning(error instanceof Error ? error.message : '规则引擎加载失败')
   } finally {
     loading.value = false
   }
@@ -321,7 +321,7 @@ async function load() {
 
 function openCreate() {
   if (!canCreateFlowRule.value) {
-    ElMessage.warning('当前用户没有新增流程规则权限')
+    ElMessage.warning('当前用户没有新增规则引擎权限')
     return
   }
   form.value = createFlowRuleTemplate()
@@ -333,7 +333,7 @@ function openCreate() {
 
 function openEdit(rule: FlowRuleDefinition) {
   if (!canEditFlowRule.value) {
-    ElMessage.warning('当前用户没有编辑流程规则权限')
+    ElMessage.warning('当前用户没有编辑规则引擎权限')
     return
   }
   form.value = cloneFlowRule(rule)
@@ -571,7 +571,7 @@ function handleEditorShortcut(event: KeyboardEvent) {
 async function save() {
   if (!form.value) return
   if (!canSaveCurrentFlowRule.value) {
-    ElMessage.warning('当前用户没有保存流程规则权限')
+    ElMessage.warning('当前用户没有保存规则引擎权限')
     return
   }
   showErrors.value = true
@@ -586,7 +586,7 @@ async function save() {
     drawerVisible.value = false
     emit('changed')
     await load()
-    ElMessage.success('流程规则已保存')
+    ElMessage.success('规则引擎已保存')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败')
   } finally {
@@ -596,17 +596,17 @@ async function save() {
 
 async function remove(rule: FlowRuleDefinition) {
   if (!canDeleteFlowRule.value) {
-    ElMessage.warning('当前用户没有删除流程规则权限')
+    ElMessage.warning('当前用户没有删除规则引擎权限')
     return
   }
-  const confirmed = await ElMessageBox.confirm(`确认删除流程规则「${rule.name}」？`, '删除确认', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认删除规则引擎「${rule.name}」？`, '删除确认', { type: 'warning' })
     .then(() => true)
     .catch(() => false)
   if (!confirmed) return
   await deleteFlowRule(rule.id)
   emit('changed')
   await load()
-  ElMessage.success('流程规则已删除')
+  ElMessage.success('规则引擎已删除')
 }
 function findLatestRuntimeEvent() {
   if (!form.value || !props.status) return undefined

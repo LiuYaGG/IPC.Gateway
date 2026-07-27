@@ -355,6 +355,38 @@ public static class GatewayAuthEndpoints
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.EditHistory, GatewayPermissions.EditDashboardStorageHealth, GatewayPermissions.WriteConfiguration);
     }
 
+    /// <summary>
+    /// 判断当前用户是否可以查看脚本中心。
+    /// </summary>
+    public static bool CanViewScripts(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasPermission(user, GatewayPermissions.ViewScripts);
+    }
+
+    /// <summary>
+    /// 判断当前用户是否可以编辑脚本定义。
+    /// </summary>
+    public static bool CanEditScripts(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasPermission(user, GatewayPermissions.EditScripts);
+    }
+
+    /// <summary>
+    /// 判断当前用户是否可以编译检查和手动执行脚本。
+    /// </summary>
+    public static bool CanExecuteScripts(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasPermission(user, GatewayPermissions.ExecuteScripts);
+    }
+
+    /// <summary>
+    /// 判断当前用户是否可以管理脚本数据库连接和写入目标。
+    /// </summary>
+    public static bool CanManageScriptDatabases(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasPermission(user, GatewayPermissions.ManageScriptDatabases);
+    }
+
     public static bool CanViewUsers(ClaimsPrincipal user)
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ViewUsers, GatewayPermissions.ManageUsers);

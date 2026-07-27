@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("IPC.Gateway.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+aa55a1f32db42fedd3eae8247e05521a76d13cd0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3c2613399c2d9e54af8d89bc55c106038488cffb")]
 [assembly: System.Reflection.AssemblyProductAttribute("IPC.Gateway.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IPC.Gateway.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

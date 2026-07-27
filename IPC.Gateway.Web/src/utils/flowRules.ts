@@ -93,7 +93,7 @@ export function createFlowRuleTemplate(): FlowRuleDefinition {
   const now = new Date().toISOString()
   return {
     id: '',
-    name: '流程规则',
+    name: '规则引擎',
     description: '',
     enabled: true,
     version: 1,
@@ -324,7 +324,7 @@ function validateFlowGraph(rule: FlowRuleDefinition) {
       if (count === 0) queue.push(edge.targetNodeId)
     }
   }
-  if (visited !== nodes.length) errors.push('流程规则不能包含环路')
+  if (visited !== nodes.length) errors.push('规则引擎不能包含环路')
 
   let conditions = nodes.filter(node => CONDITION_NODE_TYPES.has(node.nodeType) && node.nodeType !== 'QualityGate')
   if (!conditions.length) conditions = nodes.filter(node => node.nodeType === 'QualityGate')

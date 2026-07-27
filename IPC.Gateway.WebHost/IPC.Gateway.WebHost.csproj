@@ -13,6 +13,7 @@
     <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
     <ProjectReference Include="..\IPC.Gateway.FlowRules\IPC.Gateway.FlowRules.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Inference\IPC.Gateway.Inference.csproj" />
+    <ProjectReference Include="..\IPC.Gateway.Scripting\IPC.Gateway.Scripting.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Watchdog\IPC.Gateway.Watchdog.csproj" />
     <ProjectReference Include="..\IPC.Gateway.LegacyProtocolPlugins\IPC.Gateway.LegacyProtocolPlugins.csproj"
                       ReferenceOutputAssembly="false"
