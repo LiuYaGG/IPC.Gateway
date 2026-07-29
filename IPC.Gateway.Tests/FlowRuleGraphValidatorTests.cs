@@ -49,6 +49,35 @@ public sealed class FlowRuleGraphValidatorTests
         Assert.Contains(errors, error => error.Contains("环路", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 验证流程编译会把值处理脚本的固定发布版本传给运行规则。
+    /// </summary>
+    [Fact]
+    public void SimpleCompiler_ValueScriptNode_ShouldPreservePinnedVersion()
+    {
+        FlowRuleDefinition rule = CreateLinearRule();
+        FlowRuleNode condition = rule.Nodes.Single(node => node.Id == "condition");
+        FlowRuleNode script = new()
+        {
+            Id = "value-script",
+            NodeType = FlowRuleNodeTypes.ValueScript,
+            Label = "正弦处理",
+            ValueScriptId = "script-1",
+            ValueScriptVersion = 3,
+            TransformTimeoutMilliseconds = 120
+        };
+        rule.Nodes.Add(script);
+        rule.Edges.RemoveAll(edge => edge.SourceNodeId == "tag" && edge.TargetNodeId == condition.Id);
+        rule.Edges.Add(new FlowRuleEdge { SourceNodeId = "tag", TargetNodeId = script.Id });
+        rule.Edges.Add(new FlowRuleEdge { SourceNodeId = script.Id, TargetNodeId = condition.Id });
+
+        Assert.True(FlowRuleCompiler.TryCompile(rule, out EdgeRuleConfig? compiled));
+        Assert.NotNull(compiled);
+        Assert.Equal("script-1", compiled.ValueScriptId);
+        Assert.Equal(3, compiled.ValueScriptVersion);
+        Assert.Equal(120, compiled.TransformTimeoutMilliseconds);
+    }
+
     private static FlowRuleDefinition CreateLinearRule()
     {
         FlowRuleNode tag = new FlowRuleNode

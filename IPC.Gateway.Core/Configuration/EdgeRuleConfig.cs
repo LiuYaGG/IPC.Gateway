@@ -140,6 +140,8 @@ namespace IPC.Runtime.Configuration
             TransformUseAbsolute = false;
             TransformExpression = string.Empty;
             TransformTimeoutMilliseconds = 50;
+            ValueScriptId = string.Empty;
+            ValueScriptVersion = 0;
             SequenceWindowSeconds = 60;
             SequenceStepTimeoutSeconds = 0;
             SequenceMinIntervalSeconds = 0;
@@ -257,6 +259,8 @@ namespace IPC.Runtime.Configuration
         public bool TransformUseAbsolute { get; set; }
         public string TransformExpression { get; set; }
         public int TransformTimeoutMilliseconds { get; set; }
+        public string ValueScriptId { get; set; }
+        public int ValueScriptVersion { get; set; }
         public int SequenceWindowSeconds { get; set; }
         public int SequenceStepTimeoutSeconds { get; set; }
         public int SequenceMinIntervalSeconds { get; set; }

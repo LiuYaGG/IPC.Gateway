@@ -151,6 +151,53 @@
       </div>
       <el-button plain @click="addEnumMapping">新增映射</el-button>
     </div>
+    <el-divider content-position="left">值处理脚本</el-divider>
+    <div class="form-grid">
+      <el-form-item label="启用脚本处理">
+        <el-switch v-model="model.cleaning.valueScriptEnabled" :disabled="!model.cleaning.enabled" />
+      </el-form-item>
+      <el-form-item label="已发布脚本" prop="cleaning.valueScriptId">
+        <el-select
+          v-model="model.cleaning.valueScriptId"
+          filterable
+          clearable
+          default-first-option
+          :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
+          placeholder="选择或输入筛选"
+          no-data-text="没有输入类型兼容的已发布标签清洗脚本"
+          :filter-method="filterValueScripts"
+          @change="applySelectedValueScript"
+          @visible-change="handleValueScriptDropdownVisible"
+        >
+          <el-option
+            v-for="script in compatibleValueScripts"
+            :key="script.id"
+            :label="`${script.name}（v${script.version}，${script.inputDataType} → ${script.outputDataType}）`"
+            :value="script.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="固定版本">
+        <el-input-number v-model="model.cleaning.valueScriptVersion" :disabled="true" :controls="false" />
+      </el-form-item>
+      <el-form-item label="脚本超时(ms)">
+        <el-input-number
+          v-model="model.cleaning.valueScriptTimeoutMilliseconds"
+          :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
+          :min="10"
+          :max="5000"
+          :controls="false"
+        />
+      </el-form-item>
+      <el-form-item label="失败策略">
+        <el-select v-model="model.cleaning.valueScriptFailurePolicy" :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled">
+          <el-option label="保留上次有效值" value="KeepLastGood" />
+          <el-option label="使用本次原始值" value="UseOriginal" />
+          <el-option label="标记坏质量" value="MarkBad" />
+        </el-select>
+      </el-form-item>
+    </div>
+    <p class="form-help">下拉框内可按脚本名称、说明、输入/输出类型或版本筛选；保存标签时会固定当前发布版本。</p>
 
     <template v-if="isMeter">
       <el-divider content-position="left">表计字段</el-divider>
@@ -202,9 +249,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { TagConfig } from '../api'
+import { loadValueTransformCatalog, type ValueTransformCatalogItem } from '../scriptingApi'
 import {
   accessModeOptions,
   dataTypeOptionGroups,
@@ -223,11 +271,71 @@ const props = defineProps<{
 }>()
 
 const formRef = ref<FormInstance>()
+const valueScripts = ref<ValueTransformCatalogItem[]>([])
+const valueScriptFilterKeyword = ref('')
 const activeProtocol = computed(() => props.model.protocol || props.deviceProtocol)
 const availableDataTypeGroups = computed(() => dataTypeOptionGroups(activeProtocol.value))
 const isMeter = computed(() => isMeterProtocol(activeProtocol.value))
 const addressPlaceholder = computed(() => tagAddressPlaceholder(activeProtocol.value))
 const meterAddressHint = computed(() => meterAddressPlaceholder(activeProtocol.value))
+const compatibleValueScripts = computed(() => {
+  const keyword = valueScriptFilterKeyword.value.trim().toLocaleLowerCase()
+  return valueScripts.value.filter(script => {
+    if (script.scope === 'RuleEngine' || !isCompatibleInputType(script.inputDataType, props.model.dataType)) return false
+    if (!keyword) return true
+    const searchableText = [
+      script.name,
+      script.description,
+      script.inputDataType,
+      script.outputDataType,
+      `v${script.version}`,
+      String(script.version)
+    ].join(' ').toLocaleLowerCase()
+    return searchableText.includes(keyword)
+  })
+})
+
+onMounted(async () => {
+  try {
+    const response = await loadValueTransformCatalog()
+    valueScripts.value = response.data
+  } catch {
+    valueScripts.value = []
+  }
+})
+
+/**
+ * 固定当前所选脚本的发布版本。
+ */
+function applySelectedValueScript(scriptId: string) {
+  const script = valueScripts.value.find(item => item.id === scriptId)
+  props.model.cleaning.valueScriptVersion = script?.version ?? 0
+}
+
+/**
+ * 在原有脚本选择框内筛选目录，避免增加额外输入框挤压表单宽度。
+ */
+function filterValueScripts(keyword: string) {
+  valueScriptFilterKeyword.value = keyword
+}
+
+/**
+ * 下拉框关闭后清除临时筛选词，下一次打开时恢复完整兼容目录。
+ */
+function handleValueScriptDropdownVisible(visible: boolean) {
+  if (!visible) valueScriptFilterKeyword.value = ''
+}
+
+/**
+ * 判断脚本声明的输入类型能否接收当前标签的采集值。
+ */
+function isCompatibleInputType(inputType: string, tagType: string) {
+  if (inputType === 'Object' || inputType === tagType) return true
+  if (inputType === 'Bool' && ['Bool', 'Coil', 'DiscreteInput'].includes(tagType)) return true
+  if (inputType === 'BoolArray' && ['BoolArray', 'CoilArray', 'DiscreteInputArray'].includes(tagType)) return true
+  const numericTypes = ['Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Float', 'Double', 'Decimal']
+  return numericTypes.includes(inputType) && numericTypes.includes(tagType)
+}
 const meterDataIdentifierHint = computed(() => meterDataIdentifierPlaceholder(activeProtocol.value))
 const meterTypeItems = computed(() => meterTypeOptions(activeProtocol.value))
 const rules: FormRules<TagConfig> = {
@@ -244,7 +352,8 @@ const rules: FormRules<TagConfig> = {
   'scaling.decimalPlaces': [{ validator: validateScalingDecimalPlaces, trigger: 'change' }],
   'cleaning.deadband': [{ validator: validateCleaningNonNegative, trigger: 'change' }],
   'cleaning.spikeThreshold': [{ validator: validateCleaningNonNegative, trigger: 'change' }],
-  'cleaning.unitMultiplier': [{ validator: validateUnitMultiplier, trigger: 'change' }]
+  'cleaning.unitMultiplier': [{ validator: validateUnitMultiplier, trigger: 'change' }],
+  'cleaning.valueScriptId': [{ validator: validateValueScriptSelection, trigger: 'change' }]
 }
 
 const scalingPreview = computed(() => {
@@ -368,6 +477,15 @@ function validateUnitMultiplier(_rule: unknown, value: number, callback: (error?
   if (!Number.isFinite(number)) callback(new Error('请输入合法单位倍率'))
   else if (number === 0) callback(new Error('单位倍率不能为 0'))
   else callback()
+}
+
+/**
+ * 启用脚本清洗时要求选择一个有效发布版本。
+ */
+function validateValueScriptSelection(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  if (!props.model.cleaning?.enabled || !props.model.cleaning.valueScriptEnabled) return callback()
+  if (value?.trim() && props.model.cleaning.valueScriptVersion > 0) return callback()
+  callback(new Error('请选择一个已发布的值处理脚本'))
 }
 
 defineExpose({ validate })

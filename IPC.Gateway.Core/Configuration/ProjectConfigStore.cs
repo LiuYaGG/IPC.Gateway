@@ -237,6 +237,8 @@ namespace IPC.Runtime.Configuration
                 if (rule.ActionMaxPerMinute < 0)
                     rule.ActionMaxPerMinute = 0;
                 rule.TransformExpression = rule.TransformExpression ?? string.Empty;
+                rule.ValueScriptId = rule.ValueScriptId ?? string.Empty;
+                rule.ValueScriptVersion = Math.Max(0, rule.ValueScriptVersion);
                 NormalizeModelInferenceRule(rule);
                 if (rule.TransformTimeoutMilliseconds <= 0)
                     rule.TransformTimeoutMilliseconds = 50;
@@ -346,6 +348,8 @@ namespace IPC.Runtime.Configuration
                 condition.SourceTagName = condition.SourceTagName ?? string.Empty;
                 condition.SourceDataType = condition.SourceDataType ?? string.Empty;
                 condition.TransformExpression = condition.TransformExpression ?? string.Empty;
+                condition.ValueScriptId = condition.ValueScriptId ?? string.Empty;
+                condition.ValueScriptVersion = Math.Max(0, condition.ValueScriptVersion);
             }
         }
 
@@ -490,6 +494,11 @@ namespace IPC.Runtime.Configuration
                     node.ActionMaxPerMinute = 0;
                 node.DebugLabel = node.DebugLabel ?? string.Empty;
                 node.TransformExpression = node.TransformExpression ?? string.Empty;
+                node.ValueScriptId = node.ValueScriptId ?? string.Empty;
+                node.ValueScriptVersion = Math.Max(0, node.ValueScriptVersion);
+                node.ValueScriptCategory = node.ValueScriptCategory ?? string.Empty;
+                node.ValueScriptInputDataType = node.ValueScriptInputDataType ?? string.Empty;
+                node.ValueScriptOutputDataType = node.ValueScriptOutputDataType ?? string.Empty;
                 NormalizeModelInferenceNode(node);
                 if (node.TransformTimeoutMilliseconds <= 0)
                     node.TransformTimeoutMilliseconds = 50;
@@ -663,6 +672,16 @@ namespace IPC.Runtime.Configuration
                 tag.Cleaning.UnitMultiplier = 1D;
             tag.Cleaning.SourceUnit = tag.Cleaning.SourceUnit ?? string.Empty;
             tag.Cleaning.TargetUnit = tag.Cleaning.TargetUnit ?? string.Empty;
+            tag.Cleaning.ValueScriptId = tag.Cleaning.ValueScriptId ?? string.Empty;
+            tag.Cleaning.ValueScriptVersion = Math.Max(0, tag.Cleaning.ValueScriptVersion);
+            tag.Cleaning.ValueScriptTimeoutMilliseconds = Math.Clamp(
+                tag.Cleaning.ValueScriptTimeoutMilliseconds <= 0 ? 100 : tag.Cleaning.ValueScriptTimeoutMilliseconds,
+                10,
+                5000);
+            tag.Cleaning.ValueScriptFailurePolicy =
+                string.IsNullOrWhiteSpace(tag.Cleaning.ValueScriptFailurePolicy)
+                    ? "KeepLastGood"
+                    : tag.Cleaning.ValueScriptFailurePolicy.Trim();
             if (tag.Cleaning.EnumMappings == null)
                 tag.Cleaning.EnumMappings = new System.Collections.Generic.List<DataCleaningEnumMappingConfig>();
 

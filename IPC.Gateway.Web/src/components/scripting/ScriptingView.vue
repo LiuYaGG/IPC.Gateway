@@ -2,7 +2,7 @@
   <el-card class="script-center" shadow="never" v-loading="loading">
     <template #header>
       <div class="script-header">
-        <div><strong>脚本中心</strong><p>通过受控 C# 脚本联动点位，并向独立数据库执行 INSERT / UPDATE。</p></div>
+        <div><strong>脚本中心</strong><p>支持数据库写入和点位联动两类受控 C# 脚本；数据库仅允许 INSERT / UPDATE，点位写入仅限白名单目标。</p></div>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </div>
     </template>
@@ -49,28 +49,43 @@ const canExecute = computed(() => hasPermission(PERMISSIONS.scriptsExecute))
 const canManageDatabases = computed(() => hasPermission(PERMISSIONS.scriptsDatabasesManage))
 const tagOptions = computed<ScriptTagOption[]>(() => {
   const options: ScriptTagOption[] = []
-  const channelNames = new Map((props.project?.channels ?? []).map(channel => [channel.id, channel.name || channel.id]))
+  const enabledChannels = (props.project?.channels ?? []).filter(channel => channel.enabled !== false)
+  const channelNames = new Map(enabledChannels.map(channel => [channel.id, channel.name || channel.id]))
   for (const device of props.project?.devices ?? []) {
+    if (device.enabled === false || !channelNames.has(device.channelId)) continue
     const channelName = channelNames.get(device.channelId) ?? device.channelId
     const deviceName = device.name || device.id
     for (const tag of device.tags ?? []) {
+      if (tag.enabled === false) continue
       options.push({
         value: `${device.channelId}/${device.id}//${tag.id}`,
-        label: `${channelName}-${deviceName}-【设备直属】-${tag.name || tag.id}`
+        label: `${channelName}-${deviceName}-【设备直属】-${tag.name || tag.id}`,
+        dataType: tag.dataType,
+        canRead: normalizeAccessMode(tag.accessMode) !== 'writeonly',
+        canWrite: normalizeAccessMode(tag.accessMode) !== 'readonly'
       })
     }
     for (const group of device.groups ?? []) {
+      if (group.enabled === false) continue
       const groupName = group.name || group.id
       for (const tag of group.tags ?? []) {
+        if (tag.enabled === false) continue
         options.push({
           value: `${device.channelId}/${device.id}/${group.id}/${tag.id}`,
-          label: `${channelName}-${deviceName}-【${groupName}】-${tag.name || tag.id}`
+          label: `${channelName}-${deviceName}-【${groupName}】-${tag.name || tag.id}`,
+          dataType: tag.dataType,
+          canRead: normalizeAccessMode(tag.accessMode) !== 'writeonly',
+          canWrite: normalizeAccessMode(tag.accessMode) !== 'readonly'
         })
       }
     }
   }
   return options.sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
 })
+
+function normalizeAccessMode(value: string | null | undefined) {
+  return (value ?? '').trim().toLowerCase()
+}
 
 onMounted(load)
 

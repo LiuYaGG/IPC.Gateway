@@ -243,6 +243,8 @@ namespace IPC.EdgeGateway
                 TransformUseAbsolute = firstTransform != null && firstTransform.TransformUseAbsolute,
                 TransformExpression = firstTransform == null ? string.Empty : firstTransform.TransformExpression,
                 TransformTimeoutMilliseconds = firstTransform == null ? 50 : NormalizeTransformTimeout(firstTransform.TransformTimeoutMilliseconds),
+                ValueScriptId = firstTransform == null ? string.Empty : firstTransform.ValueScriptId,
+                ValueScriptVersion = firstTransform == null ? 0 : firstTransform.ValueScriptVersion,
                 SequenceWindowSeconds = sequenceNode == null ? 60 : Math.Max(1, sequenceNode.SequenceWindowSeconds),
                 SequenceStepTimeoutSeconds = sequenceNode == null ? 0 : Math.Max(0, sequenceNode.SequenceStepTimeoutSeconds),
                 SequenceMinIntervalSeconds = sequenceNode == null ? 0 : Math.Max(0, sequenceNode.SequenceMinIntervalSeconds),
@@ -310,7 +312,9 @@ namespace IPC.EdgeGateway
                     TransformMultiplier = transformNode == null ? 1D : transformNode.TransformMultiplier,
                     TransformOffset = transformNode == null ? 0D : transformNode.TransformOffset,
                     TransformUseAbsolute = transformNode != null && transformNode.TransformUseAbsolute,
-                    TransformExpression = transformNode == null ? string.Empty : transformNode.TransformExpression
+                    TransformExpression = transformNode == null ? string.Empty : transformNode.TransformExpression,
+                    ValueScriptId = transformNode == null ? string.Empty : transformNode.ValueScriptId,
+                    ValueScriptVersion = transformNode == null ? 0 : transformNode.ValueScriptVersion
                 });
             }
 

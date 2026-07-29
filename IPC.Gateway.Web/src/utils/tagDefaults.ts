@@ -327,7 +327,12 @@ function createDefaultCleaning(): DataCleaningConfig {
     targetUnit: '',
     unitMultiplier: 1,
     unitOffset: 0,
-    preserveLastGoodOnFilter: true
+    preserveLastGoodOnFilter: true,
+    valueScriptEnabled: false,
+    valueScriptId: '',
+    valueScriptVersion: 0,
+    valueScriptTimeoutMilliseconds: 100,
+    valueScriptFailurePolicy: 'KeepLastGood'
   }
 }
 
@@ -356,6 +361,11 @@ function normalizeCleaning(cleaning: DataCleaningConfig): DataCleaningConfig {
     : 1
   cleaning.unitOffset = Number.isFinite(Number(cleaning.unitOffset)) ? Number(cleaning.unitOffset) : 0
   cleaning.preserveLastGoodOnFilter = cleaning.preserveLastGoodOnFilter ?? true
+  cleaning.valueScriptEnabled = cleaning.valueScriptEnabled ?? false
+  cleaning.valueScriptId = cleaning.valueScriptId ?? ''
+  cleaning.valueScriptVersion = Math.max(0, Number(cleaning.valueScriptVersion) || 0)
+  cleaning.valueScriptTimeoutMilliseconds = Math.min(5000, Math.max(10, Number(cleaning.valueScriptTimeoutMilliseconds) || 100))
+  cleaning.valueScriptFailurePolicy = cleaning.valueScriptFailurePolicy ?? 'KeepLastGood'
   return cleaning
 }
 

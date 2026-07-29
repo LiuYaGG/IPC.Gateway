@@ -176,6 +176,8 @@ namespace IPC.Runtime.Configuration
                 TransformUseAbsolute = transformNode != null && transformNode.TransformUseAbsolute,
                 TransformExpression = transformNode == null ? string.Empty : transformNode.TransformExpression,
                 TransformTimeoutMilliseconds = transformNode == null ? 50 : NormalizeTransformTimeout(transformNode.TransformTimeoutMilliseconds),
+                ValueScriptId = transformNode == null ? string.Empty : transformNode.ValueScriptId,
+                ValueScriptVersion = transformNode == null ? 0 : transformNode.ValueScriptVersion,
                 ClearDurationSeconds = durationNode == null ? Math.Max(0, conditionNode.ClearDurationSeconds) : Math.Max(0, durationNode.ClearDurationSeconds),
                 Actions = actions
             };
@@ -290,7 +292,8 @@ namespace IPC.Runtime.Configuration
         private static bool IsTransformNode(FlowRuleNode? node)
         {
             return IsNodeType(node, FlowRuleNodeTypes.Transform) ||
-                   IsNodeType(node, FlowRuleNodeTypes.Function);
+                   IsNodeType(node, FlowRuleNodeTypes.Function) ||
+                   IsNodeType(node, FlowRuleNodeTypes.ValueScript);
         }
 
         private static bool IsQualityGateNode(FlowRuleNode? node)

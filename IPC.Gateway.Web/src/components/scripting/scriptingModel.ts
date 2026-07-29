@@ -1,5 +1,6 @@
 import type {
   GatewayScriptDefinition,
+  GatewayScriptType,
   ScriptDatabaseConnection,
   ScriptDatabaseTarget
 } from '../../scriptingApi'
@@ -7,9 +8,12 @@ import type {
 export interface ScriptTagOption {
   value: string
   label: string
+  dataType: string
+  canRead: boolean
+  canWrite: boolean
 }
 
-export const scriptExample = `// 读取点位并写入已配置的数据库目标；脚本中不能直接执行 SQL。
+export const databaseScriptExample = `// 读取点位并写入已配置的数据库目标；脚本中不能直接执行 SQL。
 var temperature = Tags.ReadDouble("Channel/Device/Group/Temperature");
 var receipt = await Database.InsertAsync("target-id", new
 {
@@ -19,19 +23,46 @@ var receipt = await Database.InsertAsync("target-id", new
 Log.Information($"写入请求已进入队列：{receipt.RequestId}");
 return temperature;`
 
-export function createScript(): GatewayScriptDefinition {
+export const tagLinkageScriptExample = `// 读取源点位，并向当前脚本白名单内的目标点位写值。
+var sourceValue = Tags.ReadDouble("Channel/Device/Group/SourceTag");
+if (sourceValue >= 10)
+{
+    await Writes.SetAsync("Channel/Device/Group/TargetTag", sourceValue);
+}
+return sourceValue;`
+
+export const valueTransformScriptExample = `// 输入是只读对象；值处理脚本不能访问点位、数据库、文件或网络。
+var value = Input.AsDouble();
+var radians = value * Math.PI / 180D;
+return Math.Round(Math.Sin(radians), 6);`
+
+export function scriptExampleFor(scriptType: GatewayScriptType) {
+  if (scriptType === 'TagLinkage') return tagLinkageScriptExample
+  if (scriptType === 'ValueTransform') return valueTransformScriptExample
+  return databaseScriptExample
+}
+
+export function createScript(scriptType: GatewayScriptType = 'DatabaseWrite'): GatewayScriptDefinition {
   return {
     id: createId('script'),
     name: '新脚本',
     description: '',
     enabled: true,
+    scriptType,
     triggerType: 'Manual',
     intervalSeconds: 60,
     triggerTagPath: '',
     tagChangeMode: 'Any',
     debounceMilliseconds: 500,
     timeoutSeconds: 5,
-    sourceCode: scriptExample
+    allowedWriteTagPaths: [],
+    maxWritesPerExecution: 20,
+    valueTransformScope: 'Both',
+    nodeCategory: '处理',
+    inputDataType: 'Double',
+    outputDataType: 'Double',
+    transformTimeoutMilliseconds: 100,
+    sourceCode: scriptExampleFor(scriptType)
   }
 }
 

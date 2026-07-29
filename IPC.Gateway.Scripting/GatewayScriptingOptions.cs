@@ -12,6 +12,7 @@ public sealed class GatewayScriptingOptions
     public int DatabaseRetryBaseSeconds { get; set; } = 2;
     public int SchedulerResolutionMilliseconds { get; set; } = 500;
     public int MaxRecentLogsPerScript { get; set; } = 50;
+    public int MaxTagLinkageDepth { get; set; } = 8;
 
     /// <summary>
     /// 规范化脚本模块参数并返回独立副本。
@@ -26,7 +27,8 @@ public sealed class GatewayScriptingOptions
             MaxDatabaseRetryCount = Math.Clamp(MaxDatabaseRetryCount, 1, 100),
             DatabaseRetryBaseSeconds = Math.Clamp(DatabaseRetryBaseSeconds, 1, 300),
             SchedulerResolutionMilliseconds = Math.Clamp(SchedulerResolutionMilliseconds, 100, 5000),
-            MaxRecentLogsPerScript = Math.Clamp(MaxRecentLogsPerScript, 10, 500)
+            MaxRecentLogsPerScript = Math.Clamp(MaxRecentLogsPerScript, 10, 500),
+            MaxTagLinkageDepth = Math.Clamp(MaxTagLinkageDepth, 1, 32)
         };
     }
 }

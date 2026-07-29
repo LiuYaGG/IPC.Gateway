@@ -188,6 +188,11 @@ public sealed class DataCleaningConfigurationDto
     public double UnitMultiplier { get; set; } = 1D;
     public double UnitOffset { get; set; }
     public bool PreserveLastGoodOnFilter { get; set; } = true;
+    public bool ValueScriptEnabled { get; set; }
+    public string ValueScriptId { get; set; } = string.Empty;
+    public int ValueScriptVersion { get; set; }
+    public int ValueScriptTimeoutMilliseconds { get; set; } = 100;
+    public string ValueScriptFailurePolicy { get; set; } = "KeepLastGood";
 }
 
 public sealed class DataCleaningEnumMappingDto
@@ -315,6 +320,8 @@ public class EdgeRuleConfigurationDto
     public bool TransformUseAbsolute { get; set; }
     public string TransformExpression { get; set; } = string.Empty;
     public int TransformTimeoutMilliseconds { get; set; } = 50;
+    public string ValueScriptId { get; set; } = string.Empty;
+    public int ValueScriptVersion { get; set; }
     public int SequenceWindowSeconds { get; set; } = 60;
     public int SequenceStepTimeoutSeconds { get; set; }
     public int SequenceMinIntervalSeconds { get; set; }
@@ -373,6 +380,8 @@ public sealed class EdgeRuleConditionDto
     public double TransformOffset { get; set; }
     public bool TransformUseAbsolute { get; set; }
     public string TransformExpression { get; set; } = string.Empty;
+    public string ValueScriptId { get; set; } = string.Empty;
+    public int ValueScriptVersion { get; set; }
 }
 
 public class FlowRuleDefinitionDto
@@ -507,6 +516,11 @@ public sealed class FlowRuleNodeDto
     public bool TransformUseAbsolute { get; set; }
     public string TransformExpression { get; set; } = string.Empty;
     public int TransformTimeoutMilliseconds { get; set; } = 50;
+    public string ValueScriptId { get; set; } = string.Empty;
+    public int ValueScriptVersion { get; set; }
+    public string ValueScriptCategory { get; set; } = string.Empty;
+    public string ValueScriptInputDataType { get; set; } = string.Empty;
+    public string ValueScriptOutputDataType { get; set; } = string.Empty;
     public int SequenceWindowSeconds { get; set; } = 60;
     public int SequenceStepTimeoutSeconds { get; set; }
     public int SequenceMinIntervalSeconds { get; set; }

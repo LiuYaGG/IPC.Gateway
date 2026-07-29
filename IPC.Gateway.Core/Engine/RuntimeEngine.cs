@@ -26,6 +26,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Resilience;
 using IPC.Plc.Communication.Core;
 using IPC.Plc.Communication.Infrastructure;
@@ -89,6 +90,7 @@ namespace IPC.Runtime.Engine
         private readonly RuntimeSnapshotStore _snapshotStore;
         private readonly PhysicalChannelManager _physicalChannelManager;
         private readonly ConfiguredChannelScheduler _configuredChannelScheduler;
+        private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private readonly Queue<DateTime> _recentPollTimeoutUtc;
         private readonly Queue<DateTime> _recentReadTimeoutUtc;
         private const int UdpOfflineFailureThreshold = 3;
@@ -133,11 +135,21 @@ namespace IPC.Runtime.Engine
         private bool _disposed;
 
         public RuntimeEngine()
-            : this(new RuntimeSchedulerOptions())
+            : this(new RuntimeSchedulerOptions(), null)
         {
         }
 
         public RuntimeEngine(RuntimeSchedulerOptions schedulerOptions)
+            : this(schedulerOptions, null)
+        {
+        }
+
+        /// <summary>
+        /// 创建运行时并注入可选的值处理脚本执行边界。
+        /// </summary>
+        public RuntimeEngine(
+            RuntimeSchedulerOptions schedulerOptions,
+            IValueTransformScriptRuntime? valueTransformScripts)
         {
             RuntimeSchedulerOptions options = (schedulerOptions ?? new RuntimeSchedulerOptions()).Normalize();
             _syncRoot = new object();
@@ -181,6 +193,7 @@ namespace IPC.Runtime.Engine
             _snapshotStore = new RuntimeSnapshotStore();
             _physicalChannelManager = new PhysicalChannelManager();
             _configuredChannelScheduler = new ConfiguredChannelScheduler();
+            _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
             _recentPollTimeoutUtc = new Queue<DateTime>();
             _recentReadTimeoutUtc = new Queue<DateTime>();
             _devicePollSemaphore = new Semaphore(_maxConcurrentDevicePolls, _maxConcurrentDevicePolls);
@@ -513,9 +526,10 @@ namespace IPC.Runtime.Engine
                     continue;
 
                 DeviceConfig? deviceConfig = state.Config;
-                string message;
-                DateTime timestamp;
-                string deviceName;
+                string message = string.Empty;
+                DateTime timestamp = DateTime.MinValue;
+                string deviceName = string.Empty;
+                bool stateCaptured = false;
 
                 bool lockTaken = false;
                 try
@@ -526,12 +540,7 @@ namespace IPC.Runtime.Engine
                         message = state.LastConnectionError;
                         timestamp = state.LastConnectionErrorTime;
                         deviceName = state.Config == null ? string.Empty : state.Config.Name;
-                    }
-                    else
-                    {
-                        deviceName = state.Config == null ? string.Empty : state.Config.Name;
-                        message = "设备正在连接或重连中，当前状态稍后刷新。";
-                        timestamp = DateTime.Now;
+                        stateCaptured = true;
                     }
                 }
                 finally
@@ -539,6 +548,10 @@ namespace IPC.Runtime.Engine
                     if (lockTaken)
                         Monitor.Exit(state.SyncRoot);
                 }
+
+                // 抢锁失败仅表示状态正在更新，不能据此生成一条新的连接错误。
+                if (!stateCaptured)
+                    continue;
 
                 if (!string.IsNullOrWhiteSpace(message))
                 {
@@ -3062,8 +3075,116 @@ namespace IPC.Runtime.Engine
             TagValueSnapshot? previousSnapshot;
             TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id ?? string.Empty, out previousSnapshot);
             TagDataCleaner.Clean(snapshot, tag, previousSnapshot);
+            ApplyValueTransformCleaning(snapshot, tag, previousSnapshot);
 
             UpdateSnapshot(snapshot);
+        }
+
+        /// <summary>
+        /// 在内置清洗后执行标签配置的值处理脚本，并按失败策略更新质量和值。
+        /// </summary>
+        private void ApplyValueTransformCleaning(
+            TagValueSnapshot snapshot,
+            TagConfig tag,
+            TagValueSnapshot? previousSnapshot)
+        {
+            DataCleaningConfig cleaning = tag.Cleaning ?? DataCleaningConfig.Default();
+            if (!cleaning.Enabled ||
+                !cleaning.ValueScriptEnabled ||
+                string.IsNullOrWhiteSpace(cleaning.ValueScriptId))
+            {
+                return;
+            }
+
+            object? valueBeforeScript = snapshot.Value;
+            string textBeforeScript = snapshot.ValueText;
+            ValueTransformExecutionResult result = _valueTransformScripts.Execute(new ValueTransformExecutionRequest
+            {
+                ScriptId = cleaning.ValueScriptId,
+                ScriptVersion = cleaning.ValueScriptVersion,
+                Value = snapshot.Value,
+                ValueText = snapshot.ValueText,
+                DataType = snapshot.DataType,
+                ChannelId = snapshot.ChannelId,
+                ChannelName = snapshot.ChannelName,
+                DeviceId = snapshot.DeviceId,
+                DeviceName = snapshot.DeviceName,
+                GroupId = snapshot.GroupId,
+                GroupName = snapshot.GroupName,
+                TagId = snapshot.TagId,
+                TagName = snapshot.TagName,
+                PointCode = snapshot.PointCode,
+                Quality = snapshot.Quality.ToString(),
+                Timestamp = new DateTimeOffset(snapshot.Timestamp),
+                ExpectedOutputDataType = string.Empty,
+                Usage = "TagCleaning",
+                TimeoutMilliseconds = Math.Clamp(cleaning.ValueScriptTimeoutMilliseconds, 10, 5000)
+            });
+
+            if (result.Success)
+            {
+                snapshot.Value = result.Value ?? string.Empty;
+                snapshot.ValueText = result.ValueText;
+                snapshot.DataType = result.OutputDataType;
+                AppendCleaningMark(snapshot, "ValueScript", $"值处理脚本 v{cleaning.ValueScriptVersion} 已执行。");
+                return;
+            }
+
+            string policy = cleaning.ValueScriptFailurePolicy ?? "KeepLastGood";
+            string failureMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "值处理脚本执行失败。"
+                : result.ErrorMessage;
+            if (string.Equals(policy, "KeepLastGood", StringComparison.OrdinalIgnoreCase) &&
+                previousSnapshot is not null)
+            {
+                snapshot.Value = previousSnapshot.Value;
+                snapshot.ValueText = previousSnapshot.ValueText;
+                snapshot.Unit = previousSnapshot.Unit;
+            }
+            else
+            {
+                snapshot.Value = valueBeforeScript ?? string.Empty;
+                snapshot.ValueText = textBeforeScript;
+            }
+
+            if (!string.Equals(policy, "UseOriginal", StringComparison.OrdinalIgnoreCase))
+            {
+                snapshot.Quality = TagQuality.Bad;
+                snapshot.ErrorMessage = failureMessage;
+            }
+            AppendCleaningMark(snapshot, "ValueScriptFailed", failureMessage);
+        }
+
+        /// <summary>
+        /// 在保留已有清洗记录的同时追加脚本处理结果。
+        /// </summary>
+        private static void AppendCleaningMark(TagValueSnapshot snapshot, string action, string message)
+        {
+            snapshot.CleaningApplied = true;
+            snapshot.CleaningAction = string.IsNullOrWhiteSpace(snapshot.CleaningAction)
+                ? action
+                : snapshot.CleaningAction + "+" + action;
+            snapshot.CleaningMessage = string.IsNullOrWhiteSpace(snapshot.CleaningMessage)
+                ? message
+                : snapshot.CleaningMessage + " " + message;
+        }
+
+        /// <summary>
+        /// 将协议专用布尔类型转换为脚本运行时可识别的通用类型名称。
+        /// </summary>
+        private static string NormalizeValueScriptDataType(string dataType)
+        {
+            if (string.Equals(dataType, "Coil", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(dataType, "DiscreteInput", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Bool";
+            }
+            if (string.Equals(dataType, "CoilArray", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(dataType, "DiscreteInputArray", StringComparison.OrdinalIgnoreCase))
+            {
+                return "BoolArray";
+            }
+            return dataType;
         }
 
         private async ValueTask<bool> RecordReadFailureAsync(

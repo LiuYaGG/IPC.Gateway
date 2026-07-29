@@ -22,7 +22,11 @@ public interface IScriptTagAccessor
     /// <summary>
     /// 向指定点位写入一个值。
     /// </summary>
-    Task WriteAsync(string path, object? value, CancellationToken cancellationToken = default);
+    Task WriteAsync(
+        string path,
+        object? value,
+        ScriptTagWriteContext writeContext,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -33,12 +37,17 @@ public sealed class ScriptTagChangedEventArgs : EventArgs
     /// <summary>
     /// 使用变化前后的点位快照创建事件参数。
     /// </summary>
-    public ScriptTagChangedEventArgs(ScriptTagValue? previousValue, ScriptTagValue currentValue)
+    public ScriptTagChangedEventArgs(
+        ScriptTagValue? previousValue,
+        ScriptTagValue currentValue,
+        ScriptTagWriteContext? writeContext = null)
     {
         PreviousValue = previousValue;
         CurrentValue = currentValue;
+        WriteContext = writeContext?.Clone();
     }
 
     public ScriptTagValue? PreviousValue { get; }
     public ScriptTagValue CurrentValue { get; }
+    public ScriptTagWriteContext? WriteContext { get; }
 }

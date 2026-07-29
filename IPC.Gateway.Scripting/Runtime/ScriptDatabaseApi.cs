@@ -12,15 +12,17 @@ public sealed class ScriptDatabaseApi
     private readonly string _scriptId;
     private readonly IScriptDatabaseQueue _queue;
     private readonly CancellationToken _cancellationToken;
+    private readonly bool _enabled;
 
     /// <summary>
     /// 创建当前脚本执行使用的数据库 API。
     /// </summary>
-    public ScriptDatabaseApi(string scriptId, IScriptDatabaseQueue queue, CancellationToken cancellationToken)
+    public ScriptDatabaseApi(string scriptId, IScriptDatabaseQueue queue, CancellationToken cancellationToken, bool enabled = true)
     {
         _scriptId = scriptId;
         _queue = queue;
         _cancellationToken = cancellationToken;
+        _enabled = enabled;
     }
 
     /// <summary>
@@ -28,6 +30,7 @@ public sealed class ScriptDatabaseApi
     /// </summary>
     public Task<ScriptDatabaseWriteReceipt> InsertAsync(string targetId, object values, string deduplicationKey = "")
     {
+        EnsureEnabled();
         return _queue.EnqueueAsync(new ScriptDatabaseWriteRequest
         {
             ScriptId = _scriptId,
@@ -47,6 +50,7 @@ public sealed class ScriptDatabaseApi
         object keys,
         string deduplicationKey = "")
     {
+        EnsureEnabled();
         return _queue.EnqueueAsync(new ScriptDatabaseWriteRequest
         {
             ScriptId = _scriptId,
@@ -56,5 +60,14 @@ public sealed class ScriptDatabaseApi
             Keys = ScriptObjectDictionary.FromObject(keys),
             DeduplicationKey = deduplicationKey ?? string.Empty
         }, _cancellationToken);
+    }
+
+    /// <summary>
+    /// 确保当前脚本类型拥有数据库写入能力。
+    /// </summary>
+    private void EnsureEnabled()
+    {
+        if (!_enabled)
+            throw new InvalidOperationException("点位联动脚本不能调用数据库写入 API。");
     }
 }

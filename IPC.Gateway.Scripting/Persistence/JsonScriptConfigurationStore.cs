@@ -92,6 +92,7 @@ public sealed class JsonScriptConfigurationStore : IScriptConfigurationStore
     /// </summary>
     private static void NormalizeCollections(ScriptConfigurationDocument document)
     {
+        document.Version = Math.Max(3, document.Version);
         document.Connections ??= [];
         document.Targets ??= [];
         document.Scripts ??= [];
@@ -99,6 +100,37 @@ public sealed class JsonScriptConfigurationStore : IScriptConfigurationStore
         {
             target.AllowedColumns ??= [];
             target.KeyColumns ??= [];
+        }
+        foreach (GatewayScriptDefinition script in document.Scripts)
+        {
+            script.AllowedWriteTagPaths ??= [];
+            script.MaxWritesPerExecution = Math.Clamp(script.MaxWritesPerExecution <= 0 ? 20 : script.MaxWritesPerExecution, 1, 100);
+            script.NodeCategory ??= script.ScriptType == GatewayScriptType.ValueTransform ? "处理" : string.Empty;
+            script.InputDataType = string.IsNullOrWhiteSpace(script.InputDataType) ? "Double" : script.InputDataType;
+            script.OutputDataType = string.IsNullOrWhiteSpace(script.OutputDataType) ? "Double" : script.OutputDataType;
+            script.TransformTimeoutMilliseconds = Math.Clamp(
+                script.TransformTimeoutMilliseconds <= 0 ? 100 : script.TransformTimeoutMilliseconds,
+                10,
+                5000);
+            script.PublishedSourceCode ??= string.Empty;
+            script.PublishedVersions ??= [];
+            script.PublishedVersions = script.PublishedVersions
+                .Where(item => item.Version > 0 && !string.IsNullOrWhiteSpace(item.SourceCode))
+                .GroupBy(item => item.Version)
+                .Select(group => group.Last())
+                .OrderBy(item => item.Version)
+                .ToList();
+            if (script.PublishedVersion > 0 &&
+                !string.IsNullOrWhiteSpace(script.PublishedSourceCode) &&
+                script.PublishedVersions.All(item => item.Version != script.PublishedVersion))
+            {
+                script.PublishedVersions.Add(new ValueTransformPublishedVersion
+                {
+                    Version = script.PublishedVersion,
+                    SourceCode = script.PublishedSourceCode,
+                    PublishedUtc = script.PublishedUtc ?? script.UpdatedUtc
+                });
+            }
         }
     }
 }

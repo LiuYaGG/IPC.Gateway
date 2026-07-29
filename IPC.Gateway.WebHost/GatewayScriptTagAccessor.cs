@@ -3,6 +3,7 @@ using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Scripting.Abstractions;
 using IPC.Gateway.Scripting.Models;
 using IPC.Runtime.Api;
+using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
 using IPC.Runtime.Indexing;
 using IPC.Runtime.Values;
@@ -16,6 +17,7 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
 {
     private readonly GatewayCoreService _gateway;
     private readonly ConcurrentDictionary<string, ScriptTagValue> _lastValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, PendingScriptWrite> _pendingScriptWrites = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     /// <summary>
@@ -61,21 +63,46 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
     /// <summary>
     /// 使用点位当前数据类型向现有运行时写入值。
     /// </summary>
-    public async Task WriteAsync(string path, object? value, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(
+        string path,
+        object? value,
+        ScriptTagWriteContext writeContext,
+        CancellationToken cancellationToken = default)
     {
         TagValueSnapshot runtimeSnapshot = ResolveSnapshot(path) ?? throw new KeyNotFoundException($"未找到点位 {path}。");
-        WriteTagResponse response = await Task.Run(() => _gateway.Runtime.WriteTag(new WriteTagRequest
+        ProjectConfig project = _gateway.CurrentProject;
+        string configuredDataType = GatewayScriptTagMetadataResolver.ResolveDataType(project, runtimeSnapshot);
+        string normalizedPath = TagPath.BuildIdentity(
+            runtimeSnapshot.ChannelId,
+            runtimeSnapshot.DeviceId,
+            runtimeSnapshot.GroupId,
+            runtimeSnapshot.TagId);
+        PendingScriptWrite pending = new(writeContext.Clone(), DateTimeOffset.UtcNow.AddSeconds(10));
+        _pendingScriptWrites[normalizedPath] = pending;
+        WriteTagResponse response;
+        try
         {
-            ChannelId = runtimeSnapshot.ChannelId,
-            DeviceId = runtimeSnapshot.DeviceId,
-            GroupId = runtimeSnapshot.GroupId,
-            TagId = runtimeSnapshot.TagId,
-            DataType = runtimeSnapshot.DataType,
-            Value = value ?? string.Empty,
-            ValueText = value?.ToString() ?? string.Empty
-        }), cancellationToken).ConfigureAwait(false);
+            response = await Task.Run(() => _gateway.Runtime.WriteTag(new WriteTagRequest
+            {
+                ChannelId = runtimeSnapshot.ChannelId,
+                DeviceId = runtimeSnapshot.DeviceId,
+                GroupId = runtimeSnapshot.GroupId,
+                TagId = runtimeSnapshot.TagId,
+                DataType = configuredDataType,
+                Value = value ?? string.Empty,
+                ValueText = value?.ToString() ?? string.Empty
+            }), cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            _pendingScriptWrites.TryRemove(new KeyValuePair<string, PendingScriptWrite>(normalizedPath, pending));
+            throw;
+        }
         if (!response.Success)
+        {
+            _pendingScriptWrites.TryRemove(new KeyValuePair<string, PendingScriptWrite>(normalizedPath, pending));
             throw new InvalidOperationException(response.ErrorMessage);
+        }
     }
 
     /// <summary>
@@ -97,7 +124,13 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
         ScriptTagValue current = Map(eventArgs.Snapshot);
         _lastValues.TryGetValue(current.Path, out ScriptTagValue? previous);
         _lastValues[current.Path] = current;
-        TagChanged?.Invoke(this, new ScriptTagChangedEventArgs(previous, current));
+        ScriptTagWriteContext? writeContext = null;
+        if (_pendingScriptWrites.TryRemove(current.Path, out PendingScriptWrite? pending) &&
+            pending.ExpiresUtc >= DateTimeOffset.UtcNow)
+        {
+            writeContext = pending.Context;
+        }
+        TagChanged?.Invoke(this, new ScriptTagChangedEventArgs(previous, current, writeContext));
     }
 
     /// <summary>
@@ -195,4 +228,9 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
             _ => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Local))
         };
     }
+
+    /// <summary>
+    /// 保存尚未与点位变化事件关联的脚本写入来源。
+    /// </summary>
+    private sealed record PendingScriptWrite(ScriptTagWriteContext Context, DateTimeOffset ExpiresUtc);
 }

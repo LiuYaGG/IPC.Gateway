@@ -2168,7 +2168,11 @@
           "net10.0": {
             "framework": "net10.0",
             "targetAlias": "net10.0",
-            "projectReferences": {}
+            "projectReferences": {
+              "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj": {
+                "projectPath": "E:\\IPC\\IPC.Gateway\\IPC.Gateway.Core\\IPC.Gateway.Core.csproj"
+              }
+            }
           }
         },
         "warningProperties": {

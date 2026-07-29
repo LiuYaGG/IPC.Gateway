@@ -447,6 +447,7 @@ function nodeFooter(node: FlowRuleNode) {
   if (node.nodeType === 'DebugProbe') return node.debugLabel || '调试跟踪'
   if (node.nodeType === 'Transform') return `${node.transformUseAbsolute ? 'abs, ' : ''}x${node.transformMultiplier ?? 1} ${formatOffset(node.transformOffset ?? 0)}`
   if (node.nodeType === 'Function') return node.transformExpression || '{value}'
+  if (node.nodeType === 'ValueScript') return `v${node.valueScriptVersion || 0} · ${node.valueScriptInputDataType || '?'} → ${node.valueScriptOutputDataType || '?'}`
   if (node.nodeType === 'Logic') return node.logicalOperator || 'And'
   if (node.nodeType === 'Duration') return `${node.durationSeconds || 0}s`
   if (node.nodeType === 'Sequence') return `${node.sequenceWindowSeconds || 60}s 窗口`

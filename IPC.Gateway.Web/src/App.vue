@@ -748,7 +748,9 @@ function sanitizeStatus(source: GatewayStatus | null | undefined, currentProject
     const quality = normalizeKey(tag.quality)
     return !!quality && quality !== 'good' && quality !== 'unknown'
   }).length
-  const recentErrors = (source.recentErrors ?? []).filter(error => isRuntimeErrorInScope(error, deviceKeys, tagScope.tagKeys))
+  const recentErrors = (source.recentErrors ?? [])
+    .filter(error => isRuntimeErrorInScope(error, deviceKeys, tagScope.tagKeys))
+    .filter(error => isRuntimeErrorActive(error, devices, tags))
 
   return {
     ...source,
@@ -812,6 +814,26 @@ function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceKeys: Set<string
   const tagId = normalizeKey(error.tagId)
   if (!tagId) return true
   return tagKeys.has(tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId))
+}
+
+function isRuntimeErrorActive(error: RuntimeErrorDetail, devices: DeviceRuntimeStatus[], tags: TagValueSnapshot[]) {
+  const category = normalizeKey(error.category)
+  if (category === 'deviceconnectionrecovered') return false
+
+  if (category.startsWith('deviceconnection') && normalizeKey(error.deviceId)) {
+    const device = devices.find(item =>
+      deviceIdentityKey(item.channelId, item.deviceId) === deviceIdentityKey(error.channelId, error.deviceId))
+    if (device) return device.enabled !== false && !device.isConnected
+  }
+
+  if (category === 'tagread' && normalizeKey(error.tagId)) {
+    const tag = tags.find(item =>
+      tagIdentityKey(item.channelId, item.deviceId, item.groupId, item.tagId) ===
+      tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId))
+    if (tag) return normalizeKey(tag.quality) === 'readerror'
+  }
+
+  return true
 }
 
 function deviceIdentityKey(channelId: string | null | undefined, deviceId: string | null | undefined) {

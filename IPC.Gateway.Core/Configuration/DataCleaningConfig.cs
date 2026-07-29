@@ -28,6 +28,8 @@ namespace IPC.Runtime.Configuration
             TargetUnit = string.Empty;
             UnitMultiplier = 1D;
             PreserveLastGoodOnFilter = true;
+            ValueScriptId = string.Empty;
+            ValueScriptFailurePolicy = "KeepLastGood";
         }
 
         public bool Enabled { get; set; }
@@ -48,6 +50,11 @@ namespace IPC.Runtime.Configuration
         public double UnitMultiplier { get; set; }
         public double UnitOffset { get; set; }
         public bool PreserveLastGoodOnFilter { get; set; }
+        public bool ValueScriptEnabled { get; set; }
+        public string ValueScriptId { get; set; }
+        public int ValueScriptVersion { get; set; }
+        public int ValueScriptTimeoutMilliseconds { get; set; } = 100;
+        public string ValueScriptFailurePolicy { get; set; }
 
         public static DataCleaningConfig Default()
         {

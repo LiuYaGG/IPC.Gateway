@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("IPC.Gateway.Watchdog")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3c2613399c2d9e54af8d89bc55c106038488cffb")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+56eff3cf1e1363b65a71e6119e1b47a2737df79b")]
 [assembly: System.Reflection.AssemblyProductAttribute("IPC.Gateway.Watchdog")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IPC.Gateway.Watchdog")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,6 +1,26 @@
 namespace IPC.Gateway.Scripting.Models;
 
 /// <summary>
+/// 定义脚本的业务用途，后续可在此扩展规则引擎值处理脚本。
+/// </summary>
+public enum GatewayScriptType
+{
+    DatabaseWrite,
+    TagLinkage,
+    ValueTransform
+}
+
+/// <summary>
+/// 定义值处理脚本允许出现的使用位置。
+/// </summary>
+public enum ValueTransformScriptScope
+{
+    RuleEngine,
+    TagCleaning,
+    Both
+}
+
+/// <summary>
 /// 定义脚本的触发方式。
 /// </summary>
 public enum ScriptTriggerType

@@ -160,6 +160,11 @@ namespace IPC.Runtime.Configuration
             TransformUseAbsolute = false;
             TransformExpression = string.Empty;
             TransformTimeoutMilliseconds = 50;
+            ValueScriptId = string.Empty;
+            ValueScriptVersion = 0;
+            ValueScriptCategory = string.Empty;
+            ValueScriptInputDataType = string.Empty;
+            ValueScriptOutputDataType = string.Empty;
             SequenceWindowSeconds = 60;
             SequenceStepTimeoutSeconds = 0;
             SequenceMinIntervalSeconds = 0;
@@ -297,6 +302,11 @@ namespace IPC.Runtime.Configuration
         public bool TransformUseAbsolute { get; set; }
         public string TransformExpression { get; set; }
         public int TransformTimeoutMilliseconds { get; set; }
+        public string ValueScriptId { get; set; }
+        public int ValueScriptVersion { get; set; }
+        public string ValueScriptCategory { get; set; }
+        public string ValueScriptInputDataType { get; set; }
+        public string ValueScriptOutputDataType { get; set; }
         public int SequenceWindowSeconds { get; set; }
         public int SequenceStepTimeoutSeconds { get; set; }
         public int SequenceMinIntervalSeconds { get; set; }
@@ -397,6 +407,7 @@ namespace IPC.Runtime.Configuration
         public const string ContextGate = "ContextGate";
         public const string Transform = "Transform";
         public const string Function = "Function";
+        public const string ValueScript = "ValueScript";
         public const string Sequence = "Sequence";
         public const string Logic = "Logic";
         public const string Duration = "Duration";

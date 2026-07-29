@@ -1,4 +1,5 @@
 import type { FlowRuleDefinition, FlowRuleEdge, FlowRuleNode } from '../api'
+import type { ValueTransformCatalogItem } from '../scriptingApi'
 import type { TagSelection } from './tagSelection'
 
 export const FLOW_NODE_GROUPS = [
@@ -221,6 +222,11 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     transformUseAbsolute: false,
     transformExpression: nodeType === 'Function' ? '{value}' : '',
     transformTimeoutMilliseconds: 50,
+    valueScriptId: '',
+    valueScriptVersion: 0,
+    valueScriptCategory: '',
+    valueScriptInputDataType: '',
+    valueScriptOutputDataType: '',
     sequenceWindowSeconds: 60,
     sequenceStepTimeoutSeconds: 0,
     sequenceMinIntervalSeconds: 0,
@@ -254,6 +260,21 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     webhookTimeoutSeconds: 5,
     webhookRetryCount: 0
   }
+}
+
+/**
+ * 根据脚本目录创建固定发布版本的规则节点。
+ */
+export function createValueScriptFlowNode(script: ValueTransformCatalogItem, index = 0): FlowRuleNode {
+  const node = createFlowNode('ValueScript', index)
+  node.label = script.name
+  node.valueScriptId = script.id
+  node.valueScriptVersion = script.version
+  node.valueScriptCategory = script.nodeCategory
+  node.valueScriptInputDataType = script.inputDataType
+  node.valueScriptOutputDataType = script.outputDataType
+  node.transformTimeoutMilliseconds = 100
+  return node
 }
 
 export function createEdge(sourceNodeId: string, targetNodeId: string): FlowRuleEdge {
@@ -496,6 +517,12 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         errors.push('函数/数据处理超时必须在 1-5000ms 之间')
       }
     }
+    if (node.nodeType === 'ValueScript') {
+      if (!node.valueScriptId?.trim() || Number(node.valueScriptVersion) <= 0) errors.push('值处理脚本节点必须选择一个已发布版本')
+      if (!Number.isFinite(Number(node.transformTimeoutMilliseconds)) || Number(node.transformTimeoutMilliseconds) < 10 || Number(node.transformTimeoutMilliseconds) > 5000) {
+        errors.push('值处理脚本超时必须在 10-5000ms 之间')
+      }
+    }
     if (node.nodeType === 'Sequence') {
       if (!Number.isFinite(Number(node.sequenceWindowSeconds)) || Number(node.sequenceWindowSeconds) <= 0) {
         errors.push('顺序/时序总窗口必须大于 0 秒')
@@ -594,6 +621,7 @@ export function nodeDisplayName(node: FlowRuleNode) {
   if (node.nodeType === 'DebugProbe') return `${title}: ${node.debugLabel || 'trace'}`
   if (node.nodeType === 'Transform') return `${title}: x${node.transformMultiplier ?? 1} ${formatOffset(node.transformOffset ?? 0)}`
   if (node.nodeType === 'Function') return `${title}: ${node.transformExpression || '{value}'}`
+  if (node.nodeType === 'ValueScript') return `${title}: v${node.valueScriptVersion || 0} ${node.valueScriptInputDataType || '?'} → ${node.valueScriptOutputDataType || '?'}`
   if (node.nodeType === 'Sequence') return `${title}: ${node.sequenceWindowSeconds || 60}s`
   if (node.nodeType === 'EmailNotify') return `${title}: ${node.emailTo || '未配置收件人'}`
   if (node.nodeType === 'WebhookCall') return `${title}: ${node.webhookMethod || 'POST'}`

@@ -260,6 +260,7 @@ public sealed class GatewayRuntimeStateCache : IDisposable
             MergeTagsNoLock(tags);
             MergeErrorsNoLock(errors);
             PruneToActiveProjectNoLock();
+            PruneResolvedErrorsNoLock();
             MarkDirtyNoLock();
         }
     }
@@ -332,6 +333,26 @@ public sealed class GatewayRuntimeStateCache : IDisposable
 
         for (int i = MaxRecentErrors; i < ordered.Count; i++)
             _errors.Remove(ordered[i].Key);
+    }
+
+    /// <summary>
+    /// 从缓存中移除已经恢复的连接错误、读取错误和连接恢复通知。
+    /// </summary>
+    private void PruneResolvedErrorsNoLock()
+    {
+        IList<RuntimeErrorDetail> activeErrors = RuntimeErrorActivityFilter.Filter(
+            _errors.Values.ToList(),
+            _devices.Values.ToList(),
+            _tags.Values.ToList());
+        HashSet<string> activeKeys = activeErrors
+            .Select(GetErrorKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string key in _errors.Keys.ToList())
+        {
+            if (!activeKeys.Contains(key))
+                _errors.Remove(key);
+        }
     }
 
     private void MarkDevicesOffline()

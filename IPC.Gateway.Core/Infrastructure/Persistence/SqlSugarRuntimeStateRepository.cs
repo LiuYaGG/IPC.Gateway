@@ -88,9 +88,10 @@ public sealed class SqlSugarRuntimeStateRepository
         {
             HashSet<string> deviceIds = await UpsertDevicesAsync(db, normalizedProjectId, snapshot.Devices, updatedUtc);
             HashSet<string> tagIds = await UpsertTagsAsync(db, normalizedProjectId, snapshot.Tags, updatedUtc);
+            HashSet<string> errorIds = await UpsertErrorsAsync(db, normalizedProjectId, snapshot.RecentErrors, updatedUtc);
             await DeleteMissingDevicesAsync(db, normalizedProjectId, deviceIds);
             await DeleteMissingTagsAsync(db, normalizedProjectId, tagIds);
-            await UpsertErrorsAsync(db, normalizedProjectId, snapshot.RecentErrors, updatedUtc);
+            await DeleteMissingErrorsAsync(db, normalizedProjectId, errorIds);
             await TrimErrorsAsync(db, normalizedProjectId);
             await db.Ado.CommitTranAsync();
         }
@@ -183,12 +184,12 @@ public sealed class SqlSugarRuntimeStateRepository
             .ExecuteCommandAsync();
     }
 
-    private static async Task UpsertErrorsAsync(ISqlSugarClient db, string projectId, IList<RuntimeErrorDetail> errors, DateTime updatedUtc)
+    private static async Task<HashSet<string>> UpsertErrorsAsync(ISqlSugarClient db, string projectId, IList<RuntimeErrorDetail> errors, DateTime updatedUtc)
     {
-        if (errors == null)
-            return;
-
         HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (errors == null)
+            return seen;
+
         List<GatewayRuntimeErrorEntity> entities = new List<GatewayRuntimeErrorEntity>();
         foreach (RuntimeErrorDetail error in errors)
         {
@@ -204,6 +205,27 @@ public sealed class SqlSugarRuntimeStateRepository
 
         if (entities.Count > 0)
             await db.Storageable(entities).WhereColumns(item => item.Id).ExecuteCommandAsync();
+
+        return seen;
+    }
+
+    /// <summary>
+    /// 删除当前快照中已经不存在的运行时错误，避免已恢复错误长期残留。
+    /// </summary>
+    private static async Task DeleteMissingErrorsAsync(ISqlSugarClient db, string projectId, HashSet<string> activeIds)
+    {
+        List<string> ids = activeIds == null ? new List<string>() : activeIds.ToList();
+        if (ids.Count == 0)
+        {
+            await db.Deleteable<GatewayRuntimeErrorEntity>()
+                .Where(item => item.ProjectId == projectId)
+                .ExecuteCommandAsync();
+            return;
+        }
+
+        await db.Deleteable<GatewayRuntimeErrorEntity>()
+            .Where(item => item.ProjectId == projectId && !ids.Contains(item.Id))
+            .ExecuteCommandAsync();
     }
 
     private static async Task TrimErrorsAsync(ISqlSugarClient db, string projectId)

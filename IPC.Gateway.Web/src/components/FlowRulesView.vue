@@ -98,11 +98,11 @@
           <div class="flow-palette">
             <div class="flow-palette__header">
               <strong>节点库</strong>
-              <el-tag size="small" type="info">{{ FLOW_NODE_GROUPS.length }} 组</el-tag>
+              <el-tag size="small" type="info">{{ paletteGroups.length }} 组</el-tag>
             </div>
             <el-collapse v-model="paletteActiveGroups" class="flow-palette-collapse">
               <el-collapse-item
-                v-for="group in FLOW_NODE_GROUPS"
+                v-for="group in paletteGroups"
                 :key="group.title"
                 :name="group.title"
               >
@@ -116,10 +116,10 @@
                   <template v-if="canEditCurrentFlowRule">
                     <el-button
                       v-for="item in group.nodes"
-                      :key="item.type"
+                      :key="item.script ? `${item.type}:${item.script.id}` : item.type"
                       class="flow-palette__button"
                       :icon="Plus"
-                      @click="addNode(item.type)"
+                      @click="addNode(item)"
                     >
                       {{ item.label }}
                     </el-button>
@@ -160,6 +160,7 @@
           <FlowRuleProperties
             :node="selectedNode"
             :project="project"
+            :value-scripts="valueScripts"
             @delete="canEditCurrentFlowRule && deleteSelectedNode()"
           />
         </div>
@@ -195,6 +196,7 @@ import {
   type ProjectConfig,
   type RuleEngineRuntimeStatus
 } from '../api'
+import { loadValueTransformCatalog, type ValueTransformCatalogItem } from '../scriptingApi'
 import FlowRuleCanvas from './FlowRuleCanvas.vue'
 import FlowRuleProperties from './FlowRuleProperties.vue'
 import {
@@ -202,6 +204,7 @@ import {
   createEdge,
   createFlowNode,
   createFlowRuleTemplate,
+  createValueScriptFlowNode,
   FLOW_NODE_GROUPS,
   validateFlowRule
 } from '../utils/flowRules'
@@ -231,8 +234,27 @@ const canvasZoom = ref(1)
 const flowSearch = ref('')
 const copiedNode = ref<FlowRuleNode | null>(null)
 const debugHighlight = ref(true)
+const valueScripts = ref<ValueTransformCatalogItem[]>([])
+
+type PaletteNode = { type: string; label: string; script?: ValueTransformCatalogItem }
 
 const paletteActiveGroups = ref<string[]>(FLOW_NODE_GROUPS[0]?.title ? [FLOW_NODE_GROUPS[0].title] : [])
+const paletteGroups = computed(() => {
+  const groups = FLOW_NODE_GROUPS.map(group => ({
+    title: group.title,
+    nodes: group.nodes.map(item => ({ ...item } as PaletteNode))
+  }))
+  for (const script of valueScripts.value.filter(item => item.scope !== 'TagCleaning')) {
+    const title = script.nodeCategory?.trim() || '处理'
+    let group = groups.find(item => item.title === title)
+    if (!group) {
+      group = { title, nodes: [] }
+      groups.push(group)
+    }
+    group.nodes.push({ type: 'ValueScript', label: script.name, script })
+  }
+  return groups
+})
 const enabledCount = computed(() => rules.value.filter(rule => rule.enabled).length)
 const canCreateFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesCreate))
 const canEditFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesEdit))
@@ -298,7 +320,12 @@ watch(() => props.project, value => {
 
 watch([drawerVisible, saving], () => emit('editing-state', drawerVisible.value || saving.value), { immediate: true })
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    valueScripts.value = (await loadValueTransformCatalog()).data
+  } catch {
+    valueScripts.value = []
+  }
   load()
   window.addEventListener('keydown', handleEditorShortcut)
 })
@@ -347,10 +374,12 @@ function resetPaletteGroups() {
   paletteActiveGroups.value = FLOW_NODE_GROUPS[0]?.title ? [FLOW_NODE_GROUPS[0].title] : []
 }
 
-function addNode(nodeType: string) {
+function addNode(item: PaletteNode) {
   if (!canEditCurrentFlowRule.value) return
   if (!form.value) return
-  const node = createFlowNode(nodeType, form.value.nodes.length)
+  const node = item.script
+    ? createValueScriptFlowNode(item.script, form.value.nodes.length)
+    : createFlowNode(item.type, form.value.nodes.length)
   form.value.nodes.push(node)
   selectedNodeId.value = node.id
   selectedEdgeId.value = ''

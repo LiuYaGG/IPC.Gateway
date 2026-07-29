@@ -12,12 +12,14 @@ public sealed class GatewayScriptGlobals
     /// </summary>
     public GatewayScriptGlobals(
         ScriptTagApi tags,
+        ScriptTagWriteApi writes,
         ScriptDatabaseApi database,
         ScriptLogCollector log,
         ScriptTriggerContext trigger,
         CancellationToken cancellationToken)
     {
         Tags = tags;
+        Writes = writes;
         Database = database;
         Log = log;
         Trigger = trigger;
@@ -25,6 +27,7 @@ public sealed class GatewayScriptGlobals
     }
 
     public ScriptTagApi Tags { get; }
+    public ScriptTagWriteApi Writes { get; }
     public ScriptDatabaseApi Database { get; }
     public ScriptLogCollector Log { get; }
     public ScriptTriggerContext Trigger { get; }

@@ -27,6 +27,7 @@
             <el-option label="表达式规则" value="Expression" />
             <el-option label="数据处理" value="Transform" />
             <el-option label="函数节点" value="Function" />
+            <el-option v-if="node.nodeType === 'ValueScript'" label="值处理脚本" value="ValueScript" />
             <el-option label="AND/OR" value="Logic" />
             <el-option label="持续确认" value="Duration" />
             <el-option label="顺序/时序" value="Sequence" />
@@ -493,6 +494,29 @@
           </el-form-item>
         </template>
 
+        <template v-if="node.nodeType === 'ValueScript'">
+          <el-alert title="规则节点固定使用所选脚本的发布版本；如需升级版本，请重新选择脚本。" type="info" :closable="false" />
+          <el-form-item label="值处理脚本">
+            <el-select :model-value="node.valueScriptId" filterable style="width: 100%" @change="changeValueScript">
+              <el-option
+                v-for="script in ruleValueScripts"
+                :key="script.id"
+                :label="`${script.name}（v${script.version}）`"
+                :value="script.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="固定发布版本">
+            <el-input-number v-model="node.valueScriptVersion" :disabled="true" :controls="false" />
+          </el-form-item>
+          <el-form-item label="输入 / 输出">
+            <el-input :model-value="`${node.valueScriptInputDataType || '-'} → ${node.valueScriptOutputDataType || '-'}`" disabled />
+          </el-form-item>
+          <el-form-item label="超时（ms）">
+            <el-input-number v-model="node.transformTimeoutMilliseconds" :min="10" :max="5000" :controls="false" />
+          </el-form-item>
+        </template>
+
         <el-form-item v-if="node.nodeType === 'Logic'" label="组合方式">
           <el-segmented v-model="node.logicalOperator" :options="['And', 'Or']" />
         </el-form-item>
@@ -626,6 +650,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FlowRuleNode, ProjectConfig } from '../api'
+import type { ValueTransformCatalogItem } from '../scriptingApi'
 import { Plus } from '@element-plus/icons-vue'
 import TagSelector from './TagSelector.vue'
 import { applyTagSelectionToNode } from '../utils/flowRules'
@@ -634,6 +659,7 @@ import { findTagSelectionKey, type TagSelection } from '../utils/tagSelection'
 const props = defineProps<{
   node: FlowRuleNode | null
   project: ProjectConfig | null
+  valueScripts: ValueTransformCatalogItem[]
 }>()
 
 defineEmits<{
@@ -704,6 +730,22 @@ const needsTagSource = computed(() => !!props.node && [
   'TagRelation',
   'ContextGate'
 ].includes(props.node.nodeType))
+const ruleValueScripts = computed(() => props.valueScripts.filter(script => script.scope !== 'TagCleaning'))
+
+/**
+ * 替换规则节点使用的脚本并固定当前发布版本及类型元数据。
+ */
+function changeValueScript(scriptId: string) {
+  if (!props.node) return
+  const script = ruleValueScripts.value.find(item => item.id === scriptId)
+  if (!script) return
+  props.node.label = script.name
+  props.node.valueScriptId = script.id
+  props.node.valueScriptVersion = script.version
+  props.node.valueScriptCategory = script.nodeCategory
+  props.node.valueScriptInputDataType = script.inputDataType
+  props.node.valueScriptOutputDataType = script.outputDataType
+}
 
 function changeTag(selection: TagSelection | null) {
   if (!props.node) return

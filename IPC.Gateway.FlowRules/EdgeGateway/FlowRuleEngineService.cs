@@ -33,6 +33,7 @@ namespace IPC.EdgeGateway
         private readonly MqttGatewayOptions _gatewayOptions;
         private readonly CircuitBreakerOptions _circuitBreakerOptions;
         private readonly IModelInferenceService _modelInference;
+        private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private readonly TagValueChangedWorker _tagValueWorker;
         private EdgeRuleEngineService _engine;
         private bool _running;
@@ -53,7 +54,8 @@ namespace IPC.EdgeGateway
             Func<string, string, int, bool> mqttPublisher,
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
-            IModelInferenceService? modelInference = null)
+            IModelInferenceService? modelInference = null,
+            IValueTransformScriptRuntime? valueTransformScripts = null)
         {
             _runtime = runtime;
             _projectConfig = projectConfig;
@@ -61,6 +63,7 @@ namespace IPC.EdgeGateway
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
             _circuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
+            _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
             _syncRoot = new object();
             _tagValueWorker = new TagValueChangedWorker(
                 "IPC Flow Rule Tag Worker",
@@ -160,7 +163,14 @@ namespace IPC.EdgeGateway
 
         private EdgeRuleEngineService CreateInnerEngine()
         {
-            return new EdgeRuleEngineService(_runtime, BuildRuntimeProject(), _mqttPublisher, _gatewayOptions, _circuitBreakerOptions, _modelInference);
+            return new EdgeRuleEngineService(
+                _runtime,
+                BuildRuntimeProject(),
+                _mqttPublisher,
+                _gatewayOptions,
+                _circuitBreakerOptions,
+                _modelInference,
+                _valueTransformScripts);
         }
 
         private void ReplaceInnerEngine()

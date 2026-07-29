@@ -60,6 +60,7 @@ namespace IPC.Gateway.Core.Gateway
         private OpcUaServerService _opcUa;
         private readonly IFlowRuleEngineFactory _flowRuleEngineFactory;
         private readonly IModelInferenceService _modelInference;
+        private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private IFlowRuleEngineService _flowRuleEngine;
         private ProjectConfig _project;
         private ProjectConfigValidationResult _lastValidation;
@@ -74,7 +75,8 @@ namespace IPC.Gateway.Core.Gateway
             LocalHistoryOptions historyOptions,
             StorageHealthThresholds storageHealthThresholds,
             IFlowRuleEngineFactory? flowRuleEngineFactory = null,
-            IModelInferenceService? modelInference = null)
+            IModelInferenceService? modelInference = null,
+            IValueTransformScriptRuntime? valueTransformScripts = null)
         {
             _syncRoot = new object();
             _configurationMutationSemaphore = new SemaphoreSlim(1, 1);
@@ -86,7 +88,8 @@ namespace IPC.Gateway.Core.Gateway
             _systemResources = new SystemResourceMonitor();
             _flowRuleEngineFactory = flowRuleEngineFactory ?? new NoopFlowRuleEngineFactory();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
-            Runtime = new RuntimeEngine(_runtimeOptions.Scheduler);
+            _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
+            Runtime = new RuntimeEngine(_runtimeOptions.Scheduler, _valueTransformScripts);
             _mqttOptions = _configurationStore.LoadOrCreateMqtt(mqttOptions);
             _opcUaOptions = _configurationStore.LoadOrCreateOpcUa(opcUaOptions);
             _historyOptions = _configurationStore.LoadOrCreateHistory(historyOptions);
@@ -1273,7 +1276,7 @@ namespace IPC.Gateway.Core.Gateway
                     ConfigValidation = _lastValidation,
                     Devices = runtimeState.Devices,
                     Tags = runtimeState.Tags,
-                    RecentErrors = runtimeState.RecentErrors.Take(20).ToList(),
+                    RecentErrors = runtimeState.RecentErrors.ToList(),
                     Mqtt = _mqtt.GetStatus(),
                     OpcUa = _opcUa.GetStatus(),
                     History = _history.GetStats(),
@@ -2081,7 +2084,11 @@ namespace IPC.Gateway.Core.Gateway
 
             status.Devices = FilterRuntimeDevices(status.Devices, activeDeviceKeys);
             status.Tags = FilterRuntimeTags(status.Tags, activeTagKeys);
-            status.RecentErrors = FilterRuntimeErrors(status.RecentErrors, activeDeviceKeys);
+            status.RecentErrors = FilterRuntimeErrors(
+                status.RecentErrors,
+                activeDeviceKeys,
+                status.Devices,
+                status.Tags);
         }
 
         private static void BuildActiveRuntimeScope(
@@ -2178,17 +2185,28 @@ namespace IPC.Gateway.Core.Gateway
 
         private static IList<RuntimeErrorDetail> FilterRuntimeErrors(
             IList<RuntimeErrorDetail>? errors,
-            HashSet<string> activeDeviceKeys)
+            HashSet<string> activeDeviceKeys,
+            IList<DeviceRuntimeStatus> devices,
+            IList<TagValueSnapshot> tags)
         {
             if (errors == null || errors.Count == 0)
                 return new List<RuntimeErrorDetail>();
             if (activeDeviceKeys.Count == 0)
-                return errors.Where(error => error != null && string.IsNullOrWhiteSpace(error.DeviceId)).ToList();
+                return errors
+                    .Where(error => error != null && string.IsNullOrWhiteSpace(error.DeviceId))
+                    .OrderByDescending(error => error.Timestamp)
+                    .Take(20)
+                    .ToList();
 
-            return errors
+            IList<RuntimeErrorDetail> inScope = errors
                 .Where(error => error != null &&
                     (string.IsNullOrWhiteSpace(error.DeviceId) ||
                      activeDeviceKeys.Contains(BuildDeviceIdentity(error.ChannelId, error.DeviceId))))
+                .ToList();
+
+            return RuntimeErrorActivityFilter.Filter(inScope, devices, tags)
+                .OrderByDescending(error => error.Timestamp)
+                .Take(20)
                 .ToList();
         }
 

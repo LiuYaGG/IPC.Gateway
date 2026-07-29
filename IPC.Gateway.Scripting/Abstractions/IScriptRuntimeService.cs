@@ -18,6 +18,14 @@ public interface IScriptRuntimeService
     Task<ScriptValidationResult> ValidateAsync(string sourceCode, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 按脚本业务类型校验能力边界并执行编译检查。
+    /// </summary>
+    Task<ScriptValidationResult> ValidateAsync(
+        string sourceCode,
+        GatewayScriptType scriptType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 手动执行指定脚本。
     /// </summary>
     Task<ScriptExecutionResult> ExecuteManualAsync(string scriptId, CancellationToken cancellationToken = default);

@@ -299,6 +299,12 @@ namespace IPC.Runtime.Configuration
                 {
                     errors.Add("状态机目标值与明确恢复值不能相同：" + (node.Label ?? node.NodeType));
                 }
+
+                if (IsType(node, FlowRuleNodeTypes.ValueScript) &&
+                    (string.IsNullOrWhiteSpace(node.ValueScriptId) || node.ValueScriptVersion <= 0))
+                {
+                    errors.Add("值处理脚本节点必须引用一个已发布版本：" + (node.Label ?? node.NodeType));
+                }
             }
         }
 
@@ -321,6 +327,16 @@ namespace IPC.Runtime.Configuration
                    IsType(node, FlowRuleNodeTypes.ModelInference) ||
                    IsType(node, FlowRuleNodeTypes.TagRelation) ||
                    IsType(node, FlowRuleNodeTypes.ContextGate);
+        }
+
+        /// <summary>
+        /// 判断节点是否为数值转换节点。
+        /// </summary>
+        private static bool IsTransformNode(FlowRuleNode node)
+        {
+            return IsType(node, FlowRuleNodeTypes.Transform) ||
+                   IsType(node, FlowRuleNodeTypes.Function) ||
+                   IsType(node, FlowRuleNodeTypes.ValueScript);
         }
 
         private static bool IsBasicConditionNode(FlowRuleNode node)

@@ -532,6 +532,8 @@ export interface EdgeRuleConfig {
   transformUseAbsolute?: boolean
   transformExpression?: string
   transformTimeoutMilliseconds?: number
+  valueScriptId?: string
+  valueScriptVersion?: number
   qualityOperator?: string
   qualityValues?: string
   windowStatistic?: string
@@ -658,6 +660,8 @@ export interface EdgeRuleCondition {
   transformOffset?: number
   transformUseAbsolute?: boolean
   transformExpression?: string
+  valueScriptId?: string
+  valueScriptVersion?: number
 }
 
 export interface FlowRuleDefinition {
@@ -782,6 +786,11 @@ export interface FlowRuleNode {
   transformUseAbsolute: boolean
   transformExpression: string
   transformTimeoutMilliseconds: number
+  valueScriptId: string
+  valueScriptVersion: number
+  valueScriptCategory: string
+  valueScriptInputDataType: string
+  valueScriptOutputDataType: string
   sequenceWindowSeconds: number
   sequenceStepTimeoutSeconds: number
   sequenceMinIntervalSeconds: number
@@ -984,6 +993,11 @@ export interface DataCleaningConfig {
   unitMultiplier: number
   unitOffset: number
   preserveLastGoodOnFilter: boolean
+  valueScriptEnabled: boolean
+  valueScriptId: string
+  valueScriptVersion: number
+  valueScriptTimeoutMilliseconds: number
+  valueScriptFailurePolicy: 'KeepLastGood' | 'UseOriginal' | 'MarkBad'
 }
 
 export interface DataCleaningEnumMapping {

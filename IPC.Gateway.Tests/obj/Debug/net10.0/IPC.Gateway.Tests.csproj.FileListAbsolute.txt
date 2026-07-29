@@ -355,5 +355,5 @@ E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\IPC.Gateway.Licensing.dll
 E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\IPC.Gateway.Scripting.dll
 E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\IPC.Gateway.Licensing.pdb
 E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\IPC.Gateway.Scripting.pdb
-E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\wwwroot\assets\index-DaPz0m4V.css
-E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\wwwroot\assets\index-rfDiTlLi.js
+E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\wwwroot\assets\index-CAQXqFf5.js
+E:\IPC\IPC.Gateway\IPC.Gateway.Tests\bin\Debug\net10.0\wwwroot\assets\index-VKRew9F0.css

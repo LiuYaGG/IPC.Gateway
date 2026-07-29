@@ -249,10 +249,10 @@ E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\IPC.Gateway.Scripting.p
 E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\ClickHouse.Driver.dll
 E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\Microsoft.IO.RecyclableMemoryStream.dll
 E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\NodaTime.dll
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-rfDiTlLi.js.gz
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-DaPz0m4V.css.gz
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-DaPz0m4V.css
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-rfDiTlLi.js
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\8yinr9gy20-{0}-sv0nv8zlxq-sv0nv8zlxq.gz
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\3y9xrhvxl2-{0}-p8fai7sri7-p8fai7sri7.gz
-E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\sr9150fvzb-{0}-df21td5g4x-df21td5g4x.gz
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-CAQXqFf5.js.gz
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-VKRew9F0.css.gz
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-CAQXqFf5.js
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\bin\Debug\net10.0\wwwroot\assets\index-VKRew9F0.css
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\m25wds2xxw-{0}-cdx07sqae2-cdx07sqae2.gz
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\nnli4zbk7v-{0}-2yi80qrfwq-2yi80qrfwq.gz
+E:\IPC\IPC.Gateway\IPC.Gateway.WebHost\obj\Debug\net10.0\compressed\sr9150fvzb-{0}-i9r2nqipe3-i9r2nqipe3.gz

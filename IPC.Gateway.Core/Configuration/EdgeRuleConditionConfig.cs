@@ -49,6 +49,8 @@ namespace IPC.Runtime.Configuration
             TransformOffset = 0D;
             TransformUseAbsolute = false;
             TransformExpression = string.Empty;
+            ValueScriptId = string.Empty;
+            ValueScriptVersion = 0;
         }
 
         public string Id { get; set; }
@@ -68,5 +70,7 @@ namespace IPC.Runtime.Configuration
         public double TransformOffset { get; set; }
         public bool TransformUseAbsolute { get; set; }
         public string TransformExpression { get; set; }
+        public string ValueScriptId { get; set; }
+        public int ValueScriptVersion { get; set; }
     }
 }

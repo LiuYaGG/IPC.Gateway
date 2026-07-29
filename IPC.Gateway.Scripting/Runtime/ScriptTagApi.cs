@@ -9,15 +9,15 @@ namespace IPC.Gateway.Scripting.Runtime;
 public sealed class ScriptTagApi
 {
     private readonly IScriptTagAccessor _accessor;
-    private readonly CancellationToken _cancellationToken;
+    private readonly ScriptTagWriteApi _writes;
 
     /// <summary>
     /// 创建当前脚本执行使用的点位 API。
     /// </summary>
-    public ScriptTagApi(IScriptTagAccessor accessor, CancellationToken cancellationToken)
+    public ScriptTagApi(IScriptTagAccessor accessor, ScriptTagWriteApi writes)
     {
         _accessor = accessor;
-        _cancellationToken = cancellationToken;
+        _writes = writes;
     }
 
     /// <summary>
@@ -73,6 +73,6 @@ public sealed class ScriptTagApi
     /// </summary>
     public Task WriteAsync(string path, object? value)
     {
-        return _accessor.WriteAsync(path, value, _cancellationToken);
+        return _writes.WriteAsync(path, value);
     }
 }

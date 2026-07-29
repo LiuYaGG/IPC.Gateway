@@ -16,6 +16,7 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
     private readonly IScriptTagAccessor _tagAccessor;
     private readonly IScriptDatabaseQueue _databaseQueue;
     private readonly GatewayScriptCompiler _compiler;
+    private readonly ValueTransformScriptService _valueTransformScripts;
     private readonly GatewayScriptingOptions _options;
     private readonly ILogger<GatewayScriptRuntimeService> _logger;
     private readonly object _scriptsSyncRoot = new();
@@ -34,6 +35,7 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         IScriptTagAccessor tagAccessor,
         IScriptDatabaseQueue databaseQueue,
         GatewayScriptCompiler compiler,
+        ValueTransformScriptService valueTransformScripts,
         GatewayScriptingOptions options,
         ILogger<GatewayScriptRuntimeService> logger)
     {
@@ -41,6 +43,7 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         _tagAccessor = tagAccessor;
         _databaseQueue = databaseQueue;
         _compiler = compiler;
+        _valueTransformScripts = valueTransformScripts;
         _options = options.Normalize();
         _logger = logger;
     }
@@ -57,6 +60,7 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
             foreach (GatewayScriptDefinition script in document.Scripts)
                 _scripts[script.Id] = script.Clone();
         }
+        _valueTransformScripts.Reload(document);
         _nextIntervalUtc.Clear();
     }
 
@@ -69,11 +73,24 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
     }
 
     /// <summary>
+    /// 按脚本业务类型校验能力边界并执行编译检查。
+    /// </summary>
+    public Task<ScriptValidationResult> ValidateAsync(
+        string sourceCode,
+        GatewayScriptType scriptType,
+        CancellationToken cancellationToken = default)
+    {
+        return _compiler.ValidateAsync(sourceCode, scriptType, cancellationToken);
+    }
+
+    /// <summary>
     /// 手动执行指定脚本，无论该脚本的自动触发开关是否启用。
     /// </summary>
     public async Task<ScriptExecutionResult> ExecuteManualAsync(string scriptId, CancellationToken cancellationToken = default)
     {
         GatewayScriptDefinition script = GetScript(scriptId) ?? throw new KeyNotFoundException("未找到指定脚本。");
+        if (script.ScriptType == GatewayScriptType.ValueTransform)
+            throw new InvalidOperationException("值处理脚本需要测试输入，请使用“测试值”功能执行。");
         return await ExecuteScriptAsync(script, new ScriptTriggerContext
         {
             Type = ScriptTriggerType.Manual,
@@ -123,7 +140,9 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         DateTimeOffset now = DateTimeOffset.UtcNow;
         foreach (GatewayScriptDefinition script in GetScriptsSnapshot())
         {
-            if (!script.Enabled || script.TriggerType != ScriptTriggerType.Interval)
+            if (!script.Enabled ||
+                script.ScriptType == GatewayScriptType.ValueTransform ||
+                script.TriggerType != ScriptTriggerType.Interval)
                 continue;
             DateTimeOffset due = _nextIntervalUtc.GetOrAdd(script.Id, _ => now.AddSeconds(Math.Max(1, script.IntervalSeconds)));
             if (due > now)
@@ -146,17 +165,35 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         DateTimeOffset now = DateTimeOffset.UtcNow;
         foreach (GatewayScriptDefinition script in GetScriptsSnapshot())
         {
-            if (!script.Enabled || script.TriggerType != ScriptTriggerType.TagChanged)
+            if (!script.Enabled ||
+                script.ScriptType == GatewayScriptType.ValueTransform ||
+                script.TriggerType != ScriptTriggerType.TagChanged)
                 continue;
             if (!string.Equals(NormalizePath(script.TriggerTagPath), changedPath, StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (eventArgs.WriteContext is not null &&
+                string.Equals(eventArgs.WriteContext.ScriptId, script.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (eventArgs.WriteContext?.LinkageDepth >= _options.MaxTagLinkageDepth)
+            {
+                _logger.LogWarning(
+                    "脚本联动链路 {CorrelationId} 已达到最大深度 {Depth}，点位 {TagPath} 不再触发后续脚本。",
+                    eventArgs.WriteContext.CorrelationId,
+                    _options.MaxTagLinkageDepth,
+                    eventArgs.CurrentValue.Path);
+                continue;
+            }
             ScriptTriggerContext trigger = new()
             {
                 Type = ScriptTriggerType.TagChanged,
                 TagPath = eventArgs.CurrentValue.Path,
                 PreviousValue = eventArgs.PreviousValue,
                 CurrentValue = eventArgs.CurrentValue,
-                TriggeredUtc = now
+                TriggeredUtc = now,
+                CorrelationId = eventArgs.WriteContext?.CorrelationId ?? Guid.NewGuid().ToString("N"),
+                LinkageDepth = eventArgs.WriteContext?.LinkageDepth ?? 0
             };
             if (!MatchesChangeMode(script.TagChangeMode, trigger))
                 continue;
@@ -206,13 +243,28 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         {
             using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(script.TimeoutSeconds, 1, 300)));
+            bool isTagLinkage = script.ScriptType == GatewayScriptType.TagLinkage;
+            ScriptTagWriteApi writes = new(
+                _tagAccessor,
+                script.AllowedWriteTagPaths,
+                script.MaxWritesPerExecution,
+                new ScriptTagWriteContext
+                {
+                    ScriptId = script.Id,
+                    CorrelationId = string.IsNullOrWhiteSpace(trigger.CorrelationId) ? Guid.NewGuid().ToString("N") : trigger.CorrelationId,
+                    LinkageDepth = trigger.LinkageDepth + 1
+                },
+                logs,
+                timeout.Token,
+                isTagLinkage);
             GatewayScriptGlobals globals = new(
-                new ScriptTagApi(_tagAccessor, timeout.Token),
-                new ScriptDatabaseApi(script.Id, _databaseQueue, timeout.Token),
+                new ScriptTagApi(_tagAccessor, writes),
+                writes,
+                new ScriptDatabaseApi(script.Id, _databaseQueue, timeout.Token, !isTagLinkage),
                 logs,
                 trigger,
                 timeout.Token);
-            object? returnValue = await _compiler.RunAsync(script.SourceCode, globals, timeout.Token).ConfigureAwait(false);
+            object? returnValue = await _compiler.RunAsync(script.SourceCode, script.ScriptType, globals, timeout.Token).ConfigureAwait(false);
             stopwatch.Stop();
             return RecordFinished(script.Id, ScriptExecutionState.Succeeded, returnValue, string.Empty, startedUtc, stopwatch.ElapsedMilliseconds, logs);
         }

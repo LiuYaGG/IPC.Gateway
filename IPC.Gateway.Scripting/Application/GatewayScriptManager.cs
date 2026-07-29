@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
+using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Scripting.Abstractions;
 using IPC.Gateway.Scripting.Models;
+using IPC.Gateway.Scripting.Runtime;
 
 namespace IPC.Gateway.Scripting.Application;
 
@@ -12,6 +14,7 @@ public sealed partial class GatewayScriptManager
     private readonly IScriptConfigurationStore _store;
     private readonly IScriptRuntimeService _runtime;
     private readonly IScriptDatabaseQueue _databaseQueue;
+    private readonly ValueTransformScriptService _valueTransformScripts;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
 
     /// <summary>
@@ -20,11 +23,13 @@ public sealed partial class GatewayScriptManager
     public GatewayScriptManager(
         IScriptConfigurationStore store,
         IScriptRuntimeService runtime,
-        IScriptDatabaseQueue databaseQueue)
+        IScriptDatabaseQueue databaseQueue,
+        ValueTransformScriptService? valueTransformScripts = null)
     {
         _store = store;
         _runtime = runtime;
         _databaseQueue = databaseQueue;
+        _valueTransformScripts = valueTransformScripts ?? new ValueTransformScriptService(store, new GatewayScriptCompiler());
     }
 
     /// <summary>
@@ -158,7 +163,7 @@ public sealed partial class GatewayScriptManager
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
-        ScriptValidationResult validation = await _runtime.ValidateAsync(input.SourceCode, cancellationToken).ConfigureAwait(false);
+        ScriptValidationResult validation = await _runtime.ValidateAsync(input.SourceCode, input.ScriptType, cancellationToken).ConfigureAwait(false);
         if (!validation.Success)
             throw new InvalidOperationException(string.Join(Environment.NewLine, validation.Errors));
 
@@ -174,10 +179,41 @@ public sealed partial class GatewayScriptManager
             saved.IntervalSeconds = Math.Clamp(saved.IntervalSeconds, 1, 86400);
             saved.DebounceMilliseconds = Math.Clamp(saved.DebounceMilliseconds, 0, 60000);
             saved.TimeoutSeconds = Math.Clamp(saved.TimeoutSeconds, 1, 300);
-            if (saved.TriggerType == ScriptTriggerType.TagChanged)
-                saved.TriggerTagPath = ValidateTagPath(saved.TriggerTagPath);
+            saved.MaxWritesPerExecution = Math.Clamp(saved.MaxWritesPerExecution, 1, 100);
+            saved.TransformTimeoutMilliseconds = Math.Clamp(saved.TransformTimeoutMilliseconds, 10, 5000);
+            if (saved.ScriptType == GatewayScriptType.ValueTransform)
+            {
+                saved.TriggerType = ScriptTriggerType.Manual;
+                saved.TriggerTagPath = string.Empty;
+                saved.AllowedWriteTagPaths = [];
+                saved.NodeCategory = saved.ValueTransformScope == ValueTransformScriptScope.TagCleaning
+                    ? string.Empty
+                    : RequireText(saved.NodeCategory, "节点库分类");
+                saved.InputDataType = ValidateValueDataType(saved.InputDataType, "输入数据类型");
+                saved.OutputDataType = ValidateValueDataType(saved.OutputDataType, "输出数据类型");
+                saved.PublishedVersion = existing?.PublishedVersion ?? 0;
+                saved.PublishedSourceCode = existing?.PublishedSourceCode ?? string.Empty;
+                saved.PublishedUtc = existing?.PublishedUtc;
+                saved.PublishedVersions = existing?.PublishedVersions?.Select(item => item.Clone()).ToList() ?? [];
+            }
+            else if (saved.TriggerType == ScriptTriggerType.TagChanged)
+                saved.TriggerTagPath = ValidateTagPath(saved.TriggerTagPath, "触发点位路径");
             else
                 saved.TriggerTagPath = string.Empty;
+            if (saved.ScriptType == GatewayScriptType.TagLinkage)
+            {
+                saved.AllowedWriteTagPaths = (saved.AllowedWriteTagPaths ?? [])
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => ValidateTagPath(path, "允许写入点位路径"))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (saved.AllowedWriteTagPaths.Count == 0)
+                    throw new InvalidOperationException("点位联动脚本至少需要选择一个允许写入的目标点位。");
+            }
+            else
+            {
+                saved.AllowedWriteTagPaths = [];
+            }
             saved.CreatedUtc = existing?.CreatedUtc ?? DateTimeOffset.UtcNow;
             saved.UpdatedUtc = DateTimeOffset.UtcNow;
             saved.Version = Math.Max(1, (existing?.Version ?? 0) + 1);
@@ -200,6 +236,58 @@ public sealed partial class GatewayScriptManager
     {
         await MutateDeleteAsync(id, "脚本", document => document.Scripts, cancellationToken).ConfigureAwait(false);
         await _runtime.ReloadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 将值处理脚本当前草稿发布为可供规则和标签清洗引用的固定版本。
+    /// </summary>
+    public async Task<GatewayScriptDefinition> PublishValueScriptAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ScriptConfigurationDocument document = await _store.LoadAsync(cancellationToken).ConfigureAwait(false);
+            GatewayScriptDefinition script = document.Scripts.FirstOrDefault(item => SameId(item.Id, id)) ??
+                                             throw new KeyNotFoundException("未找到指定脚本。");
+            if (script.ScriptType != GatewayScriptType.ValueTransform)
+                throw new InvalidOperationException("只有值处理脚本支持发布版本。");
+
+            ScriptValidationResult validation = await _runtime
+                .ValidateAsync(script.SourceCode, GatewayScriptType.ValueTransform, cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.Success)
+                throw new InvalidOperationException(string.Join(Environment.NewLine, validation.Errors));
+
+            script.PublishedVersion = Math.Max(1, script.Version);
+            script.PublishedSourceCode = script.SourceCode;
+            script.PublishedUtc = DateTimeOffset.UtcNow;
+            script.PublishedVersions ??= [];
+            script.PublishedVersions.RemoveAll(item => item.Version == script.PublishedVersion);
+            script.PublishedVersions.Add(new ValueTransformPublishedVersion
+            {
+                Version = script.PublishedVersion,
+                SourceCode = script.PublishedSourceCode,
+                PublishedUtc = script.PublishedUtc.Value
+            });
+            script.UpdatedUtc = DateTimeOffset.UtcNow;
+            await _store.SaveAsync(document, cancellationToken).ConfigureAwait(false);
+            await _runtime.ReloadAsync(cancellationToken).ConfigureAwait(false);
+            return script.Clone();
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 使用测试值执行尚未发布的值处理脚本草稿。
+    /// </summary>
+    public ValueTransformExecutionResult TestValueScript(ValueTransformScriptTestRequest request)
+    {
+        return _valueTransformScripts.Test(request);
     }
 
     /// <summary>
@@ -280,12 +368,31 @@ public sealed partial class GatewayScriptManager
     /// <summary>
     /// 校验点位路径必须由四段标识组成。
     /// </summary>
-    private static string ValidateTagPath(string? path)
+    private static string ValidateTagPath(string? path, string displayName)
     {
-        string normalized = RequireText(path, "触发点位路径");
-        if (normalized.Split('/').Length != 4)
-            throw new InvalidOperationException("触发点位路径必须为 ChannelId/DeviceId/GroupId/TagId，设备直属点位的 GroupId 留空但保留斜杠。");
-        return normalized;
+        string normalized = RequireText(path, displayName);
+        string[] parts = normalized.Split('/');
+        if (parts.Length != 4 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]) || string.IsNullOrWhiteSpace(parts[3]))
+            throw new InvalidOperationException($"{displayName}必须为 ChannelId/DeviceId/GroupId/TagId，设备直属点位的 GroupId 留空但保留斜杠。");
+        return string.Join("/", parts.Select(part => part.Trim()));
+    }
+
+    /// <summary>
+    /// 校验值处理脚本声明的输入和输出数据类型。
+    /// </summary>
+    private static string ValidateValueDataType(string? value, string displayName)
+    {
+        string normalized = RequireText(value, displayName);
+        string[] supported =
+        [
+            "Bool", "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32",
+            "Int64", "UInt64", "Float", "Double", "Decimal", "String", "DateTime", "Object",
+            "BoolArray", "Int8Array", "UInt8Array", "Int16Array", "UInt16Array",
+            "Int32Array", "UInt32Array", "Int64Array", "UInt64Array", "FloatArray", "DoubleArray"
+        ];
+        string? match = supported.FirstOrDefault(item =>
+            string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase));
+        return match ?? throw new InvalidOperationException($"{displayName}“{normalized}”不受支持。");
     }
 
     /// <summary>

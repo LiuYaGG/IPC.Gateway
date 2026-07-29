@@ -2,6 +2,8 @@ import { request, type ApiResult } from './api'
 
 export type ScriptTriggerType = 'Manual' | 'Interval' | 'TagChanged'
 export type ScriptTagChangeMode = 'Any' | 'RisingEdge' | 'FallingEdge'
+export type GatewayScriptType = 'DatabaseWrite' | 'TagLinkage' | 'ValueTransform'
+export type ValueTransformScriptScope = 'RuleEngine' | 'TagCleaning' | 'Both'
 export type ScriptDatabaseProvider =
   | 'SqlServer'
   | 'PostgreSql'
@@ -43,14 +45,24 @@ export interface GatewayScriptDefinition {
   name: string
   description: string
   enabled: boolean
+  scriptType: GatewayScriptType
   triggerType: ScriptTriggerType
   intervalSeconds: number
   triggerTagPath: string
   tagChangeMode: ScriptTagChangeMode
   debounceMilliseconds: number
   timeoutSeconds: number
+  allowedWriteTagPaths: string[]
+  maxWritesPerExecution: number
+  valueTransformScope: ValueTransformScriptScope
+  nodeCategory: string
+  inputDataType: string
+  outputDataType: string
+  transformTimeoutMilliseconds: number
   sourceCode: string
   version?: number
+  publishedVersion?: number
+  publishedUtc?: string
   createdUtc?: string
   updatedUtc?: string
 }
@@ -107,14 +119,35 @@ export interface ScriptExecutionResult {
   logs: ScriptLogEntry[]
 }
 
+export interface ValueTransformCatalogItem {
+  id: string
+  name: string
+  description: string
+  scope: ValueTransformScriptScope
+  nodeCategory: string
+  inputDataType: string
+  outputDataType: string
+  version: number
+  publishedUtc?: string
+}
+
+export interface ValueTransformTestResult {
+  success: boolean
+  value?: unknown
+  valueText: string
+  outputDataType: string
+  errorMessage: string
+  durationMilliseconds: number
+}
+
 export async function loadScriptOverview() {
   return request<ApiResult<ScriptCenterOverview>>('/api/scripts/overview')
 }
 
-export async function validateGatewayScript(sourceCode: string) {
+export async function validateGatewayScript(sourceCode: string, scriptType: GatewayScriptType) {
   return request<ApiResult<ScriptValidationResult>>('/api/scripts/validate', {
     method: 'POST',
-    body: JSON.stringify({ sourceCode })
+    body: JSON.stringify({ sourceCode, scriptType })
   })
 }
 
@@ -131,6 +164,27 @@ export async function deleteGatewayScript(id: string) {
 
 export async function executeGatewayScript(id: string) {
   return request<ApiResult<ScriptExecutionResult>>(`/api/scripts/definitions/${encodeURIComponent(id)}/execute`, { method: 'POST' })
+}
+
+export async function publishValueTransformScript(id: string) {
+  return request<ApiResult<GatewayScriptDefinition>>(`/api/scripts/definitions/${encodeURIComponent(id)}/publish`, { method: 'POST' })
+}
+
+export async function loadValueTransformCatalog() {
+  return request<ApiResult<ValueTransformCatalogItem[]>>('/api/scripts/value-transforms/catalog')
+}
+
+export async function testValueTransformScript(payload: {
+  sourceCode: string
+  inputDataType: string
+  outputDataType: string
+  valueText: string
+  timeoutMilliseconds: number
+}) {
+  return request<ApiResult<ValueTransformTestResult>>('/api/scripts/value-transforms/test', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }
 
 export async function saveScriptConnection(connection: ScriptDatabaseConnection) {

@@ -10,6 +10,8 @@ public sealed class ScriptTriggerContext
     public ScriptTagValue? PreviousValue { get; set; }
     public ScriptTagValue? CurrentValue { get; set; }
     public DateTimeOffset TriggeredUtc { get; set; } = DateTimeOffset.UtcNow;
+    public string CorrelationId { get; set; } = Guid.NewGuid().ToString("N");
+    public int LinkageDepth { get; set; }
 
     /// <summary>
     /// 判断当前触发是否为布尔上升沿。

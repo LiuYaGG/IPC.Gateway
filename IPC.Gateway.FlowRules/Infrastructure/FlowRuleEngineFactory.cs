@@ -25,6 +25,19 @@ namespace IPC.Gateway.FlowRules;
 
 public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
 {
+    private readonly IValueTransformScriptRuntime _valueTransformScripts;
+
+    /// <summary>
+    /// 创建携带值处理脚本运行时的规则引擎工厂。
+    /// </summary>
+    public FlowRuleEngineFactory(IValueTransformScriptRuntime? valueTransformScripts = null)
+    {
+        _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
+    }
+
+    /// <summary>
+    /// 创建规则引擎实例。
+    /// </summary>
     public IFlowRuleEngineService Create(
         IRuntimeService runtime,
         ProjectConfig projectConfig,
@@ -33,6 +46,13 @@ public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
         CircuitBreakerOptions circuitBreakerOptions,
         IModelInferenceService modelInference)
     {
-        return new IPC.EdgeGateway.FlowRuleEngineService(runtime, projectConfig, mqttPublisher, gatewayOptions, circuitBreakerOptions, modelInference);
+        return new IPC.EdgeGateway.FlowRuleEngineService(
+            runtime,
+            projectConfig,
+            mqttPublisher,
+            gatewayOptions,
+            circuitBreakerOptions,
+            modelInference,
+            _valueTransformScripts);
     }
 }

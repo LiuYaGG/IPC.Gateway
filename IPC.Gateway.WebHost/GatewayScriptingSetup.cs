@@ -22,7 +22,8 @@ public static class GatewayScriptingSetup
             MaxDatabaseRetryCount = GetInt(section, "MaxDatabaseRetryCount", 10),
             DatabaseRetryBaseSeconds = GetInt(section, "DatabaseRetryBaseSeconds", 2),
             SchedulerResolutionMilliseconds = GetInt(section, "SchedulerResolutionMilliseconds", 500),
-            MaxRecentLogsPerScript = GetInt(section, "MaxRecentLogsPerScript", 50)
+            MaxRecentLogsPerScript = GetInt(section, "MaxRecentLogsPerScript", 50),
+            MaxTagLinkageDepth = GetInt(section, "MaxTagLinkageDepth", 8)
         }.Normalize();
     }
 

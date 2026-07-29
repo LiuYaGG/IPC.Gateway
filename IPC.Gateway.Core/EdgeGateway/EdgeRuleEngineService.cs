@@ -87,6 +87,7 @@ namespace IPC.EdgeGateway
         private readonly Func<string, string, int, bool> _mqttPublisher;
         private readonly MqttGatewayOptions _gatewayOptions;
         private readonly IModelInferenceService _modelInference;
+        private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private readonly Dictionary<string, EdgeRuleState> _states;
         private readonly Dictionary<string, EdgeRuleRuntimeRuleStatus> _ruleStatuses;
         private readonly Dictionary<string, TagValueSnapshot> _snapshotsByPoint;
@@ -116,7 +117,8 @@ namespace IPC.EdgeGateway
             Func<string, string, int, bool> mqttPublisher,
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
-            IModelInferenceService? modelInference = null)
+            IModelInferenceService? modelInference = null,
+            IValueTransformScriptRuntime? valueTransformScripts = null)
         {
             _runtime = runtime;
             _projectConfig = projectConfig;
@@ -124,6 +126,7 @@ namespace IPC.EdgeGateway
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
             _ruleCircuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
+            _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
             _syncRoot = new object();
             _states = new Dictionary<string, EdgeRuleState>(StringComparer.OrdinalIgnoreCase);
             _ruleStatuses = new Dictionary<string, EdgeRuleRuntimeRuleStatus>(StringComparer.OrdinalIgnoreCase);
@@ -501,7 +504,9 @@ namespace IPC.EdgeGateway
                 rule.TransformOffset,
                 rule.TransformUseAbsolute,
                 rule.TransformExpression,
-                rule.TransformTimeoutMilliseconds);
+                rule.TransformTimeoutMilliseconds,
+                rule.ValueScriptId,
+                rule.ValueScriptVersion);
         }
 
         private double ApplyValueTransform(EdgeRuleConditionConfig condition, TagValueSnapshot snapshot, double value)
@@ -516,7 +521,9 @@ namespace IPC.EdgeGateway
                 condition.TransformOffset,
                 condition.TransformUseAbsolute,
                 condition.TransformExpression,
-                DefaultExpressionTimeoutMilliseconds);
+                DefaultExpressionTimeoutMilliseconds,
+                condition.ValueScriptId,
+                condition.ValueScriptVersion);
         }
 
         private double ApplyValueTransform(
@@ -526,13 +533,59 @@ namespace IPC.EdgeGateway
             double offset,
             bool useAbsolute,
             string expression,
-            int timeoutMilliseconds)
+            int timeoutMilliseconds,
+            string valueScriptId,
+            int valueScriptVersion)
         {
             double transformed = useAbsolute ? Math.Abs(value) : value;
             transformed = transformed * multiplier + offset;
             if (!string.IsNullOrWhiteSpace(expression))
                 transformed = EvaluateNumericFormula(expression, snapshot, transformed, timeoutMilliseconds);
+            if (!string.IsNullOrWhiteSpace(valueScriptId))
+                transformed = ExecuteValueTransformScript(snapshot, transformed, valueScriptId, valueScriptVersion, timeoutMilliseconds);
             return transformed;
+        }
+
+        /// <summary>
+        /// 执行规则节点固定版本的值处理脚本，并把结果转换为规则引擎使用的数值。
+        /// </summary>
+        private double ExecuteValueTransformScript(
+            TagValueSnapshot snapshot,
+            double value,
+            string scriptId,
+            int scriptVersion,
+            int timeoutMilliseconds)
+        {
+            ValueTransformExecutionResult result = _valueTransformScripts.Execute(new ValueTransformExecutionRequest
+            {
+                ScriptId = scriptId,
+                ScriptVersion = scriptVersion,
+                Value = value,
+                ValueText = value.ToString(CultureInfo.InvariantCulture),
+                DataType = "Double",
+                ChannelId = snapshot.ChannelId,
+                ChannelName = snapshot.ChannelName,
+                DeviceId = snapshot.DeviceId,
+                DeviceName = snapshot.DeviceName,
+                GroupId = snapshot.GroupId,
+                GroupName = snapshot.GroupName,
+                TagId = snapshot.TagId,
+                TagName = snapshot.TagName,
+                PointCode = snapshot.PointCode,
+                Quality = snapshot.Quality.ToString(),
+                Timestamp = new DateTimeOffset(snapshot.Timestamp),
+                ExpectedOutputDataType = "Double",
+                Usage = "RuleEngine",
+                TimeoutMilliseconds = timeoutMilliseconds
+            });
+
+            if (!result.Success)
+                throw new InvalidOperationException("值处理脚本执行失败：" + result.ErrorMessage);
+            if (result.Value is bool boolean)
+                return boolean ? 1D : 0D;
+            if (result.Value == null)
+                throw new InvalidOperationException("值处理脚本没有返回结果。");
+            return Convert.ToDouble(result.Value, CultureInfo.InvariantCulture);
         }
 
         private void EvaluateThreshold(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)

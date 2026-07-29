@@ -128,6 +128,11 @@
         "resolved": "9.3.8.122",
         "contentHash": "cK5ntiTwT+JShuFvBvWLrE0YMA1LtajZxtwSUBtqUzJeslWDiXX1k9nshGAhCiPPIUy1hXbKKnTU8mCVFHHDeg=="
       },
+      "BitFaster.Caching": {
+        "type": "Transitive",
+        "resolved": "2.6.0",
+        "contentHash": "iF2dMiGpaya8Umwi0OfsGKtq3aMVgHVsBChwQL+NhShEsRorcoTinGf9FFNBnBMwJW2Vm0FqhtOaEBY0+74p6g=="
+      },
       "Microsoft.Bcl.Cryptography": {
         "type": "Transitive",
         "resolved": "9.0.13",
@@ -238,10 +243,10 @@
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Transitive",
-        "resolved": "10.0.5",
-        "contentHash": "v1SVsowG6YE1YnHVGmLWz57YTRCQRx9pH5ebIESXfm5isI9gA3QaMyg/oMTzPpXYZwSAVDzYItGJKfmV+pqXkQ==",
+        "resolved": "10.0.8",
+        "contentHash": "daf62xHIrq8pnE709hgaZZN9tSam9TGGepWe1+bE6V3GEuVwJiMs6ib+38lfMCyAJAHiX0vapxBhsuMSV7U+cg==",
         "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.5"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8"
         }
       },
       "Microsoft.Extensions.Diagnostics": {
@@ -286,12 +291,12 @@
       },
       "Microsoft.Extensions.Logging": {
         "type": "Transitive",
-        "resolved": "10.0.5",
-        "contentHash": "+XTMKQyDWg4ODoNHU/BN3BaI1jhGO7VCS+BnzT/4IauiG6y2iPAte7MyD7rHKS+hNP0TkFkjrae8DFjDUxtcxg==",
+        "resolved": "10.0.8",
+        "contentHash": "K60JhWC2hN/Gi7TP68tBxSzk5ACWOs7lkmPzsfA8Bcf/IXTajujt2ORMf9rSMk1bsng6Lv4Y3fuxp3bm1+15ug==",
         "dependencies": {
-          "Microsoft.Extensions.DependencyInjection": "10.0.5",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Options": "10.0.5"
+          "Microsoft.Extensions.DependencyInjection": "10.0.8",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Options": "10.0.8"
         }
       },
       "Microsoft.Extensions.Options": {
@@ -377,10 +382,113 @@
         "resolved": "1.0.0",
         "contentHash": "N4KeF3cpcm1PUHym1RmakkzfkEv3GRMyofVv40uXsQhCQeglr2OHNcUk2WOG51AKpGO8ynGpo9M/kFXSzghwug=="
       },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
+      "NModbus": {
+        "type": "Transitive",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
+      },
       "NodaTime": {
         "type": "Transitive",
         "resolved": "3.2.3",
         "contentHash": "FNRoHeMMeF2BcFY95EnbB4BuPnG38Eb01+8j1l4atN0qdkxoGQtZMRqImd2YyUvjAoR82wp1H3cWFea4mpP1Hg=="
+      },
+      "OPCFoundation.NetStandard.Opc.Ua": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "uk9RUquH1fQz4DdVkHgym9myd0JooQOc7zsnkaEjIoKjFg0fQLuyqmRC0rKfdRvSbCJa3JqpogN/MeDInZbcYg==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Client": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Configuration": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Gds.Client.Common": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Gds.Server.Common": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Server": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Types": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Client": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "iw2XUz5Fj6zTPgCtHmw2bBob0fTQAYTmXv8hLTHEz+7/NyNjtgQW3OCsQ+2EMZqLxkv1LU/MHmPCWwvguRqrgA==",
+        "dependencies": {
+          "BitFaster.Caching": "2.6.0",
+          "OPCFoundation.NetStandard.Opc.Ua.Configuration": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Configuration": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "vwikWMdCt0oyMP6LINsfItVZOgCS24wi7sCl+n03JrxwRX1KZGS4EwoCMeqz8oxy1pZkbUr8yD8bPma8emIzbw==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Core": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "7skS4Uk8UuHAlEq5nxlaP+01K4My5SmTw2CdiqRqi8iKkcDwqKysM1ydVDw8AMnJPlCWr/UV9zvEotX8yH9KAg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging": "10.0.8",
+          "Newtonsoft.Json": "13.0.4",
+          "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Types": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Gds.Client.Common": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "Bs5gYRJW1j++pPN6ZNwLOm/yl/GmdNE/RIY9gIzWza+tF1LkpUNuv2fSzfG5u80QvgtunHFNsZcFFPv84k0q7w==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Client": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Gds.Server.Common": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "fC6yhckc08a9U3E1xmldG6eJYARhcChBdMh9LwPZhj5AAD5YnB0KAbLxKX5hxUzXihFv4UPgkRghMtKRnLFkCw==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Server": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "FKQkB7CT3AHAzKMuKG1LpgRKnBr+885s2Bk0t7G0K+Xxu5nYrdPODlQmzqkhHHjUvERrKur0aL8zzDnMIzQX7A==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Types": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Server": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "nF4sMV2+mJIUUXFUTvtoniGMWyWmN2OEdYppMoWQL6uBhC5sWJaK/bE3/aWM4GhimzG8ftHyrzj9DzkMzoaCbg==",
+        "dependencies": {
+          "OPCFoundation.NetStandard.Opc.Ua.Configuration": "1.5.378.145",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "1.5.378.145"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Types": {
+        "type": "Transitive",
+        "resolved": "1.5.378.145",
+        "contentHash": "wlTCLEQnvlJHjpV5Bl7a/9gGAKN0lpxkeRaQk5/tQ+Y4Pty7tOQ/0bUGBto70wajxU6TueVHvggK6mb6LrHusA==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8"
+        }
+      },
+      "Oscar.Data.SqlClient": {
+        "type": "Transitive",
+        "resolved": "4.0.4",
+        "contentHash": "VJ3xVvRjxrPi/mMPT5EqYiMZor0MjFu83mw1qvUveBFWJSudGh9BOKZq7RkhqeNCcL1ud0uK0/TVkw+xTa4q4g=="
       },
       "SourceGear.sqlite3": {
         "type": "Transitive",
@@ -406,6 +514,30 @@
         "contentHash": "L4uiEKeRSXxppkGE4iSpgBgC5lNvw2zEN/hAaxTecUS1+DhC6UEFhHaakSYYvnFq7x16B7DQcaXgXy0SkhSwnw==",
         "dependencies": {
           "SQLitePCLRaw.core": "3.0.4"
+        }
+      },
+      "SqlSugarCore": {
+        "type": "Transitive",
+        "resolved": "5.1.4.214",
+        "contentHash": "Jm1PbcEKGosLRx6gNqhbSNU8B2aFLCRD5vLXPvfJBPLUA/eROWpy9dnauLtt+E3BNHbPiSjrLTih7G06eR1Dbw==",
+        "dependencies": {
+          "Microsoft.Data.SqlClient": "5.2.2",
+          "Microsoft.Data.Sqlite": "9.0.0",
+          "MySqlConnector": "2.2.5",
+          "Newtonsoft.Json": "13.0.2",
+          "Npgsql": "5.0.18",
+          "Oracle.ManagedDataAccess.Core": "23.8.0",
+          "Oscar.Data.SqlClient": "4.0.4",
+          "SqlSugarCore.Dm": "8.8.1",
+          "SqlSugarCore.Kdbndp": "9.3.8.122"
+        }
+      },
+      "SqlSugarCore.MySqlConnector": {
+        "type": "Transitive",
+        "resolved": "5.1.4.92",
+        "contentHash": "bmKX7lhRIs5mCA8rOuA4/365HEm+5I5n91E2LZkzQlnvBAGnE1dMRWISGKpZAHWrr/yeeHqvvII+Du9BFPm/WQ==",
+        "dependencies": {
+          "SqlSugarCore": "5.1.4.93"
         }
       },
       "System.Configuration.ConfigurationManager": {
@@ -453,6 +585,27 @@
         "type": "Transitive",
         "resolved": "9.0.13",
         "contentHash": "t8S9IDpjJKsLpLkeBdW8cWtcPyYqrGu93Dej1RO6WwuL/lkFSqWlan3rMJfortqz1mRIh+sys2AFsSA6jWJ3Jg=="
+      },
+      "ipc.gateway.core": {
+        "type": "Project",
+        "dependencies": {
+          "IPC.Gateway.DataProcessing": "[1.0.0, )",
+          "IPC.Gateway.Mqtt": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[7.0.1, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.8, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.8, )",
+          "NModbus": "[3.0.83, )",
+          "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
+          "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
+          "SqlSugarCore": "[5.1.4.214, )",
+          "SqlSugarCore.MySqlConnector": "[5.1.4.92, )"
+        }
+      },
+      "ipc.gateway.dataprocessing": {
+        "type": "Project"
+      },
+      "ipc.gateway.mqtt": {
+        "type": "Project"
       }
     }
   }

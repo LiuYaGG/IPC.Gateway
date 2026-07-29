@@ -240,7 +240,12 @@ public static class GatewayConfigurationContractMapper
             TargetUnit = cleaning.TargetUnit,
             UnitMultiplier = cleaning.UnitMultiplier,
             UnitOffset = cleaning.UnitOffset,
-            PreserveLastGoodOnFilter = cleaning.PreserveLastGoodOnFilter
+            PreserveLastGoodOnFilter = cleaning.PreserveLastGoodOnFilter,
+            ValueScriptEnabled = cleaning.ValueScriptEnabled,
+            ValueScriptId = cleaning.ValueScriptId,
+            ValueScriptVersion = cleaning.ValueScriptVersion,
+            ValueScriptTimeoutMilliseconds = cleaning.ValueScriptTimeoutMilliseconds,
+            ValueScriptFailurePolicy = cleaning.ValueScriptFailurePolicy
         };
 
         if (cleaning.EnumMappings != null)
@@ -386,6 +391,8 @@ public static class GatewayConfigurationContractMapper
             TransformUseAbsolute = rule.TransformUseAbsolute,
             TransformExpression = rule.TransformExpression,
             TransformTimeoutMilliseconds = NormalizeTransformTimeout(rule.TransformTimeoutMilliseconds),
+            ValueScriptId = rule.ValueScriptId,
+            ValueScriptVersion = rule.ValueScriptVersion,
             SequenceWindowSeconds = rule.SequenceWindowSeconds,
             SequenceStepTimeoutSeconds = rule.SequenceStepTimeoutSeconds,
             SequenceMinIntervalSeconds = rule.SequenceMinIntervalSeconds,
@@ -452,7 +459,9 @@ public static class GatewayConfigurationContractMapper
             TransformMultiplier = condition.TransformMultiplier,
             TransformOffset = condition.TransformOffset,
             TransformUseAbsolute = condition.TransformUseAbsolute,
-            TransformExpression = condition.TransformExpression
+            TransformExpression = condition.TransformExpression,
+            ValueScriptId = condition.ValueScriptId,
+            ValueScriptVersion = condition.ValueScriptVersion
         };
     }
 
@@ -599,6 +608,11 @@ public static class GatewayConfigurationContractMapper
             TransformUseAbsolute = node.TransformUseAbsolute,
             TransformExpression = node.TransformExpression,
             TransformTimeoutMilliseconds = NormalizeTransformTimeout(node.TransformTimeoutMilliseconds),
+            ValueScriptId = node.ValueScriptId,
+            ValueScriptVersion = node.ValueScriptVersion,
+            ValueScriptCategory = node.ValueScriptCategory,
+            ValueScriptInputDataType = node.ValueScriptInputDataType,
+            ValueScriptOutputDataType = node.ValueScriptOutputDataType,
             SequenceWindowSeconds = node.SequenceWindowSeconds,
             SequenceStepTimeoutSeconds = node.SequenceStepTimeoutSeconds,
             SequenceMinIntervalSeconds = node.SequenceMinIntervalSeconds,
@@ -1512,7 +1526,12 @@ public static class GatewayConfigurationContractMapper
             TargetUnit = dto.TargetUnit,
             UnitMultiplier = dto.UnitMultiplier,
             UnitOffset = dto.UnitOffset,
-            PreserveLastGoodOnFilter = dto.PreserveLastGoodOnFilter
+            PreserveLastGoodOnFilter = dto.PreserveLastGoodOnFilter,
+            ValueScriptEnabled = dto.ValueScriptEnabled,
+            ValueScriptId = dto.ValueScriptId,
+            ValueScriptVersion = dto.ValueScriptVersion,
+            ValueScriptTimeoutMilliseconds = dto.ValueScriptTimeoutMilliseconds,
+            ValueScriptFailurePolicy = dto.ValueScriptFailurePolicy
         };
 
         if (dto.EnumMappings != null)
@@ -1658,6 +1677,8 @@ public static class GatewayConfigurationContractMapper
             TransformUseAbsolute = dto.TransformUseAbsolute,
             TransformExpression = dto.TransformExpression,
             TransformTimeoutMilliseconds = NormalizeTransformTimeout(dto.TransformTimeoutMilliseconds),
+            ValueScriptId = dto.ValueScriptId,
+            ValueScriptVersion = dto.ValueScriptVersion,
             SequenceWindowSeconds = dto.SequenceWindowSeconds,
             SequenceStepTimeoutSeconds = dto.SequenceStepTimeoutSeconds,
             SequenceMinIntervalSeconds = dto.SequenceMinIntervalSeconds,
@@ -1721,7 +1742,9 @@ public static class GatewayConfigurationContractMapper
             TransformMultiplier = dto.TransformMultiplier,
             TransformOffset = dto.TransformOffset,
             TransformUseAbsolute = dto.TransformUseAbsolute,
-            TransformExpression = dto.TransformExpression
+            TransformExpression = dto.TransformExpression,
+            ValueScriptId = dto.ValueScriptId,
+            ValueScriptVersion = dto.ValueScriptVersion
         };
     }
 
@@ -1862,6 +1885,11 @@ public static class GatewayConfigurationContractMapper
             TransformUseAbsolute = dto.TransformUseAbsolute,
             TransformExpression = dto.TransformExpression,
             TransformTimeoutMilliseconds = NormalizeTransformTimeout(dto.TransformTimeoutMilliseconds),
+            ValueScriptId = dto.ValueScriptId,
+            ValueScriptVersion = dto.ValueScriptVersion,
+            ValueScriptCategory = dto.ValueScriptCategory,
+            ValueScriptInputDataType = dto.ValueScriptInputDataType,
+            ValueScriptOutputDataType = dto.ValueScriptOutputDataType,
             SequenceWindowSeconds = dto.SequenceWindowSeconds,
             SequenceStepTimeoutSeconds = dto.SequenceStepTimeoutSeconds,
             SequenceMinIntervalSeconds = dto.SequenceMinIntervalSeconds,

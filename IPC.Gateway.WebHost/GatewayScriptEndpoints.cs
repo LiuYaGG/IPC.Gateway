@@ -26,11 +26,43 @@ public static class GatewayScriptEndpoints
             return Results.Ok(ApiResult.Ok(await manager.GetOverviewAsync(cancellationToken)));
         });
 
+        group.MapGet("/value-transforms/catalog", async (
+            ClaimsPrincipal user,
+            GatewayScriptManager manager,
+            CancellationToken cancellationToken) =>
+        {
+            if (!GatewayAuthEndpoints.CanViewScripts(user) &&
+                !GatewayAuthEndpoints.CanViewDevices(user) &&
+                !GatewayAuthEndpoints.CanViewFlowRules(user))
+                return Forbidden("当前用户没有查看值处理脚本目录的权限。");
+            ScriptCenterOverview overview = await manager.GetOverviewAsync(cancellationToken);
+            object[] catalog = overview.Scripts
+                .Where(script =>
+                    script.ScriptType == GatewayScriptType.ValueTransform &&
+                    script.PublishedVersion > 0 &&
+                    !string.IsNullOrWhiteSpace(script.PublishedSourceCode))
+                .Select(script => new
+                {
+                    script.Id,
+                    script.Name,
+                    script.Description,
+                    Scope = script.ValueTransformScope,
+                    script.NodeCategory,
+                    script.InputDataType,
+                    script.OutputDataType,
+                    Version = script.PublishedVersion,
+                    script.PublishedUtc
+                })
+                .Cast<object>()
+                .ToArray();
+            return Results.Ok(ApiResult.Ok(catalog));
+        });
+
         group.MapPost("/validate", async (ClaimsPrincipal user, [FromBody] ScriptValidationRequest request, IScriptRuntimeService runtime, CancellationToken cancellationToken) =>
         {
             if (!GatewayAuthEndpoints.CanExecuteScripts(user))
                 return Forbidden("当前用户没有编译检查脚本的权限。");
-            return Results.Ok(ApiResult.Ok(await runtime.ValidateAsync(request.SourceCode, cancellationToken)));
+            return Results.Ok(ApiResult.Ok(await runtime.ValidateAsync(request.SourceCode, request.ScriptType, cancellationToken)));
         });
 
         group.MapPut("/definitions", async (HttpContext context, ClaimsPrincipal user, [FromBody] GatewayScriptDefinition definition, GatewayScriptManager manager, IGatewayAuditLogStore audit, CancellationToken cancellationToken) =>
@@ -41,15 +73,40 @@ public static class GatewayScriptEndpoints
                 ApiResult.Ok(await manager.SaveScriptAsync(definition, cancellationToken)));
         });
 
-        group.MapDelete("/definitions/{id}", async (HttpContext context, ClaimsPrincipal user, string id, GatewayScriptManager manager, IGatewayAuditLogStore audit, CancellationToken cancellationToken) =>
+        group.MapDelete("/definitions/{id}", async (HttpContext context, ClaimsPrincipal user, string id, GatewayScriptManager manager, GatewayCoreService gateway, IGatewayAuditLogStore audit, CancellationToken cancellationToken) =>
         {
             if (!GatewayAuthEndpoints.CanEditScripts(user))
                 return Forbidden("当前用户没有删除脚本的权限。");
             return await ExecuteAuditedAsync(context, audit, "scripts.delete", id, async () =>
             {
+                EnsureValueScriptNotReferenced(gateway.CurrentProject, id);
                 await manager.DeleteScriptAsync(id, cancellationToken);
                 return ApiResult.Ok(null);
             });
+        });
+
+        group.MapPost("/definitions/{id}/publish", async (
+            HttpContext context,
+            ClaimsPrincipal user,
+            string id,
+            GatewayScriptManager manager,
+            IGatewayAuditLogStore audit,
+            CancellationToken cancellationToken) =>
+        {
+            if (!GatewayAuthEndpoints.CanEditScripts(user))
+                return Forbidden("当前用户没有发布值处理脚本的权限。");
+            return await ExecuteAuditedAsync(context, audit, "scripts.publish", id, async () =>
+                ApiResult.Ok(await manager.PublishValueScriptAsync(id, cancellationToken)));
+        });
+
+        group.MapPost("/value-transforms/test", (
+            ClaimsPrincipal user,
+            [FromBody] ValueTransformScriptTestRequest request,
+            GatewayScriptManager manager) =>
+        {
+            if (!GatewayAuthEndpoints.CanExecuteScripts(user))
+                return Forbidden("当前用户没有测试值处理脚本的权限。");
+            return Results.Ok(ApiResult.Ok(manager.TestValueScript(request)));
         });
 
         group.MapPost("/definitions/{id}/execute", async (HttpContext context, ClaimsPrincipal user, string id, IScriptRuntimeService runtime, IGatewayAuditLogStore audit, CancellationToken cancellationToken) =>
@@ -117,6 +174,30 @@ public static class GatewayScriptEndpoints
     }
 
     /// <summary>
+    /// 阻止删除仍被规则节点或标签清洗配置引用的值处理脚本。
+    /// </summary>
+    private static void EnsureValueScriptNotReferenced(IPC.Runtime.Configuration.ProjectConfig project, string scriptId)
+    {
+        foreach (IPC.Runtime.Configuration.DeviceConfig device in project.Devices ?? [])
+        {
+            IEnumerable<IPC.Runtime.Configuration.TagConfig> tags =
+                (device.Tags ?? []).Concat((device.Groups ?? []).SelectMany(group => group.Tags ?? []));
+            if (tags.Any(tag =>
+                    tag.Cleaning?.ValueScriptEnabled == true &&
+                    string.Equals(tag.Cleaning.ValueScriptId, scriptId, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("该值处理脚本仍被标签数据清洗配置引用，不能删除。");
+            }
+        }
+
+        if ((project.FlowRules ?? []).SelectMany(rule => rule.Nodes ?? []).Any(node =>
+                string.Equals(node.ValueScriptId, scriptId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("该值处理脚本仍被规则引擎节点引用，不能删除。");
+        }
+    }
+
+    /// <summary>
     /// 创建统一的无权限响应。
     /// </summary>
     private static IResult Forbidden(string message)
@@ -154,6 +235,7 @@ public static class GatewayScriptEndpoints
     public sealed class ScriptValidationRequest
     {
         public string SourceCode { get; set; } = string.Empty;
+        public GatewayScriptType ScriptType { get; set; } = GatewayScriptType.DatabaseWrite;
     }
 
     /// <summary>

@@ -5,7 +5,7 @@ namespace IPC.Gateway.Scripting.Models;
 /// </summary>
 public sealed class ScriptConfigurationDocument
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 3;
     public List<ScriptDatabaseConnectionDefinition> Connections { get; set; } = [];
     public List<ScriptDatabaseWriteTarget> Targets { get; set; } = [];
     public List<GatewayScriptDefinition> Scripts { get; set; } = [];

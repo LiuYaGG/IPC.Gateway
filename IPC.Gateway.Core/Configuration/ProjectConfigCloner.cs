@@ -271,6 +271,11 @@ namespace IPC.Runtime.Configuration
                 TransformUseAbsolute = source.TransformUseAbsolute,
                 TransformExpression = source.TransformExpression,
                 TransformTimeoutMilliseconds = source.TransformTimeoutMilliseconds <= 0 ? 50 : source.TransformTimeoutMilliseconds,
+                ValueScriptId = source.ValueScriptId,
+                ValueScriptVersion = source.ValueScriptVersion,
+                ValueScriptCategory = source.ValueScriptCategory,
+                ValueScriptInputDataType = source.ValueScriptInputDataType,
+                ValueScriptOutputDataType = source.ValueScriptOutputDataType,
                 SequenceWindowSeconds = source.SequenceWindowSeconds,
                 SequenceStepTimeoutSeconds = source.SequenceStepTimeoutSeconds,
                 SequenceMinIntervalSeconds = source.SequenceMinIntervalSeconds,
@@ -454,6 +459,8 @@ namespace IPC.Runtime.Configuration
                 TransformUseAbsolute = source.TransformUseAbsolute,
                 TransformExpression = source.TransformExpression,
                 TransformTimeoutMilliseconds = source.TransformTimeoutMilliseconds <= 0 ? 50 : source.TransformTimeoutMilliseconds,
+                ValueScriptId = source.ValueScriptId,
+                ValueScriptVersion = source.ValueScriptVersion,
                 SequenceWindowSeconds = source.SequenceWindowSeconds,
                 SequenceStepTimeoutSeconds = source.SequenceStepTimeoutSeconds,
                 SequenceMinIntervalSeconds = source.SequenceMinIntervalSeconds,
@@ -579,7 +586,9 @@ namespace IPC.Runtime.Configuration
                 TransformMultiplier = source.TransformMultiplier,
                 TransformOffset = source.TransformOffset,
                 TransformUseAbsolute = source.TransformUseAbsolute,
-                TransformExpression = source.TransformExpression
+                TransformExpression = source.TransformExpression,
+                ValueScriptId = source.ValueScriptId,
+                ValueScriptVersion = source.ValueScriptVersion
             };
         }
 
@@ -767,7 +776,12 @@ namespace IPC.Runtime.Configuration
                 TargetUnit = source.TargetUnit,
                 UnitMultiplier = source.UnitMultiplier,
                 UnitOffset = source.UnitOffset,
-                PreserveLastGoodOnFilter = source.PreserveLastGoodOnFilter
+                PreserveLastGoodOnFilter = source.PreserveLastGoodOnFilter,
+                ValueScriptEnabled = source.ValueScriptEnabled,
+                ValueScriptId = source.ValueScriptId,
+                ValueScriptVersion = source.ValueScriptVersion,
+                ValueScriptTimeoutMilliseconds = source.ValueScriptTimeoutMilliseconds,
+                ValueScriptFailurePolicy = source.ValueScriptFailurePolicy
             };
 
             if (source.EnumMappings != null)

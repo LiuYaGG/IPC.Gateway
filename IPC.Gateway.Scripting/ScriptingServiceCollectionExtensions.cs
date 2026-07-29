@@ -3,6 +3,7 @@ using IPC.Gateway.Scripting.Application;
 using IPC.Gateway.Scripting.Database;
 using IPC.Gateway.Scripting.Persistence;
 using IPC.Gateway.Scripting.Runtime;
+using IPC.Gateway.Core.Gateway;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IPC.Gateway.Scripting;
@@ -30,6 +31,9 @@ public static class ScriptingServiceCollectionExtensions
         services.AddSingleton<IScriptDatabaseQueue>(provider => provider.GetRequiredService<ScriptDatabaseWriteDispatcher>());
         services.AddHostedService(provider => provider.GetRequiredService<ScriptDatabaseWriteDispatcher>());
         services.AddSingleton<GatewayScriptCompiler>();
+        services.AddSingleton<ValueTransformScriptService>();
+        services.AddSingleton<IValueTransformScriptRuntime>(provider =>
+            provider.GetRequiredService<ValueTransformScriptService>());
         services.AddSingleton<GatewayScriptRuntimeService>();
         services.AddSingleton<IScriptRuntimeService>(provider => provider.GetRequiredService<GatewayScriptRuntimeService>());
         services.AddHostedService(provider => provider.GetRequiredService<GatewayScriptRuntimeService>());

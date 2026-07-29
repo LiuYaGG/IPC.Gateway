@@ -49,7 +49,8 @@ public static class GatewayCoreServiceCollectionExtensions
             CreateHistoryOptions(configuration),
             CreateStorageHealthThresholds(configuration),
             sp.GetService<IFlowRuleEngineFactory>(),
-            sp.GetService<IModelInferenceService>()));
+            sp.GetService<IModelInferenceService>(),
+            sp.GetService<IValueTransformScriptRuntime>()));
 
         services.AddSingleton<IGatewayProjectApplicationService, GatewayProjectApplicationService>();
         services.AddSingleton<IGatewayDeviceConfigurationApplicationService, GatewayDeviceConfigurationApplicationService>();

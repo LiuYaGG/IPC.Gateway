@@ -199,7 +199,8 @@ namespace IPC.EdgeGateway
         private static bool IsTransformNode(FlowRuleNode? node)
         {
             return IsNodeType(node, FlowRuleNodeTypes.Transform) ||
-                   IsNodeType(node, FlowRuleNodeTypes.Function);
+                   IsNodeType(node, FlowRuleNodeTypes.Function) ||
+                   IsNodeType(node, FlowRuleNodeTypes.ValueScript);
         }
 
         private static bool IsQualityGateNode(FlowRuleNode? node)

@@ -820,6 +820,7 @@
         "type": "Project",
         "dependencies": {
           "ClickHouse.Driver": "[1.2.0, )",
+          "IPC.Gateway.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis.CSharp.Scripting": "[5.6.0, )",
           "Microsoft.Data.SqlClient": "[7.0.1, )",
           "Microsoft.Data.Sqlite": "[10.0.10, )",

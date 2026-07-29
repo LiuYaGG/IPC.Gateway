@@ -22,4 +22,8 @@
     <PackageReference Include="SqlSugarCore.Kdbndp" Version="9.3.8.122" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
+  </ItemGroup>
+
 </Project>
