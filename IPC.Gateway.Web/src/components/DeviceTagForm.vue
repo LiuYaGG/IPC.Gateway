@@ -15,6 +15,9 @@
 
     <el-divider content-position="left">采集配置</el-divider>
     <div class="form-grid">
+      <el-form-item label="数据来源">
+        <el-segmented v-model="model.isVirtual" :options="[{ label: '设备采集', value: false }, { label: 'ONNX模型', value: true }]" @change="changeTagSource" />
+      </el-form-item>
       <el-form-item label="数据类型">
         <el-select v-model="model.dataType" filterable class="data-type-select">
           <el-option-group
@@ -27,7 +30,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="访问模式">
-        <el-select v-model="model.accessMode">
+        <el-select v-model="model.accessMode" :disabled="model.isVirtual">
           <el-option v-for="item in accessModeOptions" :key="item" :label="item" :value="item" />
         </el-select>
       </el-form-item>
@@ -44,9 +47,46 @@
         <el-input-number v-model="model.elementOffset" :min="0" :max="65535" />
       </el-form-item>
     </div>
-    <el-form-item label="地址" prop="address" :required="!isMeter">
+    <el-form-item v-if="!model.isVirtual" label="地址" prop="address" :required="!isMeter">
       <el-input v-model="model.address" :placeholder="addressPlaceholder" />
     </el-form-item>
+
+    <template v-if="model.isVirtual">
+      <el-divider content-position="left">ONNX 虚拟标签</el-divider>
+      <div class="form-grid">
+        <el-form-item label="已发布模型" prop="virtualModel.modelId" required>
+          <el-select v-model="model.virtualModel.modelId" filterable placeholder="选择模型" @change="applyVirtualModel">
+            <el-option v-for="item in publishedModels" :key="item.id" :label="`${item.name}（v${item.publishedVersion}）`" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="固定版本"><el-input-number v-model="model.virtualModel.modelVersion" disabled :controls="false" /></el-form-item>
+        <el-form-item label="输出张量"><el-input v-model="model.virtualModel.outputName" placeholder="留空使用第一个输出" /></el-form-item>
+        <el-form-item label="输出序号"><el-input-number v-model="model.virtualModel.outputIndex" :min="0" :controls="false" /></el-form-item>
+        <el-form-item label="触发方式"><el-select v-model="model.virtualModel.triggerMode"><el-option label="输入变化" value="OnInputChanged" /><el-option label="固定周期" value="Interval" /></el-select></el-form-item>
+        <el-form-item v-if="model.virtualModel.triggerMode === 'Interval'" label="计算周期(ms)"><el-input-number v-model="model.virtualModel.intervalMilliseconds" :min="100" :max="3600000" :controls="false" /></el-form-item>
+        <el-form-item v-else label="防抖(ms)"><el-input-number v-model="model.virtualModel.debounceMilliseconds" :min="0" :max="10000" :controls="false" /></el-form-item>
+        <el-form-item label="输入有效期(ms)"><el-input-number v-model="model.virtualModel.maxInputAgeMilliseconds" :min="100" :max="3600000" :controls="false" /></el-form-item>
+        <el-form-item label="推理超时(ms)"><el-input-number v-model="model.virtualModel.timeoutMilliseconds" :min="10" :max="30000" :controls="false" /></el-form-item>
+        <el-form-item v-if="['Bool','Coil','DiscreteInput'].includes(model.dataType)" label="布尔阈值"><el-input-number v-model="model.virtualModel.boolThreshold" :controls="false" /></el-form-item>
+        <el-form-item label="失败策略"><el-select v-model="model.virtualModel.failurePolicy"><el-option label="保留上次值并标坏" value="KeepLastGood" /><el-option label="使用回退值" value="UseFallback" /><el-option label="标记坏质量" value="MarkBad" /></el-select></el-form-item>
+        <el-form-item v-if="model.virtualModel.failurePolicy === 'UseFallback'" label="回退值"><el-input v-model="model.virtualModel.fallbackValue" /></el-form-item>
+      </div>
+      <el-form-item label="模型输入" prop="virtualModel.inputs" required>
+        <div class="model-input-list">
+          <div v-for="(input,index) in model.virtualModel.inputs" :key="index" class="model-input-row">
+            <el-input v-model="input.featureName" placeholder="特征名称" />
+            <el-select v-model="input.tagPath" filterable placeholder="选择输入标签">
+              <el-option v-for="tag in inputTagOptions" :key="tag.value" :label="tag.label" :value="tag.value" />
+            </el-select>
+            <el-input-number v-model="input.multiplier" :controls="false" placeholder="倍率" />
+            <el-input-number v-model="input.offset" :controls="false" placeholder="偏移" />
+            <el-button text type="danger" @click="model.virtualModel.inputs.splice(index,1)">删除</el-button>
+          </div>
+          <el-button plain @click="addVirtualInput">增加输入</el-button>
+        </div>
+      </el-form-item>
+      <p class="form-help">虚拟标签不会写入 PLC；模型在独立队列执行，结果可进入历史、MQTT、Web API 和规则引擎。</p>
+    </template>
 
     <el-divider content-position="left">数值缩放</el-divider>
     <div class="form-grid">
@@ -251,8 +291,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import type { TagConfig } from '../api'
+import type { ProjectConfig, TagConfig } from '../api'
 import { loadValueTransformCatalog, type ValueTransformCatalogItem } from '../scriptingApi'
+import { loadModels, type OnnxModelDefinition } from '../modelApi'
 import {
   accessModeOptions,
   dataTypeOptionGroups,
@@ -268,13 +309,16 @@ import {
 const props = defineProps<{
   model: TagConfig
   deviceProtocol: string
+  project: ProjectConfig | null
 }>()
 
 const formRef = ref<FormInstance>()
 const valueScripts = ref<ValueTransformCatalogItem[]>([])
+const models = ref<OnnxModelDefinition[]>([])
 const valueScriptFilterKeyword = ref('')
 const activeProtocol = computed(() => props.model.protocol || props.deviceProtocol)
-const availableDataTypeGroups = computed(() => dataTypeOptionGroups(activeProtocol.value))
+const virtualDataTypes = ['Bool', 'Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Float', 'Double']
+const availableDataTypeGroups = computed(() => props.model.isVirtual ? [{ label: '虚拟标签标量类型', options: virtualDataTypes }] : dataTypeOptionGroups(activeProtocol.value))
 const isMeter = computed(() => isMeterProtocol(activeProtocol.value))
 const addressPlaceholder = computed(() => tagAddressPlaceholder(activeProtocol.value))
 const meterAddressHint = computed(() => meterAddressPlaceholder(activeProtocol.value))
@@ -294,15 +338,53 @@ const compatibleValueScripts = computed(() => {
     return searchableText.includes(keyword)
   })
 })
+const publishedModels = computed(() => models.value.filter(item => item.publishedVersion > 0))
+const inputTagOptions = computed(() => {
+  const channelNames = new Map((props.project?.channels ?? []).map(item => [item.id, item.name || item.id]))
+  const options: Array<{ value: string; label: string }> = []
+  for (const device of props.project?.devices ?? []) {
+    for (const tag of device.tags ?? []) if (tag.enabled && tag.id !== props.model.id) options.push({ value: `${device.channelId}/${device.id}//${tag.id}`, label: `${channelNames.get(device.channelId) || device.channelId}-${device.name}-【设备直属】-${tag.name}` })
+    for (const group of device.groups ?? []) for (const tag of group.tags ?? []) if (tag.enabled && tag.id !== props.model.id) options.push({ value: `${device.channelId}/${device.id}/${group.id}/${tag.id}`, label: `${channelNames.get(device.channelId) || device.channelId}-${device.name}-【${group.name}】-${tag.name}` })
+  }
+  return options.sort((a,b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
 
 onMounted(async () => {
-  try {
-    const response = await loadValueTransformCatalog()
-    valueScripts.value = response.data
-  } catch {
-    valueScripts.value = []
-  }
+  const [scriptsResult, modelsResult] = await Promise.allSettled([loadValueTransformCatalog(), loadModels()])
+  valueScripts.value = scriptsResult.status === 'fulfilled' ? scriptsResult.value.data : []
+  models.value = modelsResult.status === 'fulfilled' ? modelsResult.value.data : []
 })
+
+/**
+ * 切换数据来源时固定虚拟标签为只读，并清除无效设备地址。
+ */
+function changeTagSource(isVirtual: boolean) {
+  if (isVirtual) {
+    props.model.address = ''
+    props.model.accessMode = 'ReadOnly'
+    props.model.source = 'ONNX'
+  }
+}
+
+/**
+ * 选择模型时固定当前发布版本，并按输入维度初始化标签绑定行。
+ */
+function applyVirtualModel(modelId: string) {
+  const model = models.value.find(item => item.id === modelId)
+  props.model.virtualModel.modelVersion = model?.publishedVersion ?? 0
+  const version = model?.versions.find(item => item.version === model.publishedVersion)
+  props.model.virtualModel.outputName = version?.outputs[0]?.name ?? ''
+  const dims = version?.inputs[0]?.dimensions ?? [1]
+  const count = Math.min(64, Math.max(1, dims.length > 1 ? dims.slice(1).reduce((a,b) => a * Math.max(1,b), 1) : Math.max(1,dims[0] || 1)))
+  props.model.virtualModel.inputs = Array.from({ length: count }, (_, index) => ({ featureName: `Feature${index + 1}`, tagPath: '', multiplier: 1, offset: 0 }))
+}
+
+/**
+ * 增加一个模型特征与标签路径绑定。
+ */
+function addVirtualInput() {
+  props.model.virtualModel.inputs.push({ featureName: `Feature${props.model.virtualModel.inputs.length + 1}`, tagPath: '', multiplier: 1, offset: 0 })
+}
 
 /**
  * 固定当前所选脚本的发布版本。
@@ -353,7 +435,9 @@ const rules: FormRules<TagConfig> = {
   'cleaning.deadband': [{ validator: validateCleaningNonNegative, trigger: 'change' }],
   'cleaning.spikeThreshold': [{ validator: validateCleaningNonNegative, trigger: 'change' }],
   'cleaning.unitMultiplier': [{ validator: validateUnitMultiplier, trigger: 'change' }],
-  'cleaning.valueScriptId': [{ validator: validateValueScriptSelection, trigger: 'change' }]
+  'cleaning.valueScriptId': [{ validator: validateValueScriptSelection, trigger: 'change' }],
+  'virtualModel.modelId': [{ validator: validateVirtualModel, trigger: 'change' }],
+  'virtualModel.inputs': [{ validator: validateVirtualInputs, trigger: 'change' }]
 }
 
 const scalingPreview = computed(() => {
@@ -410,7 +494,7 @@ function validateMeterProtocol(_rule: unknown, value: string, callback: (error?:
 }
 
 function validateAddress(_rule: unknown, value: string, callback: (error?: Error) => void) {
-  if (isMeter.value || String(value ?? '').trim()) callback()
+  if (props.model.isVirtual || isMeter.value || String(value ?? '').trim()) callback()
   else callback(new Error('请输入标签地址'))
 }
 
@@ -488,5 +572,28 @@ function validateValueScriptSelection(_rule: unknown, value: string, callback: (
   callback(new Error('请选择一个已发布的值处理脚本'))
 }
 
+/**
+ * 虚拟标签必须固定一个已发布模型版本。
+ */
+function validateVirtualModel(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  if (!props.model.isVirtual || (value?.trim() && props.model.virtualModel.modelVersion > 0)) return callback()
+  callback(new Error('请选择一个已发布模型'))
+}
+
+/**
+ * 虚拟标签至少需要一个完整的四段式输入标签路径。
+ */
+function validateVirtualInputs(_rule: unknown, value: Array<{ tagPath: string }>, callback: (error?: Error) => void) {
+  if (!props.model.isVirtual) return callback()
+  if (value?.length && value.every(item => item.tagPath?.split('/').length === 4)) return callback()
+  callback(new Error('请完整配置至少一个模型输入标签'))
+}
+
 defineExpose({ validate })
 </script>
+
+<style scoped>
+.model-input-list { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.model-input-row { display: grid; grid-template-columns: minmax(105px, .65fr) minmax(260px, 1.8fr) minmax(85px, .55fr) minmax(85px, .55fr) auto; gap: 8px; align-items: center; }
+@media (max-width: 1100px) { .model-input-row { grid-template-columns: 1fr; } }
+</style>

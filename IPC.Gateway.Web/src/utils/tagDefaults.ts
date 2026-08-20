@@ -205,7 +205,9 @@ export function createTagDraft(device: DeviceConfig, group?: GroupConfig): TagCo
     scaling: createDefaultScaling(),
     cleaning: createDefaultCleaning(),
     alarm: createDefaultAlarm(),
-    description: ''
+    description: '',
+    isVirtual: false,
+    virtualModel: createDefaultVirtualModel()
   })
 }
 
@@ -214,7 +216,8 @@ export function cloneTag(tag: TagConfig): TagConfig {
     ...tag,
     scaling: { ...createDefaultScaling(), ...(tag.scaling ?? {}) },
     cleaning: normalizeCleaning({ ...createDefaultCleaning(), ...(tag.cleaning ?? {}) }),
-    alarm: { ...createDefaultAlarm(), ...(tag.alarm ?? {}) }
+    alarm: { ...createDefaultAlarm(), ...(tag.alarm ?? {}) },
+    virtualModel: normalizeVirtualModel({ ...createDefaultVirtualModel(), ...(tag.virtualModel ?? {}) })
   })
 }
 
@@ -246,7 +249,48 @@ export function normalizeTag(tag: TagConfig): TagConfig {
   tag.cleaning = normalizeCleaning({ ...createDefaultCleaning(), ...(tag.cleaning ?? {}) })
   tag.alarm = { ...createDefaultAlarm(), ...(tag.alarm ?? {}) }
   tag.description = tag.description || ''
+  tag.isVirtual = tag.isVirtual ?? false
+  tag.virtualModel = normalizeVirtualModel({ ...createDefaultVirtualModel(), ...(tag.virtualModel ?? {}) })
+  if (tag.isVirtual) {
+    tag.address = ''
+    tag.accessMode = 'ReadOnly'
+    tag.source = 'ONNX'
+  }
   return tag
+}
+
+/**
+ * 创建虚拟模型标签默认配置。
+ */
+export function createDefaultVirtualModel() {
+  return {
+    modelId: '', modelVersion: 0, inputName: '', inputNames: '', outputName: '', outputIndex: 0,
+    triggerMode: 'OnInputChanged' as const, intervalMilliseconds: 1000, debounceMilliseconds: 100,
+    maxInputAgeMilliseconds: 10000, timeoutMilliseconds: 1000, failurePolicy: 'KeepLastGood' as const,
+    fallbackValue: '', boolThreshold: 0.5, inputs: []
+  }
+}
+
+/**
+ * 规范化虚拟模型标签配置及输入缩放参数。
+ */
+function normalizeVirtualModel(config: ReturnType<typeof createDefaultVirtualModel> | any) {
+  config.modelId = config.modelId || ''
+  config.modelVersion = Math.max(0, Number(config.modelVersion) || 0)
+  config.inputName = config.inputName || ''
+  config.inputNames = config.inputNames || ''
+  config.outputName = config.outputName || ''
+  config.outputIndex = Math.max(0, Number(config.outputIndex) || 0)
+  config.triggerMode = config.triggerMode === 'Interval' ? 'Interval' : 'OnInputChanged'
+  config.intervalMilliseconds = Math.max(100, Number(config.intervalMilliseconds) || 1000)
+  config.debounceMilliseconds = Math.max(0, Number(config.debounceMilliseconds) || 0)
+  config.maxInputAgeMilliseconds = Math.max(100, Number(config.maxInputAgeMilliseconds) || 10000)
+  config.timeoutMilliseconds = Math.max(10, Number(config.timeoutMilliseconds) || 1000)
+  config.failurePolicy = ['KeepLastGood', 'UseFallback', 'MarkBad'].includes(config.failurePolicy) ? config.failurePolicy : 'KeepLastGood'
+  config.fallbackValue = config.fallbackValue || ''
+  config.boolThreshold = Number.isFinite(Number(config.boolThreshold)) ? Number(config.boolThreshold) : 0.5
+  config.inputs = (config.inputs ?? []).map((item: any) => ({ featureName: item.featureName || '', tagPath: item.tagPath || '', multiplier: Number(item.multiplier) || 1, offset: Number(item.offset) || 0 }))
+  return config
 }
 
 export function isMeterProtocol(protocol: string) {

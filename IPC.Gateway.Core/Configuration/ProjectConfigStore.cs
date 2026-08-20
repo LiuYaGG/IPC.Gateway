@@ -654,6 +654,41 @@ namespace IPC.Runtime.Configuration
                 NormalizeCleaning(tag);
                 if (tag.Alarm == null)
                     tag.Alarm = TagAlarmConfig.Default();
+                NormalizeVirtualModel(tag);
+            }
+        }
+
+        /// <summary>
+        /// 规范化虚拟模型标签参数，同时保持普通标签的向后兼容默认值。
+        /// </summary>
+        private static void NormalizeVirtualModel(TagConfig tag)
+        {
+            tag.VirtualModel ??= new VirtualModelTagConfig();
+            tag.VirtualModel.ModelId ??= string.Empty;
+            tag.VirtualModel.InputName ??= string.Empty;
+            tag.VirtualModel.InputNames ??= string.Empty;
+            tag.VirtualModel.OutputName ??= string.Empty;
+            tag.VirtualModel.TriggerMode = string.IsNullOrWhiteSpace(tag.VirtualModel.TriggerMode) ? "OnInputChanged" : tag.VirtualModel.TriggerMode.Trim();
+            tag.VirtualModel.IntervalMilliseconds = Math.Clamp(tag.VirtualModel.IntervalMilliseconds <= 0 ? 1000 : tag.VirtualModel.IntervalMilliseconds, 100, 3600000);
+            tag.VirtualModel.DebounceMilliseconds = Math.Clamp(tag.VirtualModel.DebounceMilliseconds, 0, 10000);
+            tag.VirtualModel.MaxInputAgeMilliseconds = Math.Clamp(tag.VirtualModel.MaxInputAgeMilliseconds <= 0 ? 10000 : tag.VirtualModel.MaxInputAgeMilliseconds, 100, 3600000);
+            tag.VirtualModel.TimeoutMilliseconds = Math.Clamp(tag.VirtualModel.TimeoutMilliseconds <= 0 ? 1000 : tag.VirtualModel.TimeoutMilliseconds, 10, 30000);
+            tag.VirtualModel.OutputIndex = Math.Max(0, tag.VirtualModel.OutputIndex);
+            tag.VirtualModel.FailurePolicy = string.IsNullOrWhiteSpace(tag.VirtualModel.FailurePolicy) ? "KeepLastGood" : tag.VirtualModel.FailurePolicy.Trim();
+            tag.VirtualModel.FallbackValue ??= string.Empty;
+            tag.VirtualModel.Inputs ??= [];
+            foreach (VirtualModelInputBindingConfig input in tag.VirtualModel.Inputs)
+            {
+                input.FeatureName ??= string.Empty;
+                input.TagPath = input.TagPath?.Trim() ?? string.Empty;
+                if (Math.Abs(input.Multiplier) < 0.000000001D)
+                    input.Multiplier = 1D;
+            }
+            if (tag.IsVirtual)
+            {
+                tag.AccessMode = TagAccessMode.ReadOnly;
+                tag.Address = string.Empty;
+                tag.Source = "ONNX";
             }
         }
 

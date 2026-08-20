@@ -22,9 +22,13 @@ namespace IPC.Gateway.Inference;
 
 public static class OnnxInferenceServiceCollectionExtensions
 {
-    public static IServiceCollection AddGatewayOnnxInference(this IServiceCollection services)
+    public static IServiceCollection AddGatewayOnnxInference(
+        this IServiceCollection services,
+        OnnxModelCatalogOptions? options = null)
     {
         services.AddSingleton<IModelInferenceService, OnnxModelInferenceService>();
+        services.AddSingleton(options ?? new OnnxModelCatalogOptions());
+        services.AddSingleton<OnnxModelCatalogService>();
         return services;
     }
 }

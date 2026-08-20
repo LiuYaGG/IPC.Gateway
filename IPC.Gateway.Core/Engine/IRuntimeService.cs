@@ -50,6 +50,7 @@ namespace IPC.Runtime.Engine
         }
         IList<TagValueSnapshot> GetSnapshots();
         void RestoreSnapshots(IList<TagValueSnapshot> snapshots);
+        void PublishVirtualSnapshot(TagValueSnapshot snapshot) { }
         IList<DeviceRuntimeStatus> GetDeviceStatuses();
         RuntimeSchedulerStatus GetSchedulerStatus();
         IList<RuntimeErrorDetail> GetRecentErrors(int maxCount);

@@ -390,7 +390,7 @@
     </el-drawer>
 
     <el-drawer v-model="tagDrawerVisible" :title="editingTagId ? '编辑标签' : '新增标签'" size="640px">
-      <DeviceTagForm ref="tagFormComponent" v-if="tagForm" :model="tagForm" :device-protocol="tagTargetDevice?.protocol || ''" />
+      <DeviceTagForm ref="tagFormComponent" v-if="tagForm" :model="tagForm" :device-protocol="tagTargetDevice?.protocol || ''" :project="project" />
       <template #footer>
         <div class="drawer-footer">
           <el-button @click="tagDrawerVisible = false">取消</el-button>

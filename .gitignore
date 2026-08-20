@@ -43,7 +43,6 @@ tmp/
 # Vendor-only commercial license issuer. Keep signing code and private keys out of this repository.
 IPC.Gateway.LicenseTool/
 IPC.Gateway.LicenseIssuerClient/
-IPC.Gateway.LegacyProtocolPlugins/
 **/ipc-gateway-issuer-private.pem
 **/ipc-gateway-license-IPCGW-*.json
 

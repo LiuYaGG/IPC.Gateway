@@ -1115,7 +1115,7 @@ namespace IPC.Runtime.Engine
                 if (previous == null || HasTagValueChanged(previous, snapshot))
                     changedSnapshots.Add(snapshot.Clone());
 
-                if (previous == null && parentEnabled && tag.Enabled && CanRead(tag) && !string.IsNullOrWhiteSpace(device.Id))
+                if (previous == null && parentEnabled && tag.Enabled && CanDeviceRead(tag) && !string.IsNullOrWhiteSpace(device.Id))
                     devicesToPollImmediately?.Add(device.Id);
             }
         }
@@ -1154,7 +1154,7 @@ namespace IPC.Runtime.Engine
             for (int i = 0; i < tags.Count; i++)
             {
                 TagConfig tag = tags[i];
-                if (tag == null || !tag.Enabled || !CanRead(tag) || string.IsNullOrWhiteSpace(tag.Id))
+                if (tag == null || !tag.Enabled || !CanDeviceRead(tag) || string.IsNullOrWhiteSpace(tag.Id))
                     continue;
 
                 _nextReadUtcByTagId[tag.Id] = nowUtc;
@@ -1901,7 +1901,7 @@ namespace IPC.Runtime.Engine
                 for (int i = 0; i < device.Tags.Count; i++)
                 {
                     TagConfig tag = device.Tags[i];
-                    if (tag != null && tag.Enabled && CanRead(tag) && IsDue(tag, now))
+                    if (tag != null && tag.Enabled && CanDeviceRead(tag) && IsDue(tag, now))
                         return true;
                 }
             }
@@ -1918,7 +1918,7 @@ namespace IPC.Runtime.Engine
                 for (int t = 0; t < group.Tags.Count; t++)
                 {
                     TagConfig tag = group.Tags[t];
-                    if (tag != null && tag.Enabled && CanRead(tag) && IsDue(tag, now))
+                    if (tag != null && tag.Enabled && CanDeviceRead(tag) && IsDue(tag, now))
                         return true;
                 }
             }
@@ -2050,7 +2050,7 @@ namespace IPC.Runtime.Engine
             for (int i = 0; i < tags.Count; i++)
             {
                 TagConfig tag = tags[i];
-                if (tag == null || !tag.Enabled || !CanRead(tag))
+                if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
                     continue;
 
                 CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
@@ -2149,7 +2149,7 @@ namespace IPC.Runtime.Engine
                 return;
             }
 
-            if (!CanRead(tag))
+            if (!CanDeviceRead(tag))
             {
                 ScheduleNextSubscriptionFallback(device, group, tag, now);
                 UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."));
@@ -2583,9 +2583,27 @@ namespace IPC.Runtime.Engine
             return tag != null && tag.AccessMode != TagAccessMode.WriteOnly;
         }
 
+        /// <summary>
+        /// 判断标签是否应交给设备驱动采集，虚拟标签由独立的模型运行服务计算。
+        /// </summary>
+        private static bool CanDeviceRead(TagConfig tag)
+        {
+            return tag != null && !tag.IsVirtual && CanRead(tag);
+        }
+
         private static bool CanWrite(TagConfig tag)
         {
-            return tag != null && tag.AccessMode != TagAccessMode.ReadOnly;
+            return tag != null && !tag.IsVirtual && tag.AccessMode != TagAccessMode.ReadOnly;
+        }
+
+        /// <summary>
+        /// 将异步模型推理结果写入统一快照存储并触发历史、MQTT、规则和前端事件。
+        /// </summary>
+        public void PublishVirtualSnapshot(TagValueSnapshot snapshot)
+        {
+            if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.TagId) || !IsRunning)
+                return;
+            UpdateSnapshot(snapshot);
         }
 
         private void MarkDeviceUnavailableTagsOnce(DeviceRuntimeState deviceState)
@@ -2626,6 +2644,9 @@ namespace IPC.Runtime.Engine
             {
                 TagConfig tag = tags[t];
                 if (tag == null)
+                    continue;
+
+                if (tag.IsVirtual)
                     continue;
 
                 if (!tag.Enabled)
@@ -2670,6 +2691,9 @@ namespace IPC.Runtime.Engine
 
                 TagConfig tag = tags[t];
                 if (tag == null)
+                    continue;
+
+                if (tag.IsVirtual)
                     continue;
 
                 if (!IsDue(tag, now))
@@ -4295,7 +4319,7 @@ namespace IPC.Runtime.Engine
             for (int i = 0; i < tags.Count; i++)
             {
                 TagConfig tag = tags[i];
-                if (tag == null || !tag.Enabled || !CanRead(tag))
+                if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
                     continue;
 
                 int tagScanRate = GetEffectiveScanRateMs(device, group, tag);
@@ -4335,7 +4359,7 @@ namespace IPC.Runtime.Engine
             for (int i = 0; i < tags.Count; i++)
             {
                 TagConfig tag = tags[i];
-                if (tag == null || !tag.Enabled || !CanRead(tag))
+                if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
                     continue;
 
                 if (!_nextReadUtcByTagId.TryGetValue(tag.Id, out DateTime tagNext))

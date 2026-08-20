@@ -62,7 +62,59 @@ namespace IPC.Runtime.Configuration
             for (int i = 0; i < config.Devices.Count; i++)
                 ValidateDevice(config.Devices[i], i, deviceIds, deviceNames, groupIds, tagIds, result);
 
+            ValidateVirtualTagCycles(config, result);
+
             return result;
+        }
+
+        /// <summary>
+        /// 检查虚拟标签之间的模型输入依赖，阻止自引用和间接循环。
+        /// </summary>
+        private static void ValidateVirtualTagCycles(ProjectConfig config, ProjectConfigValidationResult result)
+        {
+            Dictionary<string, TagConfig> virtualTags = new Dictionary<string, TagConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (DeviceConfig device in config.Devices ?? new List<DeviceConfig>())
+            {
+                foreach (TagConfig tag in device.Tags ?? new List<TagConfig>())
+                    Add(tag);
+                foreach (GroupConfig group in device.Groups ?? new List<GroupConfig>())
+                    foreach (TagConfig tag in group.Tags ?? new List<TagConfig>())
+                        Add(tag);
+            }
+
+            HashSet<string> visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string tagId in virtualTags.Keys)
+                Visit(tagId, new List<string>());
+
+            void Add(TagConfig tag)
+            {
+                if (tag?.IsVirtual == true && !string.IsNullOrWhiteSpace(tag.Id))
+                    virtualTags[tag.Id] = tag;
+            }
+
+            void Visit(string tagId, List<string> path)
+            {
+                if (visited.Contains(tagId))
+                    return;
+                if (!visiting.Add(tagId))
+                {
+                    path.Add(tagId);
+                    result.AddError("虚拟标签存在循环依赖：" + string.Join(" -> ", path));
+                    return;
+                }
+                path.Add(tagId);
+                TagConfig current = virtualTags[tagId];
+                foreach (VirtualModelInputBindingConfig input in current.VirtualModel?.Inputs ?? new List<VirtualModelInputBindingConfig>())
+                {
+                    string[] parts = (input.TagPath ?? string.Empty).Split('/');
+                    string dependencyId = parts.Length == 4 ? parts[3].Trim() : string.Empty;
+                    if (virtualTags.ContainsKey(dependencyId))
+                        Visit(dependencyId, new List<string>(path));
+                }
+                visiting.Remove(tagId);
+                visited.Add(tagId);
+            }
         }
 
         private static void ValidateDevice(
@@ -207,6 +259,28 @@ namespace IPC.Runtime.Configuration
 
             if (!tag.Enabled)
                 return;
+
+            if (tag.IsVirtual)
+            {
+                PlcDataType[] supportedVirtualTypes =
+                [
+                    PlcDataType.Bool, PlcDataType.Coil, PlcDataType.DiscreteInput,
+                    PlcDataType.Int8, PlcDataType.UInt8, PlcDataType.Int16, PlcDataType.UInt16,
+                    PlcDataType.Int32, PlcDataType.UInt32, PlcDataType.Int64, PlcDataType.UInt64,
+                    PlcDataType.Float, PlcDataType.Double
+                ];
+                if (!supportedVirtualTypes.Contains(tag.DataType))
+                    result.AddError(prefix + "虚拟标签当前只支持标量数值或布尔数据类型。");
+                if (string.IsNullOrWhiteSpace(tag.VirtualModel?.ModelId))
+                    result.AddError(prefix + "虚拟标签必须选择已发布模型。");
+                if ((tag.VirtualModel?.ModelVersion ?? 0) <= 0)
+                    result.AddError(prefix + "虚拟标签模型版本必须大于0。");
+                if (tag.VirtualModel?.Inputs == null || tag.VirtualModel.Inputs.Count == 0)
+                    result.AddError(prefix + "虚拟标签至少需要绑定一个输入标签。");
+                else if (tag.VirtualModel.Inputs.Any(item => string.IsNullOrWhiteSpace(item.TagPath) || item.TagPath.Split('/').Length != 4))
+                    result.AddError(prefix + "虚拟标签输入路径必须为 ChannelId/DeviceId/GroupId/TagId。");
+                return;
+            }
 
             if (device.Protocol == PlcProtocol.Dlt6452007 ||
                 device.Protocol == PlcProtocol.Cjt1882004 ||

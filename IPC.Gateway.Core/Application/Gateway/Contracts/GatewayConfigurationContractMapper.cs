@@ -172,7 +172,41 @@ public static class GatewayConfigurationContractMapper
             Scaling = ToDto(tag.Scaling),
             Cleaning = ToDto(tag.Cleaning),
             Alarm = ToDto(tag.Alarm),
-            Description = tag.Description
+            Description = tag.Description,
+            IsVirtual = tag.IsVirtual,
+            VirtualModel = ToDto(tag.VirtualModel)
+        };
+    }
+
+    /// <summary>
+    /// 将虚拟模型标签配置映射到 Web DTO。
+    /// </summary>
+    public static VirtualModelTagConfigurationDto ToDto(VirtualModelTagConfig config)
+    {
+        config ??= new VirtualModelTagConfig();
+        return new VirtualModelTagConfigurationDto
+        {
+            ModelId = config.ModelId,
+            ModelVersion = config.ModelVersion,
+            InputName = config.InputName,
+            InputNames = config.InputNames,
+            OutputName = config.OutputName,
+            OutputIndex = config.OutputIndex,
+            TriggerMode = config.TriggerMode,
+            IntervalMilliseconds = config.IntervalMilliseconds,
+            DebounceMilliseconds = config.DebounceMilliseconds,
+            MaxInputAgeMilliseconds = config.MaxInputAgeMilliseconds,
+            TimeoutMilliseconds = config.TimeoutMilliseconds,
+            FailurePolicy = config.FailurePolicy,
+            FallbackValue = config.FallbackValue,
+            BoolThreshold = config.BoolThreshold,
+            Inputs = (config.Inputs ?? []).Select(item => new VirtualModelInputBindingDto
+            {
+                FeatureName = item.FeatureName,
+                TagPath = item.TagPath,
+                Multiplier = item.Multiplier,
+                Offset = item.Offset
+            }).ToList()
         };
     }
 
@@ -1459,7 +1493,41 @@ public static class GatewayConfigurationContractMapper
             Scaling = ToConfig(dto.Scaling),
             Cleaning = ToConfig(dto.Cleaning),
             Alarm = ToConfig(dto.Alarm),
-            Description = dto.Description
+            Description = dto.Description,
+            IsVirtual = dto.IsVirtual,
+            VirtualModel = ToConfig(dto.VirtualModel)
+        };
+    }
+
+    /// <summary>
+    /// 将 Web 虚拟模型标签配置映射回核心配置。
+    /// </summary>
+    public static VirtualModelTagConfig ToConfig(VirtualModelTagConfigurationDto dto)
+    {
+        dto ??= new VirtualModelTagConfigurationDto();
+        return new VirtualModelTagConfig
+        {
+            ModelId = dto.ModelId,
+            ModelVersion = dto.ModelVersion,
+            InputName = dto.InputName,
+            InputNames = dto.InputNames,
+            OutputName = dto.OutputName,
+            OutputIndex = dto.OutputIndex,
+            TriggerMode = dto.TriggerMode,
+            IntervalMilliseconds = dto.IntervalMilliseconds,
+            DebounceMilliseconds = dto.DebounceMilliseconds,
+            MaxInputAgeMilliseconds = dto.MaxInputAgeMilliseconds,
+            TimeoutMilliseconds = dto.TimeoutMilliseconds,
+            FailurePolicy = dto.FailurePolicy,
+            FallbackValue = dto.FallbackValue,
+            BoolThreshold = dto.BoolThreshold,
+            Inputs = (dto.Inputs ?? []).Select(item => new VirtualModelInputBindingConfig
+            {
+                FeatureName = item.FeatureName,
+                TagPath = item.TagPath,
+                Multiplier = item.Multiplier,
+                Offset = item.Offset
+            }).ToList()
         };
     }
 

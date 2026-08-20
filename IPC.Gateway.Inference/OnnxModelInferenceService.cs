@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using IPC.Gateway.Core.Gateway;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -34,12 +35,13 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
 
     public ModelInferenceResult Predict(ModelInferenceRequest request)
     {
+        Stopwatch stopwatch = Stopwatch.StartNew();
         if (request == null)
-            return ModelInferenceResult.Failed("Inference request is empty.");
+            return Complete(ModelInferenceResult.Failed("Inference request is empty."), stopwatch);
         if (string.IsNullOrWhiteSpace(request.ModelPath))
-            return ModelInferenceResult.Failed("Model path is empty.");
+            return Complete(ModelInferenceResult.Failed("Model path is empty."), stopwatch);
         if (request.Features == null || request.Features.Count == 0)
-            return ModelInferenceResult.Failed("Model features are empty.");
+            return Complete(ModelInferenceResult.Failed("Model features are empty."), stopwatch);
 
         int timeoutMilliseconds = NormalizeTimeout(request.TimeoutMilliseconds);
         RunOptions runOptions = new RunOptions();
@@ -66,24 +68,34 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
                     _ = task.ContinueWith(_ => runOptions.Dispose(), TaskScheduler.Default);
                 else
                     runOptions.Dispose();
-                return ModelInferenceResult.Failed("ONNX inference timed out after " + timeoutMilliseconds + " ms.");
+                return Complete(ModelInferenceResult.Failed("ONNX inference timed out after " + timeoutMilliseconds + " ms."), stopwatch);
             }
 
             ModelInferenceResult result = task.GetAwaiter().GetResult();
             runOptions.Dispose();
-            return result;
+            return Complete(result, stopwatch);
         }
         catch (AggregateException ex)
         {
             runOptions.Dispose();
             Exception inner = ex.Flatten().InnerExceptions.FirstOrDefault() ?? ex;
-            return ModelInferenceResult.Failed(inner.Message);
+            return Complete(ModelInferenceResult.Failed(inner.Message), stopwatch);
         }
         catch (Exception ex)
         {
             runOptions.Dispose();
-            return ModelInferenceResult.Failed(ex.Message);
+            return Complete(ModelInferenceResult.Failed(ex.Message), stopwatch);
         }
+    }
+
+    /// <summary>
+    /// 写入一次推理的总耗时并返回结果。
+    /// </summary>
+    private static ModelInferenceResult Complete(ModelInferenceResult result, Stopwatch stopwatch)
+    {
+        stopwatch.Stop();
+        result.DurationMilliseconds = stopwatch.ElapsedMilliseconds;
+        return result;
     }
 
     public void Dispose()

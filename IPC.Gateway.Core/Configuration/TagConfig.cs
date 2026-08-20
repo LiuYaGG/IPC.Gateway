@@ -59,6 +59,7 @@ namespace IPC.Runtime.Configuration
             Cleaning = DataCleaningConfig.Default();
             Alarm = TagAlarmConfig.Default();
             Description = string.Empty;
+            VirtualModel = new VirtualModelTagConfig();
         }
 
         public string Id { get; set; }
@@ -87,5 +88,7 @@ namespace IPC.Runtime.Configuration
         public DataCleaningConfig Cleaning { get; set; }
         public TagAlarmConfig Alarm { get; set; }
         public string Description { get; set; }
+        public bool IsVirtual { get; set; }
+        public VirtualModelTagConfig VirtualModel { get; set; }
     }
 }

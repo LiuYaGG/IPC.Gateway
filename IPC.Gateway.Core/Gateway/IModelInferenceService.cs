@@ -59,6 +59,7 @@ namespace IPC.Gateway.Core.Gateway
         public IList<double> Outputs { get; set; }
         public string ErrorMessage { get; set; }
         public DateTime Timestamp { get; set; }
+        public long DurationMilliseconds { get; set; }
 
         public static ModelInferenceResult Failed(string message)
         {

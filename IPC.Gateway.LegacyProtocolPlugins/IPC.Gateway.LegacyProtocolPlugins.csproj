@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj"
+                      Private="false"
+                      ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Beckhoff.TwinCAT.Ads" Version="7.0.292" />
+    <PackageReference Include="EEIP.NetStandard" Version="1.0.1" />
+    <PackageReference Include="Lextm.SharpSnmpLib" Version="12.5.7" />
+    <PackageReference Include="opendnp3" Version="3.1.2" GeneratePathProperty="true" ExcludeAssets="all" />
+    <PackageReference Include="NModbus.Serial" Version="3.0.83" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.145" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+    <PackageReference Include="BACnet" Version="3.0.2" />
+    <PackageReference Include="log4net" Version="3.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="DNP3CLRAdapter">
+      <HintPath>$(Pkgopendnp3)\runtime\x64\DNP3CLRAdapter.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="DNP3CLRInterface">
+      <HintPath>$(Pkgopendnp3)\runtime\x64\DNP3CLRInterface.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="IPC.Gateway.LegacyProtocolPlugins.ipc-driver.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyLegacyProtocolPluginToWebHost" AfterTargets="Build">
+    <PropertyGroup>
+      <GatewayDriversDir>..\IPC.Gateway.WebHost\bin\$(Configuration)\net10.0\Drivers\</GatewayDriversDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(GatewayDriversDir)" />
+    <ItemGroup>
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)Opc.UaFx.Client.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)BouncyCastle.Crypto.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)System.Management.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)System.ServiceModel.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)System.ServiceModel.Primitives.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)Opc.Ua.Gds.Client.Common.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)Opc.Ua.Gds.Server.Common.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(TargetDir)Opc.Ua.Server.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)Opc.UaFx.Client.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)BouncyCastle.Crypto.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)System.Management.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)System.ServiceModel.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)System.ServiceModel.Primitives.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)Opc.Ua.Gds.Client.Common.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)Opc.Ua.Gds.Server.Common.dll" />
+      <RemovedOpcUaMigrationFiles Include="$(GatewayDriversDir)Opc.Ua.Server.dll" />
+    </ItemGroup>
+    <Delete Files="@(RemovedOpcUaMigrationFiles)" />
+    <ItemGroup>
+      <LegacyProtocolPluginFiles Include="$(TargetDir)*.*"
+                                 Exclude="$(TargetDir)IPC.Gateway.Core.*;$(TargetDir)*.pdb" />
+      <LegacyProtocolPluginRuntimeFiles Include="$(TargetDir)runtimes\**\System.IO.Ports*.*;$(TargetDir)runtimes\**\libSystem.IO.Ports.Native.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LegacyProtocolPluginFiles)"
+          DestinationFolder="$(GatewayDriversDir)"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LegacyProtocolPluginRuntimeFiles)"
+          DestinationFolder="$(GatewayDriversDir)runtimes\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

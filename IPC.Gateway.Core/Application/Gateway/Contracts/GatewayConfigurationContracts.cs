@@ -131,6 +131,41 @@ public class TagConfigurationDto
     public DataCleaningConfigurationDto Cleaning { get; set; } = new DataCleaningConfigurationDto();
     public TagAlarmConfigurationDto Alarm { get; set; } = new TagAlarmConfigurationDto();
     public string Description { get; set; } = string.Empty;
+    public bool IsVirtual { get; set; }
+    public VirtualModelTagConfigurationDto VirtualModel { get; set; } = new();
+}
+
+/// <summary>
+/// 表示虚拟模型标签的 Web 配置。
+/// </summary>
+public sealed class VirtualModelTagConfigurationDto
+{
+    public string ModelId { get; set; } = string.Empty;
+    public int ModelVersion { get; set; }
+    public string InputName { get; set; } = string.Empty;
+    public string InputNames { get; set; } = string.Empty;
+    public string OutputName { get; set; } = string.Empty;
+    public int OutputIndex { get; set; }
+    public string TriggerMode { get; set; } = "OnInputChanged";
+    public int IntervalMilliseconds { get; set; } = 1000;
+    public int DebounceMilliseconds { get; set; } = 100;
+    public int MaxInputAgeMilliseconds { get; set; } = 10000;
+    public int TimeoutMilliseconds { get; set; } = 1000;
+    public string FailurePolicy { get; set; } = "KeepLastGood";
+    public string FallbackValue { get; set; } = string.Empty;
+    public double BoolThreshold { get; set; } = 0.5D;
+    public IList<VirtualModelInputBindingDto> Inputs { get; set; } = new List<VirtualModelInputBindingDto>();
+}
+
+/// <summary>
+/// 表示一个模型输入特征的标签绑定。
+/// </summary>
+public sealed class VirtualModelInputBindingDto
+{
+    public string FeatureName { get; set; } = string.Empty;
+    public string TagPath { get; set; } = string.Empty;
+    public double Multiplier { get; set; } = 1D;
+    public double Offset { get; set; }
 }
 
 public sealed class PlcConnectionDto

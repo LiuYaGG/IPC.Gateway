@@ -702,7 +702,41 @@ namespace IPC.Runtime.Configuration
                 Scaling = CloneScaling(source.Scaling),
                 Cleaning = CloneCleaning(source.Cleaning),
                 Alarm = CloneAlarm(source.Alarm),
-                Description = source.Description
+                Description = source.Description,
+                IsVirtual = source.IsVirtual,
+                VirtualModel = CloneVirtualModel(source.VirtualModel)
+            };
+        }
+
+        /// <summary>
+        /// 深复制虚拟模型标签配置。
+        /// </summary>
+        private static VirtualModelTagConfig CloneVirtualModel(VirtualModelTagConfig? source)
+        {
+            source ??= new VirtualModelTagConfig();
+            return new VirtualModelTagConfig
+            {
+                ModelId = source.ModelId,
+                ModelVersion = source.ModelVersion,
+                InputName = source.InputName,
+                InputNames = source.InputNames,
+                OutputName = source.OutputName,
+                OutputIndex = source.OutputIndex,
+                TriggerMode = source.TriggerMode,
+                IntervalMilliseconds = source.IntervalMilliseconds,
+                DebounceMilliseconds = source.DebounceMilliseconds,
+                MaxInputAgeMilliseconds = source.MaxInputAgeMilliseconds,
+                TimeoutMilliseconds = source.TimeoutMilliseconds,
+                FailurePolicy = source.FailurePolicy,
+                FallbackValue = source.FallbackValue,
+                BoolThreshold = source.BoolThreshold,
+                Inputs = (source.Inputs ?? []).Select(item => new VirtualModelInputBindingConfig
+                {
+                    FeatureName = item.FeatureName,
+                    TagPath = item.TagPath,
+                    Multiplier = item.Multiplier,
+                    Offset = item.Offset
+                }).ToList()
             };
         }
 

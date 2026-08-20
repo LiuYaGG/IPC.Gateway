@@ -27,6 +27,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http.Features;
 
 string startupWebRoot = GatewayWebRoot.PrepareBeforeBuilder(Directory.GetCurrentDirectory(), AppContext.BaseDirectory);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -49,7 +50,15 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddGatewayFlowRules();
-builder.Services.AddGatewayOnnxInference();
+builder.Services.AddGatewayOnnxInference(new OnnxModelCatalogOptions
+{
+    Directory = builder.Configuration["Gateway:Inference:ModelDirectory"] ?? "Data\\Models",
+    MaxUploadBytes = builder.Configuration.GetValue<long?>("Gateway:Inference:MaxModelUploadBytes") ?? 100L * 1024 * 1024
+});
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 100L * 1024 * 1024;
+});
 builder.Services.AddGatewayCore(builder.Configuration);
 builder.Services.AddSingleton(securityOptions);
 builder.Services.AddSingleton(updateOptions);
@@ -74,6 +83,7 @@ builder.Services.AddSingleton<IScriptSecretProtector, GatewayScriptSecretProtect
 builder.Services.AddSingleton<IScriptTagAccessor, GatewayScriptTagAccessor>();
 builder.Services.AddGatewayScripting(scriptingOptions);
 builder.Services.AddHostedService<GatewayRuntimePushHostedService>();
+builder.Services.AddHostedService<VirtualModelTagRuntimeService>();
 builder.Services.AddGatewayWatchdog(builder.Configuration);
 
 var app = builder.Build();
@@ -233,6 +243,7 @@ app.MapGatewayCommercialEndpoints();
 app.MapGatewayUpdateEndpoints();
 app.MapGatewayWatchdogEndpoints();
 app.MapGatewayScriptEndpoints();
+app.MapGatewayModelEndpoints();
 app.MapFallback(async context =>
 {
     if (context.Request.Path.StartsWithSegments("/api"))

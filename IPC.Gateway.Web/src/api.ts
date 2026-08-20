@@ -962,6 +962,33 @@ export interface TagConfig {
   cleaning: DataCleaningConfig
   alarm: TagAlarmConfig
   description: string
+  isVirtual: boolean
+  virtualModel: VirtualModelTagConfig
+}
+
+export interface VirtualModelTagConfig {
+  modelId: string
+  modelVersion: number
+  inputName: string
+  inputNames: string
+  outputName: string
+  outputIndex: number
+  triggerMode: 'OnInputChanged' | 'Interval'
+  intervalMilliseconds: number
+  debounceMilliseconds: number
+  maxInputAgeMilliseconds: number
+  timeoutMilliseconds: number
+  failurePolicy: 'KeepLastGood' | 'UseFallback' | 'MarkBad'
+  fallbackValue: string
+  boolThreshold: number
+  inputs: VirtualModelInputBinding[]
+}
+
+export interface VirtualModelInputBinding {
+  featureName: string
+  tagPath: string
+  multiplier: number
+  offset: number
 }
 
 export interface ScalingConfig {

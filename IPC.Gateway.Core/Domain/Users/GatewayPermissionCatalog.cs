@@ -80,6 +80,11 @@ public static class GatewayPermissions
     public const string EditScripts = "scripts.edit";
     public const string ExecuteScripts = "scripts.execute";
     public const string ManageScriptDatabases = "scripts.databases.manage";
+    public const string ViewModels = "models.view";
+    public const string EditModels = "models.edit";
+    public const string UploadModels = "models.upload";
+    public const string PublishModels = "models.publish";
+    public const string TestModels = "models.test";
 
     public const string ViewUsers = "users.view";
     public const string CreateUser = "users.create";
@@ -131,6 +136,12 @@ public static class GatewayPermissions
         Action(EditScripts, "编辑脚本", "脚本中心", "新增、修改、启停和删除 .NET 脚本。"),
         Action(ExecuteScripts, "执行脚本", "脚本中心", "编译检查并手动执行 .NET 脚本。"),
         Action(ManageScriptDatabases, "管理脚本数据库", "脚本中心", "管理外部数据库连接及仅允许 INSERT/UPDATE 的写入目标。"),
+
+        Page(ViewModels, "模型中心", "模型中心", "查看 ONNX 模型、版本、张量结构和运行状态。"),
+        Action(EditModels, "编辑模型", "模型中心", "新增、修改和删除未发布模型版本。"),
+        Action(UploadModels, "上传模型", "模型中心", "上传并检查 ONNX 模型版本。"),
+        Action(PublishModels, "发布模型", "模型中心", "将通过检查的模型版本发布给规则和虚拟标签使用。"),
+        Action(TestModels, "测试模型", "模型中心", "使用手工或实时标签数据测试模型。"),
 
         Page(ViewAudit, "审计日志", "审计日志", "查看审计日志。"),
         Action(ExportAudit, "导出审计日志", "审计日志", "导出审计日志 CSV。"),
@@ -228,7 +239,12 @@ public static class GatewayPermissions
                 EditProject,
                 ViewHistory,
                 EditHistory,
-                EditWatchdog
+                EditWatchdog,
+                ViewModels,
+                EditModels,
+                UploadModels,
+                PublishModels,
+                TestModels
             };
 
         return new[]
@@ -241,7 +257,8 @@ public static class GatewayPermissions
             ViewMqtt,
             ViewOpcUa,
             ViewProject,
-            ViewHistory
+            ViewHistory,
+            ViewModels
         };
     }
 

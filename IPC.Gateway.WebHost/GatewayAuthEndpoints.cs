@@ -387,6 +387,36 @@ public static class GatewayAuthEndpoints
         return IsAdmin(user) || HasPermission(user, GatewayPermissions.ManageScriptDatabases);
     }
 
+    /// <summary>
+    /// 判断当前用户是否可以查看模型中心。
+    /// </summary>
+    public static bool CanViewModels(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasPermission(user, GatewayPermissions.ViewModels);
+
+    /// <summary>
+    /// 判断当前用户是否可以编辑模型目录。
+    /// </summary>
+    public static bool CanEditModels(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasPermission(user, GatewayPermissions.EditModels);
+
+    /// <summary>
+    /// 判断当前用户是否可以上传模型。
+    /// </summary>
+    public static bool CanUploadModels(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasPermission(user, GatewayPermissions.UploadModels);
+
+    /// <summary>
+    /// 判断当前用户是否可以发布模型。
+    /// </summary>
+    public static bool CanPublishModels(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasPermission(user, GatewayPermissions.PublishModels);
+
+    /// <summary>
+    /// 判断当前用户是否可以执行模型测试。
+    /// </summary>
+    public static bool CanTestModels(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasPermission(user, GatewayPermissions.TestModels);
+
     public static bool CanViewUsers(ClaimsPrincipal user)
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ViewUsers, GatewayPermissions.ManageUsers);
