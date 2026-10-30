@@ -11,9 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj"
-                      Private="false"
-                      ExcludeAssets="runtime" />
+    <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" Private="false" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +24,7 @@
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
     <PackageReference Include="BACnet" Version="3.0.2" />
     <PackageReference Include="log4net" Version="3.3.0" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
   </ItemGroup>
 
   <ItemGroup>
@@ -68,16 +67,11 @@
     </ItemGroup>
     <Delete Files="@(RemovedOpcUaMigrationFiles)" />
     <ItemGroup>
-      <LegacyProtocolPluginFiles Include="$(TargetDir)*.*"
-                                 Exclude="$(TargetDir)IPC.Gateway.Core.*;$(TargetDir)*.pdb" />
+      <LegacyProtocolPluginFiles Include="$(TargetDir)*.*" Exclude="$(TargetDir)IPC.Gateway.Core.*;$(TargetDir)*.pdb" />
       <LegacyProtocolPluginRuntimeFiles Include="$(TargetDir)runtimes\**\System.IO.Ports*.*;$(TargetDir)runtimes\**\libSystem.IO.Ports.Native.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(LegacyProtocolPluginFiles)"
-          DestinationFolder="$(GatewayDriversDir)"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(LegacyProtocolPluginRuntimeFiles)"
-          DestinationFolder="$(GatewayDriversDir)runtimes\%(RecursiveDir)"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LegacyProtocolPluginFiles)" DestinationFolder="$(GatewayDriversDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LegacyProtocolPluginRuntimeFiles)" DestinationFolder="$(GatewayDriversDir)runtimes\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

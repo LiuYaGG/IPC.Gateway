@@ -90,7 +90,7 @@
         </template>
 
         <div v-if="selectedNode.type === 'root'" class="device-overview">
-          <el-table :data="pagedFilteredDevices" row-key="id" height="520">
+          <el-table :data="pagedFilteredDevices" row-key="id" height="100%">
             <el-table-column prop="name" label="设备名称" min-width="170" fixed />
             <el-table-column label="通道" min-width="160">
               <template #default="{ row }">{{ channelName(row.channelId) }}</template>
@@ -163,7 +163,7 @@
               <strong>{{ selectedChannel.maxConcurrentDevicePolls }}</strong>
             </div>
           </div>
-          <el-table :data="selectedChannelDevices" row-key="id" height="500" class="channel-device-table">
+          <el-table :data="selectedChannelDevices" row-key="id" height="100%" class="channel-device-table">
             <el-table-column prop="name" label="设备名称" min-width="180" />
             <el-table-column label="连接" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">{{ connectionSummary(row) }}</template>
@@ -538,14 +538,14 @@ const emit = defineEmits<{
 const { hasPermission } = usePermissions()
 const treeRowHeight = 38
 const treeOverscan = 8
-const treeViewportRows = 16
 const tagRowHeight = 44
 const tagHeaderHeight = 42
 const tagOverscan = 10
-const tagViewportRows = 12
 const treeScroller = ref<HTMLElement | null>(null)
+const treeViewportHeight = ref(treeRowHeight * 16)
 const treeScrollTop = ref(0)
 const tagScroller = ref<HTMLElement | null>(null)
+const tagViewportHeight = ref(tagHeaderHeight + tagRowHeight * 12)
 const tagScrollTop = ref(0)
 const expandedTreeKeys = ref(new Set<string>(['root']))
 const deviceFilterInput = ref('')
@@ -603,6 +603,7 @@ const contextMenu = reactive({
 })
 let filterTimer: number | undefined
 let protocolCatalogLoadPromise: Promise<void> | null = null
+let viewportObserver: ResizeObserver | undefined
 
 const editingActive = computed(() =>
   channelDrawerVisible.value ||
@@ -739,14 +740,14 @@ const flatTreeRows = computed<DeviceTreeRow[]>(() => {
 const virtualTreeHeight = computed(() => flatTreeRows.value.length * treeRowHeight)
 const visibleTreeRows = computed(() => {
   const start = Math.max(0, Math.floor(treeScrollTop.value / treeRowHeight) - treeOverscan)
-  const count = treeViewportRows + treeOverscan * 2
+  const count = Math.ceil(treeViewportHeight.value / treeRowHeight) + treeOverscan * 2
   return flatTreeRows.value.slice(start, start + count)
 })
 const virtualTagHeight = computed(() => selectedTags.value.length * tagRowHeight)
 const visibleTagRows = computed<TagVirtualRow[]>(() => {
   const bodyScrollTop = Math.max(0, tagScrollTop.value - tagHeaderHeight)
   const start = Math.max(0, Math.floor(bodyScrollTop / tagRowHeight) - tagOverscan)
-  const count = tagViewportRows + tagOverscan * 2
+  const count = Math.ceil(Math.max(0, tagViewportHeight.value - tagHeaderHeight) / tagRowHeight) + tagOverscan * 2
   return selectedTags.value.slice(start, start + count).map((tag, offset) => {
     const index = start + offset
     return { tag, index, top: index * tagRowHeight }
@@ -797,12 +798,27 @@ watch(selectedNodeKey, key => {
   tagScroller.value?.scrollTo({ top: 0 })
   expandSelectedNodePath(key)
 })
+watch([treeScroller, tagScroller], ([tree, tags], [previousTree, previousTags]) => {
+  if (previousTree) viewportObserver?.unobserve(previousTree)
+  if (previousTags) viewportObserver?.unobserve(previousTags)
+  if (tree) viewportObserver?.observe(tree)
+  if (tags) viewportObserver?.observe(tags)
+}, { flush: 'post' })
 
 onMounted(() => {
+  viewportObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      if (entry.target === treeScroller.value) treeViewportHeight.value = entry.target.clientHeight
+      if (entry.target === tagScroller.value) tagViewportHeight.value = entry.target.clientHeight
+    }
+  })
+  if (treeScroller.value) viewportObserver.observe(treeScroller.value)
+  if (tagScroller.value) viewportObserver.observe(tagScroller.value)
   void ensureProtocolCatalogLoaded()
 })
 
 onBeforeUnmount(() => {
+  viewportObserver?.disconnect()
   if (filterTimer !== undefined) window.clearTimeout(filterTimer)
 })
 
@@ -1361,6 +1377,7 @@ function validateScalarValue(type: string, value: string) {
   const number = Number(value)
   if (!Number.isSafeInteger(number)) return '整数超出安全范围'
   const ranges: Record<string, [number, number]> = {
+    byte: [0, 255],
     int8: [-128, 127],
     uint8: [0, 255],
     int16: [-32768, 32767],

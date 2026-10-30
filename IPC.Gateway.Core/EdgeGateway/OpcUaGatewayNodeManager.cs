@@ -273,7 +273,7 @@ namespace IPC.EdgeGateway
 
             if (dataType.Equals("Int8", StringComparison.OrdinalIgnoreCase) && sbyte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out sbyte int8Value))
                 return int8Value;
-            if (dataType.Equals("UInt8", StringComparison.OrdinalIgnoreCase) && byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte uint8Value))
+            if ((dataType.Equals("Byte", StringComparison.OrdinalIgnoreCase) || dataType.Equals("UInt8", StringComparison.OrdinalIgnoreCase)) && byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte uint8Value))
                 return uint8Value;
             if (dataType.Equals("Int16", StringComparison.OrdinalIgnoreCase) && short.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out short int16Value))
                 return int16Value;
@@ -309,7 +309,9 @@ namespace IPC.EdgeGateway
                 case PlcDataType.Int8:
                 case PlcDataType.Int8Array:
                     return DataTypeIds.SByte;
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                     return DataTypeIds.Byte;
                 case PlcDataType.Int16:
@@ -345,6 +347,7 @@ namespace IPC.EdgeGateway
         {
             return dataType == PlcDataType.BoolArray ||
                    dataType == PlcDataType.Int8Array ||
+                   dataType == PlcDataType.ByteArray ||
                    dataType == PlcDataType.UInt8Array ||
                    dataType == PlcDataType.Int16Array ||
                    dataType == PlcDataType.UInt16Array ||

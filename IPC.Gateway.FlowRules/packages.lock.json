@@ -8,6 +8,12 @@
         "resolved": "10.0.8",
         "contentHash": "21nbDV60SRPWGIivsyl6lqBeEJNG1sginhhfWgRrr3Ais7aQ12To25OAHQxgoiJkjqy1aQ6RxpZBGYuTi7Ge6A=="
       },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "Direct",
+        "requested": "[9.0.21, )",
+        "resolved": "9.0.21",
+        "contentHash": "KD+oHoYIxwNCajjVe58WVwq9cRpum+Pg3tRveDRtkcaw6w3oc7sNBoMRtb5P5OehI3bgv1ucMpgjf8lpj5J96A=="
+      },
       "BitFaster.Caching": {
         "type": "Transitive",
         "resolved": "2.6.0",
@@ -419,11 +425,6 @@
           "Microsoft.IdentityModel.Tokens": "8.16.0"
         }
       },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "9.0.13",
-        "contentHash": "dxJhkuoaelvWy588wPXjShNks+ZMiSgXnN75/u+DPbER5PqKrLPDftE0BvGM7nDK/scQAVlD+gRXlCAAjWi58Q=="
-      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "9.0.13",
@@ -441,7 +442,8 @@
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "SqlSugarCore": "[5.1.4.214, )",
-          "SqlSugarCore.MySqlConnector": "[5.1.4.92, )"
+          "SqlSugarCore.MySqlConnector": "[5.1.4.92, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.dataprocessing": {

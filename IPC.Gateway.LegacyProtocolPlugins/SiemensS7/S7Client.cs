@@ -294,10 +294,12 @@ namespace IPC.Plc.Communication.SiemensS7
                 if (items.Exists(item => !string.Equals(item.GroupKey, groupKey, StringComparison.Ordinal)))
                     return false;
                 items.Sort((left, right) => left.StartByte.CompareTo(right.StartByte));
+                int coveredEnd = items[0].EndByte;
                 for (int i = 1; i < items.Count; i++)
                 {
-                    if (items[i].StartByte > items[i - 1].EndByte + 1)
+                    if (items[i].StartByte > coveredEnd + 1)
                         return false;
+                    coveredEnd = Math.Max(coveredEnd, items[i].EndByte);
                 }
                 return true;
             }
@@ -724,23 +726,27 @@ namespace IPC.Plc.Communication.SiemensS7
             EnsureAckData(response, s7);
             int parameterLength = ReadUInt16(response, s7 + 6);
             int dataOffset = s7 + 12 + parameterLength;
+            int dataEnd = dataOffset + ReadUInt16(response, s7 + 8);
+            if (parameterLength < 2 || dataOffset > response.Length || dataEnd != response.Length ||
+                response[s7 + 12] != 0x04 || response[s7 + 13] != items.Count)
+                throw new InvalidOperationException("S7 multi-read response header is invalid.");
+
+            // Snap7 can leave nonzero bytes in alignment slots. Determine the
+            // complete layout from item lengths and the declared data boundary,
+            // never from a fill byte's value. Hsl responses may omit alignment.
+            int[] itemOffsets;
+            if (!TryGetMultiReadItemOffsets(response, items, dataOffset, dataEnd, true, out itemOffsets) &&
+                !TryGetMultiReadItemOffsets(response, items, dataOffset, dataEnd, false, out itemOffsets))
+                throw new InvalidOperationException("S7 multi-read item length is invalid.");
 
             for (int i = 0; i < items.Count; i++)
             {
-                if (response.Length < dataOffset + 4)
-                    throw new InvalidOperationException("S7 multi-read response is shorter than expected.");
-
+                dataOffset = itemOffsets[i];
                 byte returnCode = response[dataOffset];
-                byte transportSize = response[dataOffset + 1];
-                int encodedLength = ReadUInt16(response, dataOffset + 2);
-                int byteLength = transportSize == 0x09 ? encodedLength : (encodedLength + 7) / 8;
-                if (response.Length < dataOffset + 4 + byteLength)
-                    throw new InvalidOperationException("S7 multi-read item length is invalid.");
-
                 S7MultiReadItem item = items[i];
                 if (returnCode == 0xFF)
                 {
-                    item.Data = Slice(response, dataOffset + 4, byteLength);
+                    item.Data = Slice(response, dataOffset + 4, item.ByteCount);
                     item.ErrorMessage = string.Empty;
                 }
                 else
@@ -751,15 +757,49 @@ namespace IPC.Plc.Communication.SiemensS7
                         ? PlcReadFailureScope.Device
                         : PlcReadFailureScope.Tag;
                 }
-
-                dataOffset += 4 + byteLength;
-                // Standard S7 responses align odd-length items with a zero byte.
-                // Some simulators (including Hsl) omit it, so do not consume the
-                // next item's return code when no fill byte is present.
-                if ((byteLength % 2) != 0 && i < items.Count - 1 &&
-                    dataOffset < response.Length && response[dataOffset] == 0x00)
-                    dataOffset++;
             }
+        }
+
+        private static bool TryGetMultiReadItemOffsets(
+            byte[] response, IList<S7MultiReadItem> items, int offset, int dataEnd,
+            bool aligned, out int[] itemOffsets)
+        {
+            itemOffsets = new int[items.Count];
+            int byteLength = 0;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (offset > dataEnd - 4)
+                    return false;
+                itemOffsets[i] = offset;
+                byte returnCode = response[offset];
+                byte transportSize = response[offset + 1];
+                int encodedLength = ReadUInt16(response, offset + 2);
+                if (returnCode == 0xFF)
+                {
+                    if (transportSize != 0x03 && transportSize != 0x04 && transportSize != 0x05 &&
+                        transportSize != 0x07 && transportSize != 0x09)
+                        return false;
+                    byteLength = transportSize == 0x07 || transportSize == 0x09
+                        ? encodedLength : (encodedLength + 7) / 8;
+                    if (byteLength != items[i].ByteCount)
+                        return false;
+                }
+                else
+                {
+                    // Failed items carry no payload. Snap7 sets the length to
+                    // four (the status header size); other servers use zero.
+                    if (transportSize != 0x00 || (encodedLength != 0 && encodedLength != 4))
+                        return false;
+                    byteLength = 0;
+                }
+                offset += 4 + byteLength;
+                if (offset > dataEnd)
+                    return false;
+                if (aligned && (byteLength % 2) != 0 && i < items.Count - 1)
+                    offset++;
+            }
+            // Some servers also align the final odd-length item.
+            return offset == dataEnd || ((byteLength % 2) != 0 && offset + 1 == dataEnd);
         }
 
         private static string GetS7ItemError(byte returnCode)
@@ -902,7 +942,9 @@ namespace IPC.Plc.Communication.SiemensS7
                 case PlcDataType.Bool:
                 case PlcDataType.BoolArray:
                     return "BOOL";
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                     return "BYTE";
                 case PlcDataType.Int16:

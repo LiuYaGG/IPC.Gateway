@@ -47,6 +47,7 @@ namespace IPC.Plc.Communication.Cip
                 case PlcDataType.Int8:
                     Require(data, 1);
                     return unchecked((sbyte)data[0]);
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
                     Require(data, 1);
                     return data[0];
@@ -85,6 +86,7 @@ namespace IPC.Plc.Communication.Cip
                     return DecodeBoolArray(actualType, data, count);
                 case PlcDataType.Int8Array:
                     return DecodeArray<sbyte>(data, count, 1, delegate(byte[] b, int o) { return unchecked((sbyte)b[o]); });
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                     return DecodeArray<byte>(data, count, 1, delegate(byte[] b, int o) { return b[o]; });
                 case PlcDataType.Int16Array:
@@ -132,6 +134,7 @@ namespace IPC.Plc.Communication.Cip
             {
                 case PlcDataType.Int8:
                     return new[] { unchecked((byte)sbyte.Parse(text, CultureInfo.InvariantCulture)) };
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
                     return new[] { byte.Parse(text, CultureInfo.InvariantCulture) };
                 case PlcDataType.Bool:
@@ -158,6 +161,7 @@ namespace IPC.Plc.Communication.Cip
                     return EncodeBoolArray(SplitValues(text));
                 case PlcDataType.Int8Array:
                     return EncodeArray(SplitValues(text), delegate(string s) { return new[] { unchecked((byte)sbyte.Parse(s, CultureInfo.InvariantCulture)) }; });
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                     return EncodeArray(SplitValues(text), delegate(string s) { return new[] { byte.Parse(s, CultureInfo.InvariantCulture) }; });
                 case PlcDataType.Int16Array:

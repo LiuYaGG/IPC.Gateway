@@ -109,46 +109,46 @@ export interface DataTypeOptionGroup {
   options: string[]
 }
 
-// Byte is the UI name for the existing unsigned 8-bit storage type. Keep
-// UInt8 values in saved configuration and API requests for compatibility.
 export function dataTypeDisplayName(dataType: string): string {
-  return dataType === 'UInt8' ? 'Byte' : dataType === 'UInt8Array' ? 'ByteArray' : dataType
+  return dataType
 }
 
-const byteScalarProtocols = new Set([
+const uint8ScalarProtocols = new Set([
   'SiemensS7', 'RockwellCip', 'EtherNetIp', 'CanOpen', 'BeckhoffAds',
   'OpcUa', 'MqttClient', 'Snmp', 'Dnp3'
 ])
-const byteArrayProtocols = new Set([
+const uint8ArrayProtocols = new Set([
   'SiemensS7', 'RockwellCip', 'EtherNetIp', 'CanOpen', 'BeckhoffAds',
   'OpcUa', 'MqttClient'
 ])
+// These drivers support the distinct Byte type. Other drivers keep UInt8 only.
+const byteProtocols = new Set(['SiemensS7', 'RockwellCip', 'EtherNetIp', 'BeckhoffAds', 'OpcUa'])
 const dataTypeOrder = [
-  'Bool', 'Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32',
+  'Bool', 'Byte', 'UInt8', 'Int8', 'Int16', 'UInt16', 'Int32', 'UInt32',
   'Int64', 'UInt64', 'Float', 'Double', 'String',
-  'BoolArray', 'Int8Array', 'UInt8Array', 'Int16Array', 'UInt16Array',
+  'BoolArray', 'ByteArray', 'UInt8Array', 'Int8Array', 'Int16Array', 'UInt16Array',
   'Int32Array', 'UInt32Array', 'Int64Array', 'UInt64Array', 'FloatArray', 'DoubleArray'
 ]
 
-function orderedTypes(options: string[], includeByte: boolean, byteType: string): string[] {
-  const types = options.filter(item => item !== byteType)
-  if (includeByte) types.push(byteType)
+function orderedTypes(options: string[], includeUInt8: boolean, uint8Type: string): string[] {
+  const types = options.filter(item => item !== uint8Type)
+  if (includeUInt8) types.push(uint8Type)
   return [...new Set(types)].sort((left, right) => dataTypeOrder.indexOf(left) - dataTypeOrder.indexOf(right))
 }
 
 export function dataTypeOptionGroups(protocol: string, driverOptionsJson = ''): DataTypeOptionGroup[] {
-  let supportsByteArray = byteArrayProtocols.has(protocol)
+  let supportsUInt8Array = uint8ArrayProtocols.has(protocol)
   if (protocol === 'MqttClient') {
     try {
-      supportsByteArray = String(JSON.parse(driverOptionsJson || '{}').mqttPayloadMode || 'Text').toLowerCase() === 'json'
+      supportsUInt8Array = String(JSON.parse(driverOptionsJson || '{}').mqttPayloadMode || 'Text').toLowerCase() === 'json'
     } catch {
-      supportsByteArray = false
+      supportsUInt8Array = false
     }
   }
-  const usesByteTypes = protocol === 'RockwellCip' || protocol === 'EtherNetIp' || protocol === 'CanOpen' || protocol === 'BeckhoffAds'
+  const uses8BitTypes = protocol === 'RockwellCip' || protocol === 'EtherNetIp' || protocol === 'CanOpen' || protocol === 'BeckhoffAds'
   const scalarOptions = protocol === 'Dnp3'
     ? dnp3ScalarDataTypeOptions
-    : usesByteTypes || protocol === 'Snmp' || protocol === 'MqttClient'
+    : uses8BitTypes || protocol === 'Snmp' || protocol === 'MqttClient'
     ? cipScalarDataTypeOptions
     : fullScalarProtocols.has(protocol)
     ? fullScalarDataTypeOptions
@@ -158,13 +158,18 @@ export function dataTypeOptionGroups(protocol: string, driverOptionsJson = ''): 
         ? meterScalarDataTypeOptions
         : standardScalarDataTypeOptions
   const groups: DataTypeOptionGroup[] = [
-    { label: '标量类型', options: orderedTypes(scalarOptions, byteScalarProtocols.has(protocol), 'UInt8') }
+    { label: '标量类型', options: orderedTypes(
+      [...scalarOptions, ...(byteProtocols.has(protocol) ? ['Byte'] : [])], uint8ScalarProtocols.has(protocol), 'UInt8'
+    ) }
   ]
 
   if (arrayCapableProtocols.has(protocol)) {
     groups.push({
       label: '数组类型',
-      options: orderedTypes(usesByteTypes ? cipArrayDataTypeOptions : arrayDataTypeOptions, supportsByteArray, 'UInt8Array')
+      options: orderedTypes(
+        [...(uses8BitTypes ? cipArrayDataTypeOptions : arrayDataTypeOptions), ...(byteProtocols.has(protocol) ? ['ByteArray'] : [])],
+        supportsUInt8Array, 'UInt8Array'
+      )
     })
   }
   if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii' || protocol === 'VirtualPlc') {

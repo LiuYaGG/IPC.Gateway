@@ -385,9 +385,9 @@ public sealed partial class GatewayScriptManager
         string normalized = RequireText(value, displayName);
         string[] supported =
         [
-            "Bool", "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32",
+            "Bool", "Byte", "UInt8", "Int8", "Int16", "UInt16", "Int32", "UInt32",
             "Int64", "UInt64", "Float", "Double", "Decimal", "String", "DateTime", "Object",
-            "BoolArray", "Int8Array", "UInt8Array", "Int16Array", "UInt16Array",
+            "BoolArray", "ByteArray", "UInt8Array", "Int8Array", "Int16Array", "UInt16Array",
             "Int32Array", "UInt32Array", "Int64Array", "UInt64Array", "FloatArray", "DoubleArray"
         ];
         string? match = supported.FirstOrDefault(item =>

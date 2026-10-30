@@ -94,21 +94,14 @@ The WebHost exposes commercial plant-floor operations under `/api/commercial`:
 
 - Device templates: list built-in PLC templates and apply them to create a device, group, and starter tags.
 - Tag bulk operations: export and import device tags as CSV for commissioning worksheets.
-- License status: report signed offline license validity, expiry, feature flags, and capacity limits.
 - Protocol drivers: report loaded drivers, manifest compatibility, assembly SHA256, signer, and signature trust status.
 - Project backup/restore: export a versioned JSON backup and restore project, MQTT, OPC UA, history, and storage-health settings.
 - Compatibility matrix: report gateway, WebHost, backup schema, project schema, plugin manifest, metrics, and driver compatibility.
 
-For commercial production, configure signed license and protocol driver trust settings outside source control:
+For production, configure protocol driver trust settings outside source control:
 
 ```json
 "Gateway": {
-  "License": {
-    "ProductId": "IPC.Gateway",
-    "LicenseFile": "Data/License/ipc-gateway-license.json",
-    "TrustedPublicKeyPem": "-----BEGIN PUBLIC KEY-----...-----END PUBLIC KEY-----",
-    "RequireValidLicense": true
-  },
   "ProtocolDrivers": {
     "RequireSignature": true,
     "TrustedPublicKeyPem": "-----BEGIN PUBLIC KEY-----...-----END PUBLIC KEY-----"

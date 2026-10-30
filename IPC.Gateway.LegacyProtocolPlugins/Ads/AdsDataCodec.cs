@@ -12,6 +12,7 @@ namespace IPC.Plc.Communication.Ads
             {
                 case PlcDataType.Bool: return typeof(bool);
                 case PlcDataType.Int8: return typeof(sbyte);
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8: return typeof(byte);
                 case PlcDataType.Int16: return typeof(short);
                 case PlcDataType.UInt16: return typeof(ushort);
@@ -24,6 +25,7 @@ namespace IPC.Plc.Communication.Ads
                 case PlcDataType.String: return typeof(string);
                 case PlcDataType.BoolArray: return typeof(bool[]);
                 case PlcDataType.Int8Array: return typeof(sbyte[]);
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array: return typeof(byte[]);
                 case PlcDataType.Int16Array: return typeof(short[]);
                 case PlcDataType.UInt16Array: return typeof(ushort[]);
@@ -54,6 +56,7 @@ namespace IPC.Plc.Communication.Ads
             {
                 case PlcDataType.Bool: return ParseBoolean(text);
                 case PlcDataType.Int8: return sbyte.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8: return byte.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
                 case PlcDataType.Int16: return short.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
                 case PlcDataType.UInt16: return ushort.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);

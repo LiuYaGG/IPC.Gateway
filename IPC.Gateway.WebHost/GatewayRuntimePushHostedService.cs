@@ -87,21 +87,26 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
 
     private void FlushPendingTags()
     {
-        List<TagValueSnapshotDto> tags = new();
-        int pendingCount;
+        List<TagValueSnapshotDto> pending;
         lock (_syncRoot)
         {
-            foreach (KeyValuePair<string, TagValueSnapshotDto> item in _pendingTags.Take(MaxTagBatchSize).ToList())
-            {
-                tags.Add(item.Value);
-                _pendingTags.Remove(item.Key);
-            }
-
-            pendingCount = _pendingTags.Count;
+            pending = _pendingTags.Values.ToList();
+            _pendingTags.Clear();
         }
 
-        if (tags.Count > 0)
-            _events.Publish("tags", new GatewayRuntimeTagsChangedEvent { Tags = tags, PendingCount = pendingCount });
+        // Drain the complete captured set every tick, keeping each SSE event
+        // bounded. Removing only the first batch caps throughput and lets
+        // frequently updated dictionary slots starve other tags indefinitely.
+        // New updates collected while publishing remain for the next tick.
+        for (int offset = 0; offset < pending.Count; offset += MaxTagBatchSize)
+        {
+            int count = Math.Min(MaxTagBatchSize, pending.Count - offset);
+            _events.Publish("tags", new GatewayRuntimeTagsChangedEvent
+            {
+                Tags = pending.GetRange(offset, count),
+                PendingCount = pending.Count - offset - count
+            });
+        }
     }
 
     private void PublishDeviceChangesIfDue()

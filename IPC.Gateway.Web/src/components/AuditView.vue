@@ -35,7 +35,7 @@
       <el-button @click="resetFilters">重置</el-button>
     </section>
 
-    <el-card shadow="never" class="panel-card">
+    <el-card shadow="never" class="panel-card audit-table-panel">
       <template #header>
         <div class="card-header">
           <span>配置审计</span>
@@ -47,7 +47,7 @@
         </div>
       </template>
 
-      <el-table :data="entries" :loading="loading" height="620" empty-text="暂无审计日志">
+      <el-table :data="entries" :loading="loading" height="100%" empty-text="暂无审计日志">
         <el-table-column label="时间" min-width="150">
           <template #default="{ row }">{{ formatDateTime(row.timestamp) }}</template>
         </el-table-column>

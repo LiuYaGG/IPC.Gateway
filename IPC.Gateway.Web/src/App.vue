@@ -166,7 +166,7 @@
         </div>
       </el-header>
 
-      <el-main class="content">
+      <el-main class="content" :class="{ 'content--fill': activeView === 'devices' || activeView === 'audit' }">
         <BigScreenView
           v-if="activeView === 'bigScreen'"
           :status="status"

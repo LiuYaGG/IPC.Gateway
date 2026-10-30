@@ -34,6 +34,7 @@ namespace IPC.Plc.Communication.Core
         {
             return dataType == PlcDataType.BoolArray ||
                    dataType == PlcDataType.Int8Array ||
+                   dataType == PlcDataType.ByteArray ||
                    dataType == PlcDataType.UInt8Array ||
                    dataType == PlcDataType.Int16Array ||
                    dataType == PlcDataType.UInt16Array ||
@@ -55,7 +56,9 @@ namespace IPC.Plc.Communication.Core
                 case PlcDataType.BoolArray:
                 case PlcDataType.Int8:
                 case PlcDataType.Int8Array:
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                 case PlcDataType.Coil:
                 case PlcDataType.CoilArray:
@@ -96,6 +99,7 @@ namespace IPC.Plc.Communication.Core
                     return new bool[length];
                 case PlcDataType.Int8Array:
                     return new sbyte[length];
+                case PlcDataType.ByteArray:
                 case PlcDataType.UInt8Array:
                     return new byte[length];
                 case PlcDataType.Int16Array:

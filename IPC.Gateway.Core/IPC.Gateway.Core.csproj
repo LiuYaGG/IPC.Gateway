@@ -15,6 +15,7 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <PackageReference Include="SqlSugarCore" Version="5.1.4.214" />
     <PackageReference Include="SqlSugarCore.MySqlConnector" Version="5.1.4.92" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
   </ItemGroup>
 
   <ItemGroup>

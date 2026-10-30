@@ -18,6 +18,12 @@
           "Microsoft.TestPlatform.TestHost": "17.14.1"
         }
       },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "Direct",
+        "requested": "[9.0.21, )",
+        "resolved": "9.0.21",
+        "contentHash": "KD+oHoYIxwNCajjVe58WVwq9cRpum+Pg3tRveDRtkcaw6w3oc7sNBoMRtb5P5OehI3bgv1ucMpgjf8lpj5J96A=="
+      },
       "xunit": {
         "type": "Direct",
         "requested": "[2.9.3, )",
@@ -711,11 +717,6 @@
         "resolved": "6.1.0",
         "contentHash": "M5cCC1ZMkZr9jbSQGTHnVkb5TDN67qWCV7AP8TAHdGkvDlu0puT5NzemESNn9+HkYIDpWpocP68/i+/ame2/2w=="
       },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "9.0.13",
-        "contentHash": "dxJhkuoaelvWy588wPXjShNks+ZMiSgXnN75/u+DPbER5PqKrLPDftE0BvGM7nDK/scQAVlD+gRXlCAAjWi58Q=="
-      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "9.0.13",
@@ -776,7 +777,8 @@
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "SqlSugarCore": "[5.1.4.214, )",
-          "SqlSugarCore.MySqlConnector": "[5.1.4.92, )"
+          "SqlSugarCore.MySqlConnector": "[5.1.4.92, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.dataprocessing": {
@@ -785,14 +787,16 @@
       "ipc.gateway.flowrules": {
         "type": "Project",
         "dependencies": {
-          "IPC.Gateway.Core": "[1.0.0, )"
+          "IPC.Gateway.Core": "[1.0.0, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.inference": {
         "type": "Project",
         "dependencies": {
           "IPC.Gateway.Core": "[1.0.0, )",
-          "Microsoft.ML.OnnxRuntime": "[1.22.1, )"
+          "Microsoft.ML.OnnxRuntime": "[1.22.1, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.legacyprotocolplugins": {
@@ -806,9 +810,13 @@
           "NModbus.Serial": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua.Client": "[1.5.378.145, )",
           "System.IO.Ports": "[10.0.0, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )",
           "log4net": "[3.3.0, )",
           "opendnp3": "[3.1.2, )"
         }
+      },
+      "ipc.gateway.licensing": {
+        "type": "Project"
       },
       "ipc.gateway.mqtt": {
         "type": "Project"
@@ -826,13 +834,15 @@
           "Oracle.ManagedDataAccess.Core": "[23.8.0, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )",
           "SqlSugarCore.Dm": "[8.8.1, )",
-          "SqlSugarCore.Kdbndp": "[9.3.8.122, )"
+          "SqlSugarCore.Kdbndp": "[9.3.8.122, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.watchdog": {
         "type": "Project",
         "dependencies": {
-          "IPC.Gateway.Core": "[1.0.0, )"
+          "IPC.Gateway.Core": "[1.0.0, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "ipc.gateway.webhost": {
@@ -841,10 +851,12 @@
           "IPC.Gateway.Core": "[1.0.0, )",
           "IPC.Gateway.FlowRules": "[1.0.0, )",
           "IPC.Gateway.Inference": "[1.0.0, )",
+          "IPC.Gateway.Licensing": "[1.0.0, )",
           "IPC.Gateway.Scripting": "[1.0.0, )",
           "IPC.Gateway.Watchdog": "[1.0.0, )",
           "Microsoft.Extensions.Hosting.Systemd": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.9, )"
+          "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.9, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       }
     }

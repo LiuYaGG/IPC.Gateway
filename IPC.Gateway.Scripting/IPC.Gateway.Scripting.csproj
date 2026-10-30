@@ -20,6 +20,7 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
     <PackageReference Include="SqlSugarCore.Dm" Version="8.8.1" />
     <PackageReference Include="SqlSugarCore.Kdbndp" Version="9.3.8.122" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
   </ItemGroup>
 
   <ItemGroup>

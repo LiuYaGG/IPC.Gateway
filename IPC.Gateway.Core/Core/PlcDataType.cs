@@ -45,6 +45,9 @@ namespace IPC.Plc.Communication.Core
         Int8,
         UInt8,
         Int8Array,
-        UInt8Array
+        UInt8Array,
+        // Append new values so existing numeric configurations remain compatible.
+        Byte,
+        ByteArray
     }
 }

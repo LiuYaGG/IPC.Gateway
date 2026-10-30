@@ -47,6 +47,7 @@ namespace IPC.Plc.Communication.Cip
         public const ushort Real = 0x00CA;
         public const ushort LReal = 0x00CB;
         public const ushort String = 0x00D0;
+        public const ushort Byte = 0x00D1;
         public const ushort Dword = 0x00D3;
         public const ushort ShortString = 0x00DA;
         public const ushort AbbreviatedStructure = 0x02A0;
@@ -55,6 +56,9 @@ namespace IPC.Plc.Communication.Cip
         {
             switch (dataType)
             {
+                case PlcDataType.Byte:
+                case PlcDataType.ByteArray:
+                    return Byte;
                 case PlcDataType.Int8:
                 case PlcDataType.Int8Array:
                     return Sint;
@@ -123,6 +127,8 @@ namespace IPC.Plc.Communication.Cip
                     return "LREAL";
                 case String:
                     return "STRING";
+                case Byte:
+                    return "BYTE";
                 case Dword:
                     return "DWORD";
                 case ShortString:

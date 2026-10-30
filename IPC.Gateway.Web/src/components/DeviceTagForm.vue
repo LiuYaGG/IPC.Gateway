@@ -420,7 +420,7 @@ function isCompatibleInputType(inputType: string, tagType: string) {
   if (inputType === 'Object' || inputType === tagType) return true
   if (inputType === 'Bool' && ['Bool', 'Coil', 'DiscreteInput'].includes(tagType)) return true
   if (inputType === 'BoolArray' && ['BoolArray', 'CoilArray', 'DiscreteInputArray'].includes(tagType)) return true
-  const numericTypes = ['Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Float', 'Double', 'Decimal']
+  const numericTypes = ['Byte', 'UInt8', 'Int8', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Float', 'Double', 'Decimal']
   return numericTypes.includes(inputType) && numericTypes.includes(tagType)
 }
 const meterDataIdentifierHint = computed(() => meterDataIdentifierPlaceholder(activeProtocol.value))

@@ -66,6 +66,8 @@ public sealed class SiemensS7ConfigurationTests
     public void Codec_RoundTripsAllFrontendS7ScalarAndArrayTypes()
     {
         Assert.Equal(true, Decode(PlcDataType.Bool, Encode(PlcDataType.Bool, "true"), 1));
+        Assert.Equal((byte)255, Decode(PlcDataType.Byte, Encode(PlcDataType.Byte, "255"), 1));
+        Assert.Equal(new byte[] { 0, 128, 255 }, (byte[])Decode(PlcDataType.ByteArray, Encode(PlcDataType.ByteArray, "0,128,255"), 3));
         Assert.Equal((byte)255, Decode(PlcDataType.UInt8, Encode(PlcDataType.UInt8, "255"), 1));
         Assert.Equal(new byte[] { 0, 128, 255 }, (byte[])Decode(PlcDataType.UInt8Array, Encode(PlcDataType.UInt8Array, "0,128,255"), 3));
         Assert.Equal(short.MinValue, Decode(PlcDataType.Int16, Encode(PlcDataType.Int16, short.MinValue.ToString()), 1));
@@ -180,11 +182,13 @@ public sealed class SiemensS7ConfigurationTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ReadManyAsync_OddLengthItemBeforeFailedTagPreservesFailureScope(bool padded)
+    [InlineData(true, 0x31)]
+    [InlineData(true, 0xFF)]
+    public async Task ReadManyAsync_OddLengthItemBeforeFailedTagPreservesFailureScope(bool padded, byte fillByte = 0)
     {
         List<byte> data = new() { 0xFF, 0x04, 0x00, 0x08, 0x01 };
         if (padded)
-            data.Add(0x00);
+            data.Add(fillByte);
         data.AddRange(new byte[] { 0x05, 0x00, 0x00, 0x00 });
         using TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -207,7 +211,257 @@ public sealed class SiemensS7ConfigurationTests
         await server;
     }
 
-    private static byte[] BuildMultiReadResponse(byte[] data)
+    [Theory]
+    [InlineData("short-item")]
+    [InlineData("truncated-payload")]
+    [InlineData("wrong-count")]
+    [InlineData("wrong-data-length")]
+    [InlineData("bad-error-length")]
+    [InlineData("bad-error-transport")]
+    public async Task ReadManyAsync_RejectsMalformedFramesWithoutReturningWrongTagValues(string fault)
+    {
+        byte[] response = BuildMultiReadResponse(new byte[]
+        {
+            0xFF, 0x04, 0, 8, 1, 0x31,
+            0xFF, 0x04, 0, 32, 0x42, 0xF6, 0xE6, 0x66
+        });
+        switch (fault)
+        {
+            case "short-item": response[30] = 16; break;
+            case "truncated-payload":
+                response = response[..^1];
+                response[3] = (byte)response.Length;
+                break;
+            case "wrong-count": response[20] = 3; break;
+            case "wrong-data-length": response[16]++; break;
+            case "bad-error-length":
+                response = BuildMultiReadResponse(new byte[] { 0x0A, 0, 0, 8, 0xFF, 0x04, 0, 32, 0x42, 0xF6, 0xE6, 0x66 });
+                break;
+            case "bad-error-transport":
+                response = BuildMultiReadResponse(new byte[] { 0x0A, 0x04, 0, 4, 0xFF, 0x04, 0, 32, 0x42, 0xF6, 0xE6, 0x66 });
+                break;
+        }
+        using TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        Task server = RunS7ServerAsync(listener, response);
+        using S7Client client = new(new PlcConnectionOptions
+        {
+            Protocol = PlcProtocol.SiemensS7, Host = "127.0.0.1",
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port
+        });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        IList<PlcBatchReadResult> results = await client.ReadManyAsync(new List<PlcBatchReadRequest>
+        {
+            new("DB1.DBX0.0", PlcDataType.Bool, 1, 0),
+            new("DB2.DBD2", PlcDataType.Float, 1, 0)
+        }, timeout.Token);
+        Assert.All(results, result =>
+        {
+            Assert.False(result.Success);
+            Assert.Null(result.Result);
+            Assert.Equal(PlcReadFailureScope.Batch, result.FailureScope);
+        });
+        await server;
+    }
+
+    [Theory]
+    [InlineData(0, true, 0x0A)]
+    [InlineData(1, true, 0x0A)]
+    [InlineData(2, true, 0x0A)]
+    [InlineData(0, false, 0x0A)]
+    [InlineData(1, false, 0x0A)]
+    [InlineData(2, false, 0x0A)]
+    [InlineData(0, true, 0x05)]
+    [InlineData(1, true, 0x05)]
+    [InlineData(2, true, 0x05)]
+    [InlineData(0, false, 0x05)]
+    [InlineData(1, false, 0x05)]
+    [InlineData(2, false, 0x05)]
+    public async Task ReadMany_Snap7FailedItemHeaderDoesNotFailOtherTags(int failedIndex, bool asynchronous, byte errorCode)
+    {
+        var requests = new List<PlcBatchReadRequest>
+        {
+            new("DB1.DBX0.0", PlcDataType.Bool, 1, 0),
+            new("DB1.DBD2", PlcDataType.Float, 1, 0)
+        };
+        requests.Insert(failedIndex, new("DB4.DBD0", PlcDataType.Float, 1, 0));
+        var items = new List<byte[]>
+        {
+            new byte[] { 0xFF, 0x04, 0, 8, 1 },
+            new byte[] { 0xFF, 0x04, 0, 32, 0x42, 0xF6, 0xE6, 0x66 }
+        };
+        // Snap7 reports length 4 for the failed status header, with no payload.
+        items.Insert(failedIndex, new byte[] { errorCode, 0, 0, 4 });
+        var data = new List<byte>();
+        for (int i = 0; i < items.Count; i++)
+        {
+            data.AddRange(items[i]);
+            if (items[i].Length % 2 != 0 && i < items.Count - 1)
+                data.Add(0x31);
+        }
+        using TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        Task server = RunS7ServerAsync(listener, BuildMultiReadResponse(data.ToArray(), 3), 3, 2);
+        using S7Client client = new(new PlcConnectionOptions
+        {
+            Protocol = PlcProtocol.SiemensS7, Host = "127.0.0.1",
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port, TimeoutMilliseconds = 2000
+        });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            IList<PlcBatchReadResult> results = asynchronous
+                ? await client.ReadManyAsync(requests, timeout.Token)
+                : await Task.Run(() => client.ReadMany(requests));
+            Assert.Equal(3, results.Count);
+            for (int i = 0; i < results.Count; i++)
+            {
+                if (i == failedIndex)
+                {
+                    Assert.False(results[i].Success);
+                    Assert.Equal(PlcReadFailureScope.Tag, results[i].FailureScope);
+                    Assert.False(results[i].IsCommunicationError);
+                    Assert.Contains("0x" + errorCode.ToString("X2"), results[i].ErrorMessage);
+                }
+                else
+                {
+                    Assert.True(results[i].Success, results[i].ErrorMessage);
+                    if (requests[i].DataType == PlcDataType.Bool)
+                        Assert.Equal(true, results[i].Result!.Value);
+                    else
+                        Assert.Equal(123.45f, results[i].Result!.Value);
+                }
+            }
+        }
+        await server;
+    }
+
+    [Theory]
+    [InlineData(true, 0x31)]
+    [InlineData(false, 0x31)]
+    [InlineData(true, 0xFF)]
+    [InlineData(false, 0xFF)]
+    public async Task ReadMany_BoolLastPreservesMixedValuesAfterFloatWrite(bool asynchronous, int fillByte)
+    {
+        // A second DB keeps this on the multi-variable path even after contiguous-plan fixes.
+        List<PlcBatchReadRequest> requests = new()
+        {
+            new("DB1.DBX0.0", PlcDataType.Bool, 1, 0),
+            new("DB1.DBX0.1", PlcDataType.Bool, 1, 0),
+            new("DB1.DBX0.2", PlcDataType.Bool, 1, 0),
+            new("DB2.DBD0", PlcDataType.Int16, 1, 0),
+            new("DB1.DBD2", PlcDataType.Float, 1, 0),
+            new("DB1.DBX0.3", PlcDataType.Bool, 1, 0)
+        };
+        await VerifyMixedReadWriteSequence(requests, asynchronous, false, (byte)fillByte);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReadMany_OverlappingBoolLastKeepsContiguousReadAfterFloatWrite(bool asynchronous)
+    {
+        List<PlcBatchReadRequest> requests = new()
+        {
+            new("DB1.DBX0.0", PlcDataType.Bool, 1, 0),
+            new("DB1.DBX0.1", PlcDataType.Bool, 1, 0),
+            new("DB1.DBX0.2", PlcDataType.Bool, 1, 0),
+            new("DB1.DBD0", PlcDataType.Int16, 1, 0),
+            new("DB1.DBD2", PlcDataType.Float, 1, 0),
+            new("DB1.DBX0.3", PlcDataType.Bool, 1, 0)
+        };
+        await VerifyMixedReadWriteSequence(requests, asynchronous, true, 0);
+    }
+
+    private static async Task VerifyMixedReadWriteSequence(
+        List<PlcBatchReadRequest> requests, bool asynchronous, bool contiguous, byte fillByte)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        Task server = ServeMixedReadWriteSequence(listener, contiguous, fillByte, timeout.Token);
+        using S7Client client = new(new PlcConnectionOptions
+        {
+            Protocol = PlcProtocol.SiemensS7, Host = "127.0.0.1",
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port, TimeoutMilliseconds = 2000
+        });
+        async Task Run()
+        {
+            if (asynchronous)
+                await client.ConnectAsync(timeout.Token);
+            else
+                client.Connect();
+            for (int read = 0; read < 3; read++)
+            {
+                if (read == 1)
+                {
+                    if (asynchronous)
+                        await client.WriteAsync("DB1.DBD2", PlcDataType.Float, "123.45", 0, timeout.Token);
+                    else
+                        client.Write("DB1.DBD2", PlcDataType.Float, "123.45", 0);
+                }
+                IList<PlcBatchReadResult> results = asynchronous
+                    ? await client.ReadManyAsync(requests, timeout.Token)
+                    : client.ReadMany(requests);
+                Assert.All(results, result => Assert.True(result.Success, result.ErrorMessage));
+                foreach (int index in new[] { 0, 1, 2, 5 })
+                    Assert.Equal(true, results[index].Result!.Value);
+                Assert.Equal((short)0x0F37, results[3].Result!.Value);
+                Assert.Equal(read == 0 ? 0f : 123.45f, results[4].Result!.Value);
+            }
+        }
+        await Task.WhenAll(Task.Run(async () =>
+        {
+            try { await Run(); }
+            finally { client.Disconnect(); }
+        }), server);
+    }
+
+    private static async Task ServeMixedReadWriteSequence(
+        TcpListener listener, bool contiguous, byte fillByte, CancellationToken token)
+    {
+        using TcpClient connection = await listener.AcceptTcpClientAsync(token);
+        using var cancellation = token.Register(connection.Dispose);
+        using NetworkStream stream = connection.GetStream();
+        _ = await ReadTpktAsync(stream);
+        await stream.WriteAsync(new byte[] { 0x03, 0x00, 0x00, 0x07, 0x02, 0xD0, 0x00 }, token);
+        _ = await ReadTpktAsync(stream);
+        await stream.WriteAsync(BuildSetupResponse(), token);
+        for (int read = 0; read < 3; read++)
+        {
+            if (read == 1)
+            {
+                byte[] write = await ReadTpktAsync(stream);
+                Assert.Equal(0x05, write[17]);
+                Assert.Equal(Encode(PlcDataType.Float, "123.45"), write[^4..]);
+                byte[] ack = BuildMultiReadResponse(new byte[] { 0xFF }, 1);
+                ack[19] = 0x05;
+                await stream.WriteAsync(ack, token);
+            }
+            byte[] request = await ReadTpktAsync(stream);
+            Assert.Equal(0x04, request[17]);
+            Assert.Equal(contiguous ? 1 : 6, request[18]);
+            byte[] floatBytes = read == 0 ? new byte[4] : Encode(PlcDataType.Float, "123.45");
+            List<byte> data = new();
+            if (contiguous)
+            {
+                Assert.Equal(6, request[23] << 8 | request[24]);
+                data.AddRange(new byte[] { 0xFF, 0x04, 0, 48, 0x0F, 0x37 });
+                data.AddRange(floatBytes);
+            }
+            else
+            {
+                for (int i = 0; i < 3; i++)
+                    data.AddRange(new byte[] { 0xFF, 0x04, 0, 8, 0x0F, read == 0 ? (byte)0 : fillByte });
+                data.AddRange(new byte[] { 0xFF, 0x04, 0, 16, 0x0F, 0x37, 0xFF, 0x04, 0, 32 });
+                data.AddRange(floatBytes);
+                data.AddRange(new byte[] { 0xFF, 0x04, 0, 8, 0x0F });
+            }
+            await stream.WriteAsync(BuildMultiReadResponse(data.ToArray(), contiguous ? 1 : 6), token);
+        }
+    }
+
+    private static byte[] BuildMultiReadResponse(byte[] data, int itemCount = 2)
     {
         List<byte> response = new()
         {
@@ -215,13 +469,13 @@ public sealed class SiemensS7ConfigurationTests
             0x02, 0xF0, 0x80,
             0x32, 0x03, 0x00, 0x00, 0x00, 0x02,
             0x00, 0x02, 0x00, (byte)data.Length, 0x00, 0x00,
-            0x04, 0x02
+            0x04, (byte)itemCount
         };
         response.AddRange(data);
         return response.ToArray();
     }
 
-    private static async Task RunS7ServerAsync(TcpListener listener, byte[]? response = null)
+    private static async Task RunS7ServerAsync(TcpListener listener, byte[]? response = null, int itemCount = 2, int readCount = 1)
     {
         using TcpClient connection = await listener.AcceptTcpClientAsync();
         using NetworkStream stream = connection.GetStream();
@@ -232,10 +486,13 @@ public sealed class SiemensS7ConfigurationTests
         _ = await ReadTpktAsync(stream);
         await stream.WriteAsync(BuildSetupResponse());
 
-        byte[] request = await ReadTpktAsync(stream);
-        Assert.Equal(0x04, request[17]);
-        Assert.Equal(2, request[18]);
-        await stream.WriteAsync(response ?? BuildMultiReadResponse());
+        for (int i = 0; i < readCount; i++)
+        {
+            byte[] request = await ReadTpktAsync(stream);
+            Assert.Equal(0x04, request[17]);
+            Assert.Equal(itemCount, request[18]);
+            await stream.WriteAsync(response ?? BuildMultiReadResponse());
+        }
     }
 
     private static byte[] Encode(PlcDataType dataType, string value)

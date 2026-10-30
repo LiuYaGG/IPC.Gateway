@@ -737,7 +737,7 @@ namespace IPC.Plc.Communication.OpcUa
         {
             // OPC UA distinguishes Byte[] from the scalar ByteString, although
             // both use byte[] in .NET. Preserve the configured array type on write.
-            return dataType == PlcDataType.UInt8Array
+            return dataType == PlcDataType.ByteArray || dataType == PlcDataType.UInt8Array
                 ? new Variant(value, new TypeInfo(BuiltInType.Byte, ValueRanks.OneDimension))
                 : new Variant(value);
         }
@@ -765,6 +765,8 @@ namespace IPC.Plc.Communication.OpcUa
             {
                 case PlcDataType.BoolArray:
                     return PlcDataType.Bool;
+                case PlcDataType.ByteArray:
+                    return PlcDataType.Byte;
                 case PlcDataType.UInt8Array:
                     return PlcDataType.UInt8;
                 case PlcDataType.Int16Array:
@@ -805,6 +807,7 @@ namespace IPC.Plc.Communication.OpcUa
                     return ParseBool(value);
                 case PlcDataType.Int16:
                     return Convert.ToInt16(value, CultureInfo.InvariantCulture);
+                case PlcDataType.Byte:
                 case PlcDataType.UInt8:
                     return Convert.ToByte(value, CultureInfo.InvariantCulture);
                 case PlcDataType.UInt16:

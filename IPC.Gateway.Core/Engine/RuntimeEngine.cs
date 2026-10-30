@@ -4930,6 +4930,12 @@ namespace IPC.Runtime.Engine
         {
             switch (dataType)
             {
+                case PlcDataType.Byte:
+                case PlcDataType.UInt8:
+                case PlcDataType.Int8:
+                case PlcDataType.ByteArray:
+                case PlcDataType.UInt8Array:
+                case PlcDataType.Int8Array:
                 case PlcDataType.Int16:
                 case PlcDataType.UInt16:
                 case PlcDataType.Int32:
@@ -4960,7 +4966,7 @@ namespace IPC.Runtime.Engine
             if (value is string text)
                 return text;
 
-            if (value is IEnumerable enumerable && !(value is byte[]))
+            if (value is IEnumerable enumerable)
             {
                 List<string> parts = new List<string>();
                 foreach (object item in enumerable)
@@ -5031,6 +5037,17 @@ namespace IPC.Runtime.Engine
                     if (IsValidBoolText(text))
                         return true;
                     errorMessage = "布尔值只能填写 true/false 或 1/0。";
+                    return false;
+                case PlcDataType.Byte:
+                case PlcDataType.UInt8:
+                    if (byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                        return true;
+                    errorMessage = "写入值必须是 " + dataType + " 整数（0～255）。";
+                    return false;
+                case PlcDataType.Int8:
+                    if (sbyte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                        return true;
+                    errorMessage = "写入值必须是 Int8 整数（-128～127）。";
                     return false;
                 case PlcDataType.Int16:
                     short int16Value;
@@ -5112,6 +5129,12 @@ namespace IPC.Runtime.Engine
         {
             switch (dataType)
             {
+                case PlcDataType.ByteArray:
+                    return PlcDataType.Byte;
+                case PlcDataType.UInt8Array:
+                    return PlcDataType.UInt8;
+                case PlcDataType.Int8Array:
+                    return PlcDataType.Int8;
                 case PlcDataType.BoolArray:
                     return PlcDataType.Bool;
                 case PlcDataType.Int16Array:

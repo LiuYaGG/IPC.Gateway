@@ -60,6 +60,8 @@ public sealed class BeckhoffAdsConfigurationTests
     [Theory]
     [InlineData(PlcDataType.Int8, typeof(sbyte))]
     [InlineData(PlcDataType.UInt8, typeof(byte))]
+    [InlineData(PlcDataType.Byte, typeof(byte))]
+    [InlineData(PlcDataType.ByteArray, typeof(byte[]))]
     [InlineData(PlcDataType.Int64Array, typeof(long[]))]
     [InlineData(PlcDataType.DoubleArray, typeof(double[]))]
     public void DataCodec_MapsSupportedManagedTypes(PlcDataType dataType, Type expected)
