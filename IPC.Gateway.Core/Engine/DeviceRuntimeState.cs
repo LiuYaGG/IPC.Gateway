@@ -115,6 +115,7 @@ namespace IPC.Runtime.Engine
         public DateTime StableStatusChangedUtc { get; private set; }
         public string DeviceState { get; set; }
         public bool IsIsolated { get; set; }
+        public bool UseFastRecovery { get; set; }
         public string RecoveryState { get; set; }
         public DateTime IsolatedSinceUtc { get; set; }
         public DateTime NextRecoveryProbeUtc { get; set; }
@@ -151,6 +152,7 @@ namespace IPC.Runtime.Engine
         private void ResetConnectivityState(string status, DateTime nowUtc)
         {
             ConsecutiveFailures = 0;
+            UseFastRecovery = false;
             NextPollUtc = DateTime.MinValue;
             NextReconnectUtc = DateTime.MinValue;
             LastReconnectDelayMs = 0;

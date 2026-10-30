@@ -474,9 +474,6 @@
           "Microsoft.ML.OnnxRuntime": "[1.22.1, )"
         }
       },
-      "ipc.gateway.licensing": {
-        "type": "Project"
-      },
       "ipc.gateway.mqtt": {
         "type": "Project"
       },

@@ -52,6 +52,19 @@ public sealed class ConfiguredChannelTests
         using ConfiguredChannelLease writeLease = await pendingWrite.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
+    [Fact]
+    public void Scheduler_RecoveryHasSeparateBoundedChannelCapacity()
+    {
+        ProjectConfig project = CreateScheduledProject(out DeviceConfig first, out DeviceConfig second, out _);
+        ConfiguredChannelScheduler scheduler = new();
+        scheduler.Configure(project);
+        Assert.True(scheduler.TryAcquirePoll(first, out var recoveryLease, recoveryProbe: true));
+        Assert.False(scheduler.TryAcquirePoll(second, out _, recoveryProbe: true));
+        Assert.True(scheduler.TryAcquirePoll(second, out var normalLease));
+        recoveryLease?.Dispose();
+        normalLease?.Dispose();
+    }
+
     private static ProjectConfig CreateScheduledProject(
         out DeviceConfig first,
         out DeviceConfig second,

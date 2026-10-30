@@ -11,6 +11,21 @@ namespace IPC.Gateway.Tests;
 
 public sealed class OpcUaClientEndpointTests
 {
+    [Fact]
+    public void ByteCodec_PreservesByteArrayTypeInsteadOfByteString()
+    {
+        var flags = BindingFlags.Static | BindingFlags.NonPublic;
+        var parse = typeof(OpcUaClient).GetMethod("ParseValue", flags)!;
+        var variant = typeof(OpcUaClient).GetMethod("CreateWriteVariant", flags)!;
+        object scalar = parse.Invoke(null, new object[] { PlcDataType.UInt8, "255" })!;
+        Assert.Equal((byte)255, Assert.IsType<byte>(scalar));
+        object array = parse.Invoke(null, new object[] { PlcDataType.UInt8Array, "0,128,255" })!;
+        Assert.Equal(new byte[] { 0, 128, 255 }, Assert.IsType<byte[]>(array));
+        Variant encoded = (Variant)variant.Invoke(null, new[] { (object)PlcDataType.UInt8Array, array })!;
+        Assert.Equal(BuiltInType.Byte, encoded.TypeInfo.BuiltInType);
+        Assert.Equal(ValueRanks.OneDimension, encoded.TypeInfo.ValueRank);
+    }
+
     [Theory]
     [InlineData("opc.tcp://127.0.0.1", 49320, "opc.tcp://127.0.0.1:49320/")]
     [InlineData("opc.tcp://127.0.0.1:49320", 4840, "opc.tcp://127.0.0.1:49320")]

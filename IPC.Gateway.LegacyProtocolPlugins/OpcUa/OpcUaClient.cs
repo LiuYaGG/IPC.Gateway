@@ -470,7 +470,7 @@ namespace IPC.Plc.Communication.OpcUa
                 {
                     NodeId = NodeId.Parse(nodeId),
                     AttributeId = Attributes.Value,
-                    Value = new DataValue(new Variant(value))
+                    Value = new DataValue(CreateWriteVariant(dataType, value))
                 }
             };
 
@@ -733,6 +733,15 @@ namespace IPC.Plc.Communication.OpcUa
             return result;
         }
 
+        private static Variant CreateWriteVariant(PlcDataType dataType, object value)
+        {
+            // OPC UA distinguishes Byte[] from the scalar ByteString, although
+            // both use byte[] in .NET. Preserve the configured array type on write.
+            return dataType == PlcDataType.UInt8Array
+                ? new Variant(value, new TypeInfo(BuiltInType.Byte, ValueRanks.OneDimension))
+                : new Variant(value);
+        }
+
         private static object ParseValue(PlcDataType dataType, string valueText)
         {
             if (PlcDataTypeHelper.IsArray(dataType))
@@ -756,6 +765,8 @@ namespace IPC.Plc.Communication.OpcUa
             {
                 case PlcDataType.BoolArray:
                     return PlcDataType.Bool;
+                case PlcDataType.UInt8Array:
+                    return PlcDataType.UInt8;
                 case PlcDataType.Int16Array:
                     return PlcDataType.Int16;
                 case PlcDataType.UInt16Array:
@@ -794,6 +805,8 @@ namespace IPC.Plc.Communication.OpcUa
                     return ParseBool(value);
                 case PlcDataType.Int16:
                     return Convert.ToInt16(value, CultureInfo.InvariantCulture);
+                case PlcDataType.UInt8:
+                    return Convert.ToByte(value, CultureInfo.InvariantCulture);
                 case PlcDataType.UInt16:
                     return Convert.ToUInt16(value, CultureInfo.InvariantCulture);
                 case PlcDataType.Int32:

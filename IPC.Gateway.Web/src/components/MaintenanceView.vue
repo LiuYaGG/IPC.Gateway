@@ -152,49 +152,7 @@
       @save-watchdog-config="persistWatchdogConfig"
     />
 
-    <section class="commercial-grid">
-      <el-card shadow="never" class="panel-card">
-        <template #header>
-          <div class="card-header">
-            <div class="detail-title">
-              <span>商业驱动授权</span>
-              <small>Legacy Protocol 商业驱动插件的一机一码授权</small>
-            </div>
-            <div class="card-actions">
-              <el-button size="small" :icon="DocumentCopy" @click="copyLicenseRequestCode">复制申请码</el-button>
-              <el-upload
-                accept=".json"
-                :auto-upload="false"
-                :show-file-list="false"
-                :disabled="!canUpload || licenseInstalling"
-                :on-change="installLicenseFile"
-              >
-                <el-button size="small" type="primary" :loading="licenseInstalling" :disabled="!canUpload">导入许可证</el-button>
-              </el-upload>
-            </div>
-          </div>
-        </template>
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="状态">
-            <el-tag :type="license?.operational ? 'success' : 'danger'" effect="light">{{ license?.status || '-' }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="版本">{{ license?.edition || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户">{{ license?.customerName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="许可证">{{ license?.serialNumber || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="本机机器码">
-            <span class="machine-code">{{ license?.machineCode || '-' }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="机器绑定">
-            <el-tag :type="license?.machineMatched ? 'success' : license?.configured ? 'danger' : 'info'" effect="plain">
-              {{ license?.machineMatched ? '匹配' : license?.configured ? '不匹配' : '未授权' }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="到期">{{ licenseExpiryText }}</el-descriptions-item>
-          <el-descriptions-item label="驱动权限">{{ licenseDriverEntitlementText }}</el-descriptions-item>
-          <el-descriptions-item label="说明">{{ license?.message || '-' }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
+    <section class="maintenance-grid backup-grid">
       <el-card shadow="never" class="panel-card">
         <template #header>
           <div class="card-header">
@@ -221,7 +179,7 @@
       </el-card>
     </section>
 
-    <section class="commercial-grid">
+    <section class="maintenance-grid">
       <el-card shadow="never" class="panel-card">
         <template #header>
           <div class="card-header">
@@ -431,9 +389,7 @@ import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Box, Clock, DocumentCopy, Download, FolderChecked, Refresh, RefreshLeft, Switch, UploadFilled } from '@element-plus/icons-vue'
 import {
   exportProjectBackup,
-  installLicense,
   loadCompatibilityMatrix,
-  loadLicenseStatus,
   loadProtocolDrivers,
   loadSupportSnapshot,
   loadWatchdogConfig,
@@ -445,7 +401,6 @@ import {
   saveWatchdogConfig,
   uploadUpdatePackage,
   type GatewayCompatibilityMatrix,
-  type GatewayLicenseStatus,
   type GatewayProtocolDriverInfo,
   type GatewayUpdatePackageRecord,
   type GatewaySupportSnapshot,
@@ -463,13 +418,11 @@ const uploading = ref(false)
 const snapshotLoading = ref(false)
 const backupLoading = ref(false)
 const restoreLoading = ref(false)
-const licenseInstalling = ref(false)
 const savingWatchdogConfig = ref(false)
 const preparingId = ref('')
 const status = ref<GatewayUpdateStatus | null>(null)
 const watchdog = ref<GatewayWatchdogStatus | null>(null)
 const watchdogConfig = ref<GatewayWatchdogConfig | null>(null)
-const license = ref<GatewayLicenseStatus | null>(null)
 const compatibility = ref<GatewayCompatibilityMatrix | null>(null)
 const drivers = ref<GatewayProtocolDriverInfo[]>([])
 
@@ -491,21 +444,6 @@ const totalPackageBytes = computed(() => (status.value?.packages ?? []).reduce((
 const latestRollbackLabel = computed(() => {
   const latest = status.value?.rollbackPoints?.[0]
   return latest ? formatDateTime(latest.createdTime) : '无快照'
-})
-const licenseDriverEntitlementText = computed(() => {
-  if (!license.value) return '-'
-  const features = license.value.features ?? []
-  if (features.some(item => item.toLowerCase() === 'commercial-drivers')) return '全部商业驱动'
-  const drivers = features
-    .filter(item => item.toLowerCase().startsWith('driver:') || item.toLowerCase().startsWith('legacy.'))
-    .map(item => item.replace(/^driver:/i, ''))
-  if (drivers.length > 0) return drivers.join('、')
-  return license.value.operational ? '兼容授权（全部商业驱动）' : '未授权'
-})
-const licenseExpiryText = computed(() => {
-  const expires = license.value?.expiresUtc
-  if (!expires || expires.startsWith('0001-01-01')) return '永久'
-  return formatDateTime(expires)
 })
 const pendingText = computed(() => {
   const action = status.value?.pendingAction
@@ -567,7 +505,7 @@ onMounted(() => refresh())
 async function refresh() {
   loading.value = true
   try {
-    const [updateData, watchdogData, watchdogConfigData, licenseData, compatibilityData, driverData] = await Promise.all([
+    const [updateData, watchdogData, watchdogConfigData, compatibilityData, driverData] = await Promise.all([
       loadUpdateStatus(),
       loadWatchdogStatus().catch(error => {
         ElMessage.warning(error instanceof Error ? error.message : '看门狗状态加载失败')
@@ -575,10 +513,6 @@ async function refresh() {
       }),
       loadWatchdogConfig().catch(error => {
         ElMessage.warning(error instanceof Error ? error.message : '看门狗配置加载失败')
-        return null
-      }),
-      loadLicenseStatus().catch(error => {
-        ElMessage.warning(error instanceof Error ? error.message : '许可证状态加载失败')
         return null
       }),
       loadCompatibilityMatrix().catch(error => {
@@ -593,40 +527,12 @@ async function refresh() {
     status.value = updateData
     watchdog.value = watchdogData
     watchdogConfig.value = watchdogConfigData
-    license.value = licenseData
     compatibility.value = compatibilityData
     drivers.value = driverData
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '安装升级状态加载失败')
   } finally {
     loading.value = false
-  }
-}
-
-async function copyLicenseRequestCode() {
-  const requestCode = license.value?.requestCode
-  if (!requestCode) {
-    ElMessage.warning('申请码尚未生成')
-    return
-  }
-  try {
-    await navigator.clipboard.writeText(requestCode)
-    ElMessage.success('授权申请码已复制')
-  } catch {
-    ElMessage.error('复制失败，请检查浏览器剪贴板权限')
-  }
-}
-
-async function installLicenseFile(file: UploadFile) {
-  if (!file.raw) return
-  licenseInstalling.value = true
-  try {
-    license.value = await installLicense(await file.raw.text())
-    ElMessage.success('许可证已安装，商业驱动将在数秒内应用授权')
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '许可证安装失败')
-  } finally {
-    licenseInstalling.value = false
   }
 }
 
@@ -858,7 +764,11 @@ function watchdogStateType(state: string | null | undefined) {
   gap: 18px;
 }
 
-.commercial-grid {
+.maintenance-grid.backup-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.maintenance-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
@@ -1042,7 +952,7 @@ function watchdogStateType(state: string | null | undefined) {
 
 @media (max-width: 1180px) {
   .maintenance-metrics,
-  .commercial-grid,
+  .maintenance-grid,
   .maintenance-layout,
   .watchdog-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1057,7 +967,7 @@ function watchdogStateType(state: string | null | undefined) {
   }
 
   .maintenance-metrics,
-  .commercial-grid,
+  .maintenance-grid,
   .maintenance-layout,
   .watchdog-summary {
     grid-template-columns: 1fr;

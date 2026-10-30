@@ -62,6 +62,11 @@ namespace IPC.Runtime.Engine
         private readonly Queue<DeviceRuntimeState> _pendingLowPriorityDevicePolls;
         private readonly HashSet<string> _pendingDeviceIds;
         private readonly Semaphore _devicePollSemaphore;
+        private readonly Semaphore _recoveryProbeSemaphore;
+        private readonly int _recoveryProbeIntervalMs;
+        private readonly int _recoveryProbeTimeoutMs;
+        private readonly int _maxConcurrentRecoveryProbes;
+        private int _runningRecoveryProbeCount;
         private readonly string _isolationStrategy;
         private readonly int _maxConcurrentDevicePolls;
         private readonly int _schedulerIntervalMs;
@@ -120,7 +125,6 @@ namespace IPC.Runtime.Engine
         private int _maxObservedPendingCount;
         private int _backpressureActive;
         private int _nextScheduleDeviceIndex;
-        private int _pollDequeueSequence;
         private DateTime _lastTimeoutTime;
         private string _lastTimeoutDeviceName;
         private string _lastTimeoutMessage;
@@ -166,6 +170,10 @@ namespace IPC.Runtime.Engine
             _isolationStrategy = options.IsolationStrategy;
             _maxConcurrentDevicePolls = options.MaxConcurrentDevicePolls;
             _schedulerIntervalMs = options.SchedulerIntervalMs;
+            _recoveryProbeIntervalMs = options.RecoveryProbeIntervalMs;
+            _recoveryProbeTimeoutMs = options.RecoveryProbeTimeoutMs;
+            _maxConcurrentRecoveryProbes = options.MaxConcurrentRecoveryProbes;
+            _recoveryProbeSemaphore = new Semaphore(options.MaxConcurrentRecoveryProbes, options.MaxConcurrentRecoveryProbes);
             _devicePollQueueLimit = options.DevicePollQueueLimit;
             _backpressureEnabled = options.BackpressureEnabled;
             _queueHighWatermarkPercent = options.QueueHighWatermarkPercent;
@@ -433,7 +441,8 @@ namespace IPC.Runtime.Engine
                     LowWatermark = _queueLowWatermarkCount,
                     UtilizationPercent = _devicePollQueueLimit <= 0 ? 0D : Math.Round(pendingCount * 100D / _devicePollQueueLimit, 2),
                     BackpressureActive = Volatile.Read(ref _backpressureActive) == 1,
-                    AvailableWorkers = Math.Max(0, _maxConcurrentDevicePolls - Volatile.Read(ref _runningPollTaskCount)),
+                    AvailableWorkers = Math.Max(0, _maxConcurrentDevicePolls -
+                        (Volatile.Read(ref _runningPollTaskCount) - Volatile.Read(ref _runningRecoveryProbeCount))),
                     RejectedCount = Interlocked.Read(ref _totalPollTasksRejected),
                     BackpressureThrottledCount = Interlocked.Read(ref _totalPollTasksBackpressureThrottled),
                     RateLimitedCount = Interlocked.Read(ref _totalPollTasksRateLimited),
@@ -1382,8 +1391,7 @@ namespace IPC.Runtime.Engine
                 TryStartQueuedDevicePolls(runtimeGeneration);
 
                 DateTime now = DateTime.UtcNow;
-                if (IsBackpressureAdmissionPaused(now))
-                    return;
+                bool normalAdmissionPaused = IsBackpressureAdmissionPaused(now);
 
                 int deviceCount = config.Devices.Count;
                 if (deviceCount <= 0)
@@ -1392,6 +1400,7 @@ namespace IPC.Runtime.Engine
                 int startIndex = GetNextScheduleStartIndex(deviceCount);
                 int nextStartIndex = startIndex;
                 int queuedThisTick = 0;
+                int recoveryQueuedThisTick = 0;
                 List<DeviceRuntimeState>? lowPriorityCandidates = null;
 
                 for (int offset = 0; offset < deviceCount; offset++)
@@ -1423,10 +1432,13 @@ namespace IPC.Runtime.Engine
                     if (!IsDeviceDue(deviceState, now))
                         continue;
 
-                    if (!HasDueReadableTags(device, now))
+                    if (!deviceState.IsIsolated && !HasDueReadableTags(device, now))
                         continue;
 
-                    if (IsLowPriorityPoll(deviceState))
+                    if (normalAdmissionPaused && !deviceState.IsIsolated)
+                        continue;
+
+                    if (deviceState.IsIsolated || IsLowPriorityPoll(deviceState))
                     {
                         if (lowPriorityCandidates == null)
                             lowPriorityCandidates = new List<DeviceRuntimeState>();
@@ -1459,16 +1471,22 @@ namespace IPC.Runtime.Engine
                     for (int i = 0; i < lowPriorityCandidates.Count; i++)
                     {
                         DeviceRuntimeState deviceState = lowPriorityCandidates[i];
-                        if (queuedThisTick >= _maxDevicePollsQueuedPerSchedulerTick)
+                        bool recoveryProbe = deviceState.IsIsolated;
+                        if (recoveryProbe && recoveryQueuedThisTick >= _maxConcurrentRecoveryProbes * 2)
+                            continue;
+                        if (!recoveryProbe && queuedThisTick >= _maxDevicePollsQueuedPerSchedulerTick)
                         {
                             RegisterRateLimitedAdmission(deviceState, now);
-                            break;
+                            continue;
                         }
 
                         PollAdmissionResult admission = QueueDevicePoll(deviceState, runtimeGeneration);
                         if (admission == PollAdmissionResult.Queued)
                         {
-                            queuedThisTick++;
+                            if (recoveryProbe)
+                                recoveryQueuedThisTick++;
+                            else
+                                queuedThisTick++;
                             continue;
                         }
 
@@ -1517,8 +1535,9 @@ namespace IPC.Runtime.Engine
                 }
 
                 string backpressureMessage;
-                int pendingCount = GetPendingDevicePollCountNoLock();
-                if (IsBackpressureBlockedNoLock(pendingCount, now, out backpressureMessage))
+                recoveryProbe = deviceState.IsIsolated;
+                int pendingCount = recoveryProbe ? _pendingRecoveryDevicePolls.Count : GetNormalPendingDevicePollCountNoLock();
+                if (!recoveryProbe && IsBackpressureBlockedNoLock(pendingCount, now, out backpressureMessage))
                 {
                     Interlocked.Increment(ref _totalPollTasksBackpressureThrottled);
                     DeferDeviceAdmission(deviceState, now, "BackpressureDelayed", backpressureMessage, _backpressureDelayMs);
@@ -1570,36 +1589,47 @@ namespace IPC.Runtime.Engine
 
         private void TryStartQueuedDevicePolls(int runtimeGeneration)
         {
+            StartQueuedDevicePolls(runtimeGeneration, true);
+            StartQueuedDevicePolls(runtimeGeneration, false);
+        }
+
+        private void StartQueuedDevicePolls(int runtimeGeneration, bool recoveryProbe)
+        {
+            Semaphore gate = recoveryProbe ? _recoveryProbeSemaphore : _devicePollSemaphore;
             while (IsCurrentGeneration(runtimeGeneration))
             {
-                if (!_devicePollSemaphore.WaitOne(0))
+                if (!gate.WaitOne(0))
                     return;
 
                 DeviceRuntimeState? deviceState = null;
                 ConfiguredChannelLease? configuredChannelLease = null;
                 lock (_queueSyncRoot)
                 {
-                    deviceState = DequeueNextDevicePollNoLock(DateTime.UtcNow, out configuredChannelLease);
+                    deviceState = recoveryProbe
+                        ? TryDequeueDevicePollNoLock(_pendingRecoveryDevicePolls, DateTime.UtcNow, out configuredChannelLease)
+                        : DequeueNextDevicePollNoLock(DateTime.UtcNow, out configuredChannelLease);
                 }
 
                 if (deviceState == null || configuredChannelLease == null)
                 {
-                    _devicePollSemaphore.Release();
+                    gate.Release();
                     return;
                 }
 
                 Interlocked.Increment(ref _runningPollTaskCount);
+                if (recoveryProbe)
+                    Interlocked.Increment(ref _runningRecoveryProbeCount);
                 Interlocked.Increment(ref _totalPollTasksStarted);
                 // Do not execute synchronously-completing drivers on the scheduler thread.
                 // A fast ValueTask chain can otherwise monopolize admission and serialize all devices.
-                _ = Task.Run(() => RunQueuedDevicePollAsync(deviceState, configuredChannelLease, runtimeGeneration));
+                _ = Task.Run(() => RunQueuedDevicePollAsync(deviceState, configuredChannelLease, runtimeGeneration, recoveryProbe));
             }
         }
 
         private async Task RunQueuedDevicePollAsync(
             DeviceRuntimeState deviceState,
             ConfiguredChannelLease configuredChannelLease,
-            int runtimeGeneration)
+            int runtimeGeneration, bool recoveryProbe)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             Exception? pollError = null;
@@ -1619,7 +1649,13 @@ namespace IPC.Runtime.Engine
                 stopwatch.Stop();
                 CompleteDevicePollTask(deviceState, runtimeGeneration, stopwatch.ElapsedMilliseconds, pollError);
                 configuredChannelLease.Dispose();
-                _devicePollSemaphore.Release();
+                if (recoveryProbe)
+                {
+                    Interlocked.Decrement(ref _runningRecoveryProbeCount);
+                    _recoveryProbeSemaphore.Release();
+                }
+                else
+                    _devicePollSemaphore.Release();
                 Interlocked.Decrement(ref _runningPollTaskCount);
                 TryStartQueuedDevicePolls(runtimeGeneration);
             }
@@ -1628,19 +1664,7 @@ namespace IPC.Runtime.Engine
         private DeviceRuntimeState? DequeueNextDevicePollNoLock(DateTime now, out ConfiguredChannelLease? configuredChannelLease)
         {
             configuredChannelLease = null;
-            bool preferRecovery = unchecked(++_pollDequeueSequence) % 4 == 0;
-            if (preferRecovery)
-            {
-                DeviceRuntimeState? recovery = TryDequeueDevicePollNoLock(_pendingRecoveryDevicePolls, now, out configuredChannelLease);
-                if (recovery != null)
-                    return recovery;
-            }
-
             DeviceRuntimeState? deviceState = TryDequeueDevicePollNoLock(_pendingHighPriorityDevicePolls, now, out configuredChannelLease);
-            if (deviceState != null)
-                return deviceState;
-
-            deviceState = TryDequeueDevicePollNoLock(_pendingRecoveryDevicePolls, now, out configuredChannelLease);
             if (deviceState != null)
                 return deviceState;
 
@@ -1654,6 +1678,7 @@ namespace IPC.Runtime.Engine
         {
             configuredChannelLease = null;
             int candidateCount = queue.Count;
+            bool recoveryProbe = ReferenceEquals(queue, _pendingRecoveryDevicePolls);
             DeviceRuntimeState? selected = null;
             double selectedScore = double.MaxValue;
 
@@ -1678,7 +1703,7 @@ namespace IPC.Runtime.Engine
                     continue;
                 }
 
-                if (!_configuredChannelScheduler.TryGetDispatchScore(candidate.Config, out double score))
+                if (!_configuredChannelScheduler.TryGetDispatchScore(candidate.Config, out double score, recoveryProbe))
                 {
                     queue.Enqueue(candidate);
                     continue;
@@ -1700,7 +1725,7 @@ namespace IPC.Runtime.Engine
             if (selected == null)
                 return null;
 
-            if (!_configuredChannelScheduler.TryAcquirePoll(selected.Config, out configuredChannelLease) || configuredChannelLease == null)
+            if (!_configuredChannelScheduler.TryAcquirePoll(selected.Config, out configuredChannelLease, recoveryProbe) || configuredChannelLease == null)
             {
                 queue.Enqueue(selected);
                 return null;
@@ -1761,6 +1786,7 @@ namespace IPC.Runtime.Engine
 
             await deviceState.Actor.ExecuteAsync(async actorToken =>
             {
+                using IDisposable? recoveryIo = deviceState.IsIsolated ? PlcClientInvoker.BeginRecoveryProbe() : null;
                 cancellationToken.ThrowIfCancellationRequested();
                 actorToken.ThrowIfCancellationRequested();
                 deviceState.LastPollTime = DateTime.Now;
@@ -1854,7 +1880,7 @@ namespace IPC.Runtime.Engine
             CompiledTagRead? probe = deviceState.ReadPlan.FindRecoveryProbe(deviceState.LastKnownGoodTagId);
             if (probe == null)
             {
-                RegisterDeviceFailure(deviceState, "设备没有可用于恢复探测的有效只读标签。");
+                RegisterDeviceFailure(deviceState, "设备没有可用于恢复探测的有效只读标签。", false);
                 return;
             }
 
@@ -1873,7 +1899,7 @@ namespace IPC.Runtime.Engine
             }
             else if (keepConnected)
             {
-                RegisterDeviceFailure(deviceState, "恢复探测标签读取失败：" + probe.Tag.Name);
+                RegisterDeviceFailure(deviceState, "恢复探测标签读取失败：" + probe.Tag.Name, false);
             }
         }
 
@@ -2229,7 +2255,9 @@ namespace IPC.Runtime.Engine
         {
             DeviceConfig device = deviceState.Config;
 
-            if (!deviceState.ProtocolCircuitBreaker.CanExecute())
+            // Isolated transport failures have a bounded recovery lane. Permanent
+            // factory/configuration failures still obey the circuit breaker.
+            if (!deviceState.ProtocolCircuitBreaker.CanExecute() && !deviceState.UseFastRecovery)
             {
                 CircuitBreakerStatus breaker = deviceState.ProtocolCircuitBreaker.Snapshot();
                 string message = "Protocol driver circuit breaker is open; device poll is degraded and skipped.";
@@ -2253,11 +2281,13 @@ namespace IPC.Runtime.Engine
             if (DateTime.UtcNow < deviceState.NextReconnectUtc)
                 return (false, null);
 
+            bool clientCreated = false;
             try
             {
                 PlcConnectionOptions options = device.Connection ?? new PlcConnectionOptions();
                 options.Protocol = device.Protocol;
                 IPlcClient newClient = PlcClientFactory.Create(options);
+                clientCreated = true;
                 try
                 {
                     await ExecutePlcOperationAsync(
@@ -2291,13 +2321,13 @@ namespace IPC.Runtime.Engine
                     deviceState.Client = null;
                 }
 
-                RegisterDeviceFailure(deviceState, ex.Message);
+                RegisterDeviceFailure(deviceState, ex.Message, clientCreated && IsCommunicationException(ex));
                 deviceState.ProtocolCircuitBreaker.RecordFailure(ex.Message);
                 return (false, null);
             }
         }
 
-        private void RegisterDeviceFailure(DeviceRuntimeState deviceState, string errorMessage)
+        private void RegisterDeviceFailure(DeviceRuntimeState deviceState, string errorMessage, bool fastRecovery = true)
         {
             deviceState.ConsecutiveFailures++;
             deviceState.LastError = errorMessage ?? string.Empty;
@@ -2310,11 +2340,12 @@ namespace IPC.Runtime.Engine
             if (!deviceState.IsIsolated)
                 deviceState.IsolatedSinceUtc = DateTime.UtcNow;
             deviceState.IsIsolated = true;
+            deviceState.UseFastRecovery = fastRecovery;
 
             int delay = RuntimeReconnectBackoffCalculator.CalculateScheduledDelayMs(
-                deviceState.ConsecutiveFailures,
-                GetDeviceFailureRetryDelayMs(deviceState.Config),
-                GetDeviceMaxFailureRetryDelayMs(deviceState.Config),
+                fastRecovery ? 1 : deviceState.ConsecutiveFailures,
+                fastRecovery ? Math.Min(_recoveryProbeIntervalMs, GetDeviceFailureRetryDelayMs(deviceState.Config)) : GetDeviceFailureRetryDelayMs(deviceState.Config),
+                fastRecovery ? _recoveryProbeIntervalMs + _recoveryProbeIntervalMs / 10 : GetDeviceMaxFailureRetryDelayMs(deviceState.Config),
                 GetDeviceReconnectJitterKey(deviceState.Config));
 
             deviceState.LastReconnectDelayMs = delay;
@@ -2371,8 +2402,19 @@ namespace IPC.Runtime.Engine
             deviceState.LastReconnectDelayMs = 0;
             deviceState.UnavailableTagsMarked = false;
             deviceState.LastSuccessTime = DateTime.Now;
-            deviceState.ProtocolCircuitBreaker.RecordSuccess();
+            if (deviceState.UseFastRecovery)
+                deviceState.ProtocolCircuitBreaker.Reset();
+            else
+                deviceState.ProtocolCircuitBreaker.RecordSuccess();
+            deviceState.UseFastRecovery = false;
             bool wasIsolated = deviceState.IsIsolated;
+            if (wasIsolated)
+            {
+                ForceReadableTagsDueNoLock(deviceState.Config.Tags, DateTime.UtcNow);
+                foreach (GroupConfig group in deviceState.Config.Groups ?? new List<GroupConfig>())
+                    if (group.Enabled)
+                        ForceReadableTagsDueNoLock(group.Tags, DateTime.UtcNow);
+            }
             deviceState.IsIsolated = false;
             deviceState.IsolatedSinceUtc = DateTime.MinValue;
             deviceState.NextRecoveryProbeUtc = DateTime.MinValue;
@@ -2381,7 +2423,7 @@ namespace IPC.Runtime.Engine
             string status = RecordDeviceStatusSample(
                 deviceState,
                 "Online",
-                applyUdpRecoveryDebounce: !confirmedSubscriptionUpdate);
+                applyUdpRecoveryDebounce: !confirmedSubscriptionUpdate && !wasIsolated);
             if (IsOnlineDeviceStatus(status))
             {
                 if (deviceState.PendingRecoveryFailureCount > 0)
@@ -3612,13 +3654,18 @@ namespace IPC.Runtime.Engine
             lock (_queueSyncRoot)
             {
                 string message;
-                return IsBackpressureBlockedNoLock(GetPendingDevicePollCountNoLock(), now, out message);
+                return IsBackpressureBlockedNoLock(GetNormalPendingDevicePollCountNoLock(), now, out message);
             }
         }
 
         private int GetPendingDevicePollCountNoLock()
         {
             return _pendingHighPriorityDevicePolls.Count + _pendingRecoveryDevicePolls.Count + _pendingLowPriorityDevicePolls.Count;
+        }
+
+        private int GetNormalPendingDevicePollCountNoLock()
+        {
+            return _pendingHighPriorityDevicePolls.Count + _pendingLowPriorityDevicePolls.Count;
         }
 
         private static bool IsLowPriorityPoll(DeviceRuntimeState deviceState)
@@ -3908,7 +3955,9 @@ namespace IPC.Runtime.Engine
         private CancellationTokenSource CreatePollCancellationTokenSource(DeviceRuntimeState deviceState)
         {
             CancellationTokenSource cancellation = new CancellationTokenSource();
-            cancellation.CancelAfter(GetPollTimeoutMs());
+            cancellation.CancelAfter(deviceState.UseFastRecovery
+                ? Math.Min(GetPollTimeoutMs(), _recoveryProbeTimeoutMs)
+                : GetPollTimeoutMs());
             return cancellation;
         }
 
@@ -4059,6 +4108,19 @@ namespace IPC.Runtime.Engine
         {
             if (deviceState == null || deviceState.Config == null)
                 return;
+
+            // Recovery must not wait for a tag's long sampling interval or the
+            // normal scan phase: it only reads the selected recovery probe.
+            if (deviceState.IsIsolated)
+            {
+                deviceState.NextPollUtc = deviceState.NextReconnectUtc;
+                return;
+            }
+            if (deviceState.RecoveryState == "Recovered")
+            {
+                deviceState.NextPollUtc = now;
+                return;
+            }
 
             DateTime next = GetNextDeviceReadableTagDueUtc(deviceState.Config);
             if (next == DateTime.MinValue)

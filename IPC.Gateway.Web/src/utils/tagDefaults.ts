@@ -109,7 +109,42 @@ export interface DataTypeOptionGroup {
   options: string[]
 }
 
-export function dataTypeOptionGroups(protocol: string): DataTypeOptionGroup[] {
+// Byte is the UI name for the existing unsigned 8-bit storage type. Keep
+// UInt8 values in saved configuration and API requests for compatibility.
+export function dataTypeDisplayName(dataType: string): string {
+  return dataType === 'UInt8' ? 'Byte' : dataType === 'UInt8Array' ? 'ByteArray' : dataType
+}
+
+const byteScalarProtocols = new Set([
+  'SiemensS7', 'RockwellCip', 'EtherNetIp', 'CanOpen', 'BeckhoffAds',
+  'OpcUa', 'MqttClient', 'Snmp', 'Dnp3'
+])
+const byteArrayProtocols = new Set([
+  'SiemensS7', 'RockwellCip', 'EtherNetIp', 'CanOpen', 'BeckhoffAds',
+  'OpcUa', 'MqttClient'
+])
+const dataTypeOrder = [
+  'Bool', 'Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32',
+  'Int64', 'UInt64', 'Float', 'Double', 'String',
+  'BoolArray', 'Int8Array', 'UInt8Array', 'Int16Array', 'UInt16Array',
+  'Int32Array', 'UInt32Array', 'Int64Array', 'UInt64Array', 'FloatArray', 'DoubleArray'
+]
+
+function orderedTypes(options: string[], includeByte: boolean, byteType: string): string[] {
+  const types = options.filter(item => item !== byteType)
+  if (includeByte) types.push(byteType)
+  return [...new Set(types)].sort((left, right) => dataTypeOrder.indexOf(left) - dataTypeOrder.indexOf(right))
+}
+
+export function dataTypeOptionGroups(protocol: string, driverOptionsJson = ''): DataTypeOptionGroup[] {
+  let supportsByteArray = byteArrayProtocols.has(protocol)
+  if (protocol === 'MqttClient') {
+    try {
+      supportsByteArray = String(JSON.parse(driverOptionsJson || '{}').mqttPayloadMode || 'Text').toLowerCase() === 'json'
+    } catch {
+      supportsByteArray = false
+    }
+  }
   const usesByteTypes = protocol === 'RockwellCip' || protocol === 'EtherNetIp' || protocol === 'CanOpen' || protocol === 'BeckhoffAds'
   const scalarOptions = protocol === 'Dnp3'
     ? dnp3ScalarDataTypeOptions
@@ -123,13 +158,13 @@ export function dataTypeOptionGroups(protocol: string): DataTypeOptionGroup[] {
         ? meterScalarDataTypeOptions
         : standardScalarDataTypeOptions
   const groups: DataTypeOptionGroup[] = [
-    { label: '标量类型', options: [...scalarOptions] }
+    { label: '标量类型', options: orderedTypes(scalarOptions, byteScalarProtocols.has(protocol), 'UInt8') }
   ]
 
   if (arrayCapableProtocols.has(protocol)) {
     groups.push({
       label: '数组类型',
-      options: [...(usesByteTypes ? cipArrayDataTypeOptions : arrayDataTypeOptions)]
+      options: orderedTypes(usesByteTypes ? cipArrayDataTypeOptions : arrayDataTypeOptions, supportsByteArray, 'UInt8Array')
     })
   }
   if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii' || protocol === 'VirtualPlc') {

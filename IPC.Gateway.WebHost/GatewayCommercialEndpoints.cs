@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using System.Text;
 using IPC.Plc.Communication.Infrastructure;
 
@@ -56,41 +55,6 @@ public static class GatewayCommercialEndpoints
             using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8);
             string json = await reader.ReadToEndAsync();
             return Execute(() => backups.Restore(json));
-        });
-
-        group.MapGet("/license", (ClaimsPrincipal user, GatewayLicenseService licenses) =>
-        {
-            if (!GatewayAuthEndpoints.CanViewMaintenance(user))
-                return Forbidden("Current user is not allowed to view license status.");
-            return Ok(licenses.GetStatus());
-        });
-
-        group.MapPost("/license", async (ClaimsPrincipal user, HttpRequest request, GatewayLicenseService licenses) =>
-        {
-            if (!GatewayAuthEndpoints.CanUploadUpdatePackage(user))
-                return Forbidden("Current user is not allowed to install licenses.");
-            try
-            {
-                using StreamReader reader = new(request.Body, Encoding.UTF8);
-                string licenseText = await reader.ReadToEndAsync();
-                return Ok(licenses.Install(licenseText));
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(ApiResult.Fail(ex.Message));
-            }
-            catch (InvalidDataException ex)
-            {
-                return Results.BadRequest(ApiResult.Fail(ex.Message));
-            }
-            catch (JsonException ex)
-            {
-                return Results.BadRequest(ApiResult.Fail("License JSON is invalid: " + ex.Message));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(ApiResult.Fail(ex.Message));
-            }
         });
 
         group.MapGet("/compatibility", (ClaimsPrincipal user, GatewayCompatibilityService compatibility) =>

@@ -247,7 +247,7 @@
                 </span>
                 <span :title="tagUpdatedTime(row.tag)">{{ tagUpdatedTime(row.tag) }}</span>
                 <span :title="tagLastError(row.tag)">{{ tagLastError(row.tag) }}</span>
-                <span>{{ row.tag.dataType }}</span>
+                <span>{{ dataTypeDisplayName(row.tag.dataType) }}</span>
                 <span :title="tagScalingText(row.tag)">{{ tagScalingText(row.tag) }}</span>
                 <span :title="row.tag.meterAddress">{{ row.tag.meterAddress || '-' }}</span>
                 <span :title="row.tag.meterDataIdentifier">{{ row.tag.meterDataIdentifier || '-' }}</span>
@@ -411,7 +411,7 @@
           <el-input :model-value="writeTargetTag.name" disabled />
         </el-form-item>
         <el-form-item label="数据类型">
-          <el-input :model-value="writeTargetTag.dataType" disabled />
+          <el-input :model-value="dataTypeDisplayName(writeTargetTag.dataType)" disabled />
         </el-form-item>
         <el-form-item label="当前值">
           <el-input :model-value="tagCurrentValue(writeTargetTag)" disabled />
@@ -489,7 +489,7 @@ import {
   normalizeDevice,
   protocolLabel
 } from '../utils/deviceDefaults'
-import { cloneGroup, cloneTag, createGroupDraft, createTagDraft, normalizeGroup, normalizeTag } from '../utils/tagDefaults'
+import { cloneGroup, cloneTag, createGroupDraft, createTagDraft, normalizeGroup, normalizeTag, dataTypeDisplayName } from '../utils/tagDefaults'
 import { formatDateTime } from '../utils/format'
 import { PERMISSIONS, usePermissions } from '../utils/permissions'
 
@@ -1361,6 +1361,8 @@ function validateScalarValue(type: string, value: string) {
   const number = Number(value)
   if (!Number.isSafeInteger(number)) return '整数超出安全范围'
   const ranges: Record<string, [number, number]> = {
+    int8: [-128, 127],
+    uint8: [0, 255],
     int16: [-32768, 32767],
     uint16: [0, 65535],
     int32: [-2147483648, 2147483647],

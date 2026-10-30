@@ -17,7 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\IPC.Gateway.Licensing\IPC.Gateway.Licensing.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
     <ProjectReference Include="..\IPC.Gateway.DataProcessing\IPC.Gateway.DataProcessing.csproj" />
     <ProjectReference Include="..\IPC.Gateway.FlowRules\IPC.Gateway.FlowRules.csproj" />
@@ -37,7 +36,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(IncludeCommercialDriverPlugin)' != 'true'">
-    <Compile Remove="BacnetPackageMigrationTests.cs;BeckhoffAdsConfigurationTests.cs;CanOpenConfigurationTests.cs;Dnp3ConfigurationTests.cs;Dnp3RuntimeCompatibilityTests.cs;EtherNetIpConfigurationTests.cs;MitsubishiMcConfigurationTests.cs;MitsubishiMcFrameCodecTests.cs;MitsubishiMcUdpRetryTests.cs;ModbusAsciiConfigurationTests.cs;MqttSouthboundConfigurationTests.cs;OmronFinsConfigurationTests.cs;OmronFinsUdpClientTests.cs;OpcUaClientEndpointTests.cs;OpcUaClientIntegrationTests.cs;OpcUaPluginLoadTests.cs;ProtocolFailureClassificationTests.cs;RockwellCipConfigurationTests.cs;RockwellPcccConfigurationTests.cs;SiemensS7ConfigurationTests.cs;SnmpConfigurationTests.cs;TcpProtocolAsyncClientTests.cs" />
+    <Compile Remove="BacnetPackageMigrationTests.cs;BeckhoffAdsConfigurationTests.cs;CanOpenConfigurationTests.cs;Dnp3ConfigurationTests.cs;Dnp3RuntimeCompatibilityTests.cs;EtherNetIpConfigurationTests.cs;MitsubishiMcConfigurationTests.cs;MitsubishiMcFrameCodecTests.cs;MitsubishiMcUdpRetryTests.cs;ModbusAsciiConfigurationTests.cs;MqttSouthboundConfigurationTests.cs;OmronFinsConfigurationTests.cs;OmronFinsUdpClientTests.cs;OpcUaClientEndpointTests.cs;OpcUaClientIntegrationTests.cs;OpcUaPluginLoadTests.cs;ProtocolFailureClassificationTests.cs;RockwellCipConfigurationTests.cs;RockwellPcccConfigurationTests.cs;SiemensS7ConfigurationTests.cs;ProtocolDriverCreationTests.cs;SnmpConfigurationTests.cs;TcpProtocolAsyncClientTests.cs" />
   </ItemGroup>
 
 </Project>

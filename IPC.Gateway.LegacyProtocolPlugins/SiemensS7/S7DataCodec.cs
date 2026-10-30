@@ -43,6 +43,11 @@ namespace IPC.Plc.Communication.SiemensS7
                     return GetBit(data, bitOffset);
                 case PlcDataType.BoolArray:
                     return DecodeBoolArray(data, bitOffset, count);
+                case PlcDataType.UInt8:
+                    Require(data, 1);
+                    return data[0];
+                case PlcDataType.UInt8Array:
+                    return DecodeArray<byte>(data, count, 1, (bytes, offset) => bytes[offset]);
                 case PlcDataType.Int16:
                     Require(data, 2);
                     return (short)ReadUInt16(data, 0);
@@ -98,6 +103,10 @@ namespace IPC.Plc.Communication.SiemensS7
                     return new[] { ParseBool(text) ? (byte)1 : (byte)0 };
                 case PlcDataType.BoolArray:
                     return EncodeBoolValues(SplitValues(text));
+                case PlcDataType.UInt8:
+                    return new[] { byte.Parse(text, CultureInfo.InvariantCulture) };
+                case PlcDataType.UInt8Array:
+                    return EncodeArray(SplitValues(text), value => new[] { byte.Parse(value, CultureInfo.InvariantCulture) });
                 case PlcDataType.Int16:
                     return GetBytes((ushort)short.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.UInt16:

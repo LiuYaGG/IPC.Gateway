@@ -753,7 +753,11 @@ namespace IPC.Plc.Communication.SiemensS7
                 }
 
                 dataOffset += 4 + byteLength;
-                if ((byteLength % 2) != 0 && i < items.Count - 1)
+                // Standard S7 responses align odd-length items with a zero byte.
+                // Some simulators (including Hsl) omit it, so do not consume the
+                // next item's return code when no fill byte is present.
+                if ((byteLength % 2) != 0 && i < items.Count - 1 &&
+                    dataOffset < response.Length && response[dataOffset] == 0x00)
                     dataOffset++;
             }
         }
@@ -898,6 +902,9 @@ namespace IPC.Plc.Communication.SiemensS7
                 case PlcDataType.Bool:
                 case PlcDataType.BoolArray:
                     return "BOOL";
+                case PlcDataType.UInt8:
+                case PlcDataType.UInt8Array:
+                    return "BYTE";
                 case PlcDataType.Int16:
                 case PlcDataType.Int16Array:
                     return "INT";

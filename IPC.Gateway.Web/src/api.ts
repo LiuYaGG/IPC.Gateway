@@ -1599,31 +1599,6 @@ export interface GatewayTagImportResult {
   warnings: string[]
 }
 
-export interface GatewayLicenseStatus {
-  configured: boolean
-  valid: boolean
-  operational: boolean
-  expired: boolean
-  signatureVerified: boolean
-  machineMatched: boolean
-  requireValidLicense: boolean
-  requireMachineBinding: boolean
-  productId: string
-  machineCode: string
-  licensedMachineCode: string
-  requestCode: string
-  customerName: string
-  edition: string
-  serialNumber: string
-  issuedUtc: string
-  expiresUtc: string
-  maxDevices: number
-  maxTags: number
-  features: string[]
-  status: string
-  message: string
-}
-
 export interface GatewayCompatibilityMatrix {
   gatewayVersion: string
   configurationSchemaVersion: string
@@ -2032,22 +2007,6 @@ export async function restoreProjectBackup(json: string) {
     body: json
   })
   if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'Project restore failed')
-  return result.data
-}
-
-export async function loadLicenseStatus() {
-  const result = await request<ApiResult<GatewayLicenseStatus>>('/api/commercial/license')
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'License status failed to load')
-  return result.data
-}
-
-export async function installLicense(licenseText: string) {
-  const result = await request<ApiResult<GatewayLicenseStatus>>('/api/commercial/license', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: licenseText
-  })
-  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || 'License installation failed')
   return result.data
 }
 

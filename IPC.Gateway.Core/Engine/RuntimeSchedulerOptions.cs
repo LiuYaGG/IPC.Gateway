@@ -27,6 +27,9 @@ namespace IPC.Runtime.Engine
             IsolationStrategy = "SemaphoreLimitedPerDeviceQueue";
             MaxConcurrentDevicePolls = Math.Max(16, Math.Min(64, Environment.ProcessorCount * 8));
             SchedulerIntervalMs = 100;
+            RecoveryProbeIntervalMs = 1000;
+            RecoveryProbeTimeoutMs = 1000;
+            MaxConcurrentRecoveryProbes = 4;
             DevicePollQueueLimit = 1024;
             BackpressureEnabled = true;
             QueueHighWatermarkPercent = 80;
@@ -52,6 +55,9 @@ namespace IPC.Runtime.Engine
         public string IsolationStrategy { get; set; }
         public int MaxConcurrentDevicePolls { get; set; }
         public int SchedulerIntervalMs { get; set; }
+        public int RecoveryProbeIntervalMs { get; set; }
+        public int RecoveryProbeTimeoutMs { get; set; }
+        public int MaxConcurrentRecoveryProbes { get; set; }
         public int DevicePollQueueLimit { get; set; }
         public bool BackpressureEnabled { get; set; }
         public int QueueHighWatermarkPercent { get; set; }
@@ -86,6 +92,9 @@ namespace IPC.Runtime.Engine
                     : IsolationStrategy.Trim(),
                 MaxConcurrentDevicePolls = maxConcurrentDevicePolls,
                 SchedulerIntervalMs = Clamp(SchedulerIntervalMs, 20, 60000),
+                RecoveryProbeIntervalMs = Clamp(RecoveryProbeIntervalMs, 100, 60000),
+                RecoveryProbeTimeoutMs = Clamp(RecoveryProbeTimeoutMs, 100, 60000),
+                MaxConcurrentRecoveryProbes = Clamp(MaxConcurrentRecoveryProbes, 1, 64),
                 DevicePollQueueLimit = Clamp(DevicePollQueueLimit, 1, 100000),
                 BackpressureEnabled = BackpressureEnabled,
                 QueueHighWatermarkPercent = highWatermarkPercent,

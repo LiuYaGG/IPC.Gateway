@@ -668,10 +668,11 @@ namespace IPC.Gateway.LegacyProtocolPlugins
 
         public IPlcClient CreateClient(PlcConnectionOptions options)
         {
-            LegacyPluginLicense.EnsureDriverAllowed(DriverId);
-            return LicensedPlcClient.Wrap(DriverId, CreateLicensedClient(options));
+            return CreateLicensedClient(options);
         }
 
+        // Retain the protected factory name for compatibility with existing plugins.
+        // Client creation no longer performs commercial license validation.
         protected abstract IPlcClient CreateLicensedClient(PlcConnectionOptions options);
 
         public virtual IList<PlcConnectionParameterDefinition> GetConnectionParameters()

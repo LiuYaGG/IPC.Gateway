@@ -11,6 +11,18 @@ namespace IPC.Plc.Communication.Core
             new BoundedSynchronousIoExecutor(
                 Math.Clamp(Environment.ProcessorCount, 4, 16),
                 1024);
+        private static readonly BoundedSynchronousIoExecutor RecoveryExecutor =
+            new BoundedSynchronousIoExecutor(4, 256, "PLC recovery I/O", false);
+        private static readonly AsyncLocal<bool> RecoveryIo = new AsyncLocal<bool>();
+
+        internal static IDisposable BeginRecoveryProbe() => new RecoveryScope();
+
+        private sealed class RecoveryScope : IDisposable
+        {
+            private readonly bool _previous = RecoveryIo.Value;
+            public RecoveryScope() => RecoveryIo.Value = true;
+            public void Dispose() => RecoveryIo.Value = _previous;
+        }
 
         public static PlcClientCapabilities GetCapabilities(IPlcClient client)
         {
@@ -159,7 +171,16 @@ namespace IPC.Plc.Communication.Core
         {
             ArgumentNullException.ThrowIfNull(operation);
             cancellationToken.ThrowIfCancellationRequested();
-            Task operationTask = SynchronousExecutor.InvokeAsync(operation, cancellationToken).AsTask();
+            bool recovery = RecoveryIo.Value;
+            Task operationTask = (recovery ? RecoveryExecutor : SynchronousExecutor).InvokeAsync(operation, cancellationToken).AsTask();
+            // A synchronous driver cannot be interrupted safely. Keep the device
+            // actor and physical-channel lease until its actual I/O has finished.
+            if (recovery)
+            {
+                await operationTask.ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                return;
+            }
             try
             {
                 await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -177,7 +198,14 @@ namespace IPC.Plc.Communication.Core
         {
             ArgumentNullException.ThrowIfNull(operation);
             cancellationToken.ThrowIfCancellationRequested();
-            Task<T> operationTask = SynchronousExecutor.InvokeAsync(operation, cancellationToken).AsTask();
+            bool recovery = RecoveryIo.Value;
+            Task<T> operationTask = (recovery ? RecoveryExecutor : SynchronousExecutor).InvokeAsync(operation, cancellationToken).AsTask();
+            if (recovery)
+            {
+                T result = await operationTask.ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                return result;
+            }
             try
             {
                 return await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);

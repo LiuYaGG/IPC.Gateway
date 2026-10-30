@@ -66,6 +66,8 @@ public sealed class SiemensS7ConfigurationTests
     public void Codec_RoundTripsAllFrontendS7ScalarAndArrayTypes()
     {
         Assert.Equal(true, Decode(PlcDataType.Bool, Encode(PlcDataType.Bool, "true"), 1));
+        Assert.Equal((byte)255, Decode(PlcDataType.UInt8, Encode(PlcDataType.UInt8, "255"), 1));
+        Assert.Equal(new byte[] { 0, 128, 255 }, (byte[])Decode(PlcDataType.UInt8Array, Encode(PlcDataType.UInt8Array, "0,128,255"), 3));
         Assert.Equal(short.MinValue, Decode(PlcDataType.Int16, Encode(PlcDataType.Int16, short.MinValue.ToString()), 1));
         Assert.Equal(ushort.MaxValue, Decode(PlcDataType.UInt16, Encode(PlcDataType.UInt16, ushort.MaxValue.ToString()), 1));
         Assert.Equal(int.MinValue, Decode(PlcDataType.Int32, Encode(PlcDataType.Int32, int.MinValue.ToString()), 1));
@@ -117,7 +119,109 @@ public sealed class SiemensS7ConfigurationTests
         await server;
     }
 
-    private static async Task RunS7ServerAsync(TcpListener listener)
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public async Task ReadMany_MixedBoolAndIntAcceptsPaddedAndUnpaddedResponses(
+        bool boolFirst, bool padded, bool asynchronous)
+    {
+        byte[] boolItem = { 0xFF, 0x04, 0x00, 0x08, 0x01 };
+        byte[] intItem = { 0xFF, 0x04, 0x00, 0x20, 0x12, 0x34, 0x56, 0x78 };
+        List<byte> data = new List<byte>();
+        data.AddRange(boolFirst ? boolItem : intItem);
+        if (boolFirst && padded)
+            data.Add(0x00);
+        data.AddRange(boolFirst ? intItem : boolItem);
+        byte[] response = BuildMultiReadResponse(data.ToArray());
+
+        using TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        Task server = RunS7ServerAsync(listener, response);
+        using S7Client client = new S7Client(new PlcConnectionOptions
+        {
+            Protocol = PlcProtocol.SiemensS7,
+            Host = "127.0.0.1",
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port,
+            Rack = 0,
+            Slot = 1
+        });
+        PlcBatchReadRequest boolRequest = new("DB1.DBX0.0", PlcDataType.Bool, 1, 0);
+        PlcBatchReadRequest intRequest = new("DB1.DBD2", PlcDataType.Int32, 1, 0);
+        List<PlcBatchReadRequest> requests = boolFirst
+            ? new() { boolRequest, intRequest }
+            : new() { intRequest, boolRequest };
+        IList<PlcBatchReadResult> results;
+        if (asynchronous)
+        {
+            await client.ConnectAsync(CancellationToken.None);
+            results = await client.ReadManyAsync(requests, CancellationToken.None);
+        }
+        else
+        {
+            results = await Task.Run(() =>
+            {
+                client.Connect();
+                return client.ReadMany(requests);
+            });
+        }
+
+        Assert.All(results, result => Assert.True(result.Success, result.ErrorMessage));
+        Assert.Equal(true, results[boolFirst ? 0 : 1].Result!.Value);
+        Assert.Equal(0x12345678, results[boolFirst ? 1 : 0].Result!.Value);
+        await server;
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReadManyAsync_OddLengthItemBeforeFailedTagPreservesFailureScope(bool padded)
+    {
+        List<byte> data = new() { 0xFF, 0x04, 0x00, 0x08, 0x01 };
+        if (padded)
+            data.Add(0x00);
+        data.AddRange(new byte[] { 0x05, 0x00, 0x00, 0x00 });
+        using TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        Task server = RunS7ServerAsync(listener, BuildMultiReadResponse(data.ToArray()));
+        using S7Client client = new(new PlcConnectionOptions
+        {
+            Protocol = PlcProtocol.SiemensS7,
+            Host = "127.0.0.1",
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port
+        });
+        IList<PlcBatchReadResult> results = await client.ReadManyAsync(new List<PlcBatchReadRequest>
+        {
+            new("DB1.DBX0.0", PlcDataType.Bool, 1, 0),
+            new("DB99.DBD2", PlcDataType.Int32, 1, 0)
+        }, CancellationToken.None);
+        Assert.True(results[0].Success, results[0].ErrorMessage);
+        Assert.Equal(true, results[0].Result!.Value);
+        Assert.False(results[1].Success);
+        Assert.Equal(PlcReadFailureScope.Tag, results[1].FailureScope);
+        await server;
+    }
+
+    private static byte[] BuildMultiReadResponse(byte[] data)
+    {
+        List<byte> response = new()
+        {
+            0x03, 0x00, 0x00, (byte)(21 + data.Length),
+            0x02, 0xF0, 0x80,
+            0x32, 0x03, 0x00, 0x00, 0x00, 0x02,
+            0x00, 0x02, 0x00, (byte)data.Length, 0x00, 0x00,
+            0x04, 0x02
+        };
+        response.AddRange(data);
+        return response.ToArray();
+    }
+
+    private static async Task RunS7ServerAsync(TcpListener listener, byte[]? response = null)
     {
         using TcpClient connection = await listener.AcceptTcpClientAsync();
         using NetworkStream stream = connection.GetStream();
@@ -131,7 +235,7 @@ public sealed class SiemensS7ConfigurationTests
         byte[] request = await ReadTpktAsync(stream);
         Assert.Equal(0x04, request[17]);
         Assert.Equal(2, request[18]);
-        await stream.WriteAsync(BuildMultiReadResponse());
+        await stream.WriteAsync(response ?? BuildMultiReadResponse());
     }
 
     private static byte[] Encode(PlcDataType dataType, string value)
@@ -170,6 +274,15 @@ public sealed class SiemensS7ConfigurationTests
             0xFF, 0x04, 0x00, 0x10, 0x12, 0x34,
             0x05, 0x00, 0x00, 0x00
         };
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("256")]
+    public void ByteCodec_RejectsOutOfRangeValues(string text)
+    {
+        var exception = Assert.Throws<System.Reflection.TargetInvocationException>(() => Encode(PlcDataType.UInt8, text));
+        Assert.IsType<OverflowException>(exception.InnerException);
     }
 
     private static async Task<byte[]> ReadTpktAsync(NetworkStream stream)

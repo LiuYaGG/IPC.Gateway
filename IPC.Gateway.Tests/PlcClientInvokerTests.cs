@@ -5,6 +5,34 @@ namespace IPC.Gateway.Tests;
 public sealed class PlcClientInvokerTests
 {
     [Fact]
+    public async Task RecoveryIo_UsesSeparateThreadsAndDoesNotDetachCancelledSynchronousWork()
+    {
+        using ManualResetEventSlim release = new(false);
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using CancellationTokenSource cancellation = new();
+        Task recovery = Task.Run(async () =>
+        {
+            using IDisposable scope = PlcClientInvoker.BeginRecoveryProbe();
+            await PlcClientInvoker.InvokeSynchronousAsync(() =>
+            {
+                Assert.StartsWith("PLC recovery I/O", Thread.CurrentThread.Name);
+                started.TrySetResult();
+                release.Wait(TimeSpan.FromSeconds(5));
+            }, cancellation.Token);
+        });
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            cancellation.Cancel();
+            Assert.False(recovery.IsCompleted);
+            string? worker = await PlcClientInvoker.InvokeSynchronousAsync(() => Thread.CurrentThread.Name);
+            Assert.StartsWith("PLC synchronous I/O", worker);
+        }
+        finally { release.Set(); }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => recovery);
+    }
+
+    [Fact]
     public async Task Invoker_UsesSyncFallbackWhenAsyncInterfaceIsMissing()
     {
         SyncBatchClient client = new SyncBatchClient();

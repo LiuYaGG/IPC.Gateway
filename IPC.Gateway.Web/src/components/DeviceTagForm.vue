@@ -25,7 +25,7 @@
             :key="group.label"
             :label="group.label"
           >
-            <el-option v-for="item in group.options" :key="item" :label="item" :value="item" />
+            <el-option v-for="item in group.options" :key="item" :label="dataTypeDisplayName(item)" :value="item" />
           </el-option-group>
         </el-select>
       </el-form-item>
@@ -297,6 +297,7 @@ import { loadModels, type OnnxModelDefinition } from '../modelApi'
 import {
   accessModeOptions,
   dataTypeOptionGroups,
+  dataTypeDisplayName,
   defaultMeterType,
   isMeterProtocol,
   meterAddressPlaceholder,
@@ -318,7 +319,11 @@ const models = ref<OnnxModelDefinition[]>([])
 const valueScriptFilterKeyword = ref('')
 const activeProtocol = computed(() => props.model.protocol || props.deviceProtocol)
 const virtualDataTypes = ['Bool', 'Int8', 'UInt8', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Float', 'Double']
-const availableDataTypeGroups = computed(() => props.model.isVirtual ? [{ label: '虚拟标签标量类型', options: virtualDataTypes }] : dataTypeOptionGroups(activeProtocol.value))
+const availableDataTypeGroups = computed(() => {
+  if (props.model.isVirtual) return [{ label: '虚拟标签标量类型', options: virtualDataTypes }]
+  const device = props.project?.devices?.find(item => item.id === props.model.deviceId)
+  return dataTypeOptionGroups(activeProtocol.value, device?.connection?.driverOptionsJson)
+})
 const isMeter = computed(() => isMeterProtocol(activeProtocol.value))
 const addressPlaceholder = computed(() => tagAddressPlaceholder(activeProtocol.value))
 const meterAddressHint = computed(() => meterAddressPlaceholder(activeProtocol.value))

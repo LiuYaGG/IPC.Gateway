@@ -22,6 +22,20 @@ namespace IPC.Gateway.Tests;
 public sealed class RuntimeSchedulerOptionsTests
 {
     [Fact]
+    public void Normalize_ClampsRecoveryBudgetAndTimeout()
+    {
+        RuntimeSchedulerOptions options = new RuntimeSchedulerOptions
+        {
+            MaxConcurrentRecoveryProbes = 0,
+            RecoveryProbeIntervalMs = 1,
+            RecoveryProbeTimeoutMs = int.MaxValue
+        }.Normalize();
+        Assert.Equal(1, options.MaxConcurrentRecoveryProbes);
+        Assert.Equal(100, options.RecoveryProbeIntervalMs);
+        Assert.Equal(60000, options.RecoveryProbeTimeoutMs);
+    }
+
+    [Fact]
     public void Normalize_DerivesAdmissionLimitAndClampsWatermarks()
     {
         RuntimeSchedulerOptions options = new RuntimeSchedulerOptions

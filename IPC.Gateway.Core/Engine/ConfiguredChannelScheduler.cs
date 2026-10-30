@@ -31,7 +31,7 @@ namespace IPC.Runtime.Engine
             return state == null || state.Enabled;
         }
 
-        public bool TryGetDispatchScore(DeviceConfig device, out double score)
+        public bool TryGetDispatchScore(DeviceConfig device, out double score, bool recoveryProbe = false)
         {
             score = double.MaxValue;
             ChannelState? state = Find(device);
@@ -41,14 +41,15 @@ namespace IPC.Runtime.Engine
                 return true;
             }
 
-            if (!state.Enabled || Volatile.Read(ref state.WaitingWrites) > 0 || state.Gate.CurrentCount <= 0)
+            SemaphoreSlim gate = recoveryProbe ? state.RecoveryGate : state.Gate;
+            if (!state.Enabled || Volatile.Read(ref state.WaitingWrites) > 0 || gate.CurrentCount <= 0)
                 return false;
 
             score = Volatile.Read(ref state.DispatchCount) / (double)state.Weight;
             return true;
         }
 
-        public bool TryAcquirePoll(DeviceConfig device, out ConfiguredChannelLease? lease)
+        public bool TryAcquirePoll(DeviceConfig device, out ConfiguredChannelLease? lease, bool recoveryProbe = false)
         {
             lease = null;
             ChannelState? state = Find(device);
@@ -58,11 +59,12 @@ namespace IPC.Runtime.Engine
                 return true;
             }
 
-            if (!state.Enabled || Volatile.Read(ref state.WaitingWrites) > 0 || !state.Gate.Wait(0))
+            SemaphoreSlim gate = recoveryProbe ? state.RecoveryGate : state.Gate;
+            if (!state.Enabled || Volatile.Read(ref state.WaitingWrites) > 0 || !gate.Wait(0))
                 return false;
 
             Interlocked.Increment(ref state.DispatchCount);
-            lease = new ConfiguredChannelLease(state.Gate);
+            lease = new ConfiguredChannelLease(gate);
             return true;
         }
 
@@ -106,6 +108,7 @@ namespace IPC.Runtime.Engine
             public bool Enabled { get; }
             public int Weight { get; }
             public SemaphoreSlim Gate { get; }
+            public SemaphoreSlim RecoveryGate { get; } = new SemaphoreSlim(1, 1);
             public long DispatchCount;
             public int WaitingWrites;
         }
