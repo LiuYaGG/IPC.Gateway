@@ -1,0 +1,300 @@
+export const helpEnglish: Record<string, string> = {
+  '当前用户没有角色管理权限。': 'You do not have permission to manage roles.',
+  '当前用户没有人员管理权限。': 'You do not have permission to manage users.',
+  '当前用户没有修改网关配置权限。': 'You do not have permission to change gateway settings.',
+  '当前用户没有重置人员密码权限。': 'You do not have permission to reset user passwords.',
+  '当前用户没有查看角色权限的权限。': 'You do not have permission to view role permissions.',
+  '当前用户没有查看证书状态的权限。': 'You do not have permission to view certificate status.',
+  '当前用户没有查看工业安全配置的权限。': 'You do not have permission to view industrial security settings.',
+  人员: 'Users',
+  权限: 'Permissions',
+  修改: 'Modify',
+  '个 Token': 'tokens',
+  '-【设备直属】-': '- [Direct Device Tags] -',
+  规则引擎不能包含环路: 'Rule flows must not contain cycles.',
+  '降级可用空间(MB)': 'Degraded Free Space (MB)',
+  '不健康可用空间(MB)': 'Unhealthy Free Space (MB)',
+  '经典 S7 兼容说明': 'Classic S7 Compatibility',
+  '可选：从实时标签取值': 'Optional: use a live tag value',
+  '例如：三菱生产线通道': 'e.g. Mitsubishi Production Line',
+  请输入至少一个数组值: 'Enter at least one array value.',
+  请填写脚本名称和代码: 'Enter the script name and source code.',
+  请填写看门狗状态目录: 'Enter the watchdog status directory.',
+  请填写历史库保存目录: 'Enter the historian storage directory.',
+  请选择一个已发布模型: 'Select a published model.',
+  '未登录或会话已过期。': 'You are not signed in or the session has expired.',
+  新增人员必须填写密码: 'A password is required for a new user.',
+  选择一个节点进行编辑: 'Select a node to edit.',
+  已有待执行的离线动作: 'An offline action is already pending.',
+  '邮件发件人不能为空。': 'An email sender is required.',
+  '邮件收件人不能为空。': 'An email recipient is required.',
+  '暂无 MQTT 配置': 'No MQTT configuration',
+  至少需要一个告警级别: 'At least one alarm level is required.',
+  至少允许一种写入操作: 'Allow at least one write operation.',
+  '最小采样间隔(ms)': 'Minimum Sampling Interval (ms)',
+  'JSON 格式不正确': 'Invalid JSON format',
+  '按账号、姓名或角色筛选': 'Filter by account, name or role',
+  不可恢复时请求宿主停止: 'Request Host Stop if Recovery Fails',
+  '不支持写入的数据类型：': 'Unsupported write data type:',
+  成功登录后清零失败次数: 'Reset Failed Attempts After Successful Sign-in',
+  窗口内最大宿主重启请求: 'Maximum Host Restart Requests per Window',
+  的动作值和恢复值不合法: 'has invalid action and recovery values',
+  '登录已过期，请重新登录': 'Your session has expired. Sign in again.',
+  '登录已过期，请重新登录。': 'Your session has expired. Sign in again.',
+  该标签当前没有可用数值: 'This tag has no numeric value available.',
+  节拍规则结束值不能为空: 'A cycle end value is required.',
+  节拍规则开始值不能为空: 'A cycle start value is required.',
+  '例如：10 或 0.1': 'e.g. 10 or 0.1',
+  '流程节点 ID 重复：': 'Duplicate flow node ID:',
+  留空使用模型第一个输出: 'Leave blank to use the first model output',
+  留空使用模型第一个输入: 'Leave blank to use the first model input',
+  请填写名称和连接字符串: 'Enter a name and connection string.',
+  请至少选择一种聚合方法: 'Select at least one aggregation method.',
+  '拖入升级包，或点击选择': 'Drop an update package here or click to select',
+  'MQTT 断连阈值 s': 'MQTT Disconnection Threshold (s)',
+  按通道汇聚设备与调度链路: 'View devices and scheduling connections by channel',
+  标签输入节点只能作为起点: 'Tag input nodes can only be starting nodes.',
+  管理数据库连接与写入目标: 'Manage Database Connections and Write Targets',
+  汇合节点之间不能直接相连: 'Merge nodes cannot connect directly to each other.',
+  '基线样本数（0 为不限）': 'Baseline Samples (0 = unlimited)',
+  节拍规则需要选择标签来源: 'Select a tag source for the cycle rule.',
+  流程至少需要一个判断节点: 'A flow requires at least one condition node.',
+  '密码长度不能少于 8 位': 'The password must contain at least 8 characters.',
+  模型已上传并通过结构检查: 'Model uploaded and structure validated.',
+  '请输入不小于 0 的数值': 'Enter a value greater than or equal to 0.',
+  '请输入合法的倍率和偏移。': 'Enter a valid multiplier and offset.',
+  '搜索节点名称、类型或点位': 'Search node name, type or tag',
+  '新增人员时必须填写密码。': 'A password is required when creating a user.',
+  至少需要选择一个标签来源: 'Select at least one tag source.',
+  '转换表达式没有返回数值。': 'The conversion expression did not return a number.',
+  '最大样本数（0 为不限）': 'Maximum Samples (0 = unlimited)',
+  'ONNX 推理用途不合法': 'Invalid ONNX inference purpose.',
+  'ONNX 推理阈值不合法': 'Invalid ONNX inference threshold.',
+  '”？分组下标签也会被移除。': '"? All tags in this group will also be removed.',
+  '窗口统计样本数不能小于 0': 'The window sample count must not be negative.',
+  的低限动作值必须小于恢复值: 'requires the low action value to be below the recovery value',
+  的高限动作值必须大于恢复值: 'requires the high action value to exceed the recovery value',
+  动作节点不能再连接下游节点: 'Action nodes cannot connect to downstream nodes.',
+  流程连线引用了不存在的节点: 'A flow connection refers to a missing node.',
+  '趋势判断样本数不能小于 0': 'The trend sample count must not be negative.',
+  使用环境变量或本机派生密钥: 'Use an environment variable or machine-derived key',
+  '新密码长度不能少于 8 位': 'The new password must contain at least 8 characters.',
+  选择一个模型查看版本和测试: 'Select a model to view versions and tests.',
+  '异常检测样本数不能小于 0': 'The anomaly detection sample count must not be negative.',
+  质量门控至少需要一个质量值: 'The quality gate requires at least one quality value.',
+  周期开始值与结束值不能相同: 'The cycle start and end values must differ.',
+  'ONNX 推理判断符不合法': 'Invalid ONNX inference operator.',
+  '标签数量超过上限，已折叠显示': 'Tag limit exceeded; some tags are collapsed.',
+  '工艺节拍目标秒数必须大于 0': 'The target cycle time must be greater than 0 seconds.',
+  '接收 NCMD / DCMD': 'Receive NCMD / DCMD',
+  '节拍规则最短周期不能小于 0': 'The minimum cycle time must not be negative.',
+  '节拍规则最长周期不能小于 0': 'The maximum cycle time must not be negative.',
+  请选择一个已发布的值处理脚本: 'Select a published value-processing script.',
+  '示例：原始值 10 会显示为': 'Example: a raw value of 10 is displayed as',
+  'Webhook 请求头无效：': 'Invalid Webhook headers:',
+  '？发布后该版本不可删除或覆盖。': '? Published versions cannot be deleted or overwritten.',
+  '0.0.0.0 或服务器 IP': '0.0.0.0 or the server IP',
+  '导出或恢复项目、通信和历史配置': 'Export or restore project, communication and historian settings',
+  '该角色仍有关联人员，不能删除。': 'This role is assigned to users and cannot be deleted.',
+  节点至少需要两个直接连接的条件: 'The node requires at least two directly connected conditions.',
+  '可打开“显示标签节点”查看明细': 'Enable Show Tag Nodes to view details.',
+  '请输入不小于 100 的毫秒值': 'Enter a value of at least 100 milliseconds.',
+  请完整配置至少一个模型输入标签: 'Configure at least one complete model input tag.',
+  '人大金仓 KingbaseES': 'KingbaseES',
+  '通道已有设备，协议驱动不可修改': 'The protocol driver cannot be changed while the channel contains devices.',
+  '网络请求失败，请检查后端服务。': 'Network request failed. Check the backend service.',
+  '选择纳入看门狗判断的运行组件。': 'Select the runtime components monitored by the watchdog.',
+  '邮件 SMTP 主机不能为空。': 'An SMTP host is required.',
+  '邮件通知 SMTP 端口不合法': 'Invalid SMTP port for email notifications.',
+  'Webhook 超时时间不合法': 'Invalid Webhook timeout.',
+  'Webhook 返回 HTTP': 'Webhook returned HTTP',
+  'Webhook 重试次数不合法': 'Invalid Webhook retry count.',
+  '当前账号没有编辑权限分配的权限。': 'Your account cannot edit permission assignments.',
+  '动作节点必须连接在判断结果之后：': 'Action nodes must follow a condition result:',
+  '可留空，优先使用表地址和数据标识': 'Optional; meter address and data identifier take priority',
+  '每条流程只支持一个顺序/时序节点': 'Each flow supports only one sequence/timing node.',
+  启用冷热分层时必须填写冷数据目录: 'A cold data directory is required for tiered storage.',
+  请至少选择一个允许写入的目标点位: 'Select at least one allowed writable target tag.',
+  '小数位必须是 0 到 8 的整数': 'Decimal places must be an integer from 0 to 8.',
+  '写入值数量超过标签元素数量（当前': 'The number of write values exceeds the tag element count (currently',
+  状态机目标值与明确恢复值不能相同: 'The target state and explicit recovery state must differ.',
+  组合与顺序节点当前只接受基础条件: 'Combination and sequence nodes currently accept basic conditions only.',
+  '检查设备连接、标签地址和协议参数。': 'Check device connections, tag addresses and protocol settings.',
+  '请填写名称、连接、表名和字段白名单': 'Enter a name, connection, table and allowed columns.',
+  请先删除设备或将设备移动到其他通道: 'Delete or move the devices to another channel first.',
+  通知和发布动作不能再连接到下游节点: 'Notification and publish actions cannot connect to downstream nodes.',
+  '拖入项目备份 JSON，或点击选择': 'Drop a project backup JSON here or click to select',
+  '未启用时，标签值按设备原始值展示。': 'When disabled, tags display the original device values.',
+  限制该通道同时执行的设备读循环数量: 'Limit the number of device read cycles running concurrently on this channel.',
+  '邮件通知 SMTP 服务器不能为空': 'An SMTP server is required for email notifications.',
+  离线升级脚本会在维护窗口使用这些路径: 'Offline update scripts use these paths during the maintenance window.',
+  没有输入类型兼容的已发布标签清洗脚本: 'No published tag-cleaning script matches the input type.',
+  '输入通道、设备、分组、标签名称或编码': 'Enter a channel, device, group, tag name or code',
+  '通道繁忙时，权重越高获得轮询机会越多':
+    'Higher scheduling weights receive more polling opportunities when the channel is busy.',
+  值处理脚本节点必须选择一个已发布版本: 'Value-processing nodes require a published script version.',
+  'MQTT QoS 只能是 0/1/2': 'MQTT QoS must be 0, 1 or 2.',
+  'Webhook Method 不合法': 'Invalid Webhook method.',
+  '保留天数必须在 1 到 3650 之间': 'Retention must be between 1 and 3650 days.',
+  回滚点来自每次准备升级前的安装目录快照:
+    'Rollback points are installation snapshots created before preparing an update.',
+  '每条流程只支持一个 AND/OR 节点': 'Each flow supports only one AND/OR node.',
+  '启用聚合时必须填写大于 0 的聚合窗口': 'Aggregation requires a window greater than 0.',
+  '请先在设备管理中添加设备、分组和标签。': 'Add devices, groups and tags in Device Management first.',
+  '维护 Web 登录人员、角色和启用状态': 'Manage web accounts, roles and enabled states',
+  '写入值必须是有效的 Float 数字。': 'Enter a valid Float value.',
+  邮件通知至少选择触发或恢复一种发送时机: 'Select at least one email event: trigger or recovery.',
+  组合流程中的条件必须直接连接到汇合节点: 'Conditions in combined flows must connect directly to the merge node.',
+  'OPC UA Server 配置未加载': 'OPC UA Server settings are not loaded.',
+  '”将向实际设备点位写值，确定立即执行吗？': '" will write to actual device tags. Execute now?',
+  '恢复超时必须在 5 到 3600 秒之间': 'Recovery timeout must be between 5 and 3600 seconds.',
+  '检查周期必须在 1 到 3600 秒之间': 'Check interval must be between 1 and 3600 seconds.',
+  '可留空，优先使用表地址、数据标识和表类型': 'Optional; meter address, data identifier and meter type take priority',
+  '内置和外部协议驱动的版本、摘要与签名状态':
+    'Versions, digests and signature status of built-in and external protocol drivers',
+  '启动宽限必须在 0 到 3600 秒之间': 'Startup grace period must be between 0 and 3600 seconds.',
+  '启用降采样时必须填写大于 0 的采样间隔': 'Downsampling requires a sampling interval greater than 0.',
+  '请填写该数据库驱动支持的完整连接字符串。': 'Enter a complete connection string supported by this database driver.',
+  '写入值必须是有效的 Double 数字。': 'Enter a valid Double value.',
+  '允许 UPDATE 时必须配置更新键字段': 'Update key fields are required when UPDATE is allowed.',
+  '质量门控匹配方式只能是 In/NotIn': 'Quality gate matching must use In or NotIn.',
+  'true / false 或 1 / 0': 'true / false or 1 / 0',
+  '安装包、升级包、离线升级和版本回滚集中管理': 'Manage installation packages, updates, offline upgrades and rollbacks',
+  '表地址、数据标识、表类型在标签配置中维护。':
+    'Configure meter address, data identifier and meter type in tag settings.',
+  '恢复冷却必须在 1 到 86400 秒之间': 'Recovery cooldown must be between 1 and 86400 seconds.',
+  '启用时间对齐时必须填写大于 0 的对齐间隔': 'Time alignment requires an interval greater than 0.',
+  '选择包后准备离线升级，系统会自动创建回滚点':
+    'Select a package to prepare an offline update. A rollback point is created automatically.',
+  'MQTT / Sparkplug B 南向': 'MQTT / Sparkplug B Southbound',
+  '表地址、数据标识、表类型仍在标签配置里维护。':
+    'Meter address, data identifier and meter type remain in tag settings.',
+  '当前接口要求通过 HTTPS/TLS 访问。': 'This API requires HTTPS/TLS.',
+  '点击拓扑节点查看设备、分组、标签或服务状态。':
+    'Click a topology node to inspect device, group, tag or service status.',
+  '配置健康检查、自恢复、异常重启保护和监控对象':
+    'Configure health checks, automatic recovery, restart protection and monitored services',
+  '热数据保留天数必须在 1 到 3650 之间': 'Hot data retention must be between 1 and 3650 days.',
+  '网关、配置 schema、插件和协议能力范围': 'Gateway, configuration schema, plugin and protocol compatibility',
+  '限制恢复风暴，避免设备异常导致服务反复重启。':
+    'Limit recovery storms to prevent repeated restarts caused by device errors.',
+  '自动清理间隔必须在 1 到 720 小时之间': 'Automatic cleanup interval must be between 1 and 720 hours.',
+  '布尔值只能是 true、false、1 或 0': 'Boolean values must be true, false, 1 or 0.',
+  '测试只读取实时缓存，不写标签、不触发规则动作。':
+    'Testing reads the live cache only; it does not write tags or trigger rule actions.',
+  '恢复保护窗口必须在 1 到 1440 分钟之间': 'Recovery protection window must be between 1 and 1440 minutes.',
+  '恢复窗口内最大次数必须在 1 到 100 之间': 'Maximum recoveries per window must be between 1 and 100.',
+  '控制看门狗是否启用，以及保护状态文件保存位置。': 'Configure watchdog enablement and the protection state directory.',
+  '留空表示不启用 Primary Host 仲裁': 'Leave blank to disable Primary Host arbitration',
+  '输入通道、设备、分组、标签名称、编码或数据类型': 'Enter a channel, device, group, tag name, code or data type',
+  '无进展阈值必须在 30 到 86400 秒之间': 'The stall threshold must be between 30 and 86400 seconds.',
+  '值处理脚本超时必须在 10-5000ms 之间': 'Value-processing script timeout must be between 10 and 5000 ms.',
+  '最大补点间隔必须在 0 到 86400 秒之间': 'Maximum fill interval must be between 0 and 86400 seconds.',
+  '最大查询条数必须在 50 到 10000 之间': 'Maximum query rows must be between 50 and 10000.',
+  'Webhook 至少选择触发或恢复一种调用时机': 'Select at least one Webhook event: trigger or recovery.',
+  '单次最大生成点数必须在 1 到 10000 之间': 'Maximum generated points must be between 1 and 10000.',
+  '函数/数据处理超时必须在 1-5000ms 之间': 'Function/data processing timeout must be between 1 and 5000 ms.',
+  '恢复项目备份会覆盖当前项目和通信配置。确认继续？':
+    'Restoring this backup overwrites the current project and communication settings. Continue?',
+  '控制本地历史数据保存、查询上限和边缘处理总开关。':
+    'Configure local historian storage, query limits and edge processing.',
+  '准备版本回滚会覆盖当前待执行升级动作。确认继续？':
+    'Preparing a rollback replaces the pending update action. Continue?',
+  'AND/OR 和顺序/时序节点当前只接受基础条件':
+    'AND/OR and sequence/timing nodes currently accept basic conditions only.',
+  '布尔值只能填写 true/false 或 1/0。': 'Enter true/false or 1/0 for a Boolean value.',
+  '当前账号没有查看人员列表权限，只显示角色人员数量。':
+    'Your account cannot view the user list; only the role member count is shown.',
+  '管理员默认拥有全部权限，运行时不会限制管理员账号。':
+    'Administrators have all permissions and are not restricted by runtime permission checks.',
+  '慢设备和外部连接异常达到阈值后触发降级或恢复建议。':
+    'Slow devices and connection errors trigger degradation or recovery recommendations at the configured thresholds.',
+  '容量上限必须在 0 到 1048576 MB 之间': 'Capacity limit must be between 0 and 1048576 MB.',
+  '宿主重启保护窗口必须在 1 到 1440 分钟之间': 'Host restart protection window must be between 1 and 1440 minutes.',
+  '宿主重启窗口内最大次数必须在 0 到 100 之间': 'Maximum host restarts per window must be between 0 and 100.',
+  '写入已确认，但当前值回读失败，请稍后刷新确认当前值':
+    'The write was acknowledged, but reading back the value failed. Refresh later to verify it.',
+  'ONNX 推理超时必须在 1-30000ms 之间': 'ONNX inference timeout must be between 1 and 30000 ms.',
+  '密码复杂度以后端工业安全策略为准，保存时会自动校验。':
+    'Password complexity follows the backend security policy and is validated on save.',
+  '配置写入记录请求指纹，未授权和拒绝访问进入安全审计。':
+    'Configuration writes record request fingerprints; unauthorized and denied requests are included in security audits.',
+  '同一流程不能同时使用 AND/OR 和顺序/时序节点': 'A flow cannot use both AND/OR and sequence/timing nodes.',
+  '维护 Web 端角色基础信息，权限后续在专门页面维护':
+    'Manage web roles here; assign permissions on the Permissions page.',
+  'TLS 与 OPC UA 证书有效期、指纹和私钥状态': 'TLS and OPC UA certificate validity, thumbprints and private key status',
+  '角色编码需以字母开头，仅支持字母、数字、下划线和短横线':
+    'Role IDs must start with a letter and contain only letters, digits, underscores and hyphens.',
+  '角色编码需以字母开头，仅支持字母、数字、下划线和短横线。':
+    'Role IDs must start with a letter and contain only letters, digits, underscores and hyphens.',
+  '连接串会由网关密钥加密保存；页面重新加载后只显示掩码。':
+    'Connection strings are encrypted with the gateway key and masked after reloading the page.',
+  'MQTT 断连阈值必须在 30 到 86400 秒之间': 'MQTT disconnection threshold must be between 30 and 86400 seconds.',
+  '标签数量较多，拓扑已自动折叠部分标签节点，避免画布卡顿。':
+    'Some tag nodes are collapsed automatically to keep a large topology responsive.',
+  '多个条件必须通过一个 AND/OR 或顺序/时序节点汇合':
+    'Multiple conditions must merge through one AND/OR or sequence/timing node.',
+  '启用补点时必须填写补点间隔，或启用对齐/降采样/聚合间隔':
+    'Gap filling requires a fill interval or an enabled alignment, downsampling or aggregation interval.',
+  '冷数据保留天数必须大于等于热数据保留天数，且不超过 3650':
+    'Cold data retention must be at least the hot data retention and no more than 3650 days.',
+  '配置热目录、冷目录、压缩和自动清理，控制历史文件的生命周期。':
+    'Configure hot/cold directories, compression and automatic cleanup to manage historian files.',
+  '配置压缩、降采样、补点、对齐和聚合，处理后的值会进入历史库。':
+    'Configure compression, downsampling, gap filling, alignment and aggregation before values enter the historian.',
+  '准备离线升级会创建当前版本快照，并生成待执行脚本。确认继续？':
+    'Preparing an offline update creates a version snapshot and an execution script. Continue?',
+  '支持安装包和升级包 zip，上传后先校验清单和 payload':
+    'ZIP installation and update packages are supported; manifests and payloads are validated after upload.',
+  '仅 UPDATE 使用，例如 DeviceId, TagName': 'Used for UPDATE only, e.g. DeviceId, TagName',
+  '规则节点固定使用所选脚本的发布版本；如需升级版本，请重新选择脚本。':
+    'Rule nodes use a pinned published script version. Select the script again to update its version.',
+  '写入目标决定脚本可访问的表、字段与更新键；未列入白名单的字段会被拒绝。':
+    'Write targets define the tables, columns and keys available to scripts. Columns outside the allowlist are rejected.',
+  '账号需以字母开头，长度 3-64，仅支持字母、数字、下划线、短横线和点':
+    'Usernames must start with a letter, contain 3–64 characters, and use only letters, digits, underscores, hyphens and dots.',
+  '留空使用当前标签；多个标签用逗号分隔，可填写点位编码或 设备.分组.标签':
+    'Leave blank to use the current tag. Separate multiple tag codes or Device.Group.Tag paths with commas.',
+  '统一管理模型版本、张量结构、发布状态和虚拟标签测试。已发布版本不可覆盖。':
+    'Manage model versions, tensors, publishing and virtual tag tests. Published versions cannot be overwritten.',
+  '包内需要包含清单、payload 目录和文件摘要；生产环境建议启用发布签名':
+    'Packages require a manifest, payload directory and file digests. Release signatures are recommended for production.',
+  '逗号或换行分隔，例如 TagName, Value, CollectedAt':
+    'Separate with commas or newlines, e.g. TagName, Value, CollectedAt',
+  '{value} * 10 + 5，支持 abs/round/floor/ceil': '{value} * 10 + 5; supports abs/round/floor/ceil',
+  '监控网关运行时、采集调度、MQTT、历史库、规则引擎和 OPC UA Server':
+    'Monitor the gateway runtime, scheduler, MQTT, historian, rule engine and OPC UA Server.',
+  '下拉框内可按脚本名称、说明、输入/输出类型或版本筛选；保存标签时会固定当前发布版本。':
+    'Filter scripts by name, description, input/output type or version. Saving a tag pins the current published version.',
+  '账号策略、接口鉴权、TLS 和证书状态按 ISA/IEC 62443 思路集中展示。':
+    'Account policies, API authentication, TLS and certificates are shown together using ISA/IEC 62443 concepts.',
+  '符号标签：Program:MainProgram.TagName、MyArray[0]': 'Symbolic tags: Program:MainProgram.TagName, MyArray[0]',
+  '当前表计驱动使用串口服务器 TCP 透明传输；表地址、数据标识、表类型在标签配置中维护。':
+    'This meter driver uses transparent TCP transport through a serial server. Configure meter addresses, identifiers and types in tag settings.',
+  '虚拟标签不会写入 PLC；模型在独立队列执行，结果可进入历史、MQTT、Web API 和规则引擎。':
+    'Virtual tags do not write to the PLC. Models run in a separate queue; results can feed the historian, MQTT, Web API and rule engine.',
+  '显式消息：@0x01/1/7、Assembly:100；隐式 I/O：Input:0.0、Output:0':
+    'Explicit messaging: @0x01/1/7, Assembly:100; implicit I/O: Input:0.0, Output:0',
+  '支持数据库写入和点位联动两类受控 C# 脚本；数据库仅允许 INSERT / UPDATE，点位写入仅限白名单目标。':
+    'Controlled C# scripts support database writes and tag linkage. Databases allow INSERT/UPDATE only; tag writes are limited to allowed targets.',
+  'ClickHouse 使用 HTTP/HTTPS 端口（通常为 8123/8443）；UPDATE 需要服务器和表引擎支持轻量更新。':
+    'ClickHouse uses HTTP/HTTPS ports, typically 8123/8443. UPDATE requires lightweight update support from the server and table engine.',
+  '配置会写入当前环境的 appsettings 文件。检查间隔、阈值和监控开关可立即影响后续检查；启用状态和状态目录建议重启后确认完全生效。':
+    'Settings are saved to the current environment appsettings file. Check intervals, thresholds and monitored services apply to subsequent checks. Restart to fully apply enablement or status-directory changes.',
+  '脚本只能通过 Writes.SetAsync/WriteAsync 写入上述白名单点位；系统会阻止自触发，并将跨脚本联动限制在 8 层以内。':
+    'Scripts may write only to allowed tags through Writes.SetAsync/WriteAsync. Self-triggering is blocked and cross-script linkage is limited to 8 levels.',
+  '点位联动脚本可使用 Tags、Writes、Log、Trigger、UtcNow 和 CancellationToken，不能调用 Database。':
+    'Tag-linkage scripts can use Tags, Writes, Log, Trigger, UtcNow and CancellationToken, but cannot call Database.',
+  '支持 SDO、TPDO/RPDO、Heartbeat、EMCY、NMT、SYNC 和 TIME；PDO 字节布局需要与设备对象字典及映射参数保持一致。':
+    'Supports SDO, TPDO/RPDO, Heartbeat, EMCY, NMT, SYNC and TIME. PDO layouts must match the device object dictionary and mapping settings.',
+  'SDO：1:0x6041:0；PDO：TPDO1:1:0.0、RPDO1:1:0；服务：Heartbeat:1、EMCY:1、NMT:1、SYNC、TIME':
+    'SDO: 1:0x6041:0; PDO: TPDO1:1:0.0, RPDO1:1:0; services: Heartbeat:1, EMCY:1, NMT:1, SYNC, TIME',
+  '输入标签使用 Input:字节偏移[.位]，输出标签使用 Output:字节偏移[.位]。装配实例、数据长度、RPI 与实时格式必须和目标设备的 EDS/手册一致。':
+    'Input tags use Input:byteOffset[.bit]; output tags use Output:byteOffset[.bit]. Assembly instances, lengths, RPI and real-time format must match the device EDS/manual.',
+  '支持 DB、M、I/Q、E/A、V 区绝对地址。S7-1200/1500 需要允许 PUT/GET，并将目标 DB 设为非优化访问；优化 DB、符号变量或安全通信请使用 OPC UA。':
+    'Supports absolute DB, M, I/Q, E/A and V addresses. For S7-1200/1500, enable PUT/GET and non-optimized DB access. Use OPC UA for optimized DBs, symbolic variables or secure communication.',
+  '数据库写入脚本可使用 Tags、Database、Log、Trigger、UtcNow 和 CancellationToken；Database 只允许结构化 InsertAsync/UpdateAsync。':
+    'Database-write scripts can use Tags, Database, Log, Trigger, UtcNow and CancellationToken. Database supports structured InsertAsync/UpdateAsync operations only.',
+  '值处理脚本只可使用 Input、Log、Now、UtcNow、CancellationToken、Success/Failure 及 .NET 数学和字符串处理能力；不能读写标签、数据库、文件或网络。保存只更新草稿，发布后规则和标签配置才会使用新版本。':
+    'Value-processing scripts can use Input, Log, Now, UtcNow, CancellationToken, Success/Failure and .NET math/string functions. Tag, database, file and network access is unavailable. Saving updates the draft; publish it before rules and tags can use the new version.'
+}

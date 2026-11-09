@@ -1,0 +1,37 @@
+[Unit]
+Description=IPC Gateway Edge Service
+Documentation=https://localhost/
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ipc-gateway/app
+ExecStart=/usr/bin/dotnet /opt/ipc-gateway/app/IPC.Gateway.WebHost.dll
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=60
+User=ipc-gateway
+Group=ipc-gateway
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5184
+Environment=Gateway__Watchdog__RequestHostStopOnUnrecoverable=true
+Environment=Gateway__History__Directory=/opt/ipc-gateway/app/Data/History
+Environment=Gateway__Mqtt__OutboxDirectory=/opt/ipc-gateway/app/Data/MqttOutbox
+Environment=Gateway__Maintenance__Updates__UpdateDirectory=/opt/ipc-gateway/app/Data/Updates
+Environment=Gateway__OpcUa__CertificateStorePath=/opt/ipc-gateway/app/Data/OpcUa/pki
+Environment=Gateway__Watchdog__StateDirectory=/opt/ipc-gateway/app/Data/Watchdog
+Environment=Gateway__Inference__ModelDirectory=/opt/ipc-gateway/app/Data/Models
+Environment=Gateway__Scripting__ConfigurationFile=/opt/ipc-gateway/app/Data/Scripting/config.json
+EnvironmentFile=/etc/ipc-gateway/ipc-gateway.env
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/ipc-gateway/app /opt/ipc-gateway/app/Data /opt/ipc-gateway/app/logs
+
+[Install]
+WantedBy=multi-user.target

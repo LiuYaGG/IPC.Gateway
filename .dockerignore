@@ -7,8 +7,13 @@ artifacts
 **/Data
 **/logs
 **/node_modules
-IPC.Gateway.Web/dist
-IPC.Gateway.Web/vite-browser-qa*.log
+src/IPC.Gateway.Web/dist
+src/IPC.Gateway.Web/vite-browser-qa*.log
+docs
+tmp
 postgres-start.log
 *.user
 *.suo
+**/appsettings.Production.json
+**/gateway.env
+**/.env

@@ -22,8 +22,8 @@ TestResults/
 
 # Node/Vite build output
 **/node_modules/
-IPC.Gateway.Web/dist/
-IPC.Gateway.Web/.vite/
+src/IPC.Gateway.Web/dist/
+src/IPC.Gateway.Web/.vite/
 
 # Python cache
 **/__pycache__/
@@ -31,9 +31,6 @@ IPC.Gateway.Web/.vite/
 
 # Release packaging output
 artifacts/
-
-# Local documentation workspace
-docs/
 
 # Machine-local certificates, exports, and scratch files
 CertificateStores/
@@ -58,6 +55,19 @@ postgres-start.log
 *.local.json
 appsettings.*.local.json
 appsettings.Local.json
+appsettings.Production.json
+appsettings.Development.json
+gateway.env
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Private certificate files are supplied per deployment.
+*.pfx
+*.p12
+*.key
+**/*private*.pem
 
 # OS files
 Thumbs.db

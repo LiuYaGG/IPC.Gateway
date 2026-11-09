@@ -1,332 +1,166 @@
-# IPC Gateway
-联系方式：Q 2673904969
+# IPC Gateway 工业边缘网关
 
-体验网址: https://gatewayexample.xyz/
+IPC Gateway 面向制造业现场，连接 PLC、仪表和上位系统，将设备采集、数据处理、规则与脚本、MQTT/OPC UA 服务、历史记录及运维管理集中到一个 Web 系统中。
 
-IPC Gateway 是面向制造业现场的边缘计算网关。当前项目提供 Web 管理界面、协议采集、规则引擎、MQTT/OPC UA 对外服务、历史库、权限审计、看门狗和离线升级能力。
-默认用户名admin，密码Gateway#12345678
+后端采用 **.NET 10 / ASP.NET Core**，前端采用 **Vue 3 / TypeScript / Ant Design Vue**。支持 Windows 服务、Linux systemd 和 Docker 部署。
 
-## 当前支持的主要操作
+[开发文档](docs/文档导航.md) · [架构与目录](docs/架构与目录说明.md) · [发布部署](docs/发布部署指南.md) · [ZIP 升级](docs/ZIP升级操作指南.md)
 
-### 登录与账号
+## 系统能力
 
-- 用户登录，登录页带图形验证码。
-- 当前用户修改密码。
-- 人员管理：新增、编辑、删除、筛选人员。
-- 人员密码重置：拥有权限的管理员可为其他用户重置密码。
-- 角色管理：新增、编辑、删除角色。
-- 权限分配：按角色分配页面级和按钮级权限。
+| 模块 | 当前能力 |
+| --- | --- |
+| 设备与标签 | 通道、设备、分组、标签管理；按协议配置连接参数；批量导入导出；读写权限与采集周期 |
+| 协议接入 | 西门子 S7、罗克韦尔 CIP/PCCC、Modbus、三菱、欧姆龙、ADS、OPC UA/DA、仪表及其他插件驱动 |
+| 采集调度 | 设备隔离、批读、超时、失败恢复探测、背压与队列监控；异常点位和设备诊断 |
+| 数据类型 | 标量、字符串、数组；按协议展示支持的类型；原始值与当前值查看、完整值抽屉 |
+| 数据处理 | 缩放、单位转换、死区、重复值与毛刺过滤、枚举映射、压缩、采样、补点和聚合 |
+| 规则引擎 | 阈值、组合条件、流程节点与动作，支持调试和状态查看 |
+| 脚本与模型 | 脚本中心、数据库写入、本地 ONNX 推理及模型关联标签 |
+| 北向服务 | MQTT、离线待发队列、Sparkplug B；OPC UA Server 支持安全模式与策略选择、标签浏览、订阅及按权限读写 |
+| 运行监控 | 大屏、运行总览、设备拓扑、系统资源、模块状态、最近错误和健康检查 |
+| 历史与审计 | 本地历史文件、冷热分层及保留策略，操作与配置变更审计 |
+| 账号与权限 | 人员、角色、页面和操作权限，密码策略、登录锁定、API Token 与证书状态 |
+| 运维升级 | 看门狗与单机自恢复、售后快照、安装包、ZIP 升级和程序回滚 |
+| 界面体验 | 黑色菜单、浅蓝背景、白色卡片；中英文切换记忆；表格分页、列宽调整和固定操作列 |
 
-### 运行监控
+系统已移除商业授权校验。驱动签名与升级包摘要/签名用于完整性及来源校验，不属于商业授权。
+各协议的可用数据类型、批读方式和平台支持以驱动能力及目标环境为准。
 
-- 大屏总览：展示网关健康、模块状态、系统资源、告警、趋势和慢设备。
-- 运行总览：展示设备数、在线状态、标签数、成功率、CPU、内存、MQTT、规则、历史库等运行状态。
-- 设备拓扑：查看设备、协议、分组、标签和服务拓扑关系。
-- 健康检查：支持 live、ready 和 API readiness 检查。
-- 错误详情：查看设备、采集、规则、MQTT、历史库等最近错误。
-![输入图片说明](%E5%A4%A7%E5%B1%8F%E6%80%BB%E8%A7%88.png)
-![输入图片说明](%E8%BF%90%E8%A1%8C%E6%80%BB%E8%A7%88.png)
-![输入图片说明](%E8%AE%BE%E5%A4%87%E6%8B%93%E6%89%91.png)
+## 系统界面
 
-### 设备与标签
+以下截图来自实际前端，使用独立的**演示假数据**：3 个通道、6 台设备、18 个分组、1500 个标签。
+截图不连接现场数据库或 PLC，也不代表实时运行状态、性能结果或真实告警。详见 [截图说明](docs/截图与演示数据说明.md)。
 
-- 设备管理：新增、编辑、删除设备。
-- 按协议展示不同连接参数表单。
-- 分组管理：新增、编辑、删除分组，支持启用和采集周期。
-- 标签管理：新增、编辑、删除标签，支持地址、数据类型、采集周期、失败重试和写入值。
-- 标签当前值：展示当前值、质量、更新时间、最近错误。
-- 标签缩放：支持标签值放大或缩小指定倍数。
-- 友好字段：DL/T 645、CJ/T 188 标签保留协议、表地址、数据标识、表类型字段。
-![输入图片说明](%E8%AE%BE%E5%A4%87%E7%AE%A1%E7%90%86.png)
+### 大屏总览
 
-### 协议采集
+设备在线、标签质量、采集趋势、资源使用和核心链路集中展示。
 
-- 统一协议驱动模型：`IPlcClient` / `IProtocolDriver`。
-- 支持插件化协议驱动发现、加载、卸载和版本校验。
-- 支持 DL/T 645、CJ/T 188、Modbus TCP 抄表类协议配置字段。
-- 支持设备独立采集周期、标签独立采集周期、失败重试、慢设备隔离、采集线程隔离。
-- 支持采集队列状态、任务状态、超时统计、背压、限流和队列水位保护。
+![大屏总览，演示假数据](docs/图片/大屏总览.png)
 
-### 数据处理与历史库
+### 设备概览
 
-- 历史数据保存。
-- 清洗前/清洗后双值保存。
-- 数据清洗规则：越界质量标记、死区过滤、重复值过滤、毛刺过滤、枚举映射、单位换算。
-- 边缘侧处理：压缩、降采样、补点、对齐、聚合。
-- 历史库配置：冷热分层、保留策略、压缩、自动清理。
-- 历史库状态 API 和前端状态展示。
-![输入图片说明](%E5%8E%86%E5%8F%B2%E5%BA%93.png)
+按通道组织设备，查看协议、连接参数、采集周期和点位健康率。
 
-### 规则引擎
+![设备概览，演示假数据](docs/图片/设备概览.png)
 
-- 简单规则：单标签阈值、条件、死区、变化率。
-- 组合规则：多个条件，支持 AND / OR。
-- 规则事件与调试：active 状态、触发时间、恢复时间、事件列表、最近错误、评估次数、触发次数、恢复次数。
-- 模拟测试规则：手动输入值并预览触发、active/clear 消息。
-- 流程规则编辑器：节点、连线、缩放、适配画布、迷你地图、节点搜索、复制粘贴、自动布局、执行路径高亮。
-- 流程规则能力：滞回规则、多级告警、表达式规则、聚合、窗口计算、趋势判断、状态机、工艺节拍、异常检测、顺序/时序规则。
-- 函数节点：支持乘数、偏移、取绝对值、表达式处理。
-- 动作节点：支持 MQTT 发布、邮件通知、Webhook。
-![输入图片说明](%E6%B5%81%E7%A8%8B%E8%A7%84%E5%88%99.png)
+### 标签与分组
 
-### 通讯与对外服务
+展示多种数据类型、原始值、当前值及标签质量，设备树保留通道、设备和分组层级。
 
-- MQTT 普通模式。
-- MQTT Sparkplug B 模式。
-- MQTT TLS、用户名密码、客户端证书配置。
-- MQTT 连接状态、发布状态、离线缓存和积压状态展示。
-- OPC UA Server：让网关采集到的数据以标准 OPC UA 方式提供给 MES、SCADA、上位系统。
-- OPC UA Server 配置和运行状态展示。
+![设备标签，演示假数据](docs/图片/设备标签.png)
 
+### 数组完整值
 
-### 工业安全与审计
+长字符串与数组可在详情抽屉查看，支持原始值/当前值切换、暂停更新和复制。
 
-- 账号策略：密码复杂度、登录锁定。
-- API Token。
-- 设备证书、MQTT 客户端证书、TLS 证书管理。
-- 密钥加密存储。
-- 接口鉴权。
-- 操作审计和配置变更审计。
-- 审计日志查看和导出。
-![输入图片说明](%E5%B7%A5%E4%B8%9A%E5%AE%89%E5%85%A8.png)
+![数组完整值详情，演示假数据](docs/图片/数组详情.png)
 
-### 运维与部署
-
-- 看门狗、自恢复、异常重启保护。
-- Windows Service、Linux systemd、Docker 三种部署方式。
-- 安装包、升级包、离线升级、版本回滚。
-- 管理员密码维护工具：`IPC.Gateway.Maintenance reset-admin --password "new-password"`。
-
-### 本地模型推理
-
-- 支持本地 ONNX 模型推理。
-- 可用于质量预测和设备异常预警类边缘推理场景。
-
-## 本地部署方法
-
-### 直接运行源码
-
-1. 启动数据库。默认使用 PostgreSQL，配置位置为 `IPC.Gateway.WebHost/appsettings.json` 的 `Gateway:Database`。
-2. 构建前端：
-
-```powershell
-cd IPC.Gateway.Web
-npm install
-npm run build
-cd ..
-```
-
-3. 启动后端 WebHost：
-
-```powershell
-dotnet run --project IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj
-```
-
-4. 打开 Web 页面。默认地址以控制台输出为准，常见为：
+## 结构与数据流
 
 ```text
-http://localhost:5184
+ipc.gateway/
+├── src/                       产品源码与前端
+│   ├── IPC.Gateway.Core/
+│   ├── IPC.Gateway.DataProcessing/
+│   ├── IPC.Gateway.FlowRules/
+│   ├── IPC.Gateway.Inference/
+│   ├── IPC.Gateway.LegacyProtocolPlugins/
+│   ├── IPC.Gateway.Maintenance/
+│   ├── IPC.Gateway.Mqtt/
+│   ├── IPC.Gateway.Scripting/
+│   ├── IPC.Gateway.Watchdog/
+│   ├── IPC.Gateway.Web/
+│   └── IPC.Gateway.WebHost/
+├── script/
+│   ├── windows/               安装、卸载、离线升级、生成安装升级包
+│   ├── linux/                 systemd 发布与卸载
+│   └── docker/                Dockerfile、Compose、发布与卸载
+├── docs/                      中文开发文档、部署说明、参考配置与图片
+├── IPC.Gateway.slnx            解决方案入口
+├── Directory.Build.props      公共构建配置
+└── README.md
 ```
 
-首次运行时会按配置执行数据库迁移并初始化必要表结构。
+测试项目、前端测试脚本、模拟器及英文兼容部署脚本已移除。生成的构建与发布产物放在 `artifacts`，不纳入产品源码。
 
-### Windows Service 部署
+```mermaid
+flowchart LR
+    Device[PLC 与仪表] --> Driver[协议驱动]
+    Driver --> Runtime[采集调度与最新状态]
+    Runtime --> Process[清洗与转换]
+    Process --> History[本地历史文件]
+    Process --> Rule[规则 / 脚本 / 模型]
+    Process --> Publish[MQTT / OPC UA]
+    Runtime --> Web[Web API / SSE]
+    Web --> UI[浏览器管理界面]
+    Database[(配置数据库)] <--> Runtime
+    Database <--> Web
+```
 
-1. 构建前端并发布 WebHost：
+配置数据库支持 SQL Server、PostgreSQL、MySQL 和 SQLite。项目配置、账号权限、审计与运行快照进入数据库；历史、待发消息、证书、脚本和模型文件需要单独持久化与备份。
+
+## 本地开发
+
+准备 .NET 10 SDK、Node.js/npm 和可用数据库。在仓库根目录打开解决方案；主配置位于 `src/IPC.Gateway.WebHost/appsettings.json`，生产配置参考同目录的示例文件。
 
 ```powershell
-Push-Location IPC.Gateway.Web
-npm install
+dotnet restore IPC.Gateway.slnx
+Push-Location src/IPC.Gateway.Web
+npm ci
 npm run build
 Pop-Location
-
-dotnet publish IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj -c Release -o C:\IPC.Gateway\app
-dotnet publish IPC.Gateway.LegacyProtocolPlugins/IPC.Gateway.LegacyProtocolPlugins.csproj -c Release -o C:\IPC.Gateway\app\Drivers /p:UseAppHost=false
-```
-
-2. 以管理员身份安装服务：
-
-```powershell
-deployment/windows/install-ipc-gateway-service.ps1 `
-  -PublishDirectory C:\IPC.Gateway\app `
-  -Url http://127.0.0.1:5184 `
-  -DataDirectory C:\IPC.Gateway\data `
-  -EnableServiceRecovery `
-  -Start
-```
-
-3. 检查健康状态：
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:5184/health/live
-Invoke-RestMethod http://127.0.0.1:5184/health/ready
-```
-
-卸载服务：
-
-```powershell
-deployment/windows/remove-ipc-gateway-service.ps1
-```
-
-### Linux systemd 部署
-
-1. 构建前端并发布：
-
-```bash
-cd IPC.Gateway.Web
-npm install
-npm run build
-cd ..
-
-dotnet publish IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj -c Release -o ./artifacts/publish/ipc-gateway
-dotnet publish IPC.Gateway.LegacyProtocolPlugins/IPC.Gateway.LegacyProtocolPlugins.csproj -c Release -o ./artifacts/publish/ipc-gateway/Drivers /p:UseAppHost=false
-```
-
-2. 安装 systemd 服务：
-
-```bash
-sudo PUBLISH_DIR=/absolute/path/to/artifacts/publish/ipc-gateway \
-  SERVICE_URL=http://127.0.0.1:5184 \
-  START_SERVICE=1 \
-  deployment/linux/install-ipc-gateway-systemd.sh
-```
-
-3. 常用运维命令：
-
-```bash
-sudo systemctl status ipc-gateway
-sudo journalctl -u ipc-gateway -f
-sudo systemctl restart ipc-gateway
-sudo systemctl stop ipc-gateway
-```
-
-### Docker 部署
-
-Docker Compose 文件包含 WebHost 和 PostgreSQL，适合本地或单机部署验证：
-
-```bash
-docker compose -f deployment/docker/docker-compose.yml up -d --build
-```
-
-打开：
-
-```text
-http://localhost:5184
-```
-
-查看日志和重启：
-
-```bash
-docker compose -f deployment/docker/docker-compose.yml logs -f ipc-gateway
-docker compose -f deployment/docker/docker-compose.yml restart ipc-gateway
-```
-
-停止：
-
-```bash
-docker compose -f deployment/docker/docker-compose.yml down
-```
-
-生产使用前请修改认证密钥、初始管理员密码和数据库密码，并将 `/app/Data` 挂载到持久化存储。
-
-### 离线安装包和升级包
-
-生成安装包或升级包：
-
-```powershell
-deployment/package/build-ipc-gateway-package.ps1 -PackageType Install -Version 1.0.0
-deployment/package/build-ipc-gateway-package.ps1 -PackageType Upgrade -Version 1.0.1
-```
-
-升级包可在 Web 页面 `安装升级` 中上传，系统会校验包、创建回滚点，并生成离线升级动作。实际应用升级建议安排在维护窗口执行。
-
-## 测试流程
-
-### 西门子 1500 点位压力测试
-
-- 2026-10-30，使用 Snap7 serverdemo 完成西门子 S7 采集压力测试，同时采集 1500 个点位。
-- 点位分布在 DB1、DB2、DB3，每个块 500 个；覆盖 Bool、Byte、有符号/无符号整数、Float、Double，以及 60 个数组标签。
-- 采集周期为 1000ms，模拟器每秒生成一轮随机值；测试期间 1500 个压力测试点位读取正常。
-- Snap7 serverdemo 的批读单次最大变量数设置为 20；1500 点位按批次采集，不代表单个 S7 请求读取 1500 个变量。实际 PLC 应按型号、协商 PDU 和现场负载验证。
-- 已修复大量标签推送时部分点位刷新滞后，以及设备管理、审计日志页面未随窗口高度填满的问题。
-
-### 后端测试
-
-运行后端测试：
-
-```powershell
-dotnet test IPC.Gateway.Tests/IPC.Gateway.Tests.csproj --no-restore
-```
-
-运行解决方案构建：
-
-```powershell
 dotnet build IPC.Gateway.slnx --no-restore
+dotnet run --project src/IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj
 ```
 
-如果本机正在运行 WebHost，输出目录 DLL 可能被占用。可使用独立输出目录验证 WebHost：
+访问地址以 WebHost 输出为准，常用地址为 `http://localhost:5184`。前端热更新开发在 `src/IPC.Gateway.Web` 执行 `npm run dev`，默认端口 5173。
+首次管理员账号和生产密钥需要通过现场配置提供；仓库不提供可通用于生产部署的固定密码。
+
+## 打包、部署和卸载
+
+| 场景 | 中文入口 |
+| --- | --- |
+| 生成安装/升级 ZIP | [生成安装升级包](script/windows/生成安装升级包.ps1) |
+| Windows 服务 | [安装](script/windows/安装Windows服务.ps1) / [卸载](script/windows/卸载Windows服务.ps1) |
+| Windows 离线升级 | [执行离线升级](script/windows/执行离线升级.ps1) |
+| Linux systemd | [发布](script/linux/发布Linux服务.sh) / [卸载](script/linux/卸载Linux服务.sh) |
+| Docker，Windows 终端 | [发布](script/docker/发布Docker.ps1) / [卸载](script/docker/卸载Docker.ps1) |
+| Docker，Linux 终端 | [发布](script/docker/发布Docker.sh) / [卸载](script/docker/卸载Docker.sh) |
+
+Windows 上打包示例：
 
 ```powershell
-dotnet build IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj --no-restore --no-dependencies -o artifacts/verify-webhost-build
+& .\script\windows\生成安装升级包.ps1 -PackageType Install -RuntimeIdentifier win-x64
+& .\script\windows\生成安装升级包.ps1 -PackageType Upgrade -RuntimeIdentifier linux-x64
 ```
 
-### 前端测试
+默认产物在 `artifacts/packages`。整个仓库换盘或改名后可以继续打包；单独移动打包脚本时，传入 `RepositoryRoot` 指向包含 `src` 的源码根目录。
+运行目标机需要 ASP.NET Core Runtime 10；Docker 镜像自行包含运行环境。详细操作见 [发布部署指南](docs/发布部署指南.md)。
 
-构建前端：
+| 环境 | 更新方式 |
+| --- | --- |
+| Windows 服务 | 网页上传 ZIP、校验、准备升级、执行并重启，支持程序回滚点 |
+| Linux systemd | 目标平台 ZIP 解压后用发布脚本人工更新，当前没有网页一键执行器 |
+| Docker | 发布新镜像并重建容器，保留配置与数据卷 |
 
-```powershell
-cd IPC.Gateway.Web
-npm run build
-```
+卸载默认保留数据。Windows 升级包保留最新 1 个、程序回滚点只保留最新 1 个；程序回滚不回滚数据库。
 
-本地预览：
+### 首次部署与登录注意事项
 
-```powershell
-npm run dev -- --host 127.0.0.1 --port 5173
-```
+1. **生产环境必须配置认证密钥。** Windows 服务使用 `Production` 环境，需要在正式程序目录的 `appsettings.Production.json` 中配置 `Gateway.Auth.Secret`，或通过 `Gateway__Auth__Secret` 环境变量提供。密钥应为至少 **32 个字符的随机值**，不能留空或使用默认占位值；否则认证接口会抛出异常并返回 HTTP 500。仅将 `appsettings.json` 复制为生产配置，不能保证这些必填项已配置；`appsettings.Production.example.json` 只是参考文件，不会自动加载。数据库中尚无管理员、需要首次创建账号时，还必须配置 `Gateway.Auth.BootstrapAdminPassword`。认证密钥不是登录密码，设置后应在后续更新中保留，不能将现场密钥写入仓库。修改配置后需重启服务。
+2. **显示首页不一定表示登录验证成功。** 浏览器可能保存了以前的登录标记，当前前端会先显示首页，再向后台验证会话；如果认证接口返回 HTTP 500，页面可能停留在首页外壳并显示错误。应先修复后台配置、重启服务，再用无痕窗口访问，或清除该站点的缓存和登录状态后重新登录。清理浏览器缓存本身不能解决后台 HTTP 500。
 
-### 健康检查
+## 运维入口与当前边界
 
-服务启动后检查：
+- `/health/live`：进程存活；`/health/ready`：运行就绪；`/metrics`：按现场权限开放的运行指标。
+- 采集、规则、历史、MQTT 等错误可从对应页面、审计日志和售后快照定位。
+- SSE 向浏览器发送最新状态，避免后台标签页积压；中间值的长期保存由历史模块承担。
+- 已有西门子仿真场景同时读取 1500 点位的验证记录；实际容量取决于协议、PLC、周期、点位类型和硬件，截图中的 1500 点为展示假数据。
+- 当前具备单机恢复能力，尚未实现主备仲裁、防双主和双机热备。
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:5184/health/live
-Invoke-RestMethod http://127.0.0.1:5184/health/ready
-Invoke-RestMethod http://127.0.0.1:5184/api/health/ready
-```
+## 开发文档
 
-`live` 用于进程存活检查，`ready` 用于判断网关是否可以接收业务流量。
+从 [文档导航](docs/文档导航.md) 查看全部中文资料。开发前阅读 [开发指南](docs/开发指南.md)，发布前阅读 [生产配置基线](docs/生产配置基线.md) 和 [发布验收清单](docs/发布验收清单.md)。
 
-### 浏览器冒烟测试
-
-建议每次发布前至少验证：
-
-- 登录页可以打开，验证码正常显示。
-- 使用管理员账号可以登录。
-- 默认进入大屏总览。
-- 左侧菜单可以展开、折叠、切换。
-- 运行总览能显示设备、标签、成功率、CPU、内存和模块状态。
-- 设备管理能新增、编辑、删除设备、分组、标签。
-- 人员管理能新增人员、编辑人员、重置密码。
-- 权限分配能看到大屏总览、设备拓扑和按钮级权限。
-- MQTT、OPC UA、历史库配置保存后不会被自动刷新覆盖。
-- 流程规则编辑器能新增节点、连线、保存和调试。
-- 审计日志能记录登录、配置变更、权限相关操作。
-
-### 依赖安全检查
-
-检查 NuGet 依赖漏洞：
-
-```powershell
-dotnet list IPC.Gateway.slnx package --vulnerable --include-transitive
-```
-
-### 发布前最小检查清单
-
-- 后端测试通过。
-- 前端构建通过。
-- WebHost 发布包中存在 `wwwroot/index.html`。
-- 协议插件已发布到 WebHost `Drivers` 目录。
-- 数据库连接、认证密钥、管理员初始密码已按目标环境配置。
-- `/health/ready` 返回符合预期的状态。
-- 浏览器冒烟测试通过。
+项目交流：Q 2673904969。

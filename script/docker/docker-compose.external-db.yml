@@ -1,0 +1,20 @@
+# Use the existing SQL Server/PostgreSQL/MySQL instance; do not create a new database container.
+services:
+  ipc-gateway:
+    image: ${IPC_GATEWAY_IMAGE:-ipc-gateway:latest}
+    build:
+      context: ${IPC_GATEWAY_SOURCE_DIRECTORY:-../..}
+      dockerfile: script/docker/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "${IPC_GATEWAY_HTTP_PORT:-5184}:5184"
+    env_file:
+      - ${IPC_GATEWAY_ENV_FILE:?Set IPC_GATEWAY_ENV_FILE using the deployment script}
+    volumes:
+      - ipc_gateway_data:/app/Data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  ipc_gateway_data:
