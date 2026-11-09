@@ -32,6 +32,9 @@ src/IPC.Gateway.Web/.vite/
 # Release packaging output
 artifacts/
 
+# Standalone local demonstration; never include in product commits.
+/演示/
+
 # Machine-local certificates, exports, and scratch files
 CertificateStores/
 outputs/

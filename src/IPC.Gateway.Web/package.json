@@ -12,13 +12,13 @@
     "@ant-design/icons-vue": "7.0.1",
     "ant-design-vue": "4.2.6",
     "echarts": "6.1.0",
-    "vue": "3.5.38"
+    "vue": "3.5.45"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.4",
     "typescript": "5.9.3",
-    "vite": "6.4.3",
-    "vue-tsc": "2.2.12"
+    "vite": "6.4.5",
+    "vue-tsc": "3.3.14"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

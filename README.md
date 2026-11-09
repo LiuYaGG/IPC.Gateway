@@ -1,3 +1,5 @@
+**在线演示：[IPC Gateway 演示系统](https://liuyagg.github.io/IPC-Gateway-Demo/)**（使用模拟数据，无需连接 PLC）
+
 # IPC Gateway 工业边缘网关
 
 IPC Gateway 面向制造业现场，连接 PLC、仪表和上位系统，将设备采集、数据处理、规则与脚本、MQTT/OPC UA 服务、历史记录及运维管理集中到一个 Web 系统中。

@@ -344,8 +344,12 @@
       },
       "MySqlConnector": {
         "type": "Transitive",
-        "resolved": "2.2.5",
-        "contentHash": "6sinY78RvryhHwpup3awdjYO7d5hhWahb5p/1VDODJhSxJggV/sBbYuKK5IQF9TuzXABiddqUbmRfM884tqA3Q=="
+        "resolved": "2.6.1",
+        "contentHash": "MzNSfnHWBc0Mo3zVbYxG+556zuex9obs8NYtwcPCwFahel40e49stH+osjX4k/doEHp4LT/zTtGdax4nlGWhcw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.2",
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.2"
+        }
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -710,6 +714,7 @@
           "Microsoft.Data.SqlClient": "[7.0.1, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.8, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.8, )",
+          "MySqlConnector": "[2.6.1, )",
           "NModbus": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",

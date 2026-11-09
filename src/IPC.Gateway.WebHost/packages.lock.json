@@ -210,8 +210,8 @@
       },
       "MySqlConnector": {
         "type": "Transitive",
-        "resolved": "2.2.5",
-        "contentHash": "6sinY78RvryhHwpup3awdjYO7d5hhWahb5p/1VDODJhSxJggV/sBbYuKK5IQF9TuzXABiddqUbmRfM884tqA3Q=="
+        "resolved": "2.6.1",
+        "contentHash": "MzNSfnHWBc0Mo3zVbYxG+556zuex9obs8NYtwcPCwFahel40e49stH+osjX4k/doEHp4LT/zTtGdax4nlGWhcw=="
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -452,6 +452,7 @@
           "IPC.Gateway.DataProcessing": "[1.0.0, )",
           "IPC.Gateway.Mqtt": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.1, )",
+          "MySqlConnector": "[2.6.1, )",
           "NModbus": "[3.0.83, )",
           "OPCFoundation.NetStandard.Opc.Ua": "[1.5.378.145, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
@@ -478,9 +479,6 @@
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
-      "ipc.gateway.licensing": {
-        "type": "Project"
-      },
       "ipc.gateway.mqtt": {
         "type": "Project"
       },
@@ -492,7 +490,7 @@
           "Microsoft.CodeAnalysis.CSharp.Scripting": "[5.6.0, )",
           "Microsoft.Data.SqlClient": "[7.0.1, )",
           "Microsoft.Data.Sqlite": "[10.0.10, )",
-          "MySqlConnector": "[2.2.5, )",
+          "MySqlConnector": "[2.6.1, )",
           "Npgsql": "[5.0.18, )",
           "Oracle.ManagedDataAccess.Core": "[23.8.0, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )",
