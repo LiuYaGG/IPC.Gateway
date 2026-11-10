@@ -1,4 +1,8 @@
 export const extraEnglish: Record<string, string> = {
+  '正在保存配置': 'Saving configuration',
+  '正在保存并应用配置，请稍候。完成前请勿关闭或刷新页面。': 'Saving and applying configuration. Please wait; do not close or refresh this page.',
+  '升级可信': 'Trusted upgrade',
+  '未加载': 'Not loaded',
   '网关运行时': 'Gateway runtime',
   '看门狗': 'Watchdog',
   '开启后，未签名或验证失败的外部驱动直接禁用，内置驱动不受影响。': 'When enabled, unsigned or unverified external drivers are disabled. Built-in drivers are unaffected.',

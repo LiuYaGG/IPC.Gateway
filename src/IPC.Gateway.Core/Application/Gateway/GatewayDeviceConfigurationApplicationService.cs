@@ -5,7 +5,7 @@
 * 类 描 述 ：
 * 所在的域 ：
 * 命名空间 ：IPC.Gateway.Core.Application.Gateway
-* 机器名称 ：UNKNOWN 
+* 机器名称 ：UNKNOWN
 * CLR 版本 ：10.0.0
 * 作    者 ：ipc
 * 创建时间 ：2026-06-23 17:52:06
@@ -34,108 +34,132 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
 
     public ChannelConfig AddChannel(ChannelConfig channel)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.AddChannel(channel);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.AddChannel(channel);
+            return result;
+        });
     }
 
-    public async Task<ChannelConfig> AddChannelAsync(ChannelConfig channel)
+    public Task<ChannelConfig> AddChannelAsync(ChannelConfig channel)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.AddChannel(channel);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.AddChannel(channel);
+            return result;
+        });
     }
 
     public ChannelConfig UpdateChannel(string channelId, ChannelConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.UpdateChannel(channelId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.UpdateChannel(channelId, input);
+            return result;
+        });
     }
 
-    public async Task<ChannelConfig> UpdateChannelAsync(string channelId, ChannelConfig input)
+    public Task<ChannelConfig> UpdateChannelAsync(string channelId, ChannelConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.UpdateChannel(channelId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.UpdateChannel(channelId, input);
+            return result;
+        });
     }
 
     public ChannelConfig DeleteChannel(string channelId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.DeleteChannel(channelId);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.DeleteChannel(channelId);
+            return result;
+        });
     }
 
-    public async Task<ChannelConfig> DeleteChannelAsync(string channelId)
+    public Task<ChannelConfig> DeleteChannelAsync(string channelId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        ChannelConfig result = aggregate.DeleteChannel(channelId);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            ChannelConfig result = aggregate.DeleteChannel(channelId);
+            return result;
+        });
     }
 
     public IList<DeviceConfig> GetDevices() => _gateway.CurrentProject.Devices;
 
     public DeviceConfig AddDevice(DeviceConfig device)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig result = aggregate.AddDevice(device);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig result = aggregate.AddDevice(device);
+            return result;
+        });
     }
 
-    public async Task<DeviceConfig> AddDeviceAsync(DeviceConfig device)
+    public Task<DeviceConfig> AddDeviceAsync(DeviceConfig device)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig result = aggregate.AddDevice(device);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig result = aggregate.AddDevice(device);
+            return result;
+        });
     }
 
     public DeviceConfig UpdateDevice(string deviceId, DeviceConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
-        if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
-            return current;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
+            if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
+                return current;
 
-        DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
-        Save(aggregate);
-        return result;
+            DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
+            return result;
+        });
     }
 
-    public async Task<DeviceConfig> UpdateDeviceAsync(string deviceId, DeviceConfig input)
+    public Task<DeviceConfig> UpdateDeviceAsync(string deviceId, DeviceConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
-        if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
-            return current;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig current = aggregate.FindDevice(deviceId) ?? throw new InvalidOperationException("Device was not found.");
+            if (DeviceConfigComparer.IsSameDeviceUpdate(current, input))
+                return current;
 
-        DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
-        await SaveAsync(aggregate);
-        return result;
+            DeviceConfig result = aggregate.UpdateDevice(deviceId, input);
+            return result;
+        });
     }
 
     public DeviceConfig DeleteDevice(string deviceId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig result = aggregate.DeleteDevice(deviceId);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig result = aggregate.DeleteDevice(deviceId);
+            return result;
+        });
     }
 
-    public async Task<DeviceConfig> DeleteDeviceAsync(string deviceId)
+    public Task<DeviceConfig> DeleteDeviceAsync(string deviceId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        DeviceConfig result = aggregate.DeleteDevice(deviceId);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            DeviceConfig result = aggregate.DeleteDevice(deviceId);
+            return result;
+        });
     }
 
     public IList<GroupConfig> GetDeviceGroups(string deviceId)
@@ -145,50 +169,62 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
 
     public GroupConfig AddGroup(string deviceId, GroupConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.AddGroup(deviceId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.AddGroup(deviceId, input);
+            return result;
+        });
     }
 
-    public async Task<GroupConfig> AddGroupAsync(string deviceId, GroupConfig input)
+    public Task<GroupConfig> AddGroupAsync(string deviceId, GroupConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.AddGroup(deviceId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.AddGroup(deviceId, input);
+            return result;
+        });
     }
 
     public GroupConfig UpdateGroup(string groupId, GroupConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.UpdateGroup(groupId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.UpdateGroup(groupId, input);
+            return result;
+        });
     }
 
-    public async Task<GroupConfig> UpdateGroupAsync(string groupId, GroupConfig input)
+    public Task<GroupConfig> UpdateGroupAsync(string groupId, GroupConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.UpdateGroup(groupId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.UpdateGroup(groupId, input);
+            return result;
+        });
     }
 
     public GroupConfig DeleteGroup(string groupId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.DeleteGroup(groupId);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.DeleteGroup(groupId);
+            return result;
+        });
     }
 
-    public async Task<GroupConfig> DeleteGroupAsync(string groupId)
+    public Task<GroupConfig> DeleteGroupAsync(string groupId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        GroupConfig result = aggregate.DeleteGroup(groupId);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            GroupConfig result = aggregate.DeleteGroup(groupId);
+            return result;
+        });
     }
 
     public IList<TagConfig> GetDeviceTags(string deviceId)
@@ -198,18 +234,22 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
 
     public TagConfig AddDeviceTag(string deviceId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.AddDeviceTag(deviceId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.AddDeviceTag(deviceId, input);
+            return result;
+        });
     }
 
-    public async Task<TagConfig> AddDeviceTagAsync(string deviceId, TagConfig input)
+    public Task<TagConfig> AddDeviceTagAsync(string deviceId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.AddDeviceTag(deviceId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.AddDeviceTag(deviceId, input);
+            return result;
+        });
     }
 
     public IList<TagConfig> GetGroupTags(string groupId)
@@ -219,50 +259,62 @@ public sealed class GatewayDeviceConfigurationApplicationService : IGatewayDevic
 
     public TagConfig AddGroupTag(string groupId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.AddGroupTag(groupId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.AddGroupTag(groupId, input);
+            return result;
+        });
     }
 
-    public async Task<TagConfig> AddGroupTagAsync(string groupId, TagConfig input)
+    public Task<TagConfig> AddGroupTagAsync(string groupId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.AddGroupTag(groupId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.AddGroupTag(groupId, input);
+            return result;
+        });
     }
 
     public TagConfig UpdateTag(string tagId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.UpdateTag(tagId, input);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.UpdateTag(tagId, input);
+            return result;
+        });
     }
 
-    public async Task<TagConfig> UpdateTagAsync(string tagId, TagConfig input)
+    public Task<TagConfig> UpdateTagAsync(string tagId, TagConfig input)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.UpdateTag(tagId, input);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.UpdateTag(tagId, input);
+            return result;
+        });
     }
 
     public TagConfig DeleteTag(string tagId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.DeleteTag(tagId);
-        Save(aggregate);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.DeleteTag(tagId);
+            return result;
+        });
     }
 
-    public async Task<TagConfig> DeleteTagAsync(string tagId)
+    public Task<TagConfig> DeleteTagAsync(string tagId)
     {
-        GatewayProjectAggregate aggregate = LoadAggregate();
-        TagConfig result = aggregate.DeleteTag(tagId);
-        await SaveAsync(aggregate);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            TagConfig result = aggregate.DeleteTag(tagId);
+            return result;
+        });
     }
 
     private GatewayProjectAggregate LoadAggregate()

@@ -38,3 +38,4 @@
 *.db binary
 *.sqlite binary
 *.bin binary
+*.pb binary

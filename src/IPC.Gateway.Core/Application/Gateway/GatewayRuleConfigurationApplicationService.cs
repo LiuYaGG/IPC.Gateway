@@ -34,99 +34,123 @@ public sealed class GatewayRuleConfigurationApplicationService : IGatewayRuleCon
 
     public EdgeRuleConfig AddRule(EdgeRuleConfig input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.AddRule(input);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.AddRule(input);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<EdgeRuleConfig> AddRuleAsync(EdgeRuleConfig input)
+    public Task<EdgeRuleConfig> AddRuleAsync(EdgeRuleConfig input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.AddRule(input);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.AddRule(input);
+            return result;
+        }, rulesOnly: true);
     }
 
     public EdgeRuleConfig UpdateRule(string ruleId, EdgeRuleConfig input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.UpdateRule(ruleId, input);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.UpdateRule(ruleId, input);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<EdgeRuleConfig> UpdateRuleAsync(string ruleId, EdgeRuleConfig input)
+    public Task<EdgeRuleConfig> UpdateRuleAsync(string ruleId, EdgeRuleConfig input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.UpdateRule(ruleId, input);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.UpdateRule(ruleId, input);
+            return result;
+        }, rulesOnly: true);
     }
 
     public EdgeRuleConfig DeleteRule(string ruleId)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<EdgeRuleConfig> DeleteRuleAsync(string ruleId)
+    public Task<EdgeRuleConfig> DeleteRuleAsync(string ruleId)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            EdgeRuleConfig result = aggregate.DeleteRule(ruleId);
+            return result;
+        }, rulesOnly: true);
     }
 
     public IList<FlowRuleDefinition> GetFlowRules() => _gateway.CurrentProject.FlowRules;
 
     public FlowRuleDefinition AddFlowRule(FlowRuleDefinition input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.AddFlowRule(input);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.AddFlowRule(input);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<FlowRuleDefinition> AddFlowRuleAsync(FlowRuleDefinition input)
+    public Task<FlowRuleDefinition> AddFlowRuleAsync(FlowRuleDefinition input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.AddFlowRule(input);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.AddFlowRule(input);
+            return result;
+        }, rulesOnly: true);
     }
 
     public FlowRuleDefinition UpdateFlowRule(string ruleId, FlowRuleDefinition input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.UpdateFlowRule(ruleId, input);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.UpdateFlowRule(ruleId, input);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<FlowRuleDefinition> UpdateFlowRuleAsync(string ruleId, FlowRuleDefinition input)
+    public Task<FlowRuleDefinition> UpdateFlowRuleAsync(string ruleId, FlowRuleDefinition input)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.UpdateFlowRule(ruleId, input);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.UpdateFlowRule(ruleId, input);
+            return result;
+        }, rulesOnly: true);
     }
 
     public FlowRuleDefinition DeleteFlowRule(string ruleId)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
-        _gateway.ApplyRuleProject(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProject(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
+            return result;
+        }, rulesOnly: true);
     }
 
-    public async Task<FlowRuleDefinition> DeleteFlowRuleAsync(string ruleId)
+    public Task<FlowRuleDefinition> DeleteFlowRuleAsync(string ruleId)
     {
-        GatewayProjectAggregate aggregate = new GatewayProjectAggregate(_gateway.CurrentProject);
-        FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
-        await _gateway.ApplyRuleProjectAsync(aggregate.Project);
-        return result;
+        return _gateway.MutateDeviceProjectAsync(project =>
+        {
+            GatewayProjectAggregate aggregate = new GatewayProjectAggregate(project);
+            FlowRuleDefinition result = aggregate.DeleteFlowRule(ruleId);
+            return result;
+        }, rulesOnly: true);
     }
 }

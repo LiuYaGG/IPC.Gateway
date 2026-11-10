@@ -330,14 +330,14 @@
         </template>
         <gateway-file-upload
           drag
-          accept=".json"
+          accept=".pb"
           :show-upload-list="false"
           :disabled="restoreLoading"
           :on-change="handleRestoreBackup"
         >
           <span class="upload-icon ui-icon"><UploadFilled /></span>
           <div class="el-upload__text">
-            {{ tx("拖入项目备份 JSON，或点击选择") }}
+            {{ tx("拖入项目备份 Protobuf 文件，或点击选择") }}
           </div>
         </gateway-file-upload>
       </a-card>
@@ -460,8 +460,9 @@
           :scroll="{ x: 830, y: 240 }"
         >
           <template #bodyCell="tableCell">
+            <template v-if="tableCell.column.key === 'column-1' && !tableCell.record.protocol"><span>{{ tx('未加载') }}</span></template>
             <template v-if="tableCell.column.key === 'driver-actions'">
-              <a-button v-if="!tableCell.record.builtIn && canSignDriver && !['trusted', 'signed'].includes((tableCell.record.signatureStatus || '').toLowerCase())" type="link" size="small" @click="openDriverSigning(tableCell.record)">{{ tx('签名') }}</a-button>
+              <a-button v-if="!tableCell.record.builtIn && canSignDriver && !['trusted', 'signed', 'upgradetrusted'].includes((tableCell.record.signatureStatus || '').toLowerCase())" type="link" size="small" @click="openDriverSigning(tableCell.record)">{{ tx('签名') }}</a-button>
               <span v-else>-</span>
             </template>
             <template v-if="tableCell.column.key === 'column-2'">
@@ -481,7 +482,7 @@
                 ]"
                 :key="tableCell.index"
               >
-                <a-tag
+                <a-tag :title="tx(row.signatureError)"
                   :color="tagColor(driverSignatureType(row.signatureStatus))"
                 >
                   {{ tx(driverSignatureText(row.signatureStatus)) }}
@@ -938,6 +939,7 @@ import { formatDateTime } from "../utils/format";
 import { PERMISSIONS, usePermissions } from "../utils/permissions";
 import { isSamePackageVersion } from "../utils/packageVersion";
 import { beginUpgradeUpload, updateUpgradeUpload, markUpgradeTransferred, finishUpgradeUpload } from '../utils/upgradeUploadState';
+import { beginConfigurationSave, endConfigurationSave } from '../utils/configurationSaveState';
 
 const { hasPermission } = usePermissions();
 const loading = ref(false);
@@ -978,6 +980,7 @@ onBeforeUnmount(() => {
 });
 
 function driverCapabilityText(driver: GatewayProtocolDriverInfo) {
+  if (!driver.protocol) return "未加载";
   const capabilities = driver.capabilities;
   if (!capabilities) return "-";
   const features = [capabilities.supportsWrite ? "读写" : "只读"];
@@ -1062,6 +1065,7 @@ function trustStatusText(value: string | null | undefined) {
 function trustStatusType(value: string | null | undefined) {
   switch ((value || "").toLowerCase()) {
     case "trusted":
+    case "upgradetrusted":
       return "success";
     case "contentverified":
       return "warning";
@@ -1285,7 +1289,7 @@ async function downloadProjectBackup() {
     const blob = await exportProjectBackup();
     downloadBlob(
       blob,
-      `ipc-gateway-project-${snapshotTimestamp(new Date().toISOString())}.json`,
+      `ipc-gateway-project-${snapshotTimestamp(new Date().toISOString())}.pb`,
     );
     notify.success("项目备份已生成");
   } catch (error) {
@@ -1297,8 +1301,7 @@ async function downloadProjectBackup() {
 
 async function handleRestoreBackup(uploadFile: FileSelection) {
   const raw = uploadFile.raw;
-  if (!raw || uploading.value) return;
-  beginUpgradeUpload(raw.name);
+  if (!raw || uploading.value || restoreLoading.value) return;
   try {
     await confirmAction(
       "恢复项目备份会覆盖当前项目和通信配置。确认继续？",
@@ -1314,9 +1317,9 @@ async function handleRestoreBackup(uploadFile: FileSelection) {
   }
 
   restoreLoading.value = true;
+  beginConfigurationSave();
   try {
-    const text = await raw.text();
-    const result = await restoreProjectBackup(text);
+    const result = await restoreProjectBackup(raw);
     notify.success(
       formatMessage("项目已恢复：{0}", [
         result.projectName || result.projectId,
@@ -1327,6 +1330,7 @@ async function handleRestoreBackup(uploadFile: FileSelection) {
     notify.error(error instanceof Error ? error.message : "项目备份恢复失败");
   } finally {
     restoreLoading.value = false;
+    endConfigurationSave();
   }
 }
 

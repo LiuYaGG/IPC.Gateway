@@ -810,3 +810,41 @@ function sameText(left: string | null | undefined, right: string | null | undefi
   return (left || '').trim().toLowerCase() === (right || '').trim().toLowerCase()
 }
 </script>
+
+<style scoped>
+.flow-editor-shell {
+  grid-template-columns: clamp(180px, 15vw, 240px) minmax(0, 1fr) clamp(320px, 28vw, 460px);
+  height: clamp(360px, calc(100dvh - 330px), 820px);
+  min-height: 0;
+  min-width: 0;
+}
+
+.flow-editor-shell > .flow-palette,
+.flow-editor-shell > .flow-canvas,
+.flow-editor-shell > .flow-properties {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .flow-editor-shell {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .flow-editor-shell > .flow-palette,
+  .flow-editor-shell > .flow-properties {
+    height: auto;
+    max-height: 60dvh;
+  }
+
+  .flow-editor-shell > .flow-canvas {
+    height: 50dvh;
+    min-height: 280px;
+  }
+}
+</style>

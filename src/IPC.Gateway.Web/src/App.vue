@@ -1,6 +1,6 @@
 <template>
   <a-config-provider :theme="gatewayTheme" :locale="antLocale" component-size="small">
-    <main v-if="!authenticated" class="login-shell" :inert="upgradeUploadState.active || undefined">
+    <main v-if="!authenticated" class="login-shell" :inert="upgradeUploadState.active || configurationSaving || undefined">
       <LoginMonetBackdrop />
       <header class="login-brand">
         <strong>IPC Gateway</strong>
@@ -41,7 +41,7 @@
         </a-form>
       </section>
     </main>
-    <a-layout v-else class="app-shell" :inert="upgradeUploadState.active || undefined" :aria-busy="upgradeUploadState.active">
+    <a-layout v-else class="app-shell" :inert="upgradeUploadState.active || configurationSaving || undefined" :aria-busy="upgradeUploadState.active || configurationSaving">
       <a-layout-sider
         :width="208"
         :collapsed-width="64"
@@ -50,7 +50,7 @@
         :trigger="null"
       >
         <div class="brand">
-          <span class="brand__logo ui-icon"><Cpu /></span>
+          <GatewayLogo class="brand__logo" />
           <div v-if="!sidebarCollapsed" class="brand__text">
             <span class="brand__name">IPC Gateway</span>
             <small>{{ tx('工业边缘网关') }}</small>
@@ -192,6 +192,7 @@
     <ChangePasswordDialog v-model="passwordDialogVisible" />
     <ErrorDetailDrawer v-model:visible="errorDrawerVisible" :error="selectedError" />
     <UpgradeUploadOverlay />
+    <ConfigurationSaveOverlay />
   </a-config-provider>
 </template>
 
@@ -204,7 +205,6 @@ import {
   HomeFilled,
   ContainerOutlined as Box,
   ApartmentOutlined as Connection,
-  DeploymentUnitOutlined as Cpu,
   LineChartOutlined as DataLine,
   FileTextOutlined as Document,
   MenuUnfoldOutlined as Expand,
@@ -257,6 +257,8 @@ import LoginCaptcha from './components/LoginCaptcha.vue'
 import AccountDropdown from './components/AccountDropdown.vue'
 import GatewayLogo from './components/GatewayLogo.vue'
 import UpgradeUploadOverlay from './components/UpgradeUploadOverlay.vue'
+import ConfigurationSaveOverlay from './components/ConfigurationSaveOverlay.vue'
+import { configurationSaving } from './utils/configurationSaveState'
 import { upgradeUploadState } from './utils/upgradeUploadState'
 import LoginMonetBackdrop from './components/LoginMonetBackdrop.vue'
 import GatewayNavigation from './components/GatewayNavigation.vue'

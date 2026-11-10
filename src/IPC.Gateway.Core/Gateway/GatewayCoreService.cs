@@ -396,8 +396,31 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
-        public void ApplyDeviceProject(ProjectConfig project)
+        public T MutateDeviceProject<T>(Func<ProjectConfig, T> mutation, bool rulesOnly = false)
         {
+            Stopwatch waiting = Stopwatch.StartNew();
+            _configurationMutationSemaphore.Wait();
+            IpcLogService.WriteInfo("ConfigurationMutationGate waitMs=" + waiting.ElapsedMilliseconds);
+            try { ProjectConfig project = CurrentProject; T result = mutation(project); if (rulesOnly) ApplyRuleProject(project, true); else ApplyDeviceProject(project, true); return result; }
+            finally { _configurationMutationSemaphore.Release(); }
+        }
+
+        public async Task<T> MutateDeviceProjectAsync<T>(Func<ProjectConfig, T> mutation, bool rulesOnly = false)
+        {
+            Stopwatch waiting = Stopwatch.StartNew();
+            await _configurationMutationSemaphore.WaitAsync();
+            IpcLogService.WriteInfo("ConfigurationMutationGate waitMs=" + waiting.ElapsedMilliseconds);
+            try { ProjectConfig project = CurrentProject; T result = mutation(project); if (rulesOnly) await ApplyRuleProjectAsync(project, true); else await ApplyDeviceProjectAsync(project, true); return result; }
+            finally { _configurationMutationSemaphore.Release(); }
+        }
+
+        public void ApplyDeviceProject(ProjectConfig project) => ApplyDeviceProject(project, false);
+
+        private void ApplyDeviceProject(ProjectConfig project, bool mutationLockHeld)
+        {
+            if (!mutationLockHeld) { _configurationMutationSemaphore.Wait(); try { ApplyDeviceProject(project, true); } finally { _configurationMutationSemaphore.Release(); } return; }
+            if (ProjectConfigurationChange.IsSame(CurrentProject, project)) return;
+            bool rebuildRules = ProjectConfigurationChange.RequiresRuleRebuild(CurrentProject, project);
             if (project == null)
                 throw new ArgumentNullException("project");
 
@@ -439,8 +462,7 @@ namespace IPC.Gateway.Core.Gateway
 
                     if (wasRunning)
                     {
-                        MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
-                        MeasureReloadStep(reloadSteps, "StopOpcUa", () => _opcUa.Stop());
+                        if (rebuildRules) MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                     }
 
                     MeasureReloadStep(reloadSteps, "CloneProject", () =>
@@ -448,14 +470,14 @@ namespace IPC.Gateway.Core.Gateway
                         _project = ProjectConfigCloner.Clone(normalizedProject);
                         _lastValidation = validation;
                     });
-                    MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
+                    if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
 
                     if (wasRunning)
                     {
                         MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
                         MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _project));
-                        MeasureReloadStep(reloadSteps, "StartOpcUa", () => _opcUa.Start());
-                        MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
+                        MeasureReloadStep(reloadSteps, "SyncOpcUa", () => _opcUa.SynchronizeAddressSpace());
+                        if (rebuildRules) MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                     }
 
                     MeasureReloadStep(reloadSteps, "UpdateReloadTimestamp", () => _lastReloadTime = DateTime.Now);
@@ -495,7 +517,9 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
-        public async Task ApplyDeviceProjectAsync(ProjectConfig project)
+        public Task ApplyDeviceProjectAsync(ProjectConfig project) => ApplyDeviceProjectAsync(project, false);
+
+        private async Task ApplyDeviceProjectAsync(ProjectConfig project, bool mutationLockHeld)
         {
             if (project == null)
                 throw new ArgumentNullException("project");
@@ -528,9 +552,11 @@ namespace IPC.Gateway.Core.Gateway
                 groupCount = CountProjectGroups(normalizedProject);
                 tagCount = CountProjectTags(normalizedProject);
 
-                await _configurationMutationSemaphore.WaitAsync();
+                await MeasureReloadStepAsync(reloadSteps, "WaitMutationGate", async () => { if (!mutationLockHeld) await _configurationMutationSemaphore.WaitAsync(); });
                 try
                 {
+                    if (ProjectConfigurationChange.IsSame(CurrentProject, normalizedProject)) { succeeded = true; return; }
+                    bool rebuildRules = ProjectConfigurationChange.RequiresRuleRebuild(CurrentProject, normalizedProject);
                     await MeasureReloadStepAsync(reloadSteps, "SaveProjectAsync", () => _configurationStore.SaveProjectAsync(normalizedProject, "WebApi", "Save project configuration"));
 
                     bool lockTaken = false;
@@ -541,8 +567,7 @@ namespace IPC.Gateway.Core.Gateway
 
                         if (wasRunning)
                         {
-                            MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
-                            MeasureReloadStep(reloadSteps, "StopOpcUa", () => _opcUa.Stop());
+                            if (rebuildRules) MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                         }
 
                         MeasureReloadStep(reloadSteps, "CloneProject", () =>
@@ -550,14 +575,14 @@ namespace IPC.Gateway.Core.Gateway
                             _project = ProjectConfigCloner.Clone(normalizedProject);
                             _lastValidation = validation;
                         });
-                        MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
+                        if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
 
                         if (wasRunning)
                         {
                             MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
                             MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _project));
-                            MeasureReloadStep(reloadSteps, "StartOpcUa", () => _opcUa.Start());
-                            MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
+                            MeasureReloadStep(reloadSteps, "SyncOpcUa", () => _opcUa.SynchronizeAddressSpace());
+                            if (rebuildRules) MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                         }
 
                         MeasureReloadStep(reloadSteps, "UpdateReloadTimestamp", () => _lastReloadTime = DateTime.Now);
@@ -571,7 +596,7 @@ namespace IPC.Gateway.Core.Gateway
                 }
                 finally
                 {
-                    _configurationMutationSemaphore.Release();
+                    if (!mutationLockHeld) _configurationMutationSemaphore.Release();
                 }
             }
             catch (Exception ex)
@@ -602,13 +627,14 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
-        internal void ApplyRuleProject(ProjectConfig project)
+        internal void ApplyRuleProject(ProjectConfig project, bool mutationLockHeld = false)
         {
             ProjectConfig normalizedProject = PrepareRuleProject(project, out ProjectConfigValidationResult validation);
 
-            _configurationMutationSemaphore.Wait();
+            if (!mutationLockHeld) _configurationMutationSemaphore.Wait();
             try
             {
+                if (ProjectConfigurationChange.IsSame(CurrentProject, normalizedProject)) return;
                 lock (_syncRoot)
                 {
                     _configurationStore.SaveProject(normalizedProject, "WebApi", "Save rule configuration");
@@ -617,24 +643,25 @@ namespace IPC.Gateway.Core.Gateway
             }
             finally
             {
-                _configurationMutationSemaphore.Release();
+                if (!mutationLockHeld) _configurationMutationSemaphore.Release();
             }
         }
 
-        internal async Task ApplyRuleProjectAsync(ProjectConfig project)
+        internal async Task ApplyRuleProjectAsync(ProjectConfig project, bool mutationLockHeld = false)
         {
             ProjectConfig normalizedProject = PrepareRuleProject(project, out ProjectConfigValidationResult validation);
 
-            await _configurationMutationSemaphore.WaitAsync();
+            if (!mutationLockHeld) await _configurationMutationSemaphore.WaitAsync();
             try
             {
+                if (ProjectConfigurationChange.IsSame(CurrentProject, normalizedProject)) return;
                 await _configurationStore.SaveProjectAsync(normalizedProject, "WebApi", "Save rule configuration");
                 lock (_syncRoot)
                     ApplyRuleEngineProject(normalizedProject, validation);
             }
             finally
             {
-                _configurationMutationSemaphore.Release();
+                if (!mutationLockHeld) _configurationMutationSemaphore.Release();
             }
         }
 

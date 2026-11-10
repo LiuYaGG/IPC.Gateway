@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System.Text.Json;
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 using IPC.EdgeGateway;
 using IPC.Gateway.DataProcessing;
@@ -42,7 +43,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         _secretProtector = new GatewaySecretProtector(secretProtectionOptions);
         _jsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = true,
+            WriteIndented = false,
             PropertyNameCaseInsensitive = true
         };
         _jsonOptions.Converters.Add(new JsonStringEnumConverter());
@@ -51,17 +52,8 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public ProjectConfig LoadOrCreateProject(Func<ProjectConfig> defaultFactory)
     {
-        string json;
-        if (TryLoadActive(GatewayConfigurationType.Project, out json))
-        {
-            ProjectConfig? loaded = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-            if (loaded != null)
-            {
-                UnprotectProjectSecrets(loaded);
-                ProjectConfigStore.Normalize(loaded);
-                return loaded;
-            }
-        }
+        var row = LoadActiveProjectRow();
+        if (row != null) return ReadProject(row);
 
         ProjectConfig config = defaultFactory == null ? new ProjectConfig() : defaultFactory();
         SaveProject(config, "System", "初始化默认项目配置");
@@ -70,17 +62,8 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public async Task<ProjectConfig> LoadOrCreateProjectAsync(Func<ProjectConfig> defaultFactory)
     {
-        string json = await TryLoadActiveAsync(GatewayConfigurationType.Project);
-        if (!string.IsNullOrWhiteSpace(json))
-        {
-            ProjectConfig? loaded = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-            if (loaded != null)
-            {
-                UnprotectProjectSecrets(loaded);
-                ProjectConfigStore.Normalize(loaded);
-                return loaded;
-            }
-        }
+        var row = await LoadActiveProjectRowAsync();
+        if (row != null) return ReadProject(row);
 
         ProjectConfig config = defaultFactory == null ? new ProjectConfig() : defaultFactory();
         await SaveProjectAsync(config, "System", "Initialize default project configuration");
@@ -89,32 +72,14 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public ProjectConfig LoadProject()
     {
-        string json;
-        if (!TryLoadActive(GatewayConfigurationType.Project, out json))
-            throw new InvalidOperationException("数据库中没有启用的项目配置。");
-
-        ProjectConfig? config = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-        if (config == null)
-            throw new InvalidOperationException("项目配置内容为空。");
-
-        UnprotectProjectSecrets(config);
-        ProjectConfigStore.Normalize(config);
-        return config;
+        return ReadProject(LoadActiveProjectRow()
+            ?? throw new InvalidOperationException("数据库中没有启用的项目配置。"));
     }
 
     public async Task<ProjectConfig> LoadProjectAsync()
     {
-        string json = await TryLoadActiveAsync(GatewayConfigurationType.Project);
-        if (string.IsNullOrWhiteSpace(json))
-            throw new InvalidOperationException("Project configuration was not found in database.");
-
-        ProjectConfig? config = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-        if (config == null)
-            throw new InvalidOperationException("Project configuration payload is empty.");
-
-        UnprotectProjectSecrets(config);
-        ProjectConfigStore.Normalize(config);
-        return config;
+        return ReadProject(await LoadActiveProjectRowAsync()
+            ?? throw new InvalidOperationException("Project configuration was not found in database."));
     }
 
     public int SaveProject(ProjectConfig config, string source, string description)
@@ -129,7 +94,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
         ProjectConfig stored = ProjectConfigCloner.Clone(config);
         ProtectProjectSecrets(stored);
-        return Save(GatewayConfigurationType.Project, JsonSerializer.Serialize(stored, _jsonOptions), source, description);
+        return Save(GatewayConfigurationType.Project, string.Empty, source, description, ProjectProtobufCodec.SerializeProject(stored));
     }
 
     public async Task<int> SaveProjectAsync(ProjectConfig config, string source, string description)
@@ -137,14 +102,20 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         if (config == null)
             throw new ArgumentNullException(nameof(config));
 
+        using var timings = new ConfigurationSaveTimings("project.prepare", string.Empty);
         ProjectConfigStore.Normalize(config);
         ProjectConfigValidationResult validation = ProjectConfigValidator.Validate(config);
         if (!validation.IsValid)
             throw new InvalidOperationException("Project configuration validation failed: " + string.Join("; ", validation.Errors));
 
+        timings.Mark("NormalizeValidate");
         ProjectConfig stored = ProjectConfigCloner.Clone(config);
         ProtectProjectSecrets(stored);
-        return await SaveAsync(GatewayConfigurationType.Project, JsonSerializer.Serialize(stored, _jsonOptions), source, description);
+        timings.Mark("CloneProtect");
+        byte[] payload = ProjectProtobufCodec.SerializeProject(stored);
+        timings.SetPayload(payload);
+        timings.Mark("Serialize");
+        return await SaveAsync(GatewayConfigurationType.Project, string.Empty, source, description, payload);
     }
 
     public MqttGatewayOptions LoadOrCreateMqtt(MqttGatewayOptions defaultOptions)
@@ -375,31 +346,17 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public ProjectConfig RollbackProject(int version)
     {
-        string json = ActivateVersion(GatewayConfigurationType.Project, version);
-        ProjectConfig? config = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-        if (config == null)
-            throw new InvalidOperationException("回滚后的项目配置为空。");
-
-        UnprotectProjectSecrets(config);
-        ProjectConfigStore.Normalize(config);
-        return config;
+        return ReadProject(ActivateVersion(GatewayConfigurationType.Project, version));
     }
 
     public async Task<ProjectConfig> RollbackProjectAsync(int version)
     {
-        string json = await ActivateVersionAsync(GatewayConfigurationType.Project, version);
-        ProjectConfig? config = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-        if (config == null)
-            throw new InvalidOperationException("Rolled back project configuration is empty.");
-
-        UnprotectProjectSecrets(config);
-        ProjectConfigStore.Normalize(config);
-        return config;
+        return ReadProject(await ActivateVersionAsync(GatewayConfigurationType.Project, version));
     }
 
     public MqttGatewayOptions RollbackMqtt(int version)
     {
-        string json = ActivateVersion(GatewayConfigurationType.Mqtt, version);
+        string json = ActivateVersion(GatewayConfigurationType.Mqtt, version).Payload;
         MqttGatewayOptions? options = JsonSerializer.Deserialize<MqttGatewayOptions>(json, _jsonOptions);
         options ??= new MqttGatewayOptions();
         UnprotectMqttSecrets(options);
@@ -408,7 +365,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public async Task<MqttGatewayOptions> RollbackMqttAsync(int version)
     {
-        string json = await ActivateVersionAsync(GatewayConfigurationType.Mqtt, version);
+        string json = (await ActivateVersionAsync(GatewayConfigurationType.Mqtt, version)).Payload;
         MqttGatewayOptions? options = JsonSerializer.Deserialize<MqttGatewayOptions>(json, _jsonOptions);
         options ??= new MqttGatewayOptions();
         UnprotectMqttSecrets(options);
@@ -417,42 +374,42 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     public OpcUaServerOptions RollbackOpcUa(int version)
     {
-        string json = ActivateVersion(GatewayConfigurationType.OpcUa, version);
+        string json = ActivateVersion(GatewayConfigurationType.OpcUa, version).Payload;
         OpcUaServerOptions? options = JsonSerializer.Deserialize<OpcUaServerOptions>(json, _jsonOptions);
         return NormalizeOpcUa(options == null ? new OpcUaServerOptions() : options);
     }
 
     public async Task<OpcUaServerOptions> RollbackOpcUaAsync(int version)
     {
-        string json = await ActivateVersionAsync(GatewayConfigurationType.OpcUa, version);
+        string json = (await ActivateVersionAsync(GatewayConfigurationType.OpcUa, version)).Payload;
         OpcUaServerOptions? options = JsonSerializer.Deserialize<OpcUaServerOptions>(json, _jsonOptions);
         return NormalizeOpcUa(options == null ? new OpcUaServerOptions() : options);
     }
 
     public LocalHistoryOptions RollbackHistory(int version)
     {
-        string json = ActivateVersion(GatewayConfigurationType.History, version);
+        string json = ActivateVersion(GatewayConfigurationType.History, version).Payload;
         LocalHistoryOptions? options = JsonSerializer.Deserialize<LocalHistoryOptions>(json, _jsonOptions);
         return NormalizeHistory(options == null ? new LocalHistoryOptions() : options);
     }
 
     public async Task<LocalHistoryOptions> RollbackHistoryAsync(int version)
     {
-        string json = await ActivateVersionAsync(GatewayConfigurationType.History, version);
+        string json = (await ActivateVersionAsync(GatewayConfigurationType.History, version)).Payload;
         LocalHistoryOptions? options = JsonSerializer.Deserialize<LocalHistoryOptions>(json, _jsonOptions);
         return NormalizeHistory(options == null ? new LocalHistoryOptions() : options);
     }
 
     public StorageHealthThresholds RollbackStorageHealth(int version)
     {
-        string json = ActivateVersion(GatewayConfigurationType.StorageHealth, version);
+        string json = ActivateVersion(GatewayConfigurationType.StorageHealth, version).Payload;
         StorageHealthThresholds? thresholds = JsonSerializer.Deserialize<StorageHealthThresholds>(json, _jsonOptions);
         return NormalizeStorageHealth(thresholds == null ? new StorageHealthThresholds() : thresholds);
     }
 
     public async Task<StorageHealthThresholds> RollbackStorageHealthAsync(int version)
     {
-        string json = await ActivateVersionAsync(GatewayConfigurationType.StorageHealth, version);
+        string json = (await ActivateVersionAsync(GatewayConfigurationType.StorageHealth, version)).Payload;
         StorageHealthThresholds? thresholds = JsonSerializer.Deserialize<StorageHealthThresholds>(json, _jsonOptions);
         return NormalizeStorageHealth(thresholds == null ? new StorageHealthThresholds() : thresholds);
     }
@@ -480,7 +437,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         return row == null ? string.Empty : row.Payload ?? string.Empty;
     }
 
-    private int Save(string configType, string payload, string source, string description)
+    private int Save(string configType, string payload, string source, string description, byte[]? binaryPayload = null)
     {
         using SqlSugar.ISqlSugarClient db = _factory.Create();
         db.Ado.BeginTran();
@@ -494,7 +451,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
             db.Updateable<GatewayConfigurationEntity>()
                 .SetColumns(item => item.Active == false)
-                .Where(item => item.ConfigType == configType)
+                .Where(item => item.ConfigType == configType && item.Active)
                 .ExecuteCommand();
 
             db.Insertable(new GatewayConfigurationEntity
@@ -503,6 +460,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 ConfigType = configType,
                 Version = nextVersion,
                 Payload = payload,
+                PayloadBinary = binaryPayload,
                 CreatedUtc = DateTime.UtcNow,
                 Active = true,
                 Source = source ?? string.Empty,
@@ -519,22 +477,30 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         }
     }
 
-    private async Task<int> SaveAsync(string configType, string payload, string source, string description)
+    private async Task<int> SaveAsync(string configType, string payload, string source, string description, byte[]? binaryPayload = null)
     {
+        using var timings = new ConfigurationSaveTimings(configType, payload);
+        if (binaryPayload != null) timings.SetPayload(binaryPayload);
         using SqlSugar.ISqlSugarClient db = _factory.Create();
+        timings.Mark("CreateClient");
+        await db.Ado.OpenAsync();
+        timings.Mark("OpenConnection");
         await db.Ado.BeginTranAsync();
+        timings.Mark("BeginTransaction");
         try
         {
             int nextVersion = await db.Queryable<GatewayConfigurationEntity>()
                 .Where(item => item.ConfigType == configType)
                 .MaxAsync(item => item.Version) + 1;
+            timings.Mark("QueryVersion");
             if (nextVersion <= 0)
                 nextVersion = 1;
 
             await db.Updateable<GatewayConfigurationEntity>()
                 .SetColumns(item => item.Active == false)
-                .Where(item => item.ConfigType == configType)
+                .Where(item => item.ConfigType == configType && item.Active)
                 .ExecuteCommandAsync();
+            timings.Mark("DeactivateCurrent");
 
             await db.Insertable(new GatewayConfigurationEntity
             {
@@ -542,13 +508,16 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 ConfigType = configType,
                 Version = nextVersion,
                 Payload = payload,
+                PayloadBinary = binaryPayload,
                 CreatedUtc = DateTime.UtcNow,
                 Active = true,
                 Source = source ?? string.Empty,
                 Description = description ?? string.Empty
             }).ExecuteCommandAsync();
 
+            timings.Mark("InsertVersion");
             await db.Ado.CommitTranAsync();
+            timings.Mark("Commit");
             return nextVersion;
         }
         catch
@@ -558,7 +527,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         }
     }
 
-    private string ActivateVersion(string configType, int version)
+    private GatewayConfigurationEntity ActivateVersion(string configType, int version)
     {
         if (version <= 0)
             throw new ArgumentException("配置版本号必须大于 0。", nameof(version));
@@ -571,12 +540,13 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 .Where(item => item.ConfigType == configType && item.Version == version)
                 .First();
 
-            if (row == null || string.IsNullOrWhiteSpace(row.Payload))
+            if (row == null || (configType == GatewayConfigurationType.Project
+                ? row.PayloadBinary is not { Length: > 0 } : string.IsNullOrWhiteSpace(row.Payload)))
                 throw new InvalidOperationException("未找到指定配置版本。");
 
             db.Updateable<GatewayConfigurationEntity>()
                 .SetColumns(item => item.Active == false)
-                .Where(item => item.ConfigType == configType)
+                .Where(item => item.ConfigType == configType && item.Active)
                 .ExecuteCommand();
 
             db.Updateable<GatewayConfigurationEntity>()
@@ -585,7 +555,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 .ExecuteCommand();
 
             db.Ado.CommitTran();
-            return row.Payload;
+            return row;
         }
         catch
         {
@@ -594,7 +564,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         }
     }
 
-    private async Task<string> ActivateVersionAsync(string configType, int version)
+    private async Task<GatewayConfigurationEntity> ActivateVersionAsync(string configType, int version)
     {
         if (version <= 0)
             throw new ArgumentException("Configuration version must be greater than 0.", nameof(version));
@@ -607,12 +577,13 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 .Where(item => item.ConfigType == configType && item.Version == version)
                 .FirstAsync();
 
-            if (row == null || string.IsNullOrWhiteSpace(row.Payload))
+            if (row == null || (configType == GatewayConfigurationType.Project
+                ? row.PayloadBinary is not { Length: > 0 } : string.IsNullOrWhiteSpace(row.Payload)))
                 throw new InvalidOperationException("The specified configuration version was not found.");
 
             await db.Updateable<GatewayConfigurationEntity>()
                 .SetColumns(item => item.Active == false)
-                .Where(item => item.ConfigType == configType)
+                .Where(item => item.ConfigType == configType && item.Active)
                 .ExecuteCommandAsync();
 
             await db.Updateable<GatewayConfigurationEntity>()
@@ -621,13 +592,38 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
                 .ExecuteCommandAsync();
 
             await db.Ado.CommitTranAsync();
-            return row.Payload;
+            return row;
         }
         catch
         {
             await db.Ado.RollbackTranAsync();
             throw;
         }
+    }
+
+    private GatewayConfigurationEntity? LoadActiveProjectRow()
+    {
+        using var db = _factory.Create();
+        return db.Queryable<GatewayConfigurationEntity>()
+            .Where(row => row.ConfigType == GatewayConfigurationType.Project && row.Active)
+            .OrderBy(row => row.Version, SqlSugar.OrderByType.Desc).First();
+    }
+
+    private async Task<GatewayConfigurationEntity?> LoadActiveProjectRowAsync()
+    {
+        using var db = _factory.Create();
+        return await db.Queryable<GatewayConfigurationEntity>()
+            .Where(row => row.ConfigType == GatewayConfigurationType.Project && row.Active)
+            .OrderBy(row => row.Version, SqlSugar.OrderByType.Desc).FirstAsync();
+    }
+
+    private ProjectConfig ReadProject(GatewayConfigurationEntity row)
+    {
+        var config = ProjectProtobufCodec.DeserializeProject(row.PayloadBinary
+            ?? throw new InvalidDataException("Protobuf project configuration is missing."));
+        UnprotectProjectSecrets(config);
+        ProjectConfigStore.Normalize(config);
+        return config;
     }
 
     private void EnsureSchema()

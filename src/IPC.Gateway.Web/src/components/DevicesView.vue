@@ -634,19 +634,23 @@
       :mask-closable="false"
       class="gateway-wide-form-modal"
       v-model:open="tagDrawerVisible"
+      :closable="!tagSaving"
+      :keyboard="!tagSaving"
       :title="tx(editingTagId ? tx('编辑标签') : tx('新增标签'))"
       width="1120px"
     >
-      <DeviceTagForm
-        ref="tagFormComponent"
-        v-if="tagForm"
-        :model="tagForm"
-        :device-protocol="tagTargetDevice?.protocol || ''"
-        :project="project"
-      />
+      <div :inert="tagSaving || undefined" :aria-busy="tagSaving">
+        <DeviceTagForm
+          ref="tagFormComponent"
+          v-if="tagForm"
+          :model="tagForm"
+          :device-protocol="tagTargetDevice?.protocol || ''"
+          :project="project"
+        />
+      </div>
       <template #footer>
         <div class="drawer-footer">
-          <a-button @click="tagDrawerVisible = false">{{ tx('取消') }}</a-button>
+          <a-button :disabled="tagSaving" @click="tagDrawerVisible = false">{{ tx('取消') }}</a-button>
           <a-button v-if="canSaveCurrentTag" type="primary" :loading="tagSaving" @click="saveTag">
             {{ tx('保存') }}
           </a-button>
@@ -720,6 +724,7 @@
 </template>
 
 <script setup lang="ts">
+import { beginConfigurationSave, endConfigurationSave } from '../utils/configurationSaveState'
 import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
@@ -2399,7 +2404,10 @@ function openEditTag(tag: TagConfig) {
 }
 
 async function saveTag() {
-  if (!tagForm.value || !tagTargetDevice.value) return
+  if (tagSaving.value || !tagForm.value || !tagTargetDevice.value) return
+  tagSaving.value = true
+  beginConfigurationSave(false)
+  try {
   if (!canSaveCurrentTag.value) {
     notify.warning('当前用户没有保存标签权限')
     return
@@ -2416,28 +2424,29 @@ async function saveTag() {
     return
   }
 
-  tagSaving.value = true
+  const targetDevice = tagTargetDevice.value
+  const targetGroup = tagTargetGroup.value
+  const targetTagId = editingTagId.value
   try {
-    if (editingTagId.value) {
-      await updateTag(editingTagId.value, payload)
+    if (targetTagId) {
+      await updateTag(targetTagId, payload)
       notify.success('标签已更新')
-    } else if (tagTargetGroup.value) {
-      await createGroupTag(tagTargetGroup.value.id, payload)
+    } else if (targetGroup) {
+      await createGroupTag(targetGroup.id, payload)
       notify.success('标签已新增')
     } else {
-      await createDeviceTag(tagTargetDevice.value.id, payload)
+      await createDeviceTag(targetDevice.id, payload)
       notify.success('标签已新增')
     }
-    selectedNodeKey.value = tagTargetGroup.value
-      ? groupNodeKey(tagTargetDevice.value, tagTargetGroup.value)
-      : deviceNodeKey(tagTargetDevice.value)
+    selectedNodeKey.value = targetGroup
+      ? groupNodeKey(targetDevice, targetGroup)
+      : deviceNodeKey(targetDevice)
     tagDrawerVisible.value = false
     emit('changed')
   } catch (error) {
     notify.error(error instanceof Error ? error.message : '保存标签失败')
-  } finally {
-    tagSaving.value = false
   }
+  } finally { tagSaving.value = false; endConfigurationSave(false) }
 }
 
 async function removeTag(tag: TagConfig) {

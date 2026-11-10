@@ -123,7 +123,7 @@ export const helpEnglish: Record<string, string> = {
   '请填写名称、连接、表名和字段白名单': 'Enter a name, connection, table and allowed columns.',
   请先删除设备或将设备移动到其他通道: 'Delete or move the devices to another channel first.',
   通知和发布动作不能再连接到下游节点: 'Notification and publish actions cannot connect to downstream nodes.',
-  '拖入项目备份 JSON，或点击选择': 'Drop a project backup JSON here or click to select',
+  '拖入项目备份 Protobuf 文件，或点击选择': 'Drop a Protobuf project backup here or click to select',
   '未启用时，标签值按设备原始值展示。': 'When disabled, tags display the original device values.',
   限制该通道同时执行的设备读循环数量: 'Limit the number of device read cycles running concurrently on this channel.',
   '邮件通知 SMTP 服务器不能为空': 'An SMTP server is required for email notifications.',

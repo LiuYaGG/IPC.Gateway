@@ -17,9 +17,6 @@
 //----------------------------------------------------------------*/
 using System;
 using System.IO;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace IPC.Runtime.Configuration
 {
@@ -34,13 +31,6 @@ namespace IPC.Runtime.Configuration
     
     public sealed class ProjectConfigStore
     {
-        private readonly JsonSerializerOptions _jsonOptions;
-
-        public ProjectConfigStore()
-        {
-            _jsonOptions = CreateJsonOptions();
-        }
-
         public ProjectConfig LoadOrCreate(string path, Func<ProjectConfig> defaultFactory)
         {
             string resolvedPath = ResolvePath(path);
@@ -55,10 +45,7 @@ namespace IPC.Runtime.Configuration
         public ProjectConfig Load(string path)
         {
             string resolvedPath = ResolvePath(path);
-            string json = File.ReadAllText(resolvedPath, Encoding.UTF8);
-            ProjectConfig? config = JsonSerializer.Deserialize<ProjectConfig>(json, _jsonOptions);
-            if (config == null)
-                throw new InvalidOperationException("项目配置文件内容为空。");
+            ProjectConfig config = ProjectProtobufCodec.DeserializeProject(File.ReadAllBytes(resolvedPath));
 
             Normalize(config);
             ProjectConfigValidationResult validation = ProjectConfigValidator.Validate(config);
@@ -83,8 +70,16 @@ namespace IPC.Runtime.Configuration
             if (!string.IsNullOrWhiteSpace(directory))
                 Directory.CreateDirectory(directory);
 
-            string json = JsonSerializer.Serialize(config, _jsonOptions);
-            File.WriteAllText(resolvedPath, json, new UTF8Encoding(false));
+            string temporaryPath = resolvedPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllBytes(temporaryPath, ProjectProtobufCodec.SerializeProject(config));
+                File.Move(temporaryPath, resolvedPath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            }
         }
 
         public static void Normalize(ProjectConfig config)
@@ -731,20 +726,11 @@ namespace IPC.Runtime.Configuration
             }
         }
 
-        private static JsonSerializerOptions CreateJsonOptions()
-        {
-            JsonSerializerOptions options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNameCaseInsensitive = true
-            };
-            options.Converters.Add(new JsonStringEnumConverter());
-            return options;
-        }
-
         private static string ResolvePath(string path)
         {
-            string value = string.IsNullOrWhiteSpace(path) ? "Data\\gateway-project.json" : path.Trim();
+            string value = string.IsNullOrWhiteSpace(path) ? Path.Combine("Data", "gateway-project.pb") : path.Trim();
+            if (!string.Equals(Path.GetExtension(value), ".pb", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Project files must use the .pb extension.", nameof(path));
             if (!Path.IsPathRooted(value))
                 value = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, value);
             return value;

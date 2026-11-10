@@ -1,3 +1,4 @@
+using IPC.Plc.Communication.Infrastructure;
 /*----------------------------------------------------------------
 * 项目名称 ：IPC.Gateway.WebHost
 * 项目描述 ：
@@ -31,6 +32,7 @@ public sealed class GatewayUpdatePackageService
     private readonly GatewayUpdateMaintenanceOptions _options;
     private readonly IGatewayUpdateProcessLauncher _processLauncher;
     private readonly object _actionLock = new();
+    private bool _completedTrustRestored;
     private readonly HashSet<string> _incomingFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly JsonSerializerOptions _jsonOptions;
 
@@ -51,8 +53,44 @@ public sealed class GatewayUpdatePackageService
         lock (_actionLock)
         {
             EnsureDirectories();
+            if (!_completedTrustRestored)
+            {
+                try { RestoreCompletedUpgradeTrust(); }
+                catch (Exception ex) { System.Diagnostics.Trace.TraceWarning("Upgrade driver trust restoration skipped: " + ex.Message); }
+            }
             if (_options.Enabled) ApplyRetentionPolicy();
             return GetStatusCore();
+        }
+    }
+
+    // The previous host may predate upgrade-trust support. Reconstruct continuity
+    // only from its completed upgrade, original ZIP and verified rollback copy.
+    public void RestoreCompletedUpgradeTrust()
+    {
+        lock (_actionLock)
+        {
+            if (_completedTrustRestored) return;
+            GatewayPendingUpdateAction? action = ReadJson<GatewayPendingUpdateAction>(GetPendingActionPath());
+            // Windows helpers start the new service before writing Applied. At
+            // this point only exact hashes extracted from the validated ZIP are granted trust.
+            if (action?.ActionType != "Upgrade" || action.Status is not ("Applying" or "Applied")) return;
+            if (!Path.TrimEndingDirectorySeparator(Path.GetFullPath(action.TargetDirectory)).Equals(ResolveInstallDirectory(), StringComparison.OrdinalIgnoreCase)) return;
+            GatewayUpdatePackageRecord record = FindPackage(action.PackageId);
+            var validation = ValidateStoredPackage(record);
+            if (!validation.Trust.ContentHashValid) return;
+            GatewayRollbackPoint rollback = FindRollback(action.RollbackId);
+            string previous = Path.Combine(rollback.Directory, "payload");
+            if (!Directory.Exists(previous)) return;
+            string payload = Path.Combine(GetStagingDirectory(), "trust-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(payload);
+                ExtractPayload(record.StoredPath, validation.Manifest.EntryDirectory, payload);
+                int restored = PlcDriverPluginRegistry.PreserveUpgradeTrust(payload, ResolveInstallDirectory(), record.PackageId, record.Sha256, previous);
+                if (restored > 0) PlcDriverPluginRegistry.RefreshDefaultPlugins();
+                _completedTrustRestored = true;
+            }
+            finally { if (Directory.Exists(payload)) Directory.Delete(payload, true); }
         }
     }
 
@@ -170,6 +208,8 @@ public sealed class GatewayUpdatePackageService
         Directory.CreateDirectory(sourceDirectory);
 
         ExtractPayload(record.StoredPath, manifest.EntryDirectory, sourceDirectory);
+        if (validation.Trust.ContentHashValid)
+            PlcDriverPluginRegistry.PreserveUpgradeTrust(sourceDirectory, ResolveInstallDirectory(), record.PackageId, record.Sha256);
         GatewayRollbackPoint rollbackPoint = CreateRollbackPoint(record);
         GatewayPendingUpdateAction action = new GatewayPendingUpdateAction
         {
@@ -255,10 +295,13 @@ public sealed class GatewayUpdatePackageService
             {
                 // Revalidate the original ZIP and re-extract a fresh payload before stopping the host.
                 GatewayUpdatePackageRecord record = FindPackage(action.PackageId);
-                GatewayUpdatePackageManifest manifest = ValidateStoredPackage(record).Manifest;
+                GatewayUpdatePackageValidationResult validated = ValidateStoredPackage(record);
+                GatewayUpdatePackageManifest manifest = validated.Manifest;
                 action.SourceDirectory = Path.Combine(GetStagingDirectory(), "execute-" + Guid.NewGuid().ToString("N"), "payload");
                 Directory.CreateDirectory(action.SourceDirectory);
                 ExtractPayload(record.StoredPath, manifest.EntryDirectory, action.SourceDirectory);
+                if (validated.Trust.ContentHashValid)
+                    PlcDriverPluginRegistry.PreserveUpgradeTrust(action.SourceDirectory, action.TargetDirectory, record.PackageId, record.Sha256);
             }
             else if (action.ActionType == "Rollback")
             {

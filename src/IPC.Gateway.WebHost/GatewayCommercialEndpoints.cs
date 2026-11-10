@@ -45,16 +45,16 @@ public static class GatewayCommercialEndpoints
         {
             if (!GatewayAuthEndpoints.CanViewProject(user))
                 return Forbidden("Current user is not allowed to export project backups.");
-            return Results.File(backups.CreateBackupBytes(), "application/json", "ipc-gateway-project-backup.json");
+            return Results.File(backups.CreateBackupBytes(), "application/x-protobuf", "ipc-gateway-project-backup.pb");
         });
 
         group.MapPost("/project/restore", async (ClaimsPrincipal user, HttpRequest request, GatewayProjectBackupService backups) =>
         {
             if (!GatewayAuthEndpoints.CanEditProject(user))
                 return Forbidden("Current user is not allowed to restore project backups.");
-            using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8);
-            string json = await reader.ReadToEndAsync();
-            return Execute(() => backups.Restore(json));
+            using var buffer = new MemoryStream();
+            await request.Body.CopyToAsync(buffer, request.HttpContext.RequestAborted);
+            return Execute(() => backups.Restore(buffer.ToArray()));
         });
 
         group.MapGet("/compatibility", (ClaimsPrincipal user, GatewayCompatibilityService compatibility) =>
@@ -68,7 +68,7 @@ public static class GatewayCommercialEndpoints
         {
             if (!GatewayAuthEndpoints.CanViewMaintenance(user))
                 return Forbidden("Current user is not allowed to view protocol driver status.");
-            return Ok(PlcDriverPluginRegistry.GetRegisteredDrivers());
+            return Ok(PlcDriverPluginRegistry.GetDriverInventory());
         });
 
         group.MapGet("/drivers/{driverId}/signing", (ClaimsPrincipal user, string driverId) =>

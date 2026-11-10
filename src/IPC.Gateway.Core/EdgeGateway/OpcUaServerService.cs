@@ -136,6 +136,15 @@ namespace IPC.EdgeGateway
             }
         }
 
+        public void SynchronizeAddressSpace()
+        {
+            lock (_syncRoot)
+            {
+                if (_server != null) _server.GatewayNodeManager?.SynchronizeAddressSpace();
+                else if (_options.Enabled) Start();
+            }
+        }
+
         public void RestartIfRunning()
         {
             lock (_syncRoot)

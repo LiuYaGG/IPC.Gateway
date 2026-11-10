@@ -78,7 +78,14 @@ public static class GatewayMigrations
             PostgreSqlRuntimeChannelIdentitySchema,
             MySqlRuntimeChannelIdentitySchema,
             SqlServerRuntimeChannelIdentitySchema,
-            SqliteRuntimeChannelIdentitySchema)
+            SqliteRuntimeChannelIdentitySchema),
+        new DatabaseMigration(
+            "202611100001_project_protobuf",
+            "Store project configurations as Protobuf binary, including historical versions.",
+            "alter table gateway_configurations add column payload_binary bytea null;",
+            "alter table gateway_configurations add column payload_binary longblob null;",
+            "alter table gateway_configurations add payload_binary varbinary(max) null;",
+            "alter table gateway_configurations add column payload_binary blob null;")
     };
 
     private const string PostgreSqlInitialSchema = @"

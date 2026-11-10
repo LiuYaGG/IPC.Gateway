@@ -113,6 +113,7 @@ export function driverSignatureText(value?: string | null) {
   const labels: Record<string, string> = {
     builtin: "内置驱动",
     trusted: "已签名",
+    upgradetrusted: "升级可信",
     signed: "已签名",
     unsigned: "未签名",
     unverified: "签名未验证",

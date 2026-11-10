@@ -1,5 +1,5 @@
 <template>
-  <div class="tag-selector">
+  <div class="tag-selector" :class="{ 'tag-selector--stacked': stacked }">
     <div class="tag-selector__filters">
       <gateway-select
         v-model="channelFilter"
@@ -46,10 +46,10 @@
       :disabled="disabled || filteredTags.length === 0"
       @change="changeTag"
     >
-      <a-select-option v-for="item in filteredTags" :key="item.key" :label="tx(item.label)" :value="item.key">
+      <a-select-option v-for="item in filteredTags" :key="item.key" :label="nameOnly ? item.tagName : tx(item.label)" :value="item.key">
         <div class="tag-selector__option">
-          <span>{{ tx(item.label) }}</span>
-          <small>{{ item.pointCode || item.address || '-' }} · {{ item.dataType || '-' }}</small>
+          <span>{{ nameOnly ? item.tagName : tx(item.label) }}</span>
+          <small v-if="!nameOnly">{{ item.pointCode || item.address || '-' }} · {{ item.dataType || '-' }}</small>
         </div>
       </a-select-option>
     </gateway-select>
@@ -92,6 +92,8 @@ const props = defineProps<{
   modelValue: string
   project: ProjectConfig | null
   disabled?: boolean
+  stacked?: boolean
+  nameOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -219,3 +221,27 @@ function keepValidFilters() {
 
 syncFiltersFromSelection({ resetWhenNoSelection: true })
 </script>
+
+<style scoped>
+.tag-selector--stacked {
+  min-width: 0;
+}
+
+.tag-selector--stacked .tag-selector__filters,
+.tag-selector--stacked .tag-selector__summary {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tag-selector--stacked .tag-selector__option {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tag-selector--stacked :deep(.ant-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.tag-selector--stacked .tag-selector__summary strong {
+  overflow-wrap: anywhere;
+}
+</style>

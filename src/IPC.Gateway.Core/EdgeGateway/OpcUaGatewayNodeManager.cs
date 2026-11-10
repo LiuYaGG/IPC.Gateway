@@ -35,6 +35,10 @@ namespace IPC.EdgeGateway
         private readonly OpcUaServerOptions _options;
         private readonly OpcUaServerStatus _status;
         private readonly Dictionary<string, BaseDataVariableState> _tagNodes;
+        private readonly Dictionary<string, FolderState> _folders = new();
+        private readonly HashSet<string> _visitedTags = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _visitedFolders = new();
+        private bool _addressSpaceCreated;
 
         public OpcUaGatewayNodeManager(
             IServerInternal server,
@@ -55,16 +59,42 @@ namespace IPC.EdgeGateway
 
         public override void CreateAddressSpace(IDictionary<NodeId, IList<IReference>> externalReferences)
         {
+            lock (Lock)
             lock (_syncRoot)
             {
-                _tagNodes.Clear();
+                _visitedTags.Clear();
+                _visitedFolders.Clear();
 
                 ProjectConfig project = _projectProvider() ?? new ProjectConfig();
+                var desired = new Dictionary<string, (string Path, NodeId DataType, int Rank)>();
+                foreach (var channel in project.Channels)
+                foreach (var device in project.Devices.Where(d => string.Equals(d.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase)))
+                {
+                    foreach (var tag in device.Tags) desired[BuildTagKey(channel, device, null, tag)] =
+                        (BuildTagPath(channel, device, null, tag), ResolveDataType(tag.DataType), IsArrayType(tag.DataType) ? ValueRanks.OneDimension : ValueRanks.Scalar);
+                    foreach (var group in device.Groups)
+                    foreach (var tag in group.Tags) desired[BuildTagKey(channel, device, group, tag)] =
+                        (BuildTagPath(channel, device, group, tag), ResolveDataType(tag.DataType), IsArrayType(tag.DataType) ? ValueRanks.OneDimension : ValueRanks.Scalar);
+                }
+                // Remove renamed/deleted nodes first, including rename swaps, before creating any new NodeId.
+                foreach (string key in _tagNodes.Keys.ToArray())
+                {
+                    var node = _tagNodes[key];
+                    if (!desired.TryGetValue(key, out var item) || node.NodeId.Identifier.ToString() != item.Path ||
+                        node.DataType != item.DataType || node.ValueRank != item.Rank)
+                    {
+                        node.StatusCode = StatusCodes.BadNodeIdUnknown;
+                        node.ClearChangeMasks(SystemContext, false);
+                        node.Parent?.RemoveChild(node);
+                        DeleteNode(SystemContext, node.NodeId);
+                        _tagNodes.Remove(key);
+                    }
+                }
                 FolderState root = CreateFolder(
                     null,
                     "gateway:" + SafeId(project.ProjectId, "gateway"),
                     string.IsNullOrWhiteSpace(project.Name) ? "IPC Gateway" : project.Name.Trim());
-                AddObjectsFolderReference(externalReferences, root);
+                if (!_addressSpaceCreated) AddObjectsFolderReference(externalReferences, root);
 
                 int channelCount = 0;
                 int deviceCount = 0;
@@ -93,7 +123,16 @@ namespace IPC.EdgeGateway
                     }
                 }
 
+                foreach (string key in _folders.Keys.Where(k => !_visitedFolders.Contains(k)).OrderByDescending(k => k.Count(c => c == '/')).ToArray())
+                {
+                    FolderState obsolete = _folders[key];
+                    obsolete.Parent?.RemoveChild(obsolete);
+                    DeleteNode(SystemContext, obsolete.NodeId);
+                    _folders.Remove(key);
+                }
                 AddPredefinedNode(SystemContext, root);
+                root.ClearChangeMasks(SystemContext, true);
+                _addressSpaceCreated = true;
                 _status.ChannelNodeCount = channelCount;
                 _status.DeviceNodeCount = deviceCount;
                 _status.GroupNodeCount = groupCount;
@@ -101,6 +140,8 @@ namespace IPC.EdgeGateway
                 _status.LastReloadTime = DateTime.Now;
             }
         }
+
+        public void SynchronizeAddressSpace() => CreateAddressSpace(new Dictionary<NodeId, IList<IReference>>());
 
         public void UpdateValue(TagValueSnapshot snapshot)
         {
@@ -135,7 +176,15 @@ namespace IPC.EdgeGateway
 
         private FolderState CreateFolder(NodeState? parent, string nodeKey, string displayName)
         {
+            _visitedFolders.Add(nodeKey);
             string browseName = SanitizeBrowseName(displayName);
+            if (_folders.TryGetValue(nodeKey, out var existing))
+            {
+                existing.BrowseName = new QualifiedName(browseName, NamespaceIndex);
+                existing.DisplayName = displayName;
+                existing.Description = displayName;
+                return existing;
+            }
             FolderState folder = new FolderState(parent)
             {
                 SymbolicName = browseName,
@@ -150,6 +199,7 @@ namespace IPC.EdgeGateway
                 EventNotifier = EventNotifiers.None
             };
 
+            _folders[nodeKey] = folder;
             parent?.AddChild(folder);
             return folder;
         }
@@ -200,20 +250,15 @@ namespace IPC.EdgeGateway
 
         private void AddTagVariable(NodeState parent, ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
-            string displayName = DisplayName(tag.Name, "Tag");
+            string displayName = BuildTagPath(channel, device, group, tag);
             string key = BuildTagKey(channel, device, group, tag);
-            string groupId = group == null ? "_" : SafeId(group.Id, group.Name);
             BaseDataVariableState variable = new BaseDataVariableState(parent)
             {
-                SymbolicName = SanitizeBrowseName(displayName),
+                SymbolicName = displayName,
                 ReferenceTypeId = ReferenceTypeIds.Organizes,
                 TypeDefinitionId = VariableTypeIds.BaseDataVariableType,
-                NodeId = new NodeId(
-                    "tag:" + SafeId(channel.Id, channel.Name) + "/" +
-                    SafeId(device.Id, device.Name) + "/" + groupId + "/" +
-                    SafeId(tag.Id, displayName),
-                    NamespaceIndex),
-                BrowseName = new QualifiedName(SanitizeBrowseName(displayName), NamespaceIndex),
+                NodeId = new NodeId(displayName, NamespaceIndex),
+                BrowseName = new QualifiedName(displayName, NamespaceIndex),
                 DisplayName = displayName,
                 Description = BuildDescription(channel, device, group, tag),
                 WriteMask = AttributeWriteMask.None,
@@ -228,6 +273,15 @@ namespace IPC.EdgeGateway
                 Timestamp = DateTime.UtcNow
             };
 
+            _visitedTags.Add(key);
+            bool created = !_tagNodes.TryGetValue(key, out var existing);
+            if (!created && existing != null)
+            {
+                existing.Description = variable.Description;
+                existing.AccessLevel = variable.AccessLevel;
+                existing.UserAccessLevel = variable.UserAccessLevel;
+                variable = existing;
+            }
             variable.OnWriteValue = (
                 ISystemContext context, NodeState node, NumericRange indexRange, QualifiedName dataEncoding,
                 ref object value, ref StatusCode statusCode, ref DateTime timestamp) =>
@@ -242,7 +296,8 @@ namespace IPC.EdgeGateway
                     out TagValueSnapshot? snapshot) && snapshot != null)
                 ApplySnapshot(variable, snapshot, notify: false);
 
-            parent.AddChild(variable);
+            if (created) parent.AddChild(variable);
+            variable.ClearChangeMasks(SystemContext, false);
             _tagNodes[key] = variable;
         }
 
@@ -261,6 +316,9 @@ namespace IPC.EdgeGateway
             ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag,
             NumericRange indexRange, ref object value, ref StatusCode statusCode, ref DateTime timestamp)
         {
+            lock (_syncRoot)
+                if (!_tagNodes.TryGetValue(BuildTagKey(channel, device, group, tag), out var live) || !ReferenceEquals(live, variable))
+                    return StatusCodes.BadNodeIdUnknown;
             if ((ResolveAccessLevel(tag) & AccessLevels.CurrentWrite) == 0)
                 return StatusCodes.BadNotWritable;
             if (!channel.Enabled || !device.Enabled || group?.Enabled == false || !tag.Enabled)
@@ -508,6 +566,17 @@ namespace IPC.EdgeGateway
         private static string BuildTagKey(ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
             return BuildIdentityKey(channel.Id, device.Id, group == null ? string.Empty : group.Id, tag.Id);
+        }
+
+        private static string BuildTagPath(ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
+        {
+            // Escape separators within a name so a direct tag named "group.tag"
+            // cannot collide with a tag inside the group named "group".
+            static string Segment(string value, string fallback) => DisplayName(value, fallback)
+                .Replace("\\", "\\\\").Replace(".", "\\.");
+            string prefix = Segment(channel.Name, "Channel") + "." + Segment(device.Name, "Device");
+            if (group != null) prefix += "." + Segment(group.Name, "Group");
+            return prefix + "." + Segment(tag.Name, "Tag");
         }
 
         private static string BuildSnapshotKey(TagValueSnapshot snapshot)

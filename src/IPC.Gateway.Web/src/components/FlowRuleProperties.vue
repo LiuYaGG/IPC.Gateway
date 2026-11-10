@@ -45,7 +45,7 @@
         </a-form-item>
         <template v-if="needsTagSource">
           <a-form-item :label="tx('标签来源')">
-            <TagSelector :model-value="tagKey" :project="project" @change="changeTag" />
+            <TagSelector stacked name-only :model-value="tagKey" :project="project" @change="changeTag" />
           </a-form-item>
         </template>
         <template v-if="node.nodeType === 'QualityGate'">
@@ -213,10 +213,10 @@
             </gateway-select>
           </a-form-item>
           <a-form-item :label="tx('关联标签（可选）')">
-            <TagSelector :model-value="relatedTagKey" :project="project" @change="changeRelatedTag" />
+            <TagSelector stacked name-only :model-value="relatedTagKey" :project="project" @change="changeRelatedTag" />
           </a-form-item>
           <a-form-item :label="tx('上下文标签（可选）')">
-            <TagSelector :model-value="contextTagKey" :project="project" @change="changeContextTag" />
+            <TagSelector stacked name-only :model-value="contextTagKey" :project="project" @change="changeContextTag" />
           </a-form-item>
           <a-form-item :label="tx('运算符')">
             <gateway-select v-model="node.operator">
@@ -349,7 +349,7 @@
         </template>
         <template v-if="node.nodeType === 'TagRelation'">
           <a-form-item :label="tx('关联标签')">
-            <TagSelector :model-value="relatedTagKey" :project="project" @change="changeRelatedTag" />
+            <TagSelector stacked name-only :model-value="relatedTagKey" :project="project" @change="changeRelatedTag" />
           </a-form-item>
           <a-form-item :label="tx('关系运算符')">
             <gateway-select v-model="node.relationOperator">
@@ -370,7 +370,7 @@
         </template>
         <template v-if="node.nodeType === 'ContextGate'">
           <a-form-item :label="tx('上下文标签（可选）')">
-            <TagSelector :model-value="contextTagKey" :project="project" @change="changeContextTag" />
+            <TagSelector stacked name-only :model-value="contextTagKey" :project="project" @change="changeContextTag" />
           </a-form-item>
           <a-form-item :label="tx('上下文名称')"><gateway-input v-model="node.contextName" /></a-form-item>
           <a-form-item :label="tx('上下文运算符')">
@@ -743,3 +743,15 @@ function createId() {
     : Math.random().toString(16).slice(2) + Date.now().toString(16)
 }
 </script>
+
+<style scoped>
+.flow-properties > .ant-form {
+  width: 100%;
+  min-width: 0;
+}
+
+.flow-properties :deep(.ant-form-item-control),
+.flow-properties :deep(.ant-form-item-control-input-content) {
+  min-width: 0;
+}
+</style>

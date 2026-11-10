@@ -67,6 +67,15 @@
           "OPCFoundation.NetStandard.Opc.Ua.Types": "1.5.378.145"
         }
       },
+      "protobuf-net": {
+        "type": "Direct",
+        "requested": "[3.4.40, )",
+        "resolved": "3.4.40",
+        "contentHash": "Gds96uOs0bZlDfLIYHRMee1xmrWxUTLM9HSOlDzUmyzkTGDcMWw3Lgx9TPUxD94r+/E/Y9OEL5Cf3PiTHn9bfw==",
+        "dependencies": {
+          "protobuf-net.Core": "3.4.40"
+        }
+      },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "Direct",
         "requested": "[3.0.3, )",
@@ -364,6 +373,11 @@
         "type": "Transitive",
         "resolved": "4.0.4",
         "contentHash": "VJ3xVvRjxrPi/mMPT5EqYiMZor0MjFu83mw1qvUveBFWJSudGh9BOKZq7RkhqeNCcL1ud0uK0/TVkw+xTa4q4g=="
+      },
+      "protobuf-net.Core": {
+        "type": "Transitive",
+        "resolved": "3.4.40",
+        "contentHash": "UDQ8fbEKqpQktJfFyqkZ22S7P01sJWNmqkYjzbwZdZUHFwHIDigmWIzxmExF7NjbNoTqmv2Dfsu3rOpRHXK5EA=="
       },
       "SourceGear.sqlite3": {
         "type": "Transitive",

@@ -1,3 +1,4 @@
+import { beginConfigurationSave, endConfigurationSave } from './utils/configurationSaveState'
 import { sendMultipartFile, type FileUploadProgress } from './utils/multipartUpload'
 
 export interface ApiResult<T> {
@@ -1643,6 +1644,9 @@ export interface GatewayProtocolDriverInfo {
 }
 
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const saving = url.startsWith('/api/config/') && !!init?.method && !['GET', 'HEAD'].includes(init.method.toUpperCase());
+  if (saving) beginConfigurationSave();
+  try {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -1674,6 +1678,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+  } finally { if (saving) endConfigurationSave(); }
 }
 
 async function requestHealth<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -2223,7 +2228,7 @@ export async function exportProjectBackup() {
   try {
     response = await fetch("/api/commercial/project/backup", {
       credentials: "include",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/x-protobuf" },
     });
   } catch (error) {
     if (isAbortError(error)) throw error;
@@ -2238,7 +2243,7 @@ export async function exportProjectBackup() {
   return await response.blob();
 }
 
-export async function restoreProjectBackup(json: string) {
+export async function restoreProjectBackup(file: Blob) {
   const result = await request<
     ApiResult<{
       backupId: string;
@@ -2249,7 +2254,8 @@ export async function restoreProjectBackup(json: string) {
     }>
   >("/api/commercial/project/restore", {
     method: "POST",
-    body: json,
+    headers: { "Content-Type": "application/x-protobuf" },
+    body: file,
   });
   if (!result.success)
     throw new Error(

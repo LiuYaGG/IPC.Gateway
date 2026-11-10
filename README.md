@@ -102,6 +102,8 @@ flowchart LR
 
 配置数据库支持 SQL Server、PostgreSQL、MySQL 和 SQLite。项目配置、账号权限、审计与运行快照进入数据库；历史、待发消息、证书、脚本和模型文件需要单独持久化与备份。
 
+项目配置文件和项目备份使用 **Protobuf 二进制（`.pb`）**；数据库中的项目版本写入 `payload_binary` 列。升级后首次启动会一次性转换已有项目版本，不再提供旧 JSON 项目文件或 JSON 备份的读取回退。`appsettings.json` 等启动配置和 Web API 仍使用 JSON。详见[项目配置 Protobuf 存储说明](docs/项目配置Protobuf存储说明.md)。
+
 ## 本地开发
 
 准备 .NET 10 SDK、Node.js/npm 和可用数据库。在仓库根目录打开解决方案；主配置位于 `src/IPC.Gateway.WebHost/appsettings.json`，生产配置参考同目录的示例文件。
@@ -166,3 +168,5 @@ Windows 上打包示例：
 从 [文档导航](docs/文档导航.md) 查看全部中文资料。开发前阅读 [开发指南](docs/开发指南.md)，发布前阅读 [生产配置基线](docs/生产配置基线.md) 和 [发布验收清单](docs/发布验收清单.md)。
 
 项目交流：Q 2673904969。
+
+已将json文件优化为protobuf文件，实测1500点位空间占用率降低75%。

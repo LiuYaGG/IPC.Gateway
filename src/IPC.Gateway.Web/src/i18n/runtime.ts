@@ -1,6 +1,12 @@
 // Only presentation text is localized. Parameters such as topics, endpoints and
 // counts are copied verbatim; backend diagnostics and stored events are untouched.
 export const runtimeMessages: ReadonlyArray<readonly [string, string]> = [
+  ['Protobuf 项目文件或格式版本不受支持。', 'Unsupported Protobuf project file or format version.'],
+  ['Protobuf 项目备份或格式版本不受支持。', 'Unsupported Protobuf project backup or format version.'],
+  ['Protobuf 项目备份内容不完整。', 'The Protobuf project backup is incomplete.'],
+  ['Protobuf 项目数据为空。', 'The Protobuf project payload is empty.'],
+  ['Protobuf 项目数据格式无效。', 'Invalid Protobuf project payload.'],
+  ['缺少 Protobuf 项目配置。', 'Protobuf project configuration is missing.'],
   ['MQTT 熔断器已开启，已降级为仅缓存待发送消息模式。', 'MQTT circuit breaker is open; degraded to outbox-only mode.'],
   ['历史库熔断器已开启，已跳过写入。', 'History circuit breaker is open; write skipped.'],
   ['协议驱动熔断器已开启，设备采集已降级并跳过。', 'Protocol driver circuit breaker is open; device poll is degraded and skipped.'],
@@ -44,6 +50,10 @@ export const runtimeMessages: ReadonlyArray<readonly [string, string]> = [
   ['操作已超时。', 'The operation has timed out.'],
   ['连接已关闭。', 'Connection is closed.'],
   ['客户端未连接。', 'Client is not connected.'],
+  ['驱动缺少签名，已被强制验签策略禁用。', 'Driver signature is required but missing.'],
+  ['驱动存在签名，但尚未配置可信公钥。', 'Driver signature is present but no trusted public key is configured.'],
+  ['驱动签名验证失败。', 'Driver signature verification failed.'],
+  ['驱动文件摘要与清单不一致。', 'Driver assembly SHA256 does not match the manifest.'],
   ['MQTT Broker 连接超时。', 'MQTT Broker connection timed out.'],
   ['规则熔断器已开启，已跳过规则计算。', 'Rule circuit breaker is Open; evaluation skipped.'],
   ['规则熔断器处于半开状态，已跳过规则计算。', 'Rule circuit breaker is HalfOpen; evaluation skipped.'],

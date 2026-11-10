@@ -408,8 +408,8 @@ a:focus-visible {
   padding: 12px 20px;
   border: 0;
 }
-.brand__logo {
-  width: 28px;
+.brand .brand__logo {
+  width: 32px;
   height: 32px;
   border-radius: 0;
   color: #fff;

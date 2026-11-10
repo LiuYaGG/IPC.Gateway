@@ -26,7 +26,7 @@ using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.Infrastructure
 {
-    public static class PlcDriverPluginRegistry
+    public static partial class PlcDriverPluginRegistry
     {
         private static readonly object SyncRoot = new object();
         private static readonly Dictionary<string, PluginRegistration> Plugins = new Dictionary<string, PluginRegistration>(StringComparer.OrdinalIgnoreCase);
@@ -323,9 +323,9 @@ namespace IPC.Plc.Communication.Infrastructure
             LoadDefaultPlugins();
             lock (SyncRoot)
             {
-                PluginRegistration registration = GetSignableDriver(driverId);
-                PlcDriverPluginManifest manifest = LoadManifest(ResolveManifestPath(registration.AssemblyPath));
-                string digest = ComputeSha256(registration.AssemblyPath);
+                string assemblyPath = GetSignableDriverPath(driverId);
+                PlcDriverPluginManifest manifest = LoadManifest(ResolveManifestPath(assemblyPath));
+                string digest = ComputeSha256(assemblyPath);
                 manifest.AssemblySha256 = digest;
                 return new PlcDriverSigningInfo
                 {
@@ -370,10 +370,12 @@ namespace IPC.Plc.Communication.Infrastructure
                 throw new ArgumentException("请提供完整的驱动签名信息。");
             request.Signer ??= string.Empty;
             LoadDefaultPlugins();
+            string signedAssemblyPath;
             lock (SyncRoot)
             {
-                PluginRegistration registration = GetSignableDriver(driverId);
-                string digest = ComputeSha256(registration.AssemblyPath);
+                string assemblyPath = GetSignableDriverPath(driverId);
+                signedAssemblyPath = assemblyPath;
+                string digest = ComputeSha256(assemblyPath);
                 if (!string.Equals(digest, request.AssemblySha256, StringComparison.OrdinalIgnoreCase))
                     throw new ArgumentException("驱动文件已经变化，请重新打开签名弹窗。");
                 if (request.PublicKeyPem.Length > 8192 || request.Signature.Length > 2048 || request.Signer.Length > 128)
@@ -393,7 +395,7 @@ namespace IPC.Plc.Communication.Infrastructure
                 else if (string.IsNullOrWhiteSpace(_trustStorePath))
                     throw new InvalidOperationException("未配置驱动公钥保存路径。");
 
-                string manifestPath = ResolveManifestPath(registration.AssemblyPath);
+                string manifestPath = ResolveManifestPath(assemblyPath);
                 PlcDriverPluginManifest manifest = LoadManifest(manifestPath);
                 // Always sign the actual file digest, never a stale digest from an old manifest.
                 manifest.AssemblySha256 = digest;
@@ -410,22 +412,66 @@ namespace IPC.Plc.Communication.Infrastructure
                 }
                 WriteSigningFile(manifestPath, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
                 // Refresh metadata for every protocol in the assembly without reloading live clients.
-                foreach (string key in Plugins.Where(p => !p.Value.BuiltIn && p.Value.AssemblyPath == registration.AssemblyPath).Select(p => p.Key).ToArray())
+                foreach (string key in Plugins.Where(p => !p.Value.BuiltIn && p.Value.AssemblyPath == assemblyPath).Select(p => p.Key).ToArray())
                 {
                     PluginRegistration old = Plugins[key];
                     Plugins[key] = new PluginRegistration(old.Plugin, old.AssemblyPath, false, manifest.Version,
                         manifest.MinGatewayVersion, manifest.MaxGatewayVersion, old.AssemblyPath, manifest, old.LoadContextId, old.Session);
                 }
             }
+            PlcDriverPluginLoadResult loaded = LoadPlugin(signedAssemblyPath);
+            if (!loaded.Success) throw new InvalidOperationException("签名已保存，但驱动加载失败：" + loaded.ErrorMessage);
         }
 
-        private static PluginRegistration GetSignableDriver(string driverId)
+        private static string GetSignableDriverPath(string driverId)
         {
-            if (!Plugins.TryGetValue(driverId, out PluginRegistration? registration) || registration.BuiltIn)
-                throw new ArgumentException("请选择已加载的外部驱动，内置驱动不需要签名。");
-            if (!File.Exists(registration.AssemblyPath) || string.IsNullOrWhiteSpace(ResolveManifestPath(registration.AssemblyPath)))
-                throw new ArgumentException("驱动文件或配套清单不存在。");
-            return registration;
+            if (Plugins.TryGetValue(driverId, out PluginRegistration? registration))
+            {
+                if (registration.BuiltIn) throw new ArgumentException("内置驱动不需要签名。");
+                if (!File.Exists(registration.AssemblyPath) || string.IsNullOrWhiteSpace(ResolveManifestPath(registration.AssemblyPath)))
+                    throw new ArgumentException("驱动文件或配套清单不存在。");
+                return registration.AssemblyPath;
+            }
+            // Discover metadata without executing an assembly rejected by the trust policy.
+            var candidates = FindUnloadedDriverCandidates().Where(c => c.DriverId == driverId).ToArray();
+            if (candidates.Length != 1) throw new ArgumentException("驱动不存在或驱动标识不唯一，请刷新驱动列表。");
+            return candidates[0].AssemblyPath;
+        }
+
+        private static IList<PlcDriverPluginCandidate> FindUnloadedDriverCandidates()
+        {
+            HashSet<string> directories = new HashSet<string>(ProbeDirectories, StringComparer.OrdinalIgnoreCase);
+            directories.Add(Path.Combine(AppContext.BaseDirectory, "Drivers"));
+            directories.Add(Path.Combine(AppContext.BaseDirectory, "Plugins", "Drivers"));
+            List<PlcDriverPluginCandidate> candidates = new List<PlcDriverPluginCandidate>();
+            foreach (string directory in directories)
+            {
+                if (!Directory.Exists(directory)) continue;
+                foreach (string path in Directory.GetFiles(directory, "*.dll"))
+                {
+                    if (LoadedAssemblies.ContainsKey(Path.GetFullPath(path)) || string.IsNullOrWhiteSpace(ResolveManifestPath(path))) continue;
+                    candidates.Add(DiscoverPlugin(path));
+                }
+            }
+            return candidates;
+        }
+
+        public static IList<PlcDriverPluginInfo> GetDriverInventory()
+        {
+            var drivers = GetRegisteredDrivers();
+            lock (SyncRoot)
+            {
+                foreach (var candidate in FindUnloadedDriverCandidates())
+                    drivers.Add(new PlcDriverPluginInfo
+                    {
+                        DriverId = candidate.DriverId, DisplayName = candidate.DisplayName, Version = candidate.Version,
+                        MinGatewayVersion = candidate.MinGatewayVersion, MaxGatewayVersion = candidate.MaxGatewayVersion,
+                        AssemblyPath = candidate.AssemblyPath, AssemblySha256 = candidate.AssemblySha256,
+                        SignatureStatus = candidate.SignatureStatus, SignatureError = candidate.ErrorMessage,
+                        Signer = candidate.Signer
+                    });
+            }
+            return drivers;
         }
 
         private static void WriteSigningFile(string path, string content)
@@ -477,7 +523,7 @@ namespace IPC.Plc.Communication.Infrastructure
                 if (!string.IsNullOrWhiteSpace(options?.DriverId)) Plugins.TryGetValue(options.DriverId.Trim(), out driver);
                 else driver = Plugins.Values.FirstOrDefault(p => p.Plugin.Protocol == protocol);
                 if (driver != null && !driver.BuiltIn &&
-                    ((_requireSignature && driver.SignatureStatus != "Trusted") || driver.SignatureStatus == "Invalid" || driver.SignatureStatus == "HashMismatch"))
+                    ((_requireSignature && driver.SignatureStatus != "Trusted" && driver.SignatureStatus != "UpgradeTrusted") || driver.SignatureStatus == "Invalid" || driver.SignatureStatus == "HashMismatch"))
                     throw new PlcProtocolException(PlcReadFailureScope.Device, "协议驱动未通过签名验证，已禁用：" + driver.Plugin.DisplayName, "DRIVER_SIGNATURE_REQUIRED");
             }
         }
@@ -785,6 +831,11 @@ namespace IPC.Plc.Communication.Infrastructure
                 publicKeyPem = _trustedPublicKeyPem;
             }
 
+            if (HasUpgradeTrust(assemblyPath, manifest, assemblySha256))
+            {
+                signatureStatus = "UpgradeTrusted";
+                return true;
+            }
             if (!string.IsNullOrWhiteSpace(manifest.AssemblySha256) &&
                 !string.Equals(NormalizeHex(manifest.AssemblySha256), NormalizeHex(assemblySha256), StringComparison.OrdinalIgnoreCase))
             {

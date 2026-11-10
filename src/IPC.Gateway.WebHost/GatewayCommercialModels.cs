@@ -36,19 +36,6 @@ public sealed class GatewayTagImportResult
     public IList<string> Warnings { get; set; } = new List<string>();
 }
 
-public sealed class GatewayProjectBackupEnvelope
-{
-    public string SchemaVersion { get; set; } = "ipc.gateway.project.backup.v1";
-    public string ProductId { get; set; } = "IPC.Gateway";
-    public string BackupId { get; set; } = Guid.NewGuid().ToString("N");
-    public DateTime CreatedTimeUtc { get; set; } = DateTime.UtcNow;
-    public ProjectConfigurationDto Project { get; set; } = new ProjectConfigurationDto();
-    public MqttConfigurationDto Mqtt { get; set; } = new MqttConfigurationDto();
-    public OpcUaServerConfigurationDto OpcUa { get; set; } = new OpcUaServerConfigurationDto();
-    public HistoryConfigurationDto History { get; set; } = new HistoryConfigurationDto();
-    public StorageHealthConfigurationDto StorageHealth { get; set; } = new StorageHealthConfigurationDto();
-}
-
 public sealed class GatewayProjectRestoreResult
 {
     public string BackupId { get; set; } = string.Empty;

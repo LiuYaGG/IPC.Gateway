@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IPC.Gateway.Core.Application.Gateway;
 using IPC.Gateway.Core.Application.Gateway.Contracts;
+using IPC.Runtime.Configuration;
 
 namespace IPC.Gateway.WebHost;
 
@@ -19,41 +20,33 @@ public sealed class GatewayProjectBackupService
         _gateway = gateway;
     }
 
-    public GatewayProjectBackupEnvelope CreateBackup()
+    public ProjectBackupDocument CreateBackup()
     {
         GatewaySyncDto sync = _gateway.GetSync();
-        return new GatewayProjectBackupEnvelope
+        return new ProjectBackupDocument
         {
-            Project = sync.Project,
-            Mqtt = sync.Mqtt,
-            OpcUa = sync.OpcUa,
-            History = sync.History,
-            StorageHealth = sync.StorageHealth
+            Project = GatewayConfigurationContractMapper.ToConfig(sync.Project),
+            Mqtt = GatewayConfigurationContractMapper.ToConfig(sync.Mqtt),
+            OpcUa = GatewayConfigurationContractMapper.ToConfig(sync.OpcUa),
+            History = GatewayConfigurationContractMapper.ToConfig(sync.History),
+            StorageHealth = GatewayConfigurationContractMapper.ToConfig(sync.StorageHealth)
         };
     }
 
     public byte[] CreateBackupBytes()
     {
-        return JsonSerializer.SerializeToUtf8Bytes(CreateBackup(), JsonOptions);
+        return ProjectProtobufCodec.SerializeBackup(CreateBackup());
     }
 
-    public GatewayProjectRestoreResult Restore(string backupJson)
+    public GatewayProjectRestoreResult Restore(byte[] payload)
     {
-        if (string.IsNullOrWhiteSpace(backupJson))
-            throw new ArgumentException("Project backup payload is empty.", nameof(backupJson));
+        ProjectBackupDocument backup = ProjectProtobufCodec.DeserializeBackup(payload);
 
-        GatewayProjectBackupEnvelope backup = JsonSerializer.Deserialize<GatewayProjectBackupEnvelope>(
-            backupJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new GatewayProjectBackupEnvelope();
-
-        if (!string.Equals(backup.SchemaVersion, "ipc.gateway.project.backup.v1", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Unsupported project backup schema: " + backup.SchemaVersion);
-
-        ProjectConfigurationDto project = _gateway.SaveProject(ToCommand<SaveProjectConfigurationCommand>(backup.Project));
-        _gateway.UpdateMqttOptions(ToCommand<SaveMqttConfigurationCommand>(backup.Mqtt));
-        _gateway.UpdateOpcUaOptions(ToCommand<SaveOpcUaServerConfigurationCommand>(backup.OpcUa));
-        _gateway.UpdateHistoryOptions(ToCommand<SaveHistoryConfigurationCommand>(backup.History));
-        _gateway.UpdateStorageHealthOptions(ToCommand<SaveStorageHealthConfigurationCommand>(backup.StorageHealth));
+        ProjectConfigurationDto project = _gateway.SaveProject(ToCommand<SaveProjectConfigurationCommand>(GatewayConfigurationContractMapper.ToDto(backup.Project)));
+        _gateway.UpdateMqttOptions(ToCommand<SaveMqttConfigurationCommand>(GatewayConfigurationContractMapper.ToDto(backup.Mqtt)));
+        _gateway.UpdateOpcUaOptions(ToCommand<SaveOpcUaServerConfigurationCommand>(GatewayConfigurationContractMapper.ToDto(backup.OpcUa)));
+        _gateway.UpdateHistoryOptions(ToCommand<SaveHistoryConfigurationCommand>(GatewayConfigurationContractMapper.ToDto(backup.History)));
+        _gateway.UpdateStorageHealthOptions(ToCommand<SaveStorageHealthConfigurationCommand>(GatewayConfigurationContractMapper.ToDto(backup.StorageHealth)));
 
         return new GatewayProjectRestoreResult
         {

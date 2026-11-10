@@ -34,6 +34,9 @@ public sealed class GatewayConfigurationEntity
     [SugarColumn(ColumnName = "payload", ColumnDataType = "text", IsNullable = false)]
     public string Payload { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "payload_binary", IsNullable = true)]
+    public byte[]? PayloadBinary { get; set; }
+
     [SugarColumn(ColumnName = "active")]
     public bool Active { get; set; }
 

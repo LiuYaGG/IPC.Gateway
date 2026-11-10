@@ -68,6 +68,18 @@ public sealed class GatewayDatabaseMigrator
 
     private static void ExecuteMigration(ISqlSugarClient db, DatabaseMigration migration)
     {
+        if (string.Equals(migration.Id, "202611100001_project_protobuf", StringComparison.Ordinal))
+        {
+            // MySQL DDL can commit independently. The existence check makes a failed
+            // conversion retryable without adding the column a second time.
+            if (!db.DbMaintenance.IsAnyColumn("gateway_configurations", "payload_binary", false))
+                db.Ado.ExecuteCommand(migration.GetSql(db.CurrentConnectionConfig.DbType));
+            if (db.CurrentConnectionConfig.DbType == DbType.MySql)
+                db.Ado.BeginTran();
+            ProjectProtobufMigration.ConvertProjects(db);
+            return;
+        }
+
         if (db.CurrentConnectionConfig.DbType == DbType.Sqlite &&
             string.Equals(migration.Id, "202606210001_runtime_tag_cleaning_state", StringComparison.OrdinalIgnoreCase))
         {

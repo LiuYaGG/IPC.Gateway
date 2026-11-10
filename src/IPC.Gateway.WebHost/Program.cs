@@ -84,6 +84,8 @@ builder.Services.AddHostedService<VirtualModelTagRuntimeService>();
 builder.Services.AddGatewayWatchdog(builder.Configuration);
 
 var app = builder.Build();
+try { app.Services.GetRequiredService<GatewayUpdatePackageService>().RestoreCompletedUpgradeTrust(); }
+catch (Exception ex) { app.Logger.LogWarning(ex, "Upgrade driver trust could not be restored; normal signature verification remains active."); }
 if (observabilityOptions.MetricsEnabled)
     _ = app.Services.GetRequiredService<GatewayMetricsInstrumentation>();
 
