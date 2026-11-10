@@ -8,6 +8,9 @@ namespace IPC.Plc.Communication.Cip
         {
             if (generalStatus == 0)
                 return PlcReadFailureScope.None;
+            // Packet capacity and unsupported service are not a lost PLC connection.
+            if (generalStatus == 0x06 || generalStatus == 0x1A || generalStatus == 0x1B || generalStatus == 0x08)
+                return PlcReadFailureScope.Batch;
             if (multipleServiceEnvelope)
                 return PlcReadFailureScope.Device;
 

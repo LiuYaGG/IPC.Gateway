@@ -22,10 +22,17 @@ namespace IPC.Plc.Communication.SiemensS7
             List<S7BatchReadItem> items = BuildItems(requests, context, results);
             Dictionary<string, List<S7BatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<S7BatchReadItem> group in groups.Values)
+            try
             {
-                group.Sort(CompareItems);
-                ExecuteSegments(group, context, results);
+                foreach (List<S7BatchReadItem> group in groups.Values)
+                {
+                    group.Sort(CompareItems);
+                    ExecuteSegments(group, context, results);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -52,11 +59,18 @@ namespace IPC.Plc.Communication.SiemensS7
             List<S7BatchReadItem> items = BuildItems(requests, context, results);
             Dictionary<string, List<S7BatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<S7BatchReadItem> group in groups.Values)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                group.Sort(CompareItems);
-                await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                foreach (List<S7BatchReadItem> group in groups.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    group.Sort(CompareItems);
+                    await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)

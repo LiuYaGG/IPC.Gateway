@@ -31,10 +31,18 @@ namespace IPC.Plc.Communication.ModbusTcp
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<BatchReadItem> group in groups.Values)
+            try
             {
-                group.Sort(CompareItems);
-                ExecuteSegments(group, context, results);
+                foreach (List<BatchReadItem> group in groups.Values)
+                {
+                    group.Sort(CompareItems);
+                    ExecuteSegments(group, context, results);
+                    if (Array.Exists(results, result => result != null && PlcBatchReadResult.IsConnectionFailureScope(result.FailureScope))) break;
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)

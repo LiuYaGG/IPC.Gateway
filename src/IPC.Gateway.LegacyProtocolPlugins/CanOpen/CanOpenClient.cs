@@ -132,8 +132,30 @@ namespace IPC.Plc.Communication.CanOpen
             return results;
         }
 
+        public void Write(string address, PlcDataType dataType, string valueText, int elementCount, int elementOffset)
+        {
+            if (dataType != PlcDataType.String) { Write(address, dataType, valueText, elementOffset); return; }
+            if (elementOffset < 0) throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            byte[] data = PlcStringCodec.EncodeFixed(valueText, elementCount, System.Text.Encoding.ASCII);
+            CanOpenServiceAddress service = CanOpenServiceAddress.Parse(address, _driverOptions.DefaultNodeId);
+            if (service.Kind == CanOpenServiceKind.Sdo)
+            {
+                EnsureConnected();
+                _channelLease.Download(service.ObjectAddress!.AddSubIndexOffset(elementOffset), data);
+                return;
+            }
+            if (service.Kind != CanOpenServiceKind.Rpdo || service.BitOffset.HasValue)
+                throw new NotSupportedException("字符串写入仅支持 SDO 或按字节寻址的 RPDO。");
+            int start = checked(service.ByteOffset + elementOffset);
+            if (start < 0 || start > 8 || data.Length > 8 - start)
+                throw new ArgumentOutOfRangeException(nameof(elementCount), "RPDO 数据不能超过 8 字节。");
+            EnsureConnected();
+            _channelLease.WriteRpdo(service.PdoNumber, service.NodeId, start, null, data, false);
+        }
+
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度。");
             EnsureConnected();
             CanOpenServiceAddress service = CanOpenServiceAddress.Parse(address, _driverOptions.DefaultNodeId);
             if (service.Kind == CanOpenServiceKind.Sdo)
@@ -201,6 +223,8 @@ namespace IPC.Plc.Communication.CanOpen
             }
 
             byte[] data = _channelLease.Upload(address);
+            if (dataType == PlcDataType.String)
+                return data.Length == 0 ? string.Empty : PlcStringCodec.DecodeFixed(data, 0, Math.Min(elementCount, data.Length), System.Text.Encoding.ASCII);
             return CanOpenDataCodec.Decode(dataType, data);
         }
 
@@ -233,7 +257,7 @@ namespace IPC.Plc.Communication.CanOpen
                 int length = Math.Max(1, elementCount);
                 int offset = checked(address.ByteOffset + elementOffset);
                 EnsurePdoRange(data, offset, length);
-                return System.Text.Encoding.ASCII.GetString(data, offset, length).TrimEnd('\0');
+                return PlcStringCodec.DecodeFixed(data, offset, length, System.Text.Encoding.ASCII);
             }
 
             int scalarSize = CanOpenDataCodec.GetScalarByteCount(dataType);

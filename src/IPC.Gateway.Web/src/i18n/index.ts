@@ -2,6 +2,7 @@ import { ref, watch } from 'vue'
 import { english } from './en'
 import { extraEnglish } from './extra'
 import { helpEnglish } from './help'
+import { translateRuntimeMessage } from './runtime'
 Object.assign(english, extraEnglish, helpEnglish)
 
 export type UiLocale = 'zh-CN' | 'en-US'
@@ -46,6 +47,8 @@ export function tx(value: unknown): string {
   if (value === undefined || value === null) return ''
   const text = String(value)
   if (formattedValues.has(text)) return text
+  const runtime = translateRuntimeMessage(text, locale.value)
+  if (runtime !== undefined) return runtime
   if (locale.value === 'zh-CN' || !/[\u3400-\u9fff]/.test(text)) return text
   const trimmed = text.trim()
   let translated = english[trimmed] ?? englishCache.get(trimmed)

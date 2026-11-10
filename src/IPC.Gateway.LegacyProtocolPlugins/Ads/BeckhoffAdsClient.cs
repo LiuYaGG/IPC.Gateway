@@ -7,7 +7,7 @@ using TwinCAT.Ads;
 
 namespace IPC.Plc.Communication.Ads
 {
-    public sealed class BeckhoffAdsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class BeckhoffAdsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private readonly PlcConnectionOptions _connection;
         private readonly AdsDriverOptions _options;
@@ -84,6 +84,15 @@ namespace IPC.Plc.Communication.Ads
             EnsureConnected();
             string instancePath = AdsAddress.WithElementOffset(address, elementOffset);
             uint handle = await GetHandleAsync(instancePath, cancellationToken).ConfigureAwait(false);
+            if (dataType == PlcDataType.String)
+            {
+                if (elementCount <= 0 || elementCount > 4096) throw new ArgumentOutOfRangeException(nameof(elementCount));
+                var read = await _client.ReadAsync(handle, checked(elementCount + 1), cancellationToken).ConfigureAwait(false);
+                if (!read.Succeeded) throw AdsFailureClassifier.Create(read.ErrorCode, "读取 ADS 字符串 " + instancePath);
+                byte[] data = read.Data.ToArray();
+                if (data.Length < elementCount + 1) throw new AdsTagException("ADS 字符串读取响应长度不足。");
+                return new PlcReadResult(0, dataType.ToString(), PlcStringCodec.DecodeFixed(data, 0, elementCount, System.Text.Encoding.ASCII));
+            }
             Type type = AdsDataCodec.GetManagedType(dataType);
             int[] args = AdsDataCodec.GetMarshalArguments(dataType, elementCount, _options.StringLength);
             ResultAnyValue result = await _client.ReadAnyAsync(handle, type, args, cancellationToken).ConfigureAwait(false);
@@ -113,6 +122,20 @@ namespace IPC.Plc.Communication.Ads
                 cancellationToken).ConfigureAwait(false);
         }
 
+        public async ValueTask WriteStringAsync(string address, string value, int capacity, int elementOffset, CancellationToken cancellationToken)
+        {
+            if (capacity <= 0 || capacity > 4096) throw new ArgumentOutOfRangeException(nameof(capacity));
+            byte[] text = PlcStringCodec.EncodeFixed(value, capacity, System.Text.Encoding.ASCII);
+            // ADS STRING(n) reserves n character bytes plus its terminating zero.
+            byte[] data = new byte[checked(capacity + 1)];
+            Buffer.BlockCopy(text, 0, data, 0, text.Length);
+            EnsureConnected();
+            string instancePath = AdsAddress.WithElementOffset(address, elementOffset);
+            uint handle = await GetHandleAsync(instancePath, cancellationToken).ConfigureAwait(false);
+            ResultWrite result = await _client.WriteAsync(handle, data.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded) throw AdsFailureClassifier.Create(result.ErrorCode, "写入 ADS 字符串 " + instancePath);
+        }
+
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
             WriteAsync(address, dataType, valueText, elementOffset, CancellationToken.None).AsTask().GetAwaiter().GetResult();
@@ -125,6 +148,7 @@ namespace IPC.Plc.Communication.Ads
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             EnsureConnected();
             string instancePath = AdsAddress.WithElementOffset(address, elementOffset);
             uint handle = await GetHandleAsync(instancePath, cancellationToken).ConfigureAwait(false);

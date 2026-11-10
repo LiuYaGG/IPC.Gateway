@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace IPC.Plc.Communication.Core
 {
@@ -60,6 +61,17 @@ namespace IPC.Plc.Communication.Core
             return failureScope == PlcReadFailureScope.Device ||
                    failureScope == PlcReadFailureScope.Session ||
                    failureScope == PlcReadFailureScope.Transport;
+        }
+
+        // Preserve completed reads when a later wire request fails or times out.
+        public static void FailPending(IList<PlcBatchReadRequest> requests, PlcBatchReadResult[] results, Exception error)
+        {
+            PlcReadFailureScope scope = error is OperationCanceledException
+                ? PlcReadFailureScope.Transport
+                : PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+            string message = error is OperationCanceledException ? "PLC batch operation timed out or was cancelled." : error.Message;
+            for (int i = 0; i < results.Length; i++)
+                results[i] ??= FromFailure(requests[i], message, scope);
         }
 
         private static PlcReadFailureScope NormalizeFailureScope(PlcReadFailureScope failureScope)

@@ -175,21 +175,8 @@ namespace IPC.Plc.Communication.Core
             Task operationTask = (recovery ? RecoveryExecutor : SynchronousExecutor).InvokeAsync(operation, cancellationToken).AsTask();
             // A synchronous driver cannot be interrupted safely. Keep the device
             // actor and physical-channel lease until its actual I/O has finished.
-            if (recovery)
-            {
-                await operationTask.ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                return;
-            }
-            try
-            {
-                await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                ObserveLateFault(operationTask);
-                throw;
-            }
+            await operationTask.ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         public static async ValueTask<T> InvokeSynchronousAsync<T>(
@@ -200,30 +187,12 @@ namespace IPC.Plc.Communication.Core
             cancellationToken.ThrowIfCancellationRequested();
             bool recovery = RecoveryIo.Value;
             Task<T> operationTask = (recovery ? RecoveryExecutor : SynchronousExecutor).InvokeAsync(operation, cancellationToken).AsTask();
-            if (recovery)
-            {
-                T result = await operationTask.ConfigureAwait(false);
+            T result = await operationTask.ConfigureAwait(false);
+            // A completed batch owns per-item results, including any transport failure.
+            // Throwing here would discard successful items merely because its deadline elapsed.
+            if (result is not IList<PlcBatchReadResult>)
                 cancellationToken.ThrowIfCancellationRequested();
-                return result;
-            }
-            try
-            {
-                return await operationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                ObserveLateFault(operationTask);
-                throw;
-            }
-        }
-
-        private static void ObserveLateFault(Task operationTask)
-        {
-            _ = operationTask.ContinueWith(
-                completed => _ = completed.Exception,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
+            return result;
         }
 
         public static ValueTask<IPlcSubscription> SubscribeAsync(

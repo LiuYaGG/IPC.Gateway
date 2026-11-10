@@ -219,10 +219,8 @@ namespace IPC.Plc.Communication.Cip
         {
             Require(data, 4);
             int length = BitConverter.ToInt32(data, 0);
-            if (length < 0)
-                length = 0;
-            if (length > data.Length - 4)
-                length = data.Length - 4;
+            if (length < 0 || length > data.Length - 4)
+                throw new InvalidOperationException("Logix STRING 返回的长度字段无效或响应不完整。");
             return Encoding.ASCII.GetString(data, 4, length);
         }
 

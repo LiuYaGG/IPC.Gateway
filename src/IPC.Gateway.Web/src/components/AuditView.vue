@@ -80,7 +80,7 @@
           </template>
           <template v-else-if="column.key === 'request'">{{ tx(requestText(record)) }}</template>
           <template v-else-if="column.key === 'error'">
-            <span :class="{ 'audit-error': record.errorMessage }">{{ record.errorMessage || '-' }}</span>
+            <span :class="{ 'audit-error': record.errorMessage }">{{ tx(record.errorMessage || '-') }}</span>
           </template>
         </template>
         <template #emptyText><a-empty :description="tx('暂无审计日志')" /></template>

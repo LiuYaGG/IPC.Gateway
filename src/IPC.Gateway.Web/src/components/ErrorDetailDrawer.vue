@@ -3,7 +3,7 @@
     <a-empty v-if="!error" :description="tx('暂无错误')" />
     <div v-else class="error-detail">
       <a-tag :color="tagColor(error.category ? 'danger' : 'warning')">{{ error.category || 'Runtime' }}</a-tag>
-      <h3>{{ error.message || '-' }}</h3>
+      <h3>{{ tx(error.message || '-') }}</h3>
       <dl>
         <dt>{{ tx('通道') }}</dt>
         <dd>{{ error.channelName || '-' }}</dd>
@@ -20,7 +20,7 @@
       </dl>
       <section class="error-detail__suggestion">
         <span>{{ tx('处理建议') }}</span>
-        <p>{{ error.suggestion || tx('检查设备连接、标签地址和协议参数。') }}</p>
+        <p>{{ tx(error.suggestion || '检查设备连接、标签地址和协议参数。') }}</p>
       </section>
     </div>
   </a-drawer>

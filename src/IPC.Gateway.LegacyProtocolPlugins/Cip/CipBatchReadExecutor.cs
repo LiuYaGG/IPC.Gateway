@@ -25,7 +25,8 @@ namespace IPC.Plc.Communication.Cip
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<CipBatchReadItem> items = BuildItems(requests, context, results);
             List<CipBatchReadOperation> operations = FlattenOperations(items);
-            ExecuteOperations(operations, context);
+            try { ExecuteOperations(operations, context); }
+            catch (Exception ex) { FailPendingOperations(operations, ex); }
 
             for (int i = 0; i < items.Count; i++)
                 results[items[i].Index] = items[i].BuildResult();
@@ -56,7 +57,8 @@ namespace IPC.Plc.Communication.Cip
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<CipBatchReadItem> items = BuildItems(requests, context, results);
             List<CipBatchReadOperation> operations = FlattenOperations(items);
-            await ExecuteOperationsAsync(operations, context, cancellationToken).ConfigureAwait(false);
+            try { await ExecuteOperationsAsync(operations, context, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) { FailPendingOperations(operations, ex); }
 
             for (int i = 0; i < items.Count; i++)
                 results[items[i].Index] = items[i].BuildResult();
@@ -68,6 +70,15 @@ namespace IPC.Plc.Communication.Cip
             }
 
             return output;
+        }
+
+        private static void FailPendingOperations(List<CipBatchReadOperation> operations, Exception error)
+        {
+            var scope = error is OperationCanceledException ? PlcReadFailureScope.Transport
+                : PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+            string message = error is OperationCanceledException ? "PLC batch operation timed out or was cancelled." : error.Message;
+            foreach (var operation in operations)
+                if (!operation.Success && string.IsNullOrEmpty(operation.ErrorMessage)) operation.SetFailure(message, scope);
         }
 
         private static List<CipBatchReadItem> BuildItems(
@@ -189,14 +200,16 @@ namespace IPC.Plc.Communication.Cip
                 byte[] response = context.SendConnectedMessage(request);
                 byte[][] replies = ParseMultipleServiceResponse(response, batch.Count);
                 for (int i = 0; i < batch.Count; i++)
-                    DecodeOperation(batch[i], replies[i], context);
+                    if (!IsCapacityReply(replies[i])) DecodeOperation(batch[i], replies[i], context);
+                for (int i = 0; i < batch.Count; i++)
+                    if (IsCapacityReply(replies[i])) ExecuteSingleOperation(batch[i], context);
             }
             catch (Exception ex)
             {
                 PlcReadFailureScope scope = PlcFailureClassifier.Classify(
                     ex,
                     IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (scope != PlcReadFailureScope.Tag)
+                if (scope != PlcReadFailureScope.Tag && scope != PlcReadFailureScope.Batch)
                     throw;
 
                 for (int i = 0; i < batch.Count; i++)
@@ -209,14 +222,17 @@ namespace IPC.Plc.Communication.Cip
             try
             {
                 byte[] response = context.SendConnectedMessage(operation.RequestBytes);
-                DecodeOperation(operation, response, context);
+                if (IsCapacityReply(response) && context.ReadTag != null &&
+                    PlcDataTypeHelper.IsArray(operation.DataType) && operation.ElementCount > 1)
+                    operation.SetSuccess(context.ReadTag(operation.TagName, operation.DataType, operation.ElementCount, 0));
+                else DecodeOperation(operation, response, context);
             }
             catch (Exception ex)
             {
                 PlcReadFailureScope scope = PlcFailureClassifier.Classify(
                     ex,
                     IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (scope != PlcReadFailureScope.Tag)
+                if (scope != PlcReadFailureScope.Tag && scope != PlcReadFailureScope.Batch)
                     throw;
                 operation.SetFailure(ex.Message, scope);
             }
@@ -239,14 +255,16 @@ namespace IPC.Plc.Communication.Cip
                 byte[] response = await context.SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
                 byte[][] replies = ParseMultipleServiceResponse(response, batch.Count);
                 for (int i = 0; i < batch.Count; i++)
-                    DecodeOperation(batch[i], replies[i], context);
+                    if (!IsCapacityReply(replies[i])) DecodeOperation(batch[i], replies[i], context);
+                for (int i = 0; i < batch.Count; i++)
+                    if (IsCapacityReply(replies[i])) await ExecuteSingleOperationAsync(batch[i], context, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 PlcReadFailureScope scope = PlcFailureClassifier.Classify(
                     ex,
                     IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (scope != PlcReadFailureScope.Tag)
+                if (scope != PlcReadFailureScope.Tag && scope != PlcReadFailureScope.Batch)
                     throw;
 
                 for (int i = 0; i < batch.Count; i++)
@@ -262,18 +280,23 @@ namespace IPC.Plc.Communication.Cip
             try
             {
                 byte[] response = await context.SendConnectedMessageAsync(operation.RequestBytes, cancellationToken).ConfigureAwait(false);
-                DecodeOperation(operation, response, context);
+                if (IsCapacityReply(response) && context.ReadTagAsync != null &&
+                    PlcDataTypeHelper.IsArray(operation.DataType) && operation.ElementCount > 1)
+                    operation.SetSuccess(await context.ReadTagAsync(operation.TagName, operation.DataType, operation.ElementCount, 0, cancellationToken).ConfigureAwait(false));
+                else DecodeOperation(operation, response, context);
             }
             catch (Exception ex)
             {
                 PlcReadFailureScope scope = PlcFailureClassifier.Classify(
                     ex,
                     IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (scope != PlcReadFailureScope.Tag)
+                if (scope != PlcReadFailureScope.Tag && scope != PlcReadFailureScope.Batch)
                     throw;
                 operation.SetFailure(ex.Message, scope);
             }
         }
+
+        private static bool IsCapacityReply(byte[] response) => response.Length >= 4 && response[2] == 0x06;
 
         private static void DecodeOperation(CipBatchReadOperation operation, byte[] response, CipBatchReadContext context)
         {
@@ -320,7 +343,7 @@ namespace IPC.Plc.Communication.Cip
 
             int candidateLength = EstimateMultipleServiceLength(batch, operation);
             int maxBytes = context.MaxRequestBytes > 0 ? context.MaxRequestBytes : int.MaxValue;
-            return candidateLength <= maxBytes;
+            return candidateLength <= maxBytes && EstimateResponseLength(batch, operation) <= Math.Min(400, maxBytes);
         }
 
         private static bool CanAddToBatch(List<CipBatchReadOperation> batch, CipBatchReadOperation operation, CipAsyncBatchReadContext context)
@@ -334,19 +357,38 @@ namespace IPC.Plc.Communication.Cip
 
             int candidateLength = EstimateMultipleServiceLength(batch, operation);
             int maxBytes = context.MaxRequestBytes > 0 ? context.MaxRequestBytes : int.MaxValue;
-            return candidateLength <= maxBytes;
+            return candidateLength <= maxBytes && EstimateResponseLength(batch, operation) <= Math.Min(400, maxBytes);
         }
 
         private static bool CanUseMultipleService(CipBatchReadOperation operation, CipBatchReadContext context)
         {
             int maxBytes = context.MaxRequestBytes > 0 ? context.MaxRequestBytes : int.MaxValue;
-            return EstimateMultipleServiceLength(null, operation) <= maxBytes;
+            return !CipExplicitAddress.IsExplicit(operation.TagName) &&
+                EstimateMultipleServiceLength(null, operation) <= maxBytes && EstimateResponseLength(null, operation) <= Math.Min(400, maxBytes);
         }
 
         private static bool CanUseMultipleService(CipBatchReadOperation operation, CipAsyncBatchReadContext context)
         {
             int maxBytes = context.MaxRequestBytes > 0 ? context.MaxRequestBytes : int.MaxValue;
-            return EstimateMultipleServiceLength(null, operation) <= maxBytes;
+            return !CipExplicitAddress.IsExplicit(operation.TagName) &&
+                EstimateMultipleServiceLength(null, operation) <= maxBytes && EstimateResponseLength(null, operation) <= Math.Min(400, maxBytes);
+        }
+
+        private static long EstimateResponseLength(List<CipBatchReadOperation> batch, CipBatchReadOperation next)
+        {
+            long length = 6 + EstimateOperationResponse(next);
+            if (batch != null)
+                foreach (var operation in batch) length += EstimateOperationResponse(operation);
+            return length;
+        }
+
+        private static long EstimateOperationResponse(CipBatchReadOperation operation)
+        {
+            // Offset table entry + reply header/type; Logix STRING includes its structure handle.
+            long dataBytes = operation.DataType == PlcDataType.String
+                ? Math.Max(90L, (long)operation.ElementCount + 6)
+                : (long)PlcDataTypeHelper.GetElementSize(operation.DataType) * operation.ElementCount;
+            return 8 + dataBytes;
         }
 
         private static int EstimateMultipleServiceLength(List<CipBatchReadOperation> batch, CipBatchReadOperation next)

@@ -14,6 +14,16 @@
     </section>
     <section class="security-metrics">
       <a-card class="security-card" size="small">
+        <div class="security-card__title"><span class="ui-icon"><Key /></span><span>{{ tx('协议驱动验签') }}</span></div>
+        <a-space align="center">
+          <span>{{ tx('强制协议驱动验签') }}</span>
+          <a-switch :checked="!!summary?.protocolDrivers?.requireSignature" :loading="savingTrust" :disabled="loading || savingTrust || !summary || !hasPermission(PERMISSIONS.securityCertificatesManage)" @change="changeDriverTrust" />
+        </a-space>
+        <small>{{ tx('开启后，未签名或验证失败的外部驱动直接禁用，内置驱动不受影响。') }}</small>
+        <a-tag :color="tagColor(summary?.protocolDrivers?.publicKeyConfigured ? 'success' : 'info')">{{ tx(summary?.protocolDrivers?.publicKeyConfigured ? '可信公钥已配置' : '可信公钥未配置') }}</a-tag>
+        <small>{{ tx('保存后立即生效，重启后保留。外部驱动可在安装升级界面签名。') }}</small>
+      </a-card>
+      <a-card class="security-card" size="small">
         <div class="security-card__title">
           <span class="ui-icon"><Lock /></span>
           <span>{{ tx('账号策略') }}</span>
@@ -198,6 +208,7 @@ import {
 import {
   loadSecurityCertificates,
   loadSecuritySummary,
+  saveDriverTrustPolicy,
   type GatewayCertificateInventory,
   type GatewaySecuritySummary
 } from '../api'
@@ -206,6 +217,16 @@ import { PERMISSIONS, usePermissions } from '../utils/permissions'
 
 const { hasPermission } = usePermissions()
 const loading = ref(false)
+const savingTrust = ref(false)
+async function changeDriverTrust(checked: boolean | string | number) {
+  if (!summary.value || savingTrust.value) return
+  savingTrust.value = true
+  try {
+    summary.value.protocolDrivers = await saveDriverTrustPolicy(!!checked)
+    notify.success(tx('驱动验签策略已保存'))
+  } catch (error) { notify.error(error instanceof Error ? error.message : tx('驱动验签策略保存失败')) }
+  finally { savingTrust.value = false }
+}
 const summary = ref<GatewaySecuritySummary | null>(null)
 const inventory = ref<GatewayCertificateInventory | null>(null)
 

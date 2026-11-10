@@ -20,38 +20,45 @@ namespace IPC.Plc.Communication.Ads
         {
             PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
             List<int> scalarIndexes = new List<int>();
-            for (int i = 0; i < requests.Count; i++)
+            try
             {
-                if (PlcDataTypeHelper.IsArray(requests[i].DataType))
+                for (int i = 0; i < requests.Count; i++)
                 {
-                    try
+                    if (PlcDataTypeHelper.IsArray(requests[i].DataType) || requests[i].DataType == PlcDataType.String)
                     {
-                        PlcReadResult value = await readSingle(requests[i], cancellationToken).ConfigureAwait(false);
-                        ordered[i] = PlcBatchReadResult.FromSuccess(requests[i], value);
+                        try
+                        {
+                            PlcReadResult value = await readSingle(requests[i], cancellationToken).ConfigureAwait(false);
+                            ordered[i] = PlcBatchReadResult.FromSuccess(requests[i], value);
+                        }
+                        catch (Exception ex) when (IsTagError(ex))
+                        {
+                            ordered[i] = PlcBatchReadResult.FromFailure(requests[i], ex.Message, PlcReadFailureScope.Tag);
+                        }
                     }
-                    catch (Exception ex) when (IsTagError(ex))
+                    else
                     {
-                        ordered[i] = PlcBatchReadResult.FromFailure(requests[i], ex.Message, PlcReadFailureScope.Tag);
+                        scalarIndexes.Add(i);
                     }
                 }
-                else
+
+                for (int offset = 0; offset < scalarIndexes.Count; offset += maxBatchItems)
                 {
-                    scalarIndexes.Add(i);
+                    int count = Math.Min(maxBatchItems, scalarIndexes.Count - offset);
+                    await ReadScalarChunkAsync(
+                        requests,
+                        scalarIndexes,
+                        ordered,
+                        offset,
+                        count,
+                        client,
+                        getHandle,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
-
-            for (int offset = 0; offset < scalarIndexes.Count; offset += maxBatchItems)
+            catch (Exception ex)
             {
-                int count = Math.Min(maxBatchItems, scalarIndexes.Count - offset);
-                await ReadScalarChunkAsync(
-                    requests,
-                    scalarIndexes,
-                    ordered,
-                    offset,
-                    count,
-                    client,
-                    getHandle,
-                    cancellationToken).ConfigureAwait(false);
+                PlcBatchReadResult.FailPending(requests, ordered, ex);
             }
 
             return ordered;
@@ -76,8 +83,10 @@ namespace IPC.Plc.Communication.Ads
                 PlcBatchReadRequest request = requests[requestIndex];
                 try
                 {
-                    handles.Add(await getHandle(request, cancellationToken).ConfigureAwait(false));
-                    types.Add(AdsDataCodec.GetManagedType(request.DataType));
+                    Type type = AdsDataCodec.GetManagedType(request.DataType);
+                    uint handle = await getHandle(request, cancellationToken).ConfigureAwait(false);
+                    handles.Add(handle);
+                    types.Add(type);
                     validIndexes.Add(requestIndex);
                 }
                 catch (Exception ex) when (IsTagError(ex))
@@ -117,7 +126,7 @@ namespace IPC.Plc.Communication.Ads
 
         private static bool IsTagError(Exception exception)
         {
-            return exception is AdsTagException || exception is FormatException || exception is NotSupportedException;
+            return exception is AdsTagException || exception is ArgumentException || exception is FormatException || exception is NotSupportedException;
         }
     }
 }

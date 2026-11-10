@@ -20,6 +20,7 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
     private readonly Dictionary<string, string> _deviceFingerprints = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _lastDeviceSampleUtc = DateTime.MinValue;
     private DateTime _lastStatusPatchUtc = DateTime.MinValue;
+    private bool _snapshotRequired;
 
     public GatewayRuntimePushHostedService(
         GatewayCoreService gateway,
@@ -79,19 +80,46 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
         lock (_syncRoot)
         {
             if (_pendingTags.Count >= MaxPendingTags && !_pendingTags.ContainsKey(key))
+            {
+                _snapshotRequired = true;
                 return;
+            }
 
-            _pendingTags[key] = tag;
+            if (!_pendingTags.TryGetValue(key, out var previous) || tag.Timestamp >= previous.Timestamp)
+                _pendingTags[key] = tag;
         }
     }
 
     private void FlushPendingTags()
     {
         List<TagValueSnapshotDto> pending;
+        bool snapshotRequired;
         lock (_syncRoot)
         {
+            snapshotRequired = _snapshotRequired;
+            _snapshotRequired = false;
             pending = _pendingTags.Values.ToList();
             _pendingTags.Clear();
+        }
+
+        if (snapshotRequired)
+        {
+            try
+            {
+                // Read from the acquisition cache, not the event stream that overflowed.
+                var latest = _gateway.Runtime.GetSnapshots()
+                    .Select(GatewayConfigurationContractMapper.ToDto)
+                    .ToDictionary(BuildTagKey, StringComparer.OrdinalIgnoreCase);
+                foreach (var tag in pending)
+                    if (latest.TryGetValue(BuildTagKey(tag), out var current) && tag.Timestamp > current.Timestamp)
+                        latest[BuildTagKey(tag)] = tag;
+                pending = latest.Values.ToList();
+            }
+            catch
+            {
+                lock (_syncRoot) _snapshotRequired = true;
+                throw;
+            }
         }
 
         // Drain the complete captured set every tick, keeping each SSE event

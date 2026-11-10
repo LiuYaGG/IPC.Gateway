@@ -36,7 +36,7 @@
           </template>
           {{ tx('保存') }}
         </a-button>
-        <span v-if="status?.lastError" class="error-text" :title="tx(status.lastError)">{{ status.lastError }}</span>
+        <span v-if="status?.lastError" class="error-text" :title="tx(status.lastError)">{{ tx(status.lastError) }}</span>
       </div>
     </section>
     <a-card v-if="opcUa" class="settings-card" size="small">

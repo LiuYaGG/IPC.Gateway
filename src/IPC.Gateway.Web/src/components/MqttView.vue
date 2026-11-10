@@ -40,7 +40,7 @@
         </div>
       </div>
       <div class="mqtt-status-actions">
-        <span class="error-text">{{ status?.lastError || status?.lastPublishResult || '' }}</span>
+        <span class="error-text" :title="tx(status?.lastError || status?.lastPublishResult || '')">{{ tx(status?.lastError || status?.lastPublishResult || '') }}</span>
         <a-button v-if="canEditMqtt" type="success" @click="emit('persist-mqtt')">
           <template #icon>
             <span class="ui-icon"><component :is="Check" /></span>

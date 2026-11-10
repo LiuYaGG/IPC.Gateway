@@ -1913,7 +1913,7 @@ async function submitWriteTag() {
       groupName: writeTargetGroup.value?.name || '',
       tagName: writeTargetTag.value.name,
       dataType: writeTargetTag.value.dataType,
-      valueText: writeValueText.value.trim(),
+      valueText: normalizeKey(writeTargetTag.value.dataType) === 'string' ? writeValueText.value : writeValueText.value.trim(),
       timeoutMilliseconds: 10000
     })
     if (!result.success) {
@@ -1940,10 +1940,11 @@ async function submitWriteTag() {
 
 function validateWriteValue(tag: TagConfig, valueText: string) {
   const text = valueText.trim()
-  if (!text) return '请输入写入值'
   if (!canWriteTag(tag)) return '当前标签没有写入权限'
 
   const type = normalizeKey(tag.dataType)
+  if (type === 'string') return ''
+  if (!text) return '请输入写入值'
   const values = type.includes('array')
     ? text
         .split(',')

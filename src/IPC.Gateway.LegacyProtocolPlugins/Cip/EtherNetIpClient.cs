@@ -14,7 +14,7 @@ namespace IPC.Plc.Communication.Cip
     /// 通用 EtherNet/IP 显式消息客户端。与 Rockwell 符号标签驱动分离，
     /// 面向任意实现 CIP Object Model 的设备。
     /// </summary>
-    public sealed class EtherNetIpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class EtherNetIpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private readonly PlcConnectionOptions _options;
         private readonly EtherNetIpDriverOptions _driverOptions;
@@ -156,6 +156,7 @@ namespace IPC.Plc.Communication.Cip
         {
             if (EtherNetIpIoAddress.IsIoAddress(address))
             {
+                if (dataType == PlcDataType.String) throw new ArgumentException("周期 I/O 字符串写入必须提供标签配置的长度。");
                 WriteIo(EtherNetIpIoAddress.Parse(address), dataType, valueText, elementOffset);
                 return;
             }
@@ -194,6 +195,31 @@ namespace IPC.Plc.Communication.Cip
                 elementCount,
                 elementOffset,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask WriteStringAsync(string address, string value, int capacity, int elementOffset, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!EtherNetIpIoAddress.IsIoAddress(address))
+            {
+                // Typed CIP attributes retain their native format; raw I/O capacity rules do not apply.
+                await WriteAsyncCore(address, PlcDataType.String, value, elementOffset, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            EtherNetIpIoAddress ioAddress = EtherNetIpIoAddress.Parse(address);
+            if (ioAddress.Direction != EtherNetIpIoDirection.Output || ioAddress.BitOffset.HasValue)
+                throw new NotSupportedException("字符串只能写入按字节寻址的 Output 周期数据。");
+            if (elementOffset < 0) throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            byte[] encoded = PlcStringCodec.EncodeFixed(value, capacity, System.Text.Encoding.UTF8);
+            EnsureImplicitConnected();
+            lock (_ioSync)
+            {
+                byte[] target = _ioClient!.O_T_IOData ?? Array.Empty<byte>();
+                int start = checked(_driverOptions.OutputDataOffset + ioAddress.ByteOffset + elementOffset);
+                EnsureRange(target, start, encoded.Length);
+                Buffer.BlockCopy(encoded, 0, target, start, encoded.Length);
+                _ioClient.O_T_IOData = target;
+            }
         }
 
         private async ValueTask WriteAsyncCore(
@@ -245,6 +271,8 @@ namespace IPC.Plc.Communication.Cip
 
         private void WriteIo(EtherNetIpIoAddress address, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String)
+                throw new ArgumentException("周期 I/O 字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             if (address.Direction != EtherNetIpIoDirection.Output)
                 throw new NotSupportedException("EtherNet/IP Input 周期数据为只读；写入请使用 Output 地址。");
 
@@ -270,6 +298,7 @@ namespace IPC.Plc.Communication.Cip
                             ? (byte)(target[byteIndex] | mask)
                             : (byte)(target[byteIndex] & ~mask);
                     }
+                    _ioClient.O_T_IOData = target;
                     return;
                 }
 
@@ -278,6 +307,7 @@ namespace IPC.Plc.Communication.Cip
                 int byteIndexWithOffset = checked(baseOffset + elementOffset * elementSize);
                 EnsureRange(target, byteIndexWithOffset, encoded.Length);
                 Buffer.BlockCopy(encoded, 0, target, byteIndexWithOffset, encoded.Length);
+                _ioClient.O_T_IOData = target;
             }
         }
 
@@ -311,7 +341,7 @@ namespace IPC.Plc.Communication.Cip
                 int length = Math.Max(1, elementCount);
                 int stringStart = checked(start + elementOffset);
                 EnsureRange(source, stringStart, length);
-                return System.Text.Encoding.UTF8.GetString(source, stringStart, length).TrimEnd('\0');
+                return PlcStringCodec.DecodeFixed(source, stringStart, length, System.Text.Encoding.UTF8);
             }
 
             int count = PlcDataTypeHelper.IsArray(dataType) ? Math.Max(1, elementCount) : 1;
@@ -335,7 +365,7 @@ namespace IPC.Plc.Communication.Cip
         {
             if (dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray ||
                 dataType == PlcDataType.Int8 || dataType == PlcDataType.Int8Array ||
-                dataType == PlcDataType.UInt8 || dataType == PlcDataType.UInt8Array)
+                dataType == PlcDataType.UInt8 || dataType == PlcDataType.UInt8Array || dataType == PlcDataType.String)
                 return 1;
             return PlcDataTypeHelper.GetElementSize(dataType);
         }

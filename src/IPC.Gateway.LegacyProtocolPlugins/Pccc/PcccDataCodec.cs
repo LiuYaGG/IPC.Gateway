@@ -44,7 +44,9 @@ namespace IPC.Plc.Communication.Pccc
                 case PlcDataType.Int32: return BitConverter.GetBytes(int.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.UInt32: return BitConverter.GetBytes(uint.Parse(text, CultureInfo.InvariantCulture));
                 case PlcDataType.Float: return BitConverter.GetBytes(float.Parse(text, CultureInfo.InvariantCulture));
-                case PlcDataType.String: return EncodeString(text);
+                case PlcDataType.String:
+                    if (address.FileTypeName != "ST") throw new ArgumentException("PCCC String 必须使用 ST 文件地址。");
+                    return EncodeString(text);
                 default: throw new NotSupportedException("PCCC暂不支持写入数据类型：" + dataType);
             }
         }
@@ -54,14 +56,19 @@ namespace IPC.Plc.Communication.Pccc
             if (address.BitNumber.HasValue)
                 return 2;
             if (dataType == PlcDataType.String)
+            {
+                if (address.FileTypeName != "ST") throw new ArgumentException("PCCC String 必须使用 ST 文件地址。");
                 return address.NativeElementSize;
+            }
             return checked(PlcDataTypeHelper.GetElementSize(dataType) * Math.Max(1, count));
         }
 
         private static string DecodeString(byte[] data)
         {
             Require(data, 2);
-            int length = Math.Min(ReadUInt16(data, 0), Math.Max(0, data.Length - 2));
+            int length = ReadUInt16(data, 0);
+            if (length > 82 || data.Length < 2 + ((length + 1) / 2) * 2)
+                throw new InvalidOperationException("PCCC STRING 返回的长度字段无效或响应不完整。");
             byte[] text = new byte[length];
             for (int i = 0; i < length; i++)
             {

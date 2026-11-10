@@ -8,7 +8,7 @@ namespace IPC.Runtime.Engine
     internal sealed class RuntimeEventBus
     {
         private readonly object _syncRoot = new object();
-        private readonly Queue<TagValueChangedDispatchItem> _queue = new Queue<TagValueChangedDispatchItem>();
+        private readonly OverflowQueue<TagValueChangedDispatchItem> _queue;
         private readonly Action<TagValueSnapshot> _dispatch;
         private readonly Func<int, bool> _isCurrentGeneration;
         private readonly int _queueLimit;
@@ -23,6 +23,7 @@ namespace IPC.Runtime.Engine
         public RuntimeEventBus(int queueLimit, Action<TagValueSnapshot> dispatch, Func<int, bool> isCurrentGeneration)
         {
             _queueLimit = Math.Max(1, queueLimit);
+            _queue = new OverflowQueue<TagValueChangedDispatchItem>(_queueLimit);
             _dispatch = dispatch ?? throw new ArgumentNullException(nameof(dispatch));
             _isCurrentGeneration = isCurrentGeneration ?? throw new ArgumentNullException(nameof(isCurrentGeneration));
         }
@@ -53,12 +54,6 @@ namespace IPC.Runtime.Engine
             {
                 if (_stopping)
                     return;
-
-                if (_queue.Count >= _queueLimit)
-                {
-                    _queue.Dequeue();
-                    Interlocked.Increment(ref _dropped);
-                }
 
                 _queue.Enqueue(new TagValueChangedDispatchItem(snapshot, runtimeGeneration));
                 int pendingCount = _queue.Count;

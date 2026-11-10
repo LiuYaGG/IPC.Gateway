@@ -22,12 +22,19 @@ namespace IPC.Plc.Communication.OmronFins
             List<FinsBatchReadItem> items = BuildItems(requests, results, context.DriverOptions);
             Dictionary<string, List<FinsBatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<FinsBatchReadItem> group in groups.Values)
+            try
             {
-                group.Sort(CompareItems);
-                if (TryExecuteSparseGroup(group, context, results))
-                    continue;
-                ExecuteSegments(group, context, results);
+                foreach (List<FinsBatchReadItem> group in groups.Values)
+                {
+                    group.Sort(CompareItems);
+                    if (TryExecuteSparseGroup(group, context, results))
+                        continue;
+                    ExecuteSegments(group, context, results);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -54,13 +61,20 @@ namespace IPC.Plc.Communication.OmronFins
             List<FinsBatchReadItem> items = BuildItems(requests, results, context.DriverOptions);
             Dictionary<string, List<FinsBatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<FinsBatchReadItem> group in groups.Values)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                group.Sort(CompareItems);
-                if (await TryExecuteSparseGroupAsync(group, context, results, cancellationToken).ConfigureAwait(false))
-                    continue;
-                await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                foreach (List<FinsBatchReadItem> group in groups.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    group.Sort(CompareItems);
+                    if (await TryExecuteSparseGroupAsync(group, context, results, cancellationToken).ConfigureAwait(false))
+                        continue;
+                    await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -487,6 +501,7 @@ namespace IPC.Plc.Communication.OmronFins
             while (current != null)
             {
                 if (current is PlcCommunicationException ||
+                    current is OperationCanceledException ||
                     current is TimeoutException ||
                     current is IOException ||
                     current is SocketException ||

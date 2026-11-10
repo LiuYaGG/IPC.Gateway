@@ -117,7 +117,8 @@ public static class GatewayCoreServiceCollectionExtensions
         IConfigurationSection section = configuration.GetSection("Gateway:ProtocolDrivers");
         PlcDriverPluginRegistry.ConfigureTrustPolicy(
             GetBool(section, "RequireSignature", false),
-            section["TrustedPublicKeyPem"] ?? string.Empty);
+            section["TrustedPublicKeyPem"] ?? string.Empty,
+            section["TrustedPublicKeyPath"] ?? Path.Combine(Path.GetFullPath(configuration["Gateway:Maintenance:Updates:UpdateDirectory"] ?? "Data/Updates", AppContext.BaseDirectory), "DriverTrust", "public-key.pem"));
     }
 
     private static GatewayResilienceOptions CreateResilienceOptions(IConfiguration configuration)

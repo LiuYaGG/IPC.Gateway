@@ -36,7 +36,7 @@ namespace IPC.Plc.Communication.OmronFins
     
     
     
-    public sealed class FinsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class FinsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int MaximumTcpPayloadLength = 1024 * 1024;
 
@@ -286,8 +286,25 @@ namespace IPC.Plc.Communication.OmronFins
             }, cancellationToken).ConfigureAwait(false);
         }
 
+        public async ValueTask WriteStringAsync(string addressText, string value, int capacity, int elementOffset, CancellationToken cancellationToken)
+        {
+            if (elementOffset != 0) throw new ArgumentException("FINS 字符串不支持元素偏移，请调整起始地址。", nameof(elementOffset));
+            byte[] data = PlcStringCodec.EncodeFixed(value, capacity, System.Text.Encoding.ASCII, 2);
+            FinsAddress address = FinsAddress.Parse(addressText, PlcDataType.String, _driverOptions);
+            if (address.HasBitIndex) throw new NotSupportedException("字符串不能使用 FINS 位地址。");
+            address.EnsureRange(data.Length / 2, false);
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+            if ((capacity & 1) != 0)
+            {
+                byte[] tail = await ReadMemoryAsync(address.Area.WordCode, address.WordAddress + data.Length / 2 - 1, 0, 1, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
+                PlcStringCodec.PreserveRegisterTail(data, capacity, tail);
+            }
+            await WriteMemoryAsync(address.Area.WordCode, address.WordAddress, 0, data, data.Length / 2, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
+        }
+
         public void Write(string addressText, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             EnsureConnected();
             EnsureSupportedType(dataType);
 
@@ -318,6 +335,7 @@ namespace IPC.Plc.Communication.OmronFins
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             EnsureSupportedType(dataType);
 

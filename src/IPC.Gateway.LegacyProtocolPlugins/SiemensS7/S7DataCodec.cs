@@ -164,7 +164,7 @@ namespace IPC.Plc.Communication.SiemensS7
             if (text == null)
                 text = string.Empty;
             if (maxLength <= 0 || maxLength > 254)
-                maxLength = 254;
+                throw new ArgumentOutOfRangeException(nameof(maxLength), "S7 STRING capacity must be between 1 and 254 bytes.");
 
             byte[] textBytes = Encoding.ASCII.GetBytes(text);
             int length = Math.Min(textBytes.Length, maxLength);
@@ -253,12 +253,8 @@ namespace IPC.Plc.Communication.SiemensS7
             Require(data, 2);
             int max = data[0];
             int length = data[1];
-            if (max <= 0 || max > data.Length - 2)
-                max = data.Length - 2;
-            if (length < 0)
-                length = 0;
-            if (length > max)
-                length = max;
+            if (max > 254 || length > max || length > data.Length - 2)
+                throw new InvalidOperationException("S7 STRING 返回的长度字段无效或响应不完整。");
             return Encoding.ASCII.GetString(data, 2, length);
         }
 

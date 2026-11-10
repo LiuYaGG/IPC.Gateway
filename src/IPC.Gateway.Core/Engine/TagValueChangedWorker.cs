@@ -8,7 +8,7 @@ namespace IPC.Runtime.Engine
     public sealed class TagValueChangedWorker : IDisposable
     {
         private readonly object _syncRoot = new object();
-        private readonly Queue<TagValueSnapshot> _queue = new Queue<TagValueSnapshot>();
+        private readonly OverflowQueue<TagValueSnapshot> _queue;
         private readonly string _threadName;
         private readonly int _queueLimit;
         private readonly Action<TagValueSnapshot> _handler;
@@ -16,7 +16,7 @@ namespace IPC.Runtime.Engine
         private Thread? _thread;
         private bool _stopping;
         private int _activeDispatches;
-        private long _droppedCount;
+        private long _droppedCount = 0;
         private int _maxObservedPendingCount;
         private bool _disposed;
 
@@ -24,6 +24,7 @@ namespace IPC.Runtime.Engine
         {
             _threadName = string.IsNullOrWhiteSpace(threadName) ? "IPC Tag Value Worker" : threadName.Trim();
             _queueLimit = Math.Max(1, queueLimit);
+            _queue = new OverflowQueue<TagValueSnapshot>(_queueLimit);
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
             _errorHandler = errorHandler;
         }
@@ -80,12 +81,6 @@ namespace IPC.Runtime.Engine
             {
                 if (_stopping)
                     return;
-
-                if (_queue.Count >= _queueLimit)
-                {
-                    _queue.Dequeue();
-                    _droppedCount++;
-                }
 
                 _queue.Enqueue(clone);
                 if (_queue.Count > _maxObservedPendingCount)

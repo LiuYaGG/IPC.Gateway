@@ -318,6 +318,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                     return PlcTagValidationResult.Invalid(normalized, "元素数量和偏移无效。");
                 if (parsed.BitNumber.HasValue && dataType != PlcDataType.Bool)
                     return PlcTagValidationResult.Invalid(normalized, "PCCC位地址必须使用Bool数据类型。");
+                if (dataType == PlcDataType.String && parsed.FileTypeName != "ST")
+                    return PlcTagValidationResult.Invalid(normalized, "PCCC String 必须使用 ST 文件地址。");
                 if (parsed.FileTypeName == "ST" && dataType != PlcDataType.String)
                     return PlcTagValidationResult.Invalid(normalized, "PCCC ST文件必须使用String数据类型。");
                 if (dataType == PlcDataType.Int64 || dataType == PlcDataType.UInt64 || dataType == PlcDataType.Double ||
@@ -359,6 +361,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                 _ = S7Address.Parse(normalized, dataType);
                 if (elementCount <= 0 || elementOffset < 0)
                     return PlcTagValidationResult.Invalid(normalized, "元素数量或偏移无效。");
+                if (dataType == PlcDataType.String && elementCount > 254)
+                    return PlcTagValidationResult.Invalid(normalized, "S7 STRING 长度必须为 1–254 字节，不包含两个长度头字节。");
                 if ((dataType == PlcDataType.Coil || dataType == PlcDataType.CoilArray ||
                      dataType == PlcDataType.DiscreteInput || dataType == PlcDataType.DiscreteInputArray))
                     return PlcTagValidationResult.Invalid(normalized, "Siemens S7 请使用 Bool 或 BoolArray，不支持 Modbus 位类型。");

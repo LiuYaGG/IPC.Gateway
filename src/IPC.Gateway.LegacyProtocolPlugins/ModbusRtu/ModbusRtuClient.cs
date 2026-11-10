@@ -159,8 +159,25 @@ namespace IPC.Plc.Communication.ModbusRtu
             });
         }
 
+        public void Write(string addressText, PlcDataType dataType, string valueText, int elementCount, int elementOffset)
+        {
+            if (dataType != PlcDataType.String) { Write(addressText, dataType, valueText, elementOffset); return; }
+            if (elementOffset != 0) throw new ArgumentException("Modbus 字符串不支持元素偏移，请调整起始地址。", nameof(elementOffset));
+            byte[] data = PlcStringCodec.EncodeFixed(valueText, elementCount, System.Text.Encoding.ASCII, 2);
+            ModbusAddress address = ModbusAddress.Parse(addressText, dataType);
+            if (address.IsReadOnly || address.IsBitArea || address.HasBitIndex)
+                throw new NotSupportedException("Modbus 字符串只能写入完整的保持寄存器。");
+            if (address.Address < 0 || (long)address.Address + data.Length / 2 > 65536)
+                throw new ArgumentOutOfRangeException(nameof(elementCount), "字符串超出 Modbus 地址范围。");
+            EnsureConnected();
+            if ((elementCount & 1) != 0)
+                PlcStringCodec.PreserveRegisterTail(data, elementCount, ReadRegisters(address.Area, address.Address + data.Length / 2 - 1, 1));
+            WriteRegisters(address.Address, data);
+        }
+
         public void Write(string addressText, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度。");
             EnsureConnected();
 
             ModbusAddress address = ModbusAddress.Parse(addressText, dataType);

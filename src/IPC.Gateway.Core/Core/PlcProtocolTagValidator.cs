@@ -51,6 +51,8 @@ namespace IPC.Plc.Communication.Core
                     case PlcProtocol.RockwellPccc:
                         if (!Regex.IsMatch(normalizedAddress, @"^(ST|[NBFLOTICSR])\d+:\d+(\.[A-Z0-9]+)?(/\d+)?$", RegexOptions.IgnoreCase))
                             return Invalid("AB/PCCC地址格式无效。");
+                        if (dataType == PlcDataType.String && !normalizedAddress.StartsWith("ST", StringComparison.OrdinalIgnoreCase))
+                            return Invalid("PCCC String 必须使用 ST 文件地址。");
                         break;
                     case PlcProtocol.ModbusTcp:
                     case PlcProtocol.ModbusRtu:
@@ -65,6 +67,8 @@ namespace IPC.Plc.Communication.Core
                         _ = Cjt188Address.Parse(normalizedAddress);
                         break;
                     case PlcProtocol.SiemensS7:
+                        if (dataType == PlcDataType.String && elementCount > 254)
+                            return Invalid("S7 STRING 长度必须为 1–254 字节，不包含两个长度头字节。");
                         if (!Regex.IsMatch(normalizedAddress, @"^(DB\d+\.DB[XBWDL]\d+(\.\d+)?|[MIQVEA][XBWDL]?\d+(\.\d+)?)$", RegexOptions.IgnoreCase))
                             return Invalid("西门子地址格式无效。");
                         if (Regex.IsMatch(normalizedAddress, @"(?:DBX|[MIQVEA]X?)[0-9]+\.[0-9]+$", RegexOptions.IgnoreCase) &&

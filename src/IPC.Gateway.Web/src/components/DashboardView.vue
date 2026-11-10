@@ -329,6 +329,7 @@
         :scroll="{ x: 960, y: 300 }"
       >
         <template #bodyCell="tableCell">
+          <template v-if="tableCell.column.key === 'column-6'"><span :title="tx(tableCell.record.lastError)">{{ tx(tableCell.record.lastError || '-') }}</span></template>
           <template v-if="tableCell.column.key === 'column-2'">
             <template v-for="{ row } in [{ row: tableCell.record, $index: tableCell.index }]" :key="tableCell.index">
               <a-tag :color="tagColor(row.isConnected ? 'success' : row.enabled ? 'warning' : 'info')">
@@ -372,6 +373,7 @@
         :custom-row="(record: any) => ({ onClick: () => emit('select-error', record) })"
       >
         <template #bodyCell="tableCell">
+          <template v-if="tableCell.column.key === 'column-3'"><span :title="tx(tableCell.record.message)">{{ tx(tableCell.record.message || '-') }}</span></template>
           <template v-if="tableCell.column.key === 'column-0'">
             <template v-for="{ row } in [{ row: tableCell.record, $index: tableCell.index }]" :key="tableCell.index">
               {{ formatDateTime(row.timestamp) }}

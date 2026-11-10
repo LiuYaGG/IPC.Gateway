@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using IPC.Plc.Communication.Core;
 
@@ -39,7 +40,7 @@ namespace IPC.Plc.Communication.Cip
                 return CreatePackedBoolItem(index, request, context, true);
 
             if (PlcDataTypeHelper.IsArray(request.DataType) &&
-                (request.ElementOffset > 0 || NeedsSegmentation(request.DataType, request.ElementCount)))
+                (request.ElementOffset > 0 || NeedsSegmentation(request.DataType, request.ElementCount, context.MaxRequestBytes)))
                 return CreateSegmentedArrayItem(index, request, context);
 
             CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.Direct, 0);
@@ -65,7 +66,7 @@ namespace IPC.Plc.Communication.Cip
                 return CreatePackedBoolItem(index, request, context, true);
 
             if (PlcDataTypeHelper.IsArray(request.DataType) &&
-                (request.ElementOffset > 0 || NeedsSegmentation(request.DataType, request.ElementCount)))
+                (request.ElementOffset > 0 || NeedsSegmentation(request.DataType, request.ElementCount, context.MaxRequestBytes)))
                 return CreateSegmentedArrayItem(index, request, context);
 
             CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.Direct, 0);
@@ -118,7 +119,10 @@ namespace IPC.Plc.Communication.Cip
                 request,
                 indexedBool ? CipBatchReadKind.IndexedBool : CipBatchReadKind.PackedBool,
                 firstBit);
-            item.AddOperation(context, BuildArrayElementTagAlways(baseTag, firstWord), PlcDataType.Int32Array, wordCount);
+            int maxWords = GetMaxElementsPerPacket(PlcDataType.Int32Array, context.MaxRequestBytes);
+            for (int copied = 0; copied < wordCount; copied += maxWords)
+                item.AddOperation(context, BuildArrayElementTagAlways(baseTag, firstWord + copied),
+                    PlcDataType.Int32Array, Math.Min(maxWords, wordCount - copied));
             return item;
         }
 
@@ -162,7 +166,10 @@ namespace IPC.Plc.Communication.Cip
                 request,
                 indexedBool ? CipBatchReadKind.IndexedBool : CipBatchReadKind.PackedBool,
                 firstBit);
-            item.AddOperation(context, BuildArrayElementTagAlways(baseTag, firstWord), PlcDataType.Int32Array, wordCount);
+            int maxWords = GetMaxElementsPerPacket(PlcDataType.Int32Array, context.MaxRequestBytes);
+            for (int copied = 0; copied < wordCount; copied += maxWords)
+                item.AddOperation(context, BuildArrayElementTagAlways(baseTag, firstWord + copied),
+                    PlcDataType.Int32Array, Math.Min(maxWords, wordCount - copied));
             return item;
         }
 
@@ -173,7 +180,7 @@ namespace IPC.Plc.Communication.Cip
         {
             CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.SegmentedArray, 0);
             int copied = 0;
-            int maxElements = GetMaxElementsPerPacket(request.DataType);
+            int maxElements = GetMaxElementsPerPacket(request.DataType, context.MaxRequestBytes);
             while (copied < request.ElementCount)
             {
                 int chunkCount = Math.Min(maxElements, request.ElementCount - copied);
@@ -191,7 +198,7 @@ namespace IPC.Plc.Communication.Cip
         {
             CipBatchReadItem item = new CipBatchReadItem(index, request, CipBatchReadKind.SegmentedArray, 0);
             int copied = 0;
-            int maxElements = GetMaxElementsPerPacket(request.DataType);
+            int maxElements = GetMaxElementsPerPacket(request.DataType, context.MaxRequestBytes);
             while (copied < request.ElementCount)
             {
                 int chunkCount = Math.Min(maxElements, request.ElementCount - copied);
@@ -217,7 +224,13 @@ namespace IPC.Plc.Communication.Cip
         private PlcReadResult BuildPackedBoolResult()
         {
             PlcReadResult current = Operations[0].Result;
-            int[] words = (int[])current.Value;
+            int[] words = new int[Operations.Sum(operation => operation.ElementCount)];
+            int copied = 0;
+            foreach (var operation in Operations)
+            {
+                Array.Copy((int[])operation.Result.Value, 0, words, copied, operation.ElementCount);
+                copied += operation.ElementCount;
+            }
             int count = _kind == CipBatchReadKind.IndexedBool ? 1 : Request.ElementCount;
             bool[] values = new bool[count];
 
@@ -251,15 +264,15 @@ namespace IPC.Plc.Communication.Cip
             return new PlcReadResult(actualType, CipTypeCodes.ToName(actualType), values);
         }
 
-        private static bool NeedsSegmentation(PlcDataType dataType, int elementCount)
+        private static bool NeedsSegmentation(PlcDataType dataType, int elementCount, int maxBytes)
         {
-            return PlcDataTypeHelper.IsArray(dataType) && elementCount > GetMaxElementsPerPacket(dataType);
+            return PlcDataTypeHelper.IsArray(dataType) && elementCount > GetMaxElementsPerPacket(dataType, maxBytes);
         }
 
-        private static int GetMaxElementsPerPacket(PlcDataType dataType)
+        private static int GetMaxElementsPerPacket(PlcDataType dataType, int maxBytes)
         {
             int elementSize = PlcDataTypeHelper.GetElementSize(dataType);
-            return Math.Max(1, 400 / elementSize);
+            return Math.Max(1, (Math.Min(400, maxBytes > 0 ? maxBytes : 400) - 16) / elementSize);
         }
 
         private static void NormalizeBoolArrayTag(string tagName, int elementOffset, out string baseTag, out int bitOffset)

@@ -55,10 +55,17 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             List<BatchReadItem<TAddress>> items = BuildItems(requests, context, results);
             Dictionary<string, List<BatchReadItem<TAddress>>> groups = GroupItems(items);
 
-            foreach (List<BatchReadItem<TAddress>> group in groups.Values)
+            try
             {
-                group.Sort(CompareItems);
-                ExecuteSegments(group, context, results);
+                foreach (List<BatchReadItem<TAddress>> group in groups.Values)
+                {
+                    group.Sort(CompareItems);
+                    ExecuteSegments(group, context, results);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -83,11 +90,18 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             List<BatchReadItem<TAddress>> items = BuildItems(requests, context, results);
             Dictionary<string, List<BatchReadItem<TAddress>>> groups = GroupItems(items);
 
-            foreach (List<BatchReadItem<TAddress>> group in groups.Values)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                group.Sort(CompareItems);
-                await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                foreach (List<BatchReadItem<TAddress>> group in groups.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    group.Sort(CompareItems);
+                    await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)

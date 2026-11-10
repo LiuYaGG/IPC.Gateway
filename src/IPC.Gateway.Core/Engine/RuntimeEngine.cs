@@ -2154,6 +2154,15 @@ namespace IPC.Runtime.Engine
             int runtimeGeneration,
             CancellationToken cancellationToken)
         {
+            if (deviceState != null)
+            {
+                try { PlcDriverPluginRegistry.EnsureDriverAllowed(deviceState.Config.Connection, deviceState.Config.Protocol); }
+                catch (PlcProtocolException ex)
+                {
+                    await DropDeviceConnectionAsync(deviceState, ex.Message, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+            }
             if (deviceState == null ||
                 update == null ||
                 !IsCurrentGeneration(runtimeGeneration) ||
@@ -2254,6 +2263,12 @@ namespace IPC.Runtime.Engine
             CancellationToken cancellationToken)
         {
             DeviceConfig device = deviceState.Config;
+            try { PlcDriverPluginRegistry.EnsureDriverAllowed(device.Connection, device.Protocol); }
+            catch (PlcProtocolException ex)
+            {
+                await DropDeviceConnectionAsync(deviceState, ex.Message, cancellationToken).ConfigureAwait(false);
+                return (false, null);
+            }
 
             // Isolated transport failures have a bounded recovery lane. Permanent
             // factory/configuration failures still obey the circuit breaker.
@@ -2956,14 +2971,13 @@ namespace IPC.Runtime.Engine
                 if (connectionFailure)
                 {
                     connectionDropped = true;
-                    MarkUnattemptedBatchReads(deviceState, batchReads, i + 1, now, errorMessage);
-                    return false;
+                    stillConnected = false;
                 }
                 if (!keepConnected)
                     stillConnected = false;
             }
 
-            if (anyReadSucceeded)
+            if (anyReadSucceeded && !connectionDropped)
                 RecordDeviceCommunicationSuccess(deviceState);
 
             return stillConnected;
@@ -3352,7 +3366,7 @@ namespace IPC.Runtime.Engine
                     await ExecutePlcOperationAsync(
                         deviceState,
                         token => PlcClientInvoker.DisconnectAsync(client, token),
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken, bypassDriverTrust: true).ConfigureAwait(false);
                 }
             }
             catch
@@ -3519,6 +3533,13 @@ namespace IPC.Runtime.Engine
             int elementOffset = Math.Max(0, tag.ElementOffset);
             if (tag.DataType == PlcDataType.String)
             {
+                if (client is IPlcStringWriter stringWriter)
+                {
+                    await ExecutePlcOperationAsync(deviceState,
+                        token => stringWriter.WriteStringAsync(ResolveTagAddress(device, tag), valueText,
+                            tag.ElementCount, elementOffset, token), cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 MethodInfo? writeWithCount = client.GetType().GetMethod(
                     "Write",
                     new[] { typeof(string), typeof(PlcDataType), typeof(string), typeof(int), typeof(int) });
@@ -3966,8 +3987,11 @@ namespace IPC.Runtime.Engine
             Func<CancellationToken, ValueTask> operation,
             CancellationToken parentToken,
             PlcOperationTimeoutKind timeoutKind = PlcOperationTimeoutKind.Device,
-            bool linkParentCancellation = true)
+            bool linkParentCancellation = true,
+            bool bypassDriverTrust = false)
         {
+            if (!bypassDriverTrust && deviceState != null)
+                PlcDriverPluginRegistry.EnsureDriverAllowed(deviceState.Config.Connection, deviceState.Config.Protocol);
             using CancellationTokenSource timeoutCancellation = CreateOperationTimeoutCancellationTokenSource(deviceState == null ? null : deviceState.Config, timeoutKind);
             using CancellationTokenSource operationCancellation =
                 CreateOperationCancellationTokenSource(parentToken, timeoutCancellation.Token, linkParentCancellation);
@@ -4001,6 +4025,8 @@ namespace IPC.Runtime.Engine
             PlcOperationTimeoutKind timeoutKind = PlcOperationTimeoutKind.Device,
             bool linkParentCancellation = true)
         {
+            if (deviceState != null)
+                PlcDriverPluginRegistry.EnsureDriverAllowed(deviceState.Config.Connection, deviceState.Config.Protocol);
             using CancellationTokenSource timeoutCancellation = CreateOperationTimeoutCancellationTokenSource(deviceState == null ? null : deviceState.Config, timeoutKind);
             using CancellationTokenSource operationCancellation =
                 CreateOperationCancellationTokenSource(parentToken, timeoutCancellation.Token, linkParentCancellation);
@@ -4892,6 +4918,8 @@ namespace IPC.Runtime.Engine
 
         private static string BuildWriteValueText(WriteTagRequest request, TagConfig tag)
         {
+            if (tag.DataType == PlcDataType.String)
+                return !string.IsNullOrEmpty(request.ValueText) ? request.ValueText : request.Value?.ToString() ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(request.ValueText))
                 return UnscaleWriteValueText(request.ValueText, tag);
 
@@ -4983,6 +5011,7 @@ namespace IPC.Runtime.Engine
         private static bool TryValidateWriteValue(PlcDataType dataType, string valueText, int elementCount, out string errorMessage)
         {
             errorMessage = string.Empty;
+            if (dataType == PlcDataType.String) return true;
             if (string.IsNullOrWhiteSpace(valueText))
             {
                 errorMessage = "请输入写入值。";

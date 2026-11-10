@@ -71,6 +71,19 @@ public static class GatewayCommercialEndpoints
             return Ok(PlcDriverPluginRegistry.GetRegisteredDrivers());
         });
 
+        group.MapGet("/drivers/{driverId}/signing", (ClaimsPrincipal user, string driverId) =>
+        {
+            if (!GatewayAuthEndpoints.CanViewMaintenance(user) || !GatewayAuthEndpoints.CanManageCertificates(user))
+                return Forbidden("Current user is not allowed to sign drivers.");
+            return Execute(() => PlcDriverPluginRegistry.PrepareDriverSigning(driverId));
+        });
+        group.MapPost("/drivers/{driverId}/signing", (ClaimsPrincipal user, string driverId, IPC.Plc.Communication.Core.PlcDriverSigningRequest request) =>
+        {
+            if (!GatewayAuthEndpoints.CanViewMaintenance(user) || !GatewayAuthEndpoints.CanManageCertificates(user))
+                return Forbidden("Current user is not allowed to sign drivers.");
+            return Execute(() => { PlcDriverPluginRegistry.ApplyDriverSignature(driverId, request); return true; });
+        });
+
         return app;
     }
 
@@ -79,6 +92,14 @@ public static class GatewayCommercialEndpoints
         try
         {
             return Ok(action());
+        }
+        catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException || ex is FormatException)
+        {
+            return Results.BadRequest(ApiResult.Fail("密钥或签名格式无效。"));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            return Results.BadRequest(ApiResult.Fail("无法读取或保存驱动签名文件，请检查服务账户的目录权限。"));
         }
         catch (ArgumentException ex)
         {

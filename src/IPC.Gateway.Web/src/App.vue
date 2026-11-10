@@ -448,6 +448,7 @@ async function handleLogout() {
 }
 
 async function refresh(options: { silent: boolean }) {
+  stopRuntimeEvents()
   refreshController?.abort()
   const controller = new AbortController()
   refreshController = controller
@@ -471,7 +472,10 @@ async function refresh(options: { silent: boolean }) {
       authenticated.value = false
     }
   } finally {
-    if (refreshController === controller) refreshController = undefined
+    if (refreshController === controller) {
+      refreshController = undefined
+      if (authenticated.value && autoRefresh.value) startRuntimeEvents()
+    }
     if (!options.silent) loading.value = false
   }
 }
@@ -532,6 +536,13 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
   const preserveMqttConfig = shouldPreserveActiveConfigDraft('mqtt', options)
   const preserveOpcUaConfig = shouldPreserveActiveConfigDraft('opcUa', options)
   const preserveHistoryConfig = shouldPreserveActiveConfigDraft('history', options)
+  // A full HTTP snapshot may have been captured before the latest SSE update.
+  // Keep newer values only for identities still present in the returned snapshot.
+  if (sync.value) {
+    const returnedKeys = new Set((data.status.tags ?? []).map(runtimeTagKey))
+    data.status.tags = mergeRuntimeTags(data.status.tags ?? [],
+      (sync.value.status.tags ?? []).filter(tag => returnedKeys.has(runtimeTagKey(tag))))
+  }
   sync.value = data
   health.value = healthData
   lastRefreshTime.value = new Date().toISOString()
@@ -922,7 +933,7 @@ function isConfigEnabled(item: { enabled?: boolean } | null | undefined) {
 
 function syncAutoRefresh() {
   stopRuntimeEvents()
-  if (!authenticated.value || !autoRefresh.value) return
+  if (!authenticated.value || !autoRefresh.value || refreshController) return
 
   startRuntimeEvents()
 }

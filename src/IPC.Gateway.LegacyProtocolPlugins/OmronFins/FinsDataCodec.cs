@@ -266,7 +266,8 @@ namespace IPC.Plc.Communication.OmronFins
 
         private static string DecodeString(byte[] data, int maxBytes)
         {
-            int limit = Math.Min(data.Length, GetStringByteCount(maxBytes));
+            int limit = GetStringByteCount(maxBytes);
+            Require(data, limit);
             int length = 0;
             while (length < limit && data[length] != 0)
                 length++;

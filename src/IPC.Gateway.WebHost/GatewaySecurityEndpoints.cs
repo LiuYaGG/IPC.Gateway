@@ -18,6 +18,8 @@
 using System.Security.Claims;
 using IPC.Gateway.Core.Domain.Users;
 using IPC.Gateway.Core.Gateway;
+using IPC.Plc.Communication.Core;
+using IPC.Plc.Communication.Infrastructure;
 
 namespace IPC.Gateway.WebHost;
 
@@ -61,7 +63,8 @@ public static class GatewaySecurityEndpoints
                     secretStorage.EnvironmentVariableName,
                     masterKeyConfigured = !string.IsNullOrWhiteSpace(secretStorage.MasterKey)
                 },
-                certificates = security.Certificates
+                certificates = security.Certificates,
+                protocolDrivers = PlcDriverPluginRegistry.GetDriverTrustPolicy()
             }));
         });
 
@@ -71,6 +74,16 @@ public static class GatewaySecurityEndpoints
                 return Results.Json(ApiResult.Fail("当前用户没有查看证书状态的权限。"), statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(ApiResult.Ok(certificates.GetInventory()));
+        });
+
+        group.MapPut("/driver-trust", (ClaimsPrincipal user, PlcDriverTrustPolicy policy) =>
+        {
+            if (!GatewayAuthEndpoints.CanViewSecurity(user) || !GatewayAuthEndpoints.CanManageCertificates(user))
+                return Results.Json(ApiResult.Fail("当前用户没有修改驱动验签策略的权限。"), statusCode: StatusCodes.Status403Forbidden);
+            try { return Results.Ok(ApiResult.Ok(PlcDriverPluginRegistry.SaveDriverTrustPolicy(policy.RequireSignature))); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ApiResult.Fail(ex.Message)); }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            { return Results.BadRequest(ApiResult.Fail("无法保存驱动验签策略，请检查服务账户的目录权限。")); }
         });
 
         return app;

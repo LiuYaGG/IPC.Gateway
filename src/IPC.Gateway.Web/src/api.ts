@@ -111,6 +111,7 @@ export interface GatewayAuditLogQueryResult {
 }
 
 export interface GatewaySecuritySummary {
+  protocolDrivers: { requireSignature: boolean; publicKeyConfigured: boolean };
   passwordPolicy: GatewayPasswordPolicy;
   accountLockout: GatewayAccountLockout;
   tls: GatewayTlsSummary;
@@ -2266,6 +2267,25 @@ export async function loadCompatibilityMatrix() {
       localizeErrorMessage(result.errorMessage) ||
         "Compatibility matrix failed to load",
     );
+  return result.data;
+}
+
+export interface GatewayDriverSigningInfo { assemblySha256: string; payloadBase64: string; trustedPublicKeyPem: string }
+export async function prepareDriverSigning(driverId: string) {
+  const result = await request<ApiResult<GatewayDriverSigningInfo>>(`/api/commercial/drivers/${encodeURIComponent(driverId)}/signing`);
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '驱动签名失败');
+  return result.data;
+}
+export async function saveDriverTrustPolicy(requireSignature: boolean) {
+  const result = await request<ApiResult<GatewaySecuritySummary['protocolDrivers']>>('/api/security/driver-trust', {
+    method: 'PUT', body: JSON.stringify({ requireSignature }),
+  });
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '驱动验签策略保存失败');
+  return result.data;
+}
+export async function applyDriverSignature(driverId: string, data: { assemblySha256: string; publicKeyPem: string; signature: string; signer: string }) {
+  const result = await request<ApiResult<boolean>>(`/api/commercial/drivers/${encodeURIComponent(driverId)}/signing`, { method: 'POST', body: JSON.stringify(data) });
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || '驱动签名失败');
   return result.data;
 }
 

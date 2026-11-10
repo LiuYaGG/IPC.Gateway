@@ -133,9 +133,9 @@ namespace IPC.Plc.Communication.SiemensS7
 
             foreach (List<S7MultiReadItem> batch in batches)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (RequiresSegmentedRead(batch, client))
                     {
                         S7MultiReadItem item = batch[0];
@@ -151,7 +151,7 @@ namespace IPC.Plc.Communication.SiemensS7
                     await client.ReadItemBatchAsync(batch, cancellationToken).ConfigureAwait(false);
                     DecodeBatch(batch, client, results);
                 }
-                catch (Exception ex) when (!(ex is OperationCanceledException))
+                catch (Exception ex)
                 {
                     PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Batch);
                     FailBatch(batch, results, ex.Message, scope);

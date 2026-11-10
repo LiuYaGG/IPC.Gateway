@@ -35,7 +35,7 @@ namespace IPC.Plc.Communication.ModbusTcp
     
     
     
-    public sealed class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
         private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;
@@ -298,8 +298,27 @@ namespace IPC.Plc.Communication.ModbusTcp
             }, cancellationToken).ConfigureAwait(false);
         }
 
+        public async ValueTask WriteStringAsync(string addressText, string value, int capacity, int elementOffset, CancellationToken cancellationToken)
+        {
+            if (elementOffset != 0) throw new ArgumentException("Modbus 字符串不支持元素偏移，请调整起始地址。", nameof(elementOffset));
+            byte[] data = PlcStringCodec.EncodeFixed(value, capacity, System.Text.Encoding.ASCII, 2);
+            ModbusAddress address = ModbusAddress.Parse(addressText, PlcDataType.String);
+            if (address.IsReadOnly || address.IsBitArea || address.HasBitIndex)
+                throw new NotSupportedException("Modbus 字符串只能写入完整的保持寄存器。");
+            if (address.Address < 0 || (long)address.Address + data.Length / 2 > 65536)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "字符串超出 Modbus 地址范围。");
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+            if ((capacity & 1) != 0)
+            {
+                byte[] tail = await ReadRegistersAsync(address.Area, address.Address + data.Length / 2 - 1, 1, cancellationToken).ConfigureAwait(false);
+                PlcStringCodec.PreserveRegisterTail(data, capacity, tail);
+            }
+            await WriteRegistersAsync(address.Address, data, cancellationToken).ConfigureAwait(false);
+        }
+
         public void Write(string addressText, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             EnsureConnected();
 
             ModbusAddress address = ModbusAddress.Parse(addressText, dataType);
@@ -347,6 +366,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
             ModbusAddress address = ModbusAddress.Parse(addressText, dataType);
@@ -395,6 +415,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (dataType == PlcDataType.String) throw new ArgumentException("字符串写入必须提供标签配置的长度，请使用 WriteStringAsync。");
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
             ModbusAddress address = ModbusAddress.Parse(addressText, dataType);

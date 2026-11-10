@@ -21,7 +21,7 @@
           type="button"
           @click="emit('select-error', error)"
         >
-          <span>{{ error.message || tx('未知错误') }}</span>
+          <span>{{ tx(error.message || '未知错误') }}</span>
           <small>{{ formatDateTime(error.timestamp) }}</small>
         </button>
         <em v-if="node.meta.errors.length === 0">{{ tx('暂无错误') }}</em>

@@ -65,7 +65,7 @@
     </div>
     <div v-if="status?.lastError" class="history-status-error">
       <span>{{ tx('最近错误') }}</span>
-      <strong>{{ status.lastError }}</strong>
+      <strong>{{ tx(status.lastError) }}</strong>
       <small>{{ formatDateTime(status.lastErrorTime) }}</small>
     </div>
   </section>

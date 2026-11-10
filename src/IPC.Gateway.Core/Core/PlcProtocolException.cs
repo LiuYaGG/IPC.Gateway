@@ -52,6 +52,7 @@ namespace IPC.Plc.Communication.Core
                     return PlcReadFailureScope.Tag;
 
                 if (current is PlcCommunicationException ||
+                    current is OperationCanceledException ||
                     current is TimeoutException ||
                     current is IOException ||
                     current is SocketException ||

@@ -258,7 +258,7 @@
                 {{ runtime.lastRunUtc ? formatDateTime(runtime.lastRunUtc) : '-' }}
               </a-descriptions-item>
               <a-descriptions-item :label="tx('最后错误')" :span="2">
-                {{ runtime.lastError || '-' }}
+                {{ tx(runtime.lastError || '-') }}
               </a-descriptions-item>
             </a-descriptions>
           </a-tab-pane>

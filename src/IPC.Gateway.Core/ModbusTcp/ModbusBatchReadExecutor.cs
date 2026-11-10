@@ -44,10 +44,18 @@ namespace IPC.Plc.Communication.ModbusTcp
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<BatchReadItem> group in groups.Values)
+            try
             {
-                group.Sort(CompareItems);
-                ExecuteSegments(group, context, results);
+                foreach (List<BatchReadItem> group in groups.Values)
+                {
+                    group.Sort(CompareItems);
+                    ExecuteSegments(group, context, results);
+                    if (HasConnectionFailure(results)) break;
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -74,11 +82,19 @@ namespace IPC.Plc.Communication.ModbusTcp
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
-            foreach (List<BatchReadItem> group in groups.Values)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                group.Sort(CompareItems);
-                await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                foreach (List<BatchReadItem> group in groups.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    group.Sort(CompareItems);
+                    await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                    if (HasConnectionFailure(results)) break;
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
 
             for (int i = 0; i < requests.Count; i++)

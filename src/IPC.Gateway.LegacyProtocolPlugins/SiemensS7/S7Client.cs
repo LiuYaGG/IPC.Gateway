@@ -34,7 +34,7 @@ namespace IPC.Plc.Communication.SiemensS7
     
     
     
-    public sealed class S7Client : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class S7Client : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int DefaultPduSize = 240;
         private TcpClient _tcpClient;
@@ -205,23 +205,26 @@ namespace IPC.Plc.Communication.SiemensS7
 
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
+            if (dataType == PlcDataType.String)
+                throw new ArgumentException("S7 STRING writes require the configured string capacity.");
+            Write(address, dataType, valueText, 1, elementOffset);
+        }
+
+        public void Write(string address, PlcDataType dataType, string valueText, int elementCount, int elementOffset)
+        {
             if (elementOffset < 0)
                 throw new ArgumentOutOfRangeException("elementOffset");
 
-            int elementCount = S7DataCodec.GetElementCount(dataType, valueText, 1);
+            int writeCount = S7DataCodec.GetElementCount(dataType, valueText, 1);
             S7Address s7Address = BuildAddress(address, dataType, elementOffset);
-            byte[] data = S7DataCodec.Encode(dataType, valueText);
+            byte[] data = dataType == PlcDataType.String
+                ? S7DataCodec.EncodeString(valueText, elementCount)
+                : S7DataCodec.Encode(dataType, valueText);
 
             if (S7DataCodec.IsBoolType(dataType))
             {
-                WriteBits(s7Address, data, elementCount);
+                WriteBits(s7Address, data, writeCount);
                 return;
-            }
-
-            if (dataType == PlcDataType.String)
-            {
-                int maxLength = ReadStringMaxLength(s7Address);
-                data = S7DataCodec.EncodeString(valueText, maxLength);
             }
 
             WriteBytes(s7Address, data);
@@ -234,23 +237,30 @@ namespace IPC.Plc.Communication.SiemensS7
             int elementOffset,
             CancellationToken cancellationToken)
         {
+            if (dataType == PlcDataType.String)
+                throw new ArgumentException("S7 STRING writes require the configured string capacity.");
+            await WriteAsync(address, dataType, valueText, 1, elementOffset, cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask WriteStringAsync(string address, string value, int capacity, int elementOffset, CancellationToken cancellationToken)
+            => WriteAsync(address, PlcDataType.String, value, capacity, elementOffset, cancellationToken);
+
+        public async ValueTask WriteAsync(string address, PlcDataType dataType, string valueText,
+            int elementCount, int elementOffset, CancellationToken cancellationToken)
+        {
             if (elementOffset < 0)
                 throw new ArgumentOutOfRangeException("elementOffset");
 
-            int elementCount = S7DataCodec.GetElementCount(dataType, valueText, 1);
+            int writeCount = S7DataCodec.GetElementCount(dataType, valueText, 1);
             S7Address s7Address = BuildAddress(address, dataType, elementOffset);
-            byte[] data = S7DataCodec.Encode(dataType, valueText);
+            byte[] data = dataType == PlcDataType.String
+                ? S7DataCodec.EncodeString(valueText, elementCount)
+                : S7DataCodec.Encode(dataType, valueText);
 
             if (S7DataCodec.IsBoolType(dataType))
             {
-                await WriteBitsAsync(s7Address, data, elementCount, cancellationToken).ConfigureAwait(false);
+                await WriteBitsAsync(s7Address, data, writeCount, cancellationToken).ConfigureAwait(false);
                 return;
-            }
-
-            if (dataType == PlcDataType.String)
-            {
-                int maxLength = await ReadStringMaxLengthAsync(s7Address, cancellationToken).ConfigureAwait(false);
-                data = S7DataCodec.EncodeString(valueText, maxLength);
             }
 
             await WriteBytesAsync(s7Address, data, cancellationToken).ConfigureAwait(false);
@@ -417,8 +427,13 @@ namespace IPC.Plc.Communication.SiemensS7
         {
             if (!IsConnected)
                 Connect();
-            byte[] response = SendS7(BuildBitWriteRequest(address, values, bitCount));
-            ParseWriteResponse(response);
+            for (int offset = 0; offset < bitCount;)
+            {
+                int count = Math.Min(GetMaxWriteDataBytesPerPacket() * 8, bitCount - offset);
+                byte[] response = SendS7(BuildBitWriteRequest(address.AddBitOffset(offset), Slice(values, offset, count), count));
+                ParseWriteResponse(response);
+                offset += count;
+            }
         }
 
         private async ValueTask WriteBitsAsync(
@@ -429,43 +444,15 @@ namespace IPC.Plc.Communication.SiemensS7
         {
             if (!IsConnected)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
-            byte[] request = BuildBitWriteRequest(address, values, bitCount);
-            byte[] response = await SendS7Async(request, cancellationToken).ConfigureAwait(false);
-            ParseWriteResponse(response);
-        }
-
-        private int ReadStringMaxLength(S7Address address)
-        {
-            try
+            for (int offset = 0; offset < bitCount;)
             {
-                byte[] header = ReadBytes(address, 2);
-                int max = header[0];
-                if (max > 0 && max <= 254)
-                    return max;
+                cancellationToken.ThrowIfCancellationRequested();
+                int count = Math.Min(GetMaxWriteDataBytesPerPacket() * 8, bitCount - offset);
+                byte[] request = BuildBitWriteRequest(address.AddBitOffset(offset), Slice(values, offset, count), count);
+                byte[] response = await SendS7Async(request, cancellationToken).ConfigureAwait(false);
+                ParseWriteResponse(response);
+                offset += count;
             }
-            catch
-            {
-            }
-
-            return 254;
-        }
-
-        private async ValueTask<int> ReadStringMaxLengthAsync(
-            S7Address address,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                byte[] header = await ReadBytesAsync(address, 2, cancellationToken).ConfigureAwait(false);
-                int max = header[0];
-                if (max > 0 && max <= 254)
-                    return max;
-            }
-            catch
-            {
-            }
-
-            return 254;
         }
 
         private int GetMaxDataBytesPerPacket()
@@ -475,7 +462,7 @@ namespace IPC.Plc.Communication.SiemensS7
 
         private int GetMaxWriteDataBytesPerPacket()
         {
-            return Math.Max(1, _pduSize - 28);
+            return Math.Max(1, (_pduSize - 28) & ~1);
         }
 
         private void SendIsoConnectionRequest()

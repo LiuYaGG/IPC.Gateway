@@ -18,6 +18,7 @@ namespace IPC.Plc.Communication.Cip
 
     internal sealed class CipAsyncBatchReadContext
     {
+        public Func<string, PlcDataType, int, int, CancellationToken, ValueTask<PlcReadResult>> ReadTagAsync { get; set; }
         public Func<string, PlcDataType, int, byte[]> BuildReadRequest { get; set; }
         public Func<byte[], CancellationToken, ValueTask<byte[]>> SendConnectedMessageAsync { get; set; }
         public Func<byte[], string, PlcDataType, int, int, PlcReadResult> DecodeReadResponse { get; set; }

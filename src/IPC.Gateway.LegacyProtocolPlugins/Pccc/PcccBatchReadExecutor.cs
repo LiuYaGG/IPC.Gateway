@@ -17,10 +17,17 @@ namespace IPC.Plc.Communication.Pccc
         {
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests?.Count ?? 0];
             Dictionary<string, List<PcccBatchReadItem>> groups = BuildGroups(requests, results);
-            foreach (List<PcccBatchReadItem> group in groups.Values)
+            try
             {
-                group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
-                ExecuteGroup(group, readRaw, results);
+                foreach (List<PcccBatchReadItem> group in groups.Values)
+                {
+                    group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
+                    ExecuteGroup(group, readRaw, results);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
             return Complete(requests, results);
         }
@@ -32,11 +39,18 @@ namespace IPC.Plc.Communication.Pccc
         {
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests?.Count ?? 0];
             Dictionary<string, List<PcccBatchReadItem>> groups = BuildGroups(requests, results);
-            foreach (List<PcccBatchReadItem> group in groups.Values)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
-                await ExecuteGroupAsync(group, readRaw, results, cancellationToken).ConfigureAwait(false);
+                foreach (List<PcccBatchReadItem> group in groups.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
+                    await ExecuteGroupAsync(group, readRaw, results, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                PlcBatchReadResult.FailPending(requests, results, ex);
             }
             return Complete(requests, results);
         }

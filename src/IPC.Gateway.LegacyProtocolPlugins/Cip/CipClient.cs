@@ -136,6 +136,7 @@ namespace IPC.Plc.Communication.Cip
             {
                 BuildReadRequest = BuildReadRequest,
                 SendConnectedMessageAsync = SendConnectedMessageAsync,
+                ReadTagAsync = ReadTagAsync,
                 DecodeReadResponse = DecodeReadResponse,
                 MaxRequestBytes = _maxRequestBytes,
                 MaxServicesPerPacket = _maxServicesPerPacket,
@@ -327,6 +328,13 @@ namespace IPC.Plc.Communication.Cip
                 throw new ArgumentOutOfRangeException("elementCount");
 
             byte[] response = SendConnectedMessage(BuildReadTagRequest(tagName, dataType, elementCount));
+            if (IsPartialArrayReply(response, dataType, elementCount))
+            {
+                int firstCount = elementCount / 2;
+                var first = ReadTagSingle(tagName, dataType, firstCount);
+                var last = ReadTagSingle(BuildArrayElementTag(tagName, firstCount), dataType, elementCount - firstCount);
+                return JoinArrayResults(dataType, elementCount, firstCount, first, last);
+            }
             return DecodeReadTagResponse(response, dataType, elementCount);
         }
 
@@ -340,7 +348,26 @@ namespace IPC.Plc.Communication.Cip
                 throw new ArgumentOutOfRangeException("elementCount");
 
             byte[] response = await SendConnectedMessageAsync(BuildReadTagRequest(tagName, dataType, elementCount), cancellationToken).ConfigureAwait(false);
+            if (IsPartialArrayReply(response, dataType, elementCount))
+            {
+                int firstCount = elementCount / 2;
+                var first = await ReadTagSingleAsync(tagName, dataType, firstCount, cancellationToken).ConfigureAwait(false);
+                var last = await ReadTagSingleAsync(BuildArrayElementTag(tagName, firstCount), dataType, elementCount - firstCount, cancellationToken).ConfigureAwait(false);
+                return JoinArrayResults(dataType, elementCount, firstCount, first, last);
+            }
             return DecodeReadTagResponse(response, dataType, elementCount);
+        }
+
+        private static bool IsPartialArrayReply(byte[] response, PlcDataType type, int count)
+            => count > 1 && PlcDataTypeHelper.IsArray(type) && response.Length >= 4 && response[0] == 0xCC && response[2] == 0x06;
+
+        private static PlcReadResult JoinArrayResults(PlcDataType type, int count, int firstCount, PlcReadResult first, PlcReadResult last)
+        {
+            if (first.TypeCode != last.TypeCode) throw new InvalidOperationException("CIP array type changed during segmented read.");
+            Array values = PlcDataTypeHelper.CreateArray(type, count);
+            Array.Copy((Array)first.Value, 0, values, 0, firstCount);
+            Array.Copy((Array)last.Value, 0, values, firstCount, count - firstCount);
+            return new PlcReadResult(first.TypeCode, first.TypeName, values);
         }
 
         private static byte[] BuildReadTagRequest(string tagName, PlcDataType dataType, int elementCount)
@@ -870,7 +897,7 @@ namespace IPC.Plc.Communication.Cip
         private int GetMaxElementsPerPacket(PlcDataType dataType)
         {
             int elementSize = PlcDataTypeHelper.GetElementSize(dataType);
-            return Math.Max(1, _maxRequestBytes / elementSize);
+            return Math.Max(1, (Math.Min(400, _maxRequestBytes) - 16) / elementSize);
         }
 
         private static string BuildArrayElementTag(string tagName, int elementOffset)

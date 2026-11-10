@@ -218,6 +218,10 @@
         :scroll="{ x: 780, y: 220 }"
       >
         <template #bodyCell="tableCell">
+          <template v-if="tableCell.column.key === 'column-1'">{{ tx(watchdogCheckLabel(tableCell.record.name)) }}</template>
+          <template v-if="tableCell.column.key === 'column-2'">
+            <span :title="tx(tableCell.record.message)">{{ tx(tableCell.record.message) }}</span>
+          </template>
           <template v-if="tableCell.column.key === 'column-0'">
             <template
               v-for="{ row } in [
@@ -450,11 +454,16 @@
                 width: '130',
                 ellipsis: true,
               },
+              { key: 'driver-actions', title: tx('操作'), width: 120, fixed: 'right' },
             ])
           "
-          :scroll="{ x: 710, y: 240 }"
+          :scroll="{ x: 830, y: 240 }"
         >
           <template #bodyCell="tableCell">
+            <template v-if="tableCell.column.key === 'driver-actions'">
+              <a-button v-if="!tableCell.record.builtIn && canSignDriver && !['trusted', 'signed'].includes((tableCell.record.signatureStatus || '').toLowerCase())" type="link" size="small" @click="openDriverSigning(tableCell.record)">{{ tx('签名') }}</a-button>
+              <span v-else>-</span>
+            </template>
             <template v-if="tableCell.column.key === 'column-2'">
               <template
                 v-for="{ row } in [
@@ -878,9 +887,11 @@
       }}</a-button>
     </a-modal>
   </section>
+  <DriverSigningModal :open="signingOpen" :driver="signingDriver" @close="signingOpen = false" @signed="refreshSignedDrivers" />
 </template>
 
 <script setup lang="ts">
+import { watchdogCheckLabel } from "../i18n/runtime";
 import { formatMessage } from "../i18n";
 import { notify } from "../utils/ui";
 import { tx, localizeColumns } from "../i18n";
@@ -921,6 +932,7 @@ import {
   type GatewayWatchdogStatus,
   type GatewayUpdateStatus,
 } from "../api";
+import DriverSigningModal from "./DriverSigningModal.vue";
 import WatchdogConfigPanel from "./watchdog/WatchdogConfigPanel.vue";
 import { formatDateTime } from "../utils/format";
 import { PERMISSIONS, usePermissions } from "../utils/permissions";
@@ -944,6 +956,11 @@ const watchdog = ref<GatewayWatchdogStatus | null>(null);
 const watchdogConfig = ref<GatewayWatchdogConfig | null>(null);
 const compatibility = ref<GatewayCompatibilityMatrix | null>(null);
 const drivers = ref<GatewayProtocolDriverInfo[]>([]);
+const signingDriver = ref<GatewayProtocolDriverInfo | null>(null);
+const signingOpen = ref(false);
+const canSignDriver = computed(() => hasPermission(PERMISSIONS.securityCertificatesManage));
+function openDriverSigning(driver: GatewayProtocolDriverInfo) { signingDriver.value = driver; signingOpen.value = true; }
+async function refreshSignedDrivers() { drivers.value = await loadProtocolDrivers(); }
 const restartDialog = ref(false);
 const applying = ref(false);
 const restartError = ref(false);
