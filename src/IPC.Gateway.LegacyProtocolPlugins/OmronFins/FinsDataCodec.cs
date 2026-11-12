@@ -92,52 +92,52 @@ namespace IPC.Plc.Communication.OmronFins
             return GetWordCount(GetScalarType(dataType), elementOffset);
         }
 
-        public static object DecodeWords(PlcDataType dataType, byte[] data, int count, PlcWordOrder wordOrder)
+        public static object DecodeWords(PlcDataType dataType, byte[] data, int count, FinsDataFormat dataFormat)
         {
             switch (dataType)
             {
                 case PlcDataType.Int16:
                     Require(data, 2);
-                    return (short)ReadUInt16(data, 0);
+                    return (short)ReadUInt16(data, 0, dataFormat);
                 case PlcDataType.UInt16:
                     Require(data, 2);
-                    return ReadUInt16(data, 0);
+                    return ReadUInt16(data, 0, dataFormat);
                 case PlcDataType.Int32:
                     Require(data, 4);
-                    return (int)ReadUInt32(GetElementBytes(data, 0, 4, wordOrder), 0);
+                    return (int)ReadUInt32(GetElementBytes(data, 0, 4, dataFormat), 0);
                 case PlcDataType.UInt32:
                     Require(data, 4);
-                    return ReadUInt32(GetElementBytes(data, 0, 4, wordOrder), 0);
+                    return ReadUInt32(GetElementBytes(data, 0, 4, dataFormat), 0);
                 case PlcDataType.Int64:
                     Require(data, 8);
-                    return (long)ReadUInt64(GetElementBytes(data, 0, 8, wordOrder), 0);
+                    return (long)ReadUInt64(GetElementBytes(data, 0, 8, dataFormat), 0);
                 case PlcDataType.UInt64:
                     Require(data, 8);
-                    return ReadUInt64(GetElementBytes(data, 0, 8, wordOrder), 0);
+                    return ReadUInt64(GetElementBytes(data, 0, 8, dataFormat), 0);
                 case PlcDataType.Float:
                     Require(data, 4);
-                    return ReadSingle(GetElementBytes(data, 0, 4, wordOrder), 0);
+                    return ReadSingle(GetElementBytes(data, 0, 4, dataFormat), 0);
                 case PlcDataType.Double:
                     Require(data, 8);
-                    return ReadDouble(GetElementBytes(data, 0, 8, wordOrder), 0);
+                    return ReadDouble(GetElementBytes(data, 0, 8, dataFormat), 0);
                 case PlcDataType.String:
                     return DecodeString(data, count);
                 case PlcDataType.Int16Array:
-                    return DecodeArray<short>(data, count, 2, delegate(byte[] b, int o) { return (short)ReadUInt16(b, o); });
+                    return DecodeArray<short>(data, count, 2, delegate(byte[] b, int o) { return (short)ReadUInt16(b, o, dataFormat); });
                 case PlcDataType.UInt16Array:
-                    return DecodeArray<ushort>(data, count, 2, ReadUInt16);
+                    return DecodeArray<ushort>(data, count, 2, delegate(byte[] b, int o) { return ReadUInt16(b, o, dataFormat); });
                 case PlcDataType.Int32Array:
-                    return DecodeArray<int>(data, count, 4, delegate(byte[] b, int o) { return (int)ReadUInt32(GetElementBytes(b, o, 4, wordOrder), 0); });
+                    return DecodeArray<int>(data, count, 4, delegate(byte[] b, int o) { return (int)ReadUInt32(GetElementBytes(b, o, 4, dataFormat), 0); });
                 case PlcDataType.UInt32Array:
-                    return DecodeArray<uint>(data, count, 4, delegate(byte[] b, int o) { return ReadUInt32(GetElementBytes(b, o, 4, wordOrder), 0); });
+                    return DecodeArray<uint>(data, count, 4, delegate(byte[] b, int o) { return ReadUInt32(GetElementBytes(b, o, 4, dataFormat), 0); });
                 case PlcDataType.Int64Array:
-                    return DecodeArray<long>(data, count, 8, delegate(byte[] b, int o) { return (long)ReadUInt64(GetElementBytes(b, o, 8, wordOrder), 0); });
+                    return DecodeArray<long>(data, count, 8, delegate(byte[] b, int o) { return (long)ReadUInt64(GetElementBytes(b, o, 8, dataFormat), 0); });
                 case PlcDataType.UInt64Array:
-                    return DecodeArray<ulong>(data, count, 8, delegate(byte[] b, int o) { return ReadUInt64(GetElementBytes(b, o, 8, wordOrder), 0); });
+                    return DecodeArray<ulong>(data, count, 8, delegate(byte[] b, int o) { return ReadUInt64(GetElementBytes(b, o, 8, dataFormat), 0); });
                 case PlcDataType.FloatArray:
-                    return DecodeArray<float>(data, count, 4, delegate(byte[] b, int o) { return ReadSingle(GetElementBytes(b, o, 4, wordOrder), 0); });
+                    return DecodeArray<float>(data, count, 4, delegate(byte[] b, int o) { return ReadSingle(GetElementBytes(b, o, 4, dataFormat), 0); });
                 case PlcDataType.DoubleArray:
-                    return DecodeArray<double>(data, count, 8, delegate(byte[] b, int o) { return ReadDouble(GetElementBytes(b, o, 8, wordOrder), 0); });
+                    return DecodeArray<double>(data, count, 8, delegate(byte[] b, int o) { return ReadDouble(GetElementBytes(b, o, 8, dataFormat), 0); });
                 default:
                     throw new NotSupportedException("该数据类型不能按 FINS 字区域解码: " + dataType);
             }
@@ -163,44 +163,44 @@ namespace IPC.Plc.Communication.OmronFins
             throw new NotSupportedException("该数据类型不能按 FINS 位区域解码: " + dataType);
         }
 
-        public static byte[] EncodeWords(PlcDataType dataType, string text, PlcWordOrder wordOrder)
+        public static byte[] EncodeWords(PlcDataType dataType, string text, FinsDataFormat dataFormat)
         {
             switch (dataType)
             {
                 case PlcDataType.Int16:
-                    return GetBytes((ushort)short.Parse(text, CultureInfo.InvariantCulture));
+                    return ApplyDataFormat(GetBytes((ushort)short.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.UInt16:
-                    return GetBytes(ushort.Parse(text, CultureInfo.InvariantCulture));
+                    return ApplyDataFormat(GetBytes(ushort.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.Int32:
-                    return ApplyWordOrder(GetBytes((uint)int.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes((uint)int.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.UInt32:
-                    return ApplyWordOrder(GetBytes(uint.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes(uint.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.Int64:
-                    return ApplyWordOrder(GetBytes((ulong)long.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes((ulong)long.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.UInt64:
-                    return ApplyWordOrder(GetBytes(ulong.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes(ulong.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.Float:
-                    return ApplyWordOrder(GetBytes(float.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes(float.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.Double:
-                    return ApplyWordOrder(GetBytes(double.Parse(text, CultureInfo.InvariantCulture)), wordOrder);
+                    return ApplyDataFormat(GetBytes(double.Parse(text, CultureInfo.InvariantCulture)), dataFormat);
                 case PlcDataType.String:
                     return EncodeString(text);
                 case PlcDataType.Int16Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return GetBytes((ushort)short.Parse(s, CultureInfo.InvariantCulture)); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes((ushort)short.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.UInt16Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return GetBytes(ushort.Parse(s, CultureInfo.InvariantCulture)); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes(ushort.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.Int32Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes((uint)int.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes((uint)int.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.UInt32Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes(uint.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes(uint.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.Int64Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes((ulong)long.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes((ulong)long.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.UInt64Array:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes(ulong.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes(ulong.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.FloatArray:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes(float.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes(float.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 case PlcDataType.DoubleArray:
-                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyWordOrder(GetBytes(double.Parse(s, CultureInfo.InvariantCulture)), wordOrder); });
+                    return EncodeArray(SplitValues(text), delegate(string s) { return ApplyDataFormat(GetBytes(double.Parse(s, CultureInfo.InvariantCulture)), dataFormat); });
                 default:
                     throw new NotSupportedException("该数据类型不能按 FINS 字区域编码: " + dataType);
             }
@@ -237,29 +237,28 @@ namespace IPC.Plc.Communication.OmronFins
             return result;
         }
 
-        private static byte[] GetElementBytes(byte[] data, int offset, int length, PlcWordOrder wordOrder)
+        private static byte[] GetElementBytes(byte[] data, int offset, int length, FinsDataFormat dataFormat)
         {
             byte[] result = new byte[length];
             Buffer.BlockCopy(data, offset, result, 0, length);
-            return ApplyWordOrder(result, wordOrder);
+            return ApplyDataFormat(result, dataFormat);
         }
 
-        private static byte[] ApplyWordOrder(byte[] bytes, PlcWordOrder wordOrder)
+        private static byte[] ApplyDataFormat(byte[] bytes, FinsDataFormat dataFormat)
         {
-            if (wordOrder == PlcWordOrder.HighWordFirst || bytes == null || bytes.Length <= 2)
+            if (dataFormat == FinsDataFormat.ABCD)
                 return bytes;
 
-            if ((bytes.Length % 2) != 0)
-                return bytes;
-
+            bool swapBytes = dataFormat == FinsDataFormat.BADC || dataFormat == FinsDataFormat.DCBA;
+            bool reverseWords = dataFormat == FinsDataFormat.CDAB || dataFormat == FinsDataFormat.DCBA;
             byte[] result = new byte[bytes.Length];
             int wordCount = bytes.Length / 2;
             for (int i = 0; i < wordCount; i++)
             {
-                int source = (wordCount - 1 - i) * 2;
+                int source = (reverseWords ? wordCount - 1 - i : i) * 2;
                 int target = i * 2;
-                result[target] = bytes[source];
-                result[target + 1] = bytes[source + 1];
+                result[target] = bytes[source + (swapBytes ? 1 : 0)];
+                result[target + 1] = bytes[source + (swapBytes ? 0 : 1)];
             }
             return result;
         }
@@ -312,6 +311,14 @@ namespace IPC.Plc.Communication.OmronFins
         {
             Require(data, offset + 2);
             return (ushort)((data[offset] << 8) | data[offset + 1]);
+        }
+
+        private static ushort ReadUInt16(byte[] data, int offset, FinsDataFormat dataFormat)
+        {
+            Require(data, offset + 2);
+            return dataFormat == FinsDataFormat.BADC || dataFormat == FinsDataFormat.DCBA
+                ? (ushort)((data[offset + 1] << 8) | data[offset])
+                : ReadUInt16(data, offset);
         }
 
         private static uint ReadUInt32(byte[] data, int offset)

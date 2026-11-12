@@ -331,6 +331,9 @@ namespace IPC.Runtime.Configuration
         public string WebhookContentType { get; set; }
         public int WebhookTimeoutSeconds { get; set; }
         public int WebhookRetryCount { get; set; }
+        public int NoChangeTimeoutSeconds { get; set; } = 30;
+        public double NoChangeDeadband { get; set; }
+        public int NoChangeMaxAgeSeconds { get; set; } = 10;
     }
 
     public sealed class FlowRuleAlarmLevel
@@ -398,6 +401,7 @@ namespace IPC.Runtime.Configuration
         public const string Aggregation = "Aggregation";
         public const string WindowCalculation = "WindowCalculation";
         public const string Trend = "Trend";
+        public const string NoChangeTimeout = "NoChangeTimeout";
         public const string StateMachine = "StateMachine";
         public const string CycleTime = "CycleTime";
         public const string ProcessTakt = "ProcessTakt";

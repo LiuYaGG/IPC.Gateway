@@ -88,6 +88,9 @@ public sealed class GatewayRuntimeTagSnapshotEntity
     [SugarColumn(ColumnName = "error_message", ColumnDataType = "text", IsNullable = true)]
     public string ErrorMessage { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "last_read_error", ColumnDataType = "text", IsNullable = true)]
+    public string LastReadError { get; set; } = string.Empty;
+
     [SugarColumn(ColumnName = "updated_utc")]
     public DateTime UpdatedUtc { get; set; }
 }

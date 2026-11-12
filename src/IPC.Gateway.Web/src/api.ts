@@ -347,6 +347,7 @@ export interface TagValueSnapshot {
   timestamp: string;
   errorMessage: string;
   tagState: string;
+  lastReadError: string;
   isTagIsolated: boolean;
   isStaticValidationError: boolean;
   tagConsecutiveFailures: number;
@@ -551,6 +552,9 @@ export interface EdgeRuleConfig {
   trendMinSlopePerSecond?: number;
   trendChangeThreshold?: number;
   trendStableDeadband?: number;
+  noChangeTimeoutSeconds?: number;
+  noChangeDeadband?: number;
+  noChangeMaxAgeSeconds?: number;
   stateName?: string;
   stateExpectedValue?: string;
   stateClearValue?: string;
@@ -727,6 +731,9 @@ export interface FlowRuleNode {
   trendMinSlopePerSecond: number;
   trendChangeThreshold: number;
   trendStableDeadband: number;
+  noChangeTimeoutSeconds: number;
+  noChangeDeadband: number;
+  noChangeMaxAgeSeconds: number;
   stateName: string;
   stateExpectedValue: string;
   stateClearValue: string;

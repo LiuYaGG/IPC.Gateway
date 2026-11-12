@@ -43,6 +43,8 @@ namespace IPC.Plc.Communication.Core
         MqttClient,
         Dnp3,
         EtherNetIp,
-        Cjt1882018
+        Cjt1882018,
+        // Persisted enum values must remain stable; append new protocols.
+        ModbusUdp
     }
 }

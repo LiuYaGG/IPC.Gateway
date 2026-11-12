@@ -632,14 +632,14 @@
       centered
       destroy-on-close
       :mask-closable="false"
-      class="gateway-wide-form-modal"
+      class="gateway-tag-form-modal"
       v-model:open="tagDrawerVisible"
       :closable="!tagSaving"
       :keyboard="!tagSaving"
       :title="tx(editingTagId ? tx('编辑标签') : tx('新增标签'))"
-      width="1120px"
+      width="900px"
     >
-      <div :inert="tagSaving || undefined" :aria-busy="tagSaving">
+      <div class="tag-dialog-body" :inert="tagSaving || undefined" :aria-busy="tagSaving">
         <DeviceTagForm
           ref="tagFormComponent"
           v-if="tagForm"
@@ -650,8 +650,8 @@
       </div>
       <template #footer>
         <div class="drawer-footer">
-          <a-button :disabled="tagSaving" @click="tagDrawerVisible = false">{{ tx('取消') }}</a-button>
-          <a-button v-if="canSaveCurrentTag" type="primary" :loading="tagSaving" @click="saveTag">
+          <a-button size="middle" :disabled="tagSaving" @click="tagDrawerVisible = false">{{ tx('取消') }}</a-button>
+          <a-button v-if="canSaveCurrentTag" size="middle" type="primary" :loading="tagSaving" @click="saveTag">
             {{ tx('保存') }}
           </a-button>
         </div>
@@ -728,7 +728,7 @@ import { beginConfigurationSave, endConfigurationSave } from '../utils/configura
 import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
-import { statusText } from '../utils/display'
+import { qualityText, statusText } from '../utils/display'
 import { showBusy, confirmAction, type FileSelection } from '../utils/ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
@@ -1544,7 +1544,9 @@ function applyConnectionParameterDefault(
   connection: DeviceConfig['connection'],
   parameter: GatewayConnectionParameterDefinition
 ) {
-  const value = parseParameterDefault(parameter)
+  const value = parameter.key === 'driverOptions.finsDataFormat'
+    ? (connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD')
+    : parseParameterDefault(parameter)
   if (parameter.key.startsWith('driverOptions.')) {
     const optionKey = parameter.key.slice('driverOptions.'.length)
     const options = readDriverOptionsJson(connection.driverOptionsJson)
@@ -1649,7 +1651,10 @@ function treeStatusType(node: DeviceTreeNode) {
       return 'warning'
     return devices.some((device) => deviceRuntime(device)?.isConnected) ? 'success' : 'warning'
   }
-  if (node.type === 'group') return node.group?.enabled ? 'success' : 'info'
+  if (node.type === 'group') {
+    if (!node.group?.enabled || node.channel?.enabled === false) return 'info'
+    return deviceStatusType(node.device)
+  }
   return deviceStatusType(node.device)
 }
 
@@ -1847,19 +1852,7 @@ function tagQualityText(tag: TagConfig) {
   const snapshot = tagSnapshot(tag)
   if (snapshot?.isStaticValidationError) return '静态校验失败'
   if (snapshot?.isTagIsolated) return '已隔离'
-  const quality = snapshot?.quality || 'Unknown'
-  const labels: Record<string, string> = {
-    good: '正常',
-    unknown: '无数据',
-    bad: '异常',
-    readerror: '读取失败',
-    notconnected: '未连接',
-    disabled: '停用',
-    outofrange: '越界',
-    filtered: '已过滤',
-    spike: '毛刺'
-  }
-  return labels[normalizeKey(quality)] ?? quality
+  return qualityText(snapshot?.quality)
 }
 
 function tagUpdatedTime(tag: TagConfig) {
@@ -1867,7 +1860,7 @@ function tagUpdatedTime(tag: TagConfig) {
 }
 
 function tagLastError(tag: TagConfig) {
-  return tagSnapshot(tag)?.errorMessage || '-'
+  return tagSnapshot(tag)?.lastReadError || '-'
 }
 
 function tagScalingText(tag: TagConfig) {

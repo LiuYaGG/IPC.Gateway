@@ -75,6 +75,7 @@ const arrayCapableProtocols = new Set([
   'MitsubishiQlSerial',
   'OmronFins',
   'ModbusTcp',
+  'ModbusUdp',
   'ModbusRtu',
   'ModbusAscii',
   'OpcUa',
@@ -197,7 +198,7 @@ export function dataTypeOptionGroups(protocol: string, driverOptionsJson = ''): 
       )
     })
   }
-  if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii' || protocol === 'VirtualPlc') {
+  if (protocol === 'ModbusTcp' || protocol === 'ModbusUdp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii' || protocol === 'VirtualPlc') {
     groups.push({ label: '位类型', options: ['Coil', 'CoilArray'] })
   }
   return groups
@@ -399,7 +400,7 @@ export function tagAddressPlaceholder(protocol: string) {
     return 'Text：factory/line1/value；JSON：factory/line1/data|temperature；Sparkplug B：spBv1.0/group/DDATA/node/device|metric'
   if (protocol === 'Dnp3') return '例如：Binary:0、Analog:12、Counter:3、BinaryOutput:5'
   if (protocol === 'RockwellPccc') return '例如：N7:0、B3:0/1、T4:0.ACC'
-  if (protocol === 'ModbusTcp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii')
+  if (protocol === 'ModbusTcp' || protocol === 'ModbusUdp' || protocol === 'ModbusRtu' || protocol === 'ModbusAscii')
     return '例如：40001、00001、3:40001'
   if (protocol === 'SiemensS7') return '例如：DB1.DBW0、M0.0、E0.0、A0.0、V100'
   if (

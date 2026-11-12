@@ -142,7 +142,7 @@ namespace IPC.Plc.Communication.OmronFins
             try
             {
                 byte[] data = context.ReadMultipleMemory(points);
-                DecodeSparseResults(items, data, context.WordOrder, results);
+                DecodeSparseResults(items, data, context.DataFormat, results);
                 return true;
             }
             catch (FinsProtocolException ex) when (ex.Scope == FinsErrorScope.Tag)
@@ -164,7 +164,7 @@ namespace IPC.Plc.Communication.OmronFins
             try
             {
                 byte[] data = await context.ReadMultipleMemoryAsync(points, cancellationToken).ConfigureAwait(false);
-                DecodeSparseResults(items, data, context.WordOrder, results);
+                DecodeSparseResults(items, data, context.DataFormat, results);
                 return true;
             }
             catch (FinsProtocolException ex) when (ex.Scope == FinsErrorScope.Tag)
@@ -220,7 +220,7 @@ namespace IPC.Plc.Communication.OmronFins
         private static void DecodeSparseResults(
             List<FinsBatchReadItem> items,
             byte[] data,
-            PlcWordOrder wordOrder,
+            FinsDataFormat dataFormat,
             PlcBatchReadResult[] results)
         {
             int offset = 0;
@@ -235,7 +235,7 @@ namespace IPC.Plc.Communication.OmronFins
                 Buffer.BlockCopy(data, offset, itemData, 0, length);
                 object value = item.Kind == FinsBatchReadKind.Bit
                     ? FinsDataCodec.DecodeBits(item.Request.DataType, itemData, item.ValueCount)
-                    : FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, wordOrder);
+                    : FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, dataFormat);
                 string areaName = item.Area.Name + (item.Kind == FinsBatchReadKind.Bit ? ".BIT" : ".WORD");
                 results[item.Index] = PlcBatchReadResult.FromSuccess(
                     item.Request,
@@ -470,7 +470,7 @@ namespace IPC.Plc.Communication.OmronFins
                 int byteOffset = (item.StartPoint - segmentStart) * 2;
                 byte[] itemData = new byte[item.PointCount * 2];
                 Buffer.BlockCopy(data, byteOffset, itemData, 0, itemData.Length);
-                object value = FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, context.WordOrder);
+                object value = FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, context.DataFormat);
                 return PlcBatchReadResult.FromSuccess(item.Request, new PlcReadResult(item.Area.WordCode, item.Area.Name + ".WORD", value));
             }
             catch (Exception ex)
@@ -486,7 +486,7 @@ namespace IPC.Plc.Communication.OmronFins
                 int byteOffset = (item.StartPoint - segmentStart) * 2;
                 byte[] itemData = new byte[item.PointCount * 2];
                 Buffer.BlockCopy(data, byteOffset, itemData, 0, itemData.Length);
-                object value = FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, context.WordOrder);
+                object value = FinsDataCodec.DecodeWords(item.Request.DataType, itemData, item.ValueCount, context.DataFormat);
                 return PlcBatchReadResult.FromSuccess(item.Request, new PlcReadResult(item.Area.WordCode, item.Area.Name + ".WORD", value));
             }
             catch (Exception ex)

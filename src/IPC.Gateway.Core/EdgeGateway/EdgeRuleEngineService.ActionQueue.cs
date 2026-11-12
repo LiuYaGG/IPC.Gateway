@@ -35,9 +35,16 @@ namespace IPC.EdgeGateway
                 }
 
                 string expectedState = ruleEvent.State ?? string.Empty;
-                int separator = expectedState.IndexOf(':');
-                if (separator >= 0 && separator + 1 < expectedState.Length)
-                    expectedState = expectedState.Substring(separator + 1);
+                if (string.Equals(state.ActiveState, expectedState, StringComparison.OrdinalIgnoreCase))
+                    return !string.IsNullOrWhiteSpace(state.ActiveState);
+                // Quality:Bad and user-defined states contain meaningful colons.
+                // Strip only lifecycle prefixes added by the engine itself.
+                foreach (string prefix in new[] { "Escalated:", "Retriggered:" })
+                {
+                    if (!expectedState.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    expectedState = expectedState.Substring(prefix.Length);
+                    break;
+                }
 
                 return !string.IsNullOrWhiteSpace(state.ActiveState) &&
                        string.Equals(state.ActiveState, expectedState, StringComparison.OrdinalIgnoreCase);

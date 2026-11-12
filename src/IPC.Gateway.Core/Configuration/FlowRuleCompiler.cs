@@ -114,6 +114,9 @@ namespace IPC.Runtime.Configuration
                 TrendMinSlopePerSecond = conditionNode.TrendMinSlopePerSecond,
                 TrendChangeThreshold = conditionNode.TrendChangeThreshold,
                 TrendStableDeadband = conditionNode.TrendStableDeadband,
+                NoChangeTimeoutSeconds = conditionNode.NoChangeTimeoutSeconds,
+                NoChangeDeadband = conditionNode.NoChangeDeadband,
+                NoChangeMaxAgeSeconds = conditionNode.NoChangeMaxAgeSeconds,
                 StateName = conditionNode.StateName,
                 StateExpectedValue = conditionNode.StateExpectedValue,
                 StateClearValue = conditionNode.StateClearValue,
@@ -270,6 +273,7 @@ namespace IPC.Runtime.Configuration
                    IsNodeType(node, FlowRuleNodeTypes.Aggregation) ||
                    IsNodeType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsNodeType(node, FlowRuleNodeTypes.Trend) ||
+                   IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout) ||
                    IsNodeType(node, FlowRuleNodeTypes.StateMachine) ||
                    IsNodeType(node, FlowRuleNodeTypes.CycleTime) ||
                    IsNodeType(node, FlowRuleNodeTypes.ProcessTakt) ||
@@ -370,6 +374,8 @@ namespace IPC.Runtime.Configuration
                 return EdgeRuleConditionType.Aggregation;
             if (IsNodeType(node, FlowRuleNodeTypes.WindowCalculation))
                 return EdgeRuleConditionType.WindowCalculation;
+            if (IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout))
+                return EdgeRuleConditionType.NoChangeTimeout;
             if (IsNodeType(node, FlowRuleNodeTypes.Trend))
                 return EdgeRuleConditionType.Trend;
             if (IsNodeType(node, FlowRuleNodeTypes.StateMachine))

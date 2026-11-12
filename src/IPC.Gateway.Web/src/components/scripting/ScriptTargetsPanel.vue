@@ -66,7 +66,6 @@
       :title="tx('数据库写入目标')"
       width="720px"
       destroy-on-close
-      :footer="null"
     >
       <a-form
         :model="form"

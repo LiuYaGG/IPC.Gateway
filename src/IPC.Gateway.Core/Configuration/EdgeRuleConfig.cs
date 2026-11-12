@@ -267,6 +267,9 @@ namespace IPC.Runtime.Configuration
         public bool SequenceResetOnMismatch { get; set; }
         public int ClearDurationSeconds { get; set; }
         public List<EdgeRuleActionConfig> Actions { get; set; }
+        public int NoChangeTimeoutSeconds { get; set; } = 30;
+        public double NoChangeDeadband { get; set; }
+        public int NoChangeMaxAgeSeconds { get; set; } = 10;
     }
 
     public sealed class EdgeRuleActionConfig

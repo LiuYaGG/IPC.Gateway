@@ -27,6 +27,7 @@ namespace IPC.EdgeGateway
             }
 
             return rule.ConditionType == EdgeRuleConditionType.SlidingWindow ||
+                   rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout ||
                    rule.ConditionType == EdgeRuleConditionType.WindowCalculation ||
                    rule.ConditionType == EdgeRuleConditionType.Trend ||
                    rule.ConditionType == EdgeRuleConditionType.AnomalyDetection ||
@@ -154,6 +155,17 @@ namespace IPC.EdgeGateway
                 snapshot = cachedSnapshot;
             if (snapshot == null)
                 return;
+
+            if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
+            {
+                TagValueSnapshot? latest = snapshot;
+                if (_runtime != null)
+                    _runtime.TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out latest);
+                EvaluateNoChangeTimeout(rule, latest, state, now);
+                if (state.NoChangeTracker?.Available == true)
+                    PublishTimedLifecycleEvents(rule, state, latest!, now);
+                return;
+            }
 
             if (IsTimeSeriesRule(rule) &&
                 (state.LastPeriodicEvaluationTime == DateTime.MinValue ||

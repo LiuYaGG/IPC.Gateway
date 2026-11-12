@@ -6,7 +6,7 @@ namespace IPC.Plc.Communication.ModbusTcp;
 /// Keeps the gateway's Modbus limits and byte representation independent from
 /// the NModbus transport used by TCP, RTU and ASCII drivers.
 /// </summary>
-public sealed class NModbusMasterAdapter : IDisposable
+public sealed class NModbusMasterAdapter : IModbusMasterAdapter
 {
     public const int MaxReadBits = 2000;
     public const int MaxWriteBits = 1968;

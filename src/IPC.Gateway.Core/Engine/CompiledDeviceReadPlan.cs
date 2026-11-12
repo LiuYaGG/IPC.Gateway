@@ -125,6 +125,7 @@ namespace IPC.Runtime.Engine
                             return "AB/PCCC地址格式无效。";
                         break;
                     case PlcProtocol.ModbusTcp:
+                    case PlcProtocol.ModbusUdp:
                     case PlcProtocol.ModbusRtu:
                     case PlcProtocol.ModbusAscii:
                         _ = ModbusAddress.Parse(address, tag.DataType);

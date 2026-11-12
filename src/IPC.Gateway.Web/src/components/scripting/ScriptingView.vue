@@ -5,7 +5,7 @@
         <div>
           <strong>{{ tx('脚本中心') }}</strong>
           <p>
-            {{ tx('支持数据库写入和点位联动两类受控 C# 脚本；数据库仅允许 INSERT / UPDATE，点位写入仅限白名单目标。') }}
+            {{ tx('支持数据库写入、点位联动和值处理三类受控 C# 脚本；数据库仅允许 INSERT / UPDATE，点位写入仅限白名单目标。') }}
           </p>
         </div>
         <a-button :loading="loading" @click="load">{{ tx('刷新') }}</a-button>

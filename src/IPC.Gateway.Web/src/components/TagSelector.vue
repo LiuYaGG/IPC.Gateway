@@ -129,7 +129,9 @@ const filteredTags = computed(() =>
 watch(
   () => props.modelValue,
   (value) => {
-    selectedKey.value = value || ''
+    const nextKey = value || ''
+    if (nextKey === selectedKey.value) return
+    selectedKey.value = nextKey
     syncFiltersFromSelection({ resetWhenNoSelection: true })
   }
 )

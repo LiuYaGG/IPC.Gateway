@@ -68,6 +68,17 @@ public sealed class GatewayDatabaseMigrator
 
     private static void ExecuteMigration(ISqlSugarClient db, DatabaseMigration migration)
     {
+        if (string.Equals(migration.Id, "202611110001_runtime_last_read_error", StringComparison.Ordinal))
+        {
+            if (db.CurrentConnectionConfig.DbType == DbType.Sqlite)
+                AddSqliteColumnIfMissing(db, "gateway_runtime_tag_snapshots", "last_read_error", "last_read_error text null");
+            else if (!db.DbMaintenance.IsAnyColumn("gateway_runtime_tag_snapshots", "last_read_error", false))
+                db.Ado.ExecuteCommand(migration.GetSql(db.CurrentConnectionConfig.DbType));
+            if (db.CurrentConnectionConfig.DbType == DbType.MySql)
+                db.Ado.BeginTran();
+            return;
+        }
+
         if (string.Equals(migration.Id, "202611100001_project_protobuf", StringComparison.Ordinal))
         {
             // MySQL DDL can commit independently. The existence check makes a failed

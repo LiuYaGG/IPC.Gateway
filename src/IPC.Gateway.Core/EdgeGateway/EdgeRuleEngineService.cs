@@ -323,7 +323,7 @@ namespace IPC.EdgeGateway
                     continue;
                 if (_seedingRuntimeSnapshots && _restoredRuleIds.Contains(GetRuleId(rule)))
                     continue;
-                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule))
+                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule) && rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout)
                     continue;
                 if (RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
                     continue;
@@ -358,6 +358,11 @@ namespace IPC.EdgeGateway
         private void EvaluateRule(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value)
         {
             EdgeRuleState state = GetState(rule);
+            if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
+            {
+                EvaluateNoChangeTimeout(rule, snapshot, state, DateTime.Now);
+                return;
+            }
             if (rule.ConditionType != EdgeRuleConditionType.QualityGate &&
                 HasQualityPolicy(rule) &&
                 !EvaluateQuality(rule, snapshot))
@@ -2616,6 +2621,7 @@ namespace IPC.EdgeGateway
                 return string.IsNullOrWhiteSpace(rule.ModelInputTags);
 
             return rule.ConditionType != EdgeRuleConditionType.QualityGate &&
+                   rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout &&
                    rule.ConditionType != EdgeRuleConditionType.StateMachine &&
                    rule.ConditionType != EdgeRuleConditionType.CycleTime &&
                    rule.ConditionType != EdgeRuleConditionType.ProcessTakt &&
@@ -3442,6 +3448,8 @@ namespace IPC.EdgeGateway
         
         private sealed class EdgeRuleState
         {
+            public NoChangeTimeoutTracker? NoChangeTracker { get; set; }
+            public bool NoChangeClearRequested { get; set; }
             public EdgeRuleState()
             {
                 ActiveState = string.Empty;

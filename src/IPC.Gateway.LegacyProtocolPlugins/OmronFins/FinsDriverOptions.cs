@@ -19,6 +19,10 @@ namespace IPC.Plc.Communication.OmronFins
         public int MaxGapWords { get; private set; } = 4;
         public int MaxEmBank { get; private set; } = 0x18;
         public int UdpReadRetries { get; private set; } = 1;
+        public FinsDataFormat? DataFormat { get; private set; }
+
+        public FinsDataFormat ResolveDataFormat(PlcWordOrder legacyWordOrder) =>
+            DataFormat ?? (legacyWordOrder == PlcWordOrder.LowWordFirst ? FinsDataFormat.CDAB : FinsDataFormat.ABCD);
 
         public bool IsNjNx => ControllerProfile.Equals("NJ/NX", StringComparison.OrdinalIgnoreCase);
 
@@ -49,6 +53,18 @@ namespace IPC.Plc.Communication.OmronFins
                 options.MaxGapWords = GetInt32(root, "maxGapWords", options.MaxGapWords, 0, 64);
                 options.MaxEmBank = GetInt32(root, "maxEmBank", options.MaxEmBank, 0, 0x18);
                 options.UdpReadRetries = GetInt32(root, "udpReadRetries", options.UdpReadRetries, 0, 1);
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty property in root.EnumerateObject())
+                    {
+                        if (!property.Name.Equals("finsDataFormat", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (property.Value.ValueKind != JsonValueKind.String ||
+                            !Enum.TryParse(property.Value.GetString(), true, out FinsDataFormat format) || !Enum.IsDefined(format) ||
+                            !format.ToString().Equals(property.Value.GetString().Trim(), StringComparison.OrdinalIgnoreCase))
+                            throw new ArgumentException("FINS data format must be ABCD, BADC, CDAB, or DCBA.");
+                        options.DataFormat = format;
+                    }
+                }
             }
             catch (JsonException)
             {

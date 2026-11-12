@@ -115,8 +115,9 @@ namespace IPC.Plc.Communication.ModbusTcp
             return GetRegisterCount(GetScalarType(dataType), elementOffset);
         }
 
-        public static object DecodeRegisters(PlcDataType dataType, byte[] data, int count)
+        public static object DecodeRegisters(PlcDataType dataType, byte[] data, int count, ModbusDataFormat format = ModbusDataFormat.ABCD)
         {
+            data = ModbusRegisterFormat.Transform(data, dataType, format);
             switch (dataType)
             {
                 case PlcDataType.Bool:
@@ -192,7 +193,10 @@ namespace IPC.Plc.Communication.ModbusTcp
             return result;
         }
 
-        public static byte[] EncodeRegisters(PlcDataType dataType, string text)
+        public static byte[] EncodeRegisters(PlcDataType dataType, string text, ModbusDataFormat format = ModbusDataFormat.ABCD) =>
+            ModbusRegisterFormat.Transform(EncodeRegistersCore(dataType, text), dataType, format);
+
+        private static byte[] EncodeRegistersCore(PlcDataType dataType, string text)
         {
             switch (dataType)
             {

@@ -17,6 +17,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         public int MaxReadBits { get; set; }
         public int MaxReadRegisters { get; set; }
         public int MaxGapPoints { get; set; }
+        public ModbusDataFormat DataFormat { get; set; }
     }
 
     internal static class ModbusBatchReadExecutor
@@ -218,7 +219,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
                 object value = item.Kind == ReadKind.RegisterBit
                     ? ModbusDataCodec.DecodeRegisterBits(item.Request.DataType, itemData, item.BitIndex, item.ValueCount)
-                    : ModbusDataCodec.DecodeRegisters(item.Request.DataType, itemData, item.ValueCount);
+                    : ModbusDataCodec.DecodeRegisters(item.Request.DataType, itemData, item.ValueCount, context.DataFormat);
                 string typeName = context.GetTypeName(item.Area) + (item.Kind == ReadKind.RegisterBit ? ".BIT" : string.Empty);
                 return PlcBatchReadResult.FromSuccess(item.Request, new PlcReadResult(context.GetTypeCode(item.Area), typeName, value));
             }

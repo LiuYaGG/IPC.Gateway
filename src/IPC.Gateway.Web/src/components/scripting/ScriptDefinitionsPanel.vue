@@ -77,7 +77,6 @@
       class="script-editor-dialog"
       destroy-on-close
       :mask-closable="false"
-      :footer="null"
       centered
     >
       <div class="script-dialog-scroll">
@@ -136,7 +135,7 @@
                 <a-select-option
                   v-for="option in filteredTagOptions"
                   :key="option.value"
-                  :label="tx(option.label)"
+                  :label="option.label"
                   :value="option.value"
                 >
                   <div class="tag-option">
@@ -172,7 +171,7 @@
                 <a-select-option
                   v-for="option in filteredWritableTagOptions"
                   :key="option.value"
-                  :label="tx(`${option.label} (${option.dataType})`)"
+                  :label="`${option.label} (${option.dataType})`"
                   :value="option.value"
                 >
                   <div class="tag-option">
@@ -219,7 +218,7 @@
                     :label="tx(category)"
                     :value="category"
                   >
-                    {{ category }}
+                    {{ tx(category) }}
                   </a-select-option>
                 </gateway-select>
               </a-form-item>
@@ -322,6 +321,7 @@ import { formatMessage } from '../../i18n'
 import { notify } from '../../utils/ui'
 import { tx, localizeColumns } from '../../i18n'
 import { tagColor, confirmAction } from '../../utils/ui'
+import { statusText } from '../../utils/display'
 import { computed, reactive, ref } from 'vue'
 
 import {
@@ -498,7 +498,7 @@ async function execute(script: GatewayScriptDefinition) {
     const response = await executeGatewayScript(script.id)
     const message =
       response.data.errorMessage ||
-      formatMessage('执行完成：{0}，耗时 {1} ms', [response.data.state, response.data.durationMilliseconds])
+      formatMessage('执行完成：{0}，耗时 {1} ms', [tx(statusText(response.data.state)), response.data.durationMilliseconds])
     response.data.state === 'Succeeded' ? notify.success(message) : notify.warning(message)
     emit('changed')
   } catch (error) {
@@ -561,7 +561,7 @@ async function remove(script: GatewayScriptDefinition) {
 }
 
 function runtimeState(scriptId: string) {
-  return props.statuses.find((item) => item.scriptId === scriptId)?.state ?? 'Idle'
+  return statusText(props.statuses.find((item) => item.scriptId === scriptId)?.state ?? 'Idle')
 }
 
 function triggerLabel(trigger: ScriptTriggerType) {
@@ -652,27 +652,34 @@ function handleScriptTypeChange(scriptType: GatewayScriptType) {
 :deep(.script-dialog-scroll .ant-input-number) {
   width: 100%;
 }
-:global(.script-editor-dialog) {
+:global(.script-editor-dialog.ant-modal) {
+  height: min(820px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: 0;
+}
+:global(.script-editor-dialog.ant-modal .ant-modal-content) {
   display: flex;
   flex-direction: column;
-  height: min(820px, calc(100vh - 32px));
-  max-height: calc(100vh - 32px);
-  margin: 0;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  padding: 0;
   overflow: hidden;
 }
-:global(.script-editor-dialog .ant-dialog__header) {
+:global(.script-editor-dialog.ant-modal .ant-modal-header) {
   flex: 0 0 auto;
   margin: 0;
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--ui-border-color-lighter);
 }
-:global(.script-editor-dialog .ant-dialog__body) {
+:global(.script-editor-dialog.ant-modal .ant-modal-body) {
   flex: 1 1 auto;
   min-height: 0;
+  max-height: none;
   padding: 8px 18px 0 20px;
   overflow: hidden;
 }
-:global(.script-editor-dialog .ant-dialog__footer) {
+:global(.script-editor-dialog.ant-modal .ant-modal-footer) {
   flex: 0 0 auto;
   padding: 12px 22px 16px;
   border-top: 1px solid var(--ui-border-color-lighter);

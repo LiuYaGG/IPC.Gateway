@@ -2,7 +2,7 @@
   <section class="flow-rules-view">
     <div class="rules-status flow-rules-status">
       <div>
-        <p class="eyebrow">Flow Rule Engine</p>
+        <p class="eyebrow">{{ tx('流程规则引擎') }}</p>
         <h3>{{ status?.isRunning ? tx('运行中') : tx('未运行') }}</h3>
       </div>
       <div class="rules-status__metrics">
@@ -53,7 +53,7 @@
             key: 'column-6',
             title: tx('生命周期'),
             dataIndex: 'lifecycleState',
-            customRender: ({ text }: any) => statusText(text),
+            customRender: ({ text }: any) => tx(statusText(text)),
             width: '110'
           },
           { key: 'column-7', title: tx('编译规则'), dataIndex: 'compiledRuleId', width: '160', ellipsis: true },
@@ -192,7 +192,7 @@
               <a-collapse-panel v-for="group in paletteGroups" :key="group.title">
                 <template #header>
                   <span class="flow-palette__title">
-                    {{ group.title }}
+                    {{ tx(group.title) }}
                     <small>{{ group.nodes.length }}</small>
                   </span>
                 </template>
@@ -778,6 +778,7 @@ function isConditionLikeNode(node: FlowRuleNode) {
     'WindowCalculation',
     'Aggregation',
     'Trend',
+    'NoChangeTimeout',
     'StateMachine',
     'CycleTime',
     'ProcessTakt',

@@ -140,7 +140,7 @@ namespace IPC.Plc.Communication.ModbusRtu
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
             int registers = ModbusDataCodec.GetRegisterCount(dataType, usesCount ? elementCount : 1);
             byte[] data = ReadRegisters(registerStart.Area, registerStart.Address, registers);
-            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1);
+            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1, _driverOptions.ResolveDataFormat(_options.WordOrder));
             return new PlcReadResult(GetTypeCode(registerStart.Area), GetTypeName(registerStart.Area), value);
         }
 
@@ -155,7 +155,8 @@ namespace IPC.Plc.Communication.ModbusRtu
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
                 MaxReadRegisters = MaxReadRegisters,
-                MaxGapPoints = _driverOptions.MaxBatchGapPoints
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints,
+                DataFormat = _driverOptions.ResolveDataFormat(_options.WordOrder)
             });
         }
 
@@ -210,7 +211,7 @@ namespace IPC.Plc.Communication.ModbusRtu
 
             int registerOffset = PlcDataTypeHelper.IsArray(dataType) ? ModbusDataCodec.GetRegisterOffset(dataType, elementOffset) : 0;
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
-            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText);
+            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText, _driverOptions.ResolveDataFormat(_options.WordOrder));
             WriteRegisters(registerStart.Address, data);
         }
 

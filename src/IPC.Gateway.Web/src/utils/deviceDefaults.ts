@@ -4,6 +4,7 @@ import { cloneTag } from './tagDefaults'
 export const protocolOptions = [
   { label: 'Virtual PLC', value: 'VirtualPlc', category: 'simulated' },
   { label: 'Modbus TCP', value: 'ModbusTcp', category: 'network' },
+  { label: 'Modbus UDP', value: 'ModbusUdp', category: 'network' },
   { label: 'Modbus RTU', value: 'ModbusRtu', category: 'serial' },
   { label: 'Modbus ASCII', value: 'ModbusAscii', category: 'serial' },
   { label: 'DL/T 645-2007', value: 'Dlt6452007', category: 'meter' },
@@ -122,6 +123,7 @@ export function isSerialProtocol(protocol: string) {
 export function isNetworkProtocol(protocol: string) {
   return [
     'ModbusTcp',
+    'ModbusUdp',
     'SiemensS7',
     'RockwellCip',
     'EtherNetIp',
@@ -162,6 +164,10 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
   if (protocol === 'ModbusTcp') {
     setNetworkDefaults(connection, '127.0.0.1', 502, 'Tcp', overwriteNetwork)
     connection.transport = 'Tcp'
+  } else if (protocol === 'ModbusUdp') {
+    setNetworkDefaults(connection, '127.0.0.1', 502, 'Udp', overwriteNetwork)
+    connection.transport = 'Udp'
+    connection.rack = overwriteNetwork ? 1 : connection.rack || 1
   } else if (protocol === 'SiemensS7') {
     setNetworkDefaults(connection, '127.0.0.1', 102, 'Tcp', overwriteNetwork)
     connection.rack = overwriteNetwork ? 0 : (connection.rack ?? 0)
@@ -205,8 +211,9 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
     )
   else if (protocol === 'OmronFins') {
     setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp', overwriteNetwork)
+    const dataFormat = connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD'
     const defaults =
-      '{"controllerProfile":"Auto","sourceNode":0,"destinationNode":0,"sourceNetwork":0,"network":0,"sourceUnit":0,"destinationUnit":0,"maxWordCount":240,"maxBitCount":480,"maxGapWords":4,"maxEmBank":24,"udpReadRetries":1}'
+      `{"controllerProfile":"Auto","finsDataFormat":"${dataFormat}","sourceNode":0,"destinationNode":0,"sourceNetwork":0,"network":0,"sourceUnit":0,"destinationUnit":0,"maxWordCount":240,"maxBitCount":480,"maxGapWords":4,"maxEmBank":24,"udpReadRetries":1}`
     connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
   } else if (protocol === 'BacnetIp') setNetworkDefaults(connection, '127.0.0.1', 47808, 'Udp', overwriteNetwork)
   else if (protocol === 'Dlt6452007' || protocol === 'Cjt1882004' || protocol === 'Cjt1882018') {

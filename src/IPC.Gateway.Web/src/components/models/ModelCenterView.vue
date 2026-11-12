@@ -266,7 +266,7 @@
       </a-col>
     </a-row>
   </a-card>
-  <a-modal v-model:open="modelDialog" :title="tx('模型信息')" width="520px" :footer="null" centered>
+  <a-modal v-model:open="modelDialog" :title="tx('模型信息')" width="520px" centered>
     <a-form :label-col="{ style: { width: '90px' } }" :wrapper-col="{ style: { flex: 1 } }" label-align="left">
       <a-form-item :label="tx('模型名称')"><gateway-input v-model="modelForm.name" /></a-form-item>
       <a-form-item :label="tx('用途')">

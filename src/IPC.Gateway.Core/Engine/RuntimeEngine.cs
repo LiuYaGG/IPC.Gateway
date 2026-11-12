@@ -3157,7 +3157,7 @@ namespace IPC.Runtime.Engine
             TagDataCleaner.Clean(snapshot, tag, previousSnapshot);
             ApplyValueTransformCleaning(snapshot, tag, previousSnapshot);
 
-            UpdateSnapshot(snapshot);
+            UpdateSnapshot(snapshot, isReadResult: true);
         }
 
         /// <summary>
@@ -3309,8 +3309,9 @@ namespace IPC.Runtime.Engine
             }
 
             TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
+            failureSnapshot.LastReadError = message;
             ApplyTagRuntimeState(failureSnapshot, compiledRead.Runtime);
-            UpdateSnapshot(failureSnapshot);
+            UpdateSnapshot(failureSnapshot, isReadResult: true);
             return !isCommunicationError;
         }
 
@@ -4781,10 +4782,12 @@ namespace IPC.Runtime.Engine
             };
         }
 
-        private void UpdateSnapshot(TagValueSnapshot snapshot)
+        private void UpdateSnapshot(TagValueSnapshot snapshot, bool isReadResult = false)
         {
             TagValueSnapshot clone;
-            bool changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone);
+            // Operational status updates must not replace the last actual read error.
+            // A completed read replaces it, including clearing it after success.
+            bool changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone, preserveLastReadError: !isReadResult);
 
             if (changed)
                 EnqueueTagValueChanged(clone, Interlocked.CompareExchange(ref _runtimeGeneration, 0, 0));
@@ -4864,6 +4867,7 @@ namespace IPC.Runtime.Engine
             restored.Quality = persisted.Quality;
             restored.Timestamp = persisted.Timestamp;
             restored.ErrorMessage = persisted.ErrorMessage ?? string.Empty;
+            restored.LastReadError = persisted.LastReadError ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(persisted.DataType))
                 restored.DataType = persisted.DataType;
             return restored;

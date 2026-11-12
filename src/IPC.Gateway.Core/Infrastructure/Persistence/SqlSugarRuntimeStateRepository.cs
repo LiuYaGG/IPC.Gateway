@@ -302,6 +302,7 @@ public sealed class SqlSugarRuntimeStateRepository
             CleaningMessage = snapshot.CleaningMessage ?? string.Empty,
             TimestampUtc = ToUtc(snapshot.Timestamp),
             ErrorMessage = snapshot.ErrorMessage ?? string.Empty,
+            LastReadError = snapshot.LastReadError ?? string.Empty,
             UpdatedUtc = updatedUtc
         };
     }
@@ -386,7 +387,8 @@ public sealed class SqlSugarRuntimeStateRepository
             CleaningMessage = entity.CleaningMessage ?? string.Empty,
             Quality = quality,
             Timestamp = FromUtc(entity.TimestampUtc),
-            ErrorMessage = entity.ErrorMessage ?? string.Empty
+            ErrorMessage = entity.ErrorMessage ?? string.Empty,
+            LastReadError = entity.LastReadError ?? string.Empty
         };
     }
 

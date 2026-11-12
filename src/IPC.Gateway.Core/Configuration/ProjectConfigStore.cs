@@ -113,6 +113,8 @@ namespace IPC.Runtime.Configuration
                 device.Connection.Protocol = device.Protocol;
                 if (device.Protocol == IPC.Plc.Communication.Core.PlcProtocol.ModbusTcp)
                     device.Connection.Transport = IPC.Plc.Communication.Core.NetworkTransport.Tcp;
+                if (device.Protocol == IPC.Plc.Communication.Core.PlcProtocol.ModbusUdp)
+                    device.Connection.Transport = IPC.Plc.Communication.Core.NetworkTransport.Udp;
                 if (device.DefaultScanRateMs <= 0)
                     device.DefaultScanRateMs = 1000;
                 if (device.FailureRetryDelayMs <= 0)
@@ -185,6 +187,8 @@ namespace IPC.Runtime.Configuration
                     rule.WindowSeconds = 60;
                 if (rule.WindowSampleCount < 0)
                     rule.WindowSampleCount = 0;
+                if (rule.NoChangeTimeoutSeconds == 0) rule.NoChangeTimeoutSeconds = 30;
+                if (rule.NoChangeMaxAgeSeconds == 0) rule.NoChangeMaxAgeSeconds = 10;
                 rule.StateName = string.IsNullOrWhiteSpace(rule.StateName) ? "State" : rule.StateName;
                 rule.StateExpectedValue = string.IsNullOrWhiteSpace(rule.StateExpectedValue) ? "1" : rule.StateExpectedValue;
                 rule.StateClearValue = rule.StateClearValue ?? string.Empty;
@@ -439,6 +443,8 @@ namespace IPC.Runtime.Configuration
                     node.WindowSeconds = 60;
                 if (node.WindowSampleCount < 0)
                     node.WindowSampleCount = 0;
+                if (node.NoChangeTimeoutSeconds == 0) node.NoChangeTimeoutSeconds = 30;
+                if (node.NoChangeMaxAgeSeconds == 0) node.NoChangeMaxAgeSeconds = 10;
                 node.StateName = string.IsNullOrWhiteSpace(node.StateName) ? "State" : node.StateName;
                 node.StateExpectedValue = string.IsNullOrWhiteSpace(node.StateExpectedValue) ? "1" : node.StateExpectedValue;
                 node.StateClearValue = node.StateClearValue ?? string.Empty;

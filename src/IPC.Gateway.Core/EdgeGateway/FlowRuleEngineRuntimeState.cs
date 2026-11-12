@@ -22,6 +22,8 @@ namespace IPC.EdgeGateway
 
     public sealed class FlowRuleRuntimeStateEntry
     {
+        internal NoChangeTimeoutTracker? NoChangeTracker { get; set; }
+        internal bool NoChangeClearRequested { get; set; }
         public string RuleId { get; set; } = string.Empty;
         public string Fingerprint { get; set; } = string.Empty;
         public string ActiveState { get; set; } = string.Empty;

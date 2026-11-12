@@ -10,7 +10,7 @@ namespace IPC.Plc.Communication.OmronFins
     {
         public Func<byte, int, int, int, int, byte[]> ReadMemory { get; set; }
         public Func<IList<FinsMemoryPoint>, byte[]> ReadMultipleMemory { get; set; }
-        public PlcWordOrder WordOrder { get; set; }
+        public FinsDataFormat DataFormat { get; set; }
         public int MaxWordCount { get; set; }
         public int MaxBitCount { get; set; }
         public int MaxGapWords { get; set; }
@@ -22,7 +22,7 @@ namespace IPC.Plc.Communication.OmronFins
     {
         public Func<byte, int, int, int, int, CancellationToken, ValueTask<byte[]>> ReadMemoryAsync { get; set; }
         public Func<IList<FinsMemoryPoint>, CancellationToken, ValueTask<byte[]>> ReadMultipleMemoryAsync { get; set; }
-        public PlcWordOrder WordOrder { get; set; }
+        public FinsDataFormat DataFormat { get; set; }
         public int MaxWordCount { get; set; }
         public int MaxBitCount { get; set; }
         public int MaxGapWords { get; set; }

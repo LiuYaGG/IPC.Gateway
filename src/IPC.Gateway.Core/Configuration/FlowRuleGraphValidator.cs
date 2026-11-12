@@ -293,6 +293,11 @@ namespace IPC.Runtime.Configuration
                     errors.Add("周期最小时间不能大于最大时间：" + (node.Label ?? node.NodeType));
                 }
 
+                if (IsType(node, FlowRuleNodeTypes.NoChangeTimeout) &&
+                    (node.NoChangeTimeoutSeconds <= 0 || node.NoChangeMaxAgeSeconds <= 0 ||
+                     !double.IsFinite(node.NoChangeDeadband) || node.NoChangeDeadband < 0))
+                    errors.Add("连续无变化超时参数无效：超时和数据最大间隔必须大于 0，变化死区必须为非负有限数。" );
+
                 if (IsType(node, FlowRuleNodeTypes.StateMachine) &&
                     !string.IsNullOrWhiteSpace(node.StateClearValue) &&
                     string.Equals(node.StateExpectedValue, node.StateClearValue, StringComparison.OrdinalIgnoreCase))
@@ -320,6 +325,7 @@ namespace IPC.Runtime.Configuration
                    IsType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsType(node, FlowRuleNodeTypes.Aggregation) ||
                    IsType(node, FlowRuleNodeTypes.Trend) ||
+                   IsType(node, FlowRuleNodeTypes.NoChangeTimeout) ||
                    IsType(node, FlowRuleNodeTypes.StateMachine) ||
                    IsType(node, FlowRuleNodeTypes.CycleTime) ||
                    IsType(node, FlowRuleNodeTypes.ProcessTakt) ||

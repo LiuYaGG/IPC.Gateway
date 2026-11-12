@@ -13,6 +13,21 @@ export interface ScriptTagOption {
   canWrite: boolean
 }
 
+export function databaseProviderLabel(value: unknown) {
+  const text = String(value ?? '')
+  const labels: Record<string, string> = {
+    SqlServer: 'SQL Server',
+    PostgreSql: 'PostgreSQL',
+    MySql: 'MySQL / MariaDB',
+    Sqlite: 'SQLite',
+    Oracle: 'Oracle',
+    Dameng: '达梦',
+    KingbaseEs: '人大金仓 KingbaseES',
+    ClickHouse: 'ClickHouse'
+  }
+  return labels[text] ?? text
+}
+
 export const databaseScriptExample = `// 读取点位并写入已配置的数据库目标；脚本中不能直接执行 SQL。
 var temperature = Tags.ReadDouble("Channel/Device/Group/Temperature");
 var receipt = await Database.InsertAsync("target-id", new

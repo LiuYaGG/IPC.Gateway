@@ -3,416 +3,321 @@
     ref="formRef"
     :model="model"
     :rules="antRules"
-    class="device-form"
-    status-icon
-    :label-col="{ style: { width: '120px' } }"
+    class="device-form tag-editor-form"
+    :class="{ 'tag-editor-form--english': locale === 'en-US' }"
+    name="tag-editor"
+    size="middle"
+    :colon="false"
+    :label-col="{ style: { width: '108px' } }"
     :wrapper-col="{ style: { flex: 1 } }"
     label-align="left"
   >
-    <a-divider orientation="left">{{ tx('基础信息') }}</a-divider>
-    <a-form-item :label="tx('标签名称')" :name="['name']" required>
-      <gateway-input v-model="model.name" :placeholder="tx('例如：温度')" />
-    </a-form-item>
-    <div class="form-grid">
-      <a-form-item :label="tx('启用')"><a-switch v-model:checked="model.enabled" /></a-form-item>
-      <a-form-item :label="tx('MQTT上报')"><a-switch v-model:checked="model.mqttPublishEnabled" /></a-form-item>
-    </div>
-    <a-divider orientation="left">{{ tx('采集配置') }}</a-divider>
-    <div class="form-grid">
-      <a-form-item :label="tx('数据来源')">
-        <gateway-choice
-          v-model="model.isVirtual"
-          :options="[
-            { label: tx('设备采集'), value: false },
-            { label: tx('ONNX模型'), value: true }
-          ]"
-          @change="changeTagSource"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('数据类型')">
-        <gateway-select v-model="model.dataType" searchable class="data-type-select">
-          <a-select-opt-group v-for="group in availableDataTypeGroups" :key="group.label" :label="tx(group.label)">
-            <a-select-option
-              v-for="item in group.options"
-              :key="item"
-              :label="tx(dataTypeDisplayName(item))"
-              :value="item"
-            >
-              {{ tx(dataTypeDisplayName(item)) }}
-            </a-select-option>
-          </a-select-opt-group>
-        </gateway-select>
-      </a-form-item>
-      <a-form-item :label="tx('访问模式')">
-        <gateway-select v-model="model.accessMode" :disabled="model.isVirtual">
-          <a-select-option v-for="item in accessModeOptions" :key="item" :label="tx(item)" :value="item">
-            {{ item }}
-          </a-select-option>
-        </gateway-select>
-      </a-form-item>
-      <a-form-item :label="tx('采集周期(ms)')" :name="['scanRateMs']">
-        <gateway-number-input v-model="model.scanRateMs" :min="100" :max="3600000" />
-      </a-form-item>
-      <a-form-item :label="tx('失败重试(ms)')" :name="['failureRetryDelayMs']">
-        <gateway-number-input v-model="model.failureRetryDelayMs" :min="100" :max="3600000" />
-      </a-form-item>
-      <a-form-item :label="tx('元素数量')" :name="['elementCount']">
-        <gateway-number-input v-model="model.elementCount" :min="1" :max="256" />
-      </a-form-item>
-      <a-form-item :label="tx('元素偏移')">
-        <gateway-number-input v-model="model.elementOffset" :min="0" :max="65535" />
-      </a-form-item>
-    </div>
-    <a-form-item v-if="!model.isVirtual" :label="tx('地址')" :name="['address']" :required="!isMeter">
-      <gateway-input v-model="model.address" :placeholder="tx(addressPlaceholder)" />
-    </a-form-item>
-    <template v-if="model.isVirtual">
-      <a-divider orientation="left">{{ tx('ONNX 虚拟标签') }}</a-divider>
-      <div class="form-grid">
-        <a-form-item :label="tx('已发布模型')" :name="['virtualModel', 'modelId']" required>
-          <gateway-select
-            v-model="model.virtualModel.modelId"
-            searchable
-            :placeholder="tx('选择模型')"
-            @change="applyVirtualModel"
-          >
-            <a-select-option
-              v-for="item in publishedModels"
-              :key="item.id"
-              :label="`${item.name}（v${item.publishedVersion}）`"
-              :value="item.id"
-            >
-              {{ `${item.name}（v${item.publishedVersion}）` }}
-            </a-select-option>
-          </gateway-select>
-        </a-form-item>
-        <a-form-item :label="tx('固定版本')">
-          <gateway-number-input v-model="model.virtualModel.modelVersion" disabled :controls="false" />
-        </a-form-item>
-        <a-form-item :label="tx('输出张量')">
-          <gateway-input v-model="model.virtualModel.outputName" :placeholder="tx('留空使用第一个输出')" />
-        </a-form-item>
-        <a-form-item :label="tx('输出序号')">
-          <gateway-number-input v-model="model.virtualModel.outputIndex" :min="0" :controls="false" />
-        </a-form-item>
-        <a-form-item :label="tx('触发方式')">
-          <gateway-select v-model="model.virtualModel.triggerMode">
-            <a-select-option :label="tx('输入变化')" value="OnInputChanged">{{ tx('输入变化') }}</a-select-option>
-            <a-select-option :label="tx('固定周期')" value="Interval">{{ tx('固定周期') }}</a-select-option>
-          </gateway-select>
-        </a-form-item>
-        <a-form-item v-if="model.virtualModel.triggerMode === 'Interval'" :label="tx('计算周期(ms)')">
-          <gateway-number-input
-            v-model="model.virtualModel.intervalMilliseconds"
-            :min="100"
-            :max="3600000"
-            :controls="false"
-          />
-        </a-form-item>
-        <a-form-item v-else :label="tx('防抖(ms)')">
-          <gateway-number-input
-            v-model="model.virtualModel.debounceMilliseconds"
-            :min="0"
-            :max="10000"
-            :controls="false"
-          />
-        </a-form-item>
-        <a-form-item :label="tx('输入有效期(ms)')">
-          <gateway-number-input
-            v-model="model.virtualModel.maxInputAgeMilliseconds"
-            :min="100"
-            :max="3600000"
-            :controls="false"
-          />
-        </a-form-item>
-        <a-form-item :label="tx('推理超时(ms)')">
-          <gateway-number-input
-            v-model="model.virtualModel.timeoutMilliseconds"
-            :min="10"
-            :max="30000"
-            :controls="false"
-          />
-        </a-form-item>
-        <a-form-item v-if="['Bool', 'Coil', 'DiscreteInput'].includes(model.dataType)" :label="tx('布尔阈值')">
-          <gateway-number-input v-model="model.virtualModel.boolThreshold" :controls="false" />
-        </a-form-item>
-        <a-form-item :label="tx('失败策略')">
-          <gateway-select v-model="model.virtualModel.failurePolicy">
-            <a-select-option :label="tx('保留上次值并标坏')" value="KeepLastGood">
-              {{ tx('保留上次值并标坏') }}
-            </a-select-option>
-            <a-select-option :label="tx('使用回退值')" value="UseFallback">{{ tx('使用回退值') }}</a-select-option>
-            <a-select-option :label="tx('标记坏质量')" value="MarkBad">{{ tx('标记坏质量') }}</a-select-option>
-          </gateway-select>
-        </a-form-item>
-        <a-form-item v-if="model.virtualModel.failurePolicy === 'UseFallback'" :label="tx('回退值')">
-          <gateway-input v-model="model.virtualModel.fallbackValue" />
-        </a-form-item>
-      </div>
-      <a-form-item :label="tx('模型输入')" :name="['virtualModel', 'inputs']" required>
-        <div class="model-input-list">
-          <div v-for="(input, index) in model.virtualModel.inputs" :key="index" class="model-input-row">
-            <gateway-input v-model="input.featureName" :placeholder="tx('特征名称')" />
-            <gateway-select v-model="input.tagPath" searchable :placeholder="tx('选择输入标签')">
-              <a-select-option v-for="tag in inputTagOptions" :key="tag.value" :label="tag.label" :value="tag.value">
-                {{ tag.label }}
-              </a-select-option>
-            </gateway-select>
-            <gateway-number-input v-model="input.multiplier" :controls="false" :placeholder="tx('倍率')" />
-            <gateway-number-input v-model="input.offset" :controls="false" :placeholder="tx('偏移')" />
-            <a-button @click="model.virtualModel.inputs.splice(index, 1)" type="link" danger>{{ tx('删除') }}</a-button>
-          </div>
-          <a-button @click="addVirtualInput">{{ tx('增加输入') }}</a-button>
+    <a-tabs v-model:active-key="activeTab" :animated="false" class="tag-editor-tabs">
+      <a-tab-pane key="basic" :tab="tx('基础配置')" force-render>
+        <div class="tag-tab-panel">
+            <a-divider orientation="left">{{ tx('基础信息') }}</a-divider>
+            <div class="tag-basic-row">
+              <a-form-item :label="tx('标签名称')" :name="['name']" required>
+                <gateway-input v-model="model.name" :placeholder="tx('例如：温度')" />
+              </a-form-item>
+              <div class="tag-basic-toggles">
+                <a-form-item :label="tx('启用')"><a-switch v-model:checked="model.enabled" /></a-form-item>
+                <a-form-item :label="tx('MQTT上报')"><a-switch v-model:checked="model.mqttPublishEnabled" /></a-form-item>
+              </div>
+            </div>
+            <a-divider orientation="left">{{ tx('采集配置') }}</a-divider>
+            <div class="form-grid tag-fields-grid">
+              <a-form-item :label="tx('数据来源')">
+                <gateway-select v-model="tagSource">
+                  <a-select-option value="Device" :label="tx('设备采集')">{{ tx('设备采集') }}</a-select-option>
+                  <a-select-option value="ONNX" :label="tx('ONNX模型')">{{ tx('ONNX模型') }}</a-select-option>
+                </gateway-select>
+              </a-form-item>
+              <a-form-item :label="tx('数据类型')">
+                <gateway-select v-model="model.dataType" searchable class="data-type-select">
+                  <a-select-opt-group v-for="group in availableDataTypeGroups" :key="group.label" :label="tx(group.label)">
+                    <a-select-option v-for="item in group.options" :key="item" :label="tx(dataTypeDisplayName(item))" :value="item">
+                      {{ tx(dataTypeDisplayName(item)) }}
+                    </a-select-option>
+                  </a-select-opt-group>
+                </gateway-select>
+              </a-form-item>
+              <a-form-item :label="tx('访问模式')">
+                <gateway-select v-model="model.accessMode" :disabled="model.isVirtual">
+                  <a-select-option v-for="item in accessModeOptions" :key="item" :label="tx(accessModeLabel(item))" :value="item">
+                    {{ tx(accessModeLabel(item)) }}
+                  </a-select-option>
+                </gateway-select>
+              </a-form-item>
+              <a-form-item v-if="!model.isVirtual" class="tag-span-two" :label="tx('地址')" :name="['address']" :required="!isMeter">
+                <gateway-input v-model="model.address" :placeholder="tx(addressPlaceholder)" />
+              </a-form-item>
+              <a-form-item :label="tx('采集周期(ms)')" :name="['scanRateMs']">
+                <gateway-number-input v-model="model.scanRateMs" :min="100" :max="3600000" />
+              </a-form-item>
+              <a-form-item :label="tx('失败重试(ms)')" :name="['failureRetryDelayMs']">
+                <gateway-number-input v-model="model.failureRetryDelayMs" :min="100" :max="3600000" />
+              </a-form-item>
+              <a-form-item :label="tx('元素数量')" :name="['elementCount']">
+                <gateway-number-input v-model="model.elementCount" :min="1" :max="256" />
+              </a-form-item>
+              <a-form-item :label="tx('元素偏移')">
+                <gateway-number-input v-model="model.elementOffset" :min="0" :max="65535" />
+              </a-form-item>
+            </div>
+            <template v-if="model.isVirtual">
+              <a-divider orientation="left">{{ tx('ONNX 虚拟标签') }}</a-divider>
+              <div class="form-grid tag-fields-grid">
+                <a-form-item :label="tx('已发布模型')" :name="['virtualModel', 'modelId']" required>
+                  <gateway-select
+                    v-model="model.virtualModel.modelId"
+                    searchable
+                    :placeholder="tx('选择模型')"
+                    @change="applyVirtualModel"
+                  >
+                    <a-select-option
+                      v-for="item in publishedModels"
+                      :key="item.id"
+                      :label="`${item.name}（v${item.publishedVersion}）`"
+                      :value="item.id"
+                    >
+                      {{ `${item.name}（v${item.publishedVersion}）` }}
+                    </a-select-option>
+                  </gateway-select>
+                </a-form-item>
+                <a-form-item :label="tx('固定版本')">
+                  <gateway-number-input v-model="model.virtualModel.modelVersion" disabled :controls="false" />
+                </a-form-item>
+                <a-form-item :label="tx('输出张量')">
+                  <gateway-input v-model="model.virtualModel.outputName" :placeholder="tx('留空使用第一个输出')" />
+                </a-form-item>
+                <a-form-item :label="tx('输出序号')">
+                  <gateway-number-input v-model="model.virtualModel.outputIndex" :min="0" :controls="false" />
+                </a-form-item>
+                <a-form-item :label="tx('触发方式')">
+                  <gateway-select v-model="model.virtualModel.triggerMode">
+                    <a-select-option :label="tx('输入变化')" value="OnInputChanged">{{ tx('输入变化') }}</a-select-option>
+                    <a-select-option :label="tx('固定周期')" value="Interval">{{ tx('固定周期') }}</a-select-option>
+                  </gateway-select>
+                </a-form-item>
+                <a-form-item v-if="model.virtualModel.triggerMode === 'Interval'" :label="tx('计算周期(ms)')">
+                  <gateway-number-input
+                    v-model="model.virtualModel.intervalMilliseconds"
+                    :min="100"
+                    :max="3600000"
+                    :controls="false"
+                  />
+                </a-form-item>
+                <a-form-item v-else :label="tx('防抖(ms)')">
+                  <gateway-number-input
+                    v-model="model.virtualModel.debounceMilliseconds"
+                    :min="0"
+                    :max="10000"
+                    :controls="false"
+                  />
+                </a-form-item>
+                <a-form-item :label="tx('输入有效期(ms)')">
+                  <gateway-number-input
+                    v-model="model.virtualModel.maxInputAgeMilliseconds"
+                    :min="100"
+                    :max="3600000"
+                    :controls="false"
+                  />
+                </a-form-item>
+                <a-form-item :label="tx('推理超时(ms)')">
+                  <gateway-number-input
+                    v-model="model.virtualModel.timeoutMilliseconds"
+                    :min="10"
+                    :max="30000"
+                    :controls="false"
+                  />
+                </a-form-item>
+                <a-form-item v-if="['Bool', 'Coil', 'DiscreteInput'].includes(model.dataType)" :label="tx('布尔阈值')">
+                  <gateway-number-input v-model="model.virtualModel.boolThreshold" :controls="false" />
+                </a-form-item>
+                <a-form-item :label="tx('失败策略')">
+                  <gateway-select v-model="model.virtualModel.failurePolicy">
+                    <a-select-option :label="tx('保留上次值并标坏')" value="KeepLastGood">
+                      {{ tx('保留上次值并标坏') }}
+                    </a-select-option>
+                    <a-select-option :label="tx('使用回退值')" value="UseFallback">{{ tx('使用回退值') }}</a-select-option>
+                    <a-select-option :label="tx('标记坏质量')" value="MarkBad">{{ tx('标记坏质量') }}</a-select-option>
+                  </gateway-select>
+                </a-form-item>
+                <a-form-item v-if="model.virtualModel.failurePolicy === 'UseFallback'" :label="tx('回退值')">
+                  <gateway-input v-model="model.virtualModel.fallbackValue" />
+                </a-form-item>
+              </div>
+              <a-form-item :label="tx('模型输入')" :name="['virtualModel', 'inputs']" required>
+                <div class="model-input-list">
+                  <div v-for="(input, index) in model.virtualModel.inputs" :key="index" class="model-input-row">
+                    <gateway-input v-model="input.featureName" :placeholder="tx('特征名称')" />
+                    <gateway-select v-model="input.tagPath" searchable :placeholder="tx('选择输入标签')">
+                      <a-select-option v-for="tag in inputTagOptions" :key="tag.value" :label="tag.label" :value="tag.value">
+                        {{ tag.label }}
+                      </a-select-option>
+                    </gateway-select>
+                    <gateway-number-input v-model="input.multiplier" :controls="false" :placeholder="tx('倍率')" />
+                    <gateway-number-input v-model="input.offset" :controls="false" :placeholder="tx('偏移')" />
+                    <a-button @click="model.virtualModel.inputs.splice(index, 1)" type="link" danger>{{ tx('删除') }}</a-button>
+                  </div>
+                  <a-button @click="addVirtualInput">{{ tx('增加输入') }}</a-button>
+                </div>
+              </a-form-item>
+              <p class="form-help">
+                {{ tx('虚拟标签不会写入 PLC；模型在独立队列执行，结果可进入历史、MQTT、Web API 和规则引擎。') }}
+              </p>
+            </template>
+            <a-divider orientation="left">{{ tx('数值缩放') }}</a-divider>
+            <div class="form-grid tag-fields-grid tag-scaling-grid">
+              <a-form-item :label="tx('启用缩放')"><a-switch v-model:checked="model.scaling.enabled" /></a-form-item>
+              <a-form-item :label="tx('倍率')" :name="['scaling', 'multiplier']">
+                <gateway-number-input
+                  v-model="model.scaling.multiplier"
+                  :disabled="!model.scaling.enabled"
+                  :controls="false"
+                  :step="0.1"
+                  :placeholder="tx('例如：10 或 0.1')"
+                />
+              </a-form-item>
+              <a-form-item :label="tx('偏移')" :name="['scaling', 'offset']">
+                <gateway-number-input
+                  v-model="model.scaling.offset"
+                  :disabled="!model.scaling.enabled"
+                  :controls="false"
+                  :step="0.1"
+                />
+              </a-form-item>
+              <a-form-item :label="tx('小数位')" :name="['scaling', 'decimalPlaces']">
+                <gateway-number-input
+                  v-model="model.scaling.decimalPlaces"
+                  :disabled="!model.scaling.enabled"
+                  :min="0"
+                  :max="8"
+                  :step="1"
+                  integer
+                  :controls="false"
+                />
+              </a-form-item>
+            </div>
+            <p class="form-help">{{ tx(scalingPreview) }}</p>
+            <template v-if="isMeter">
+              <a-divider orientation="left">{{ tx('表计字段') }}</a-divider>
+              <div class="form-grid tag-fields-grid">
+                <a-form-item :label="tx('协议')" :name="['protocol']" required>
+                  <gateway-select v-model="model.protocol" searchable :disabled="!!deviceProtocol" @change="applyMeterDefaults">
+                    <a-select-option
+                      v-for="item in meterProtocolOptions"
+                      :key="item.value"
+                      :label="tx(item.label)"
+                      :value="item.value"
+                    >
+                      {{ tx(item.label) }}
+                    </a-select-option>
+                  </gateway-select>
+                </a-form-item>
+                <a-form-item :label="tx('表地址')" :name="['meterAddress']" required>
+                  <gateway-input v-model="model.meterAddress" :placeholder="tx(meterAddressHint)" />
+                </a-form-item>
+                <a-form-item :label="tx('数据标识')" :name="['meterDataIdentifier']" required>
+                  <gateway-input v-model="model.meterDataIdentifier" :placeholder="tx(meterDataIdentifierHint)" />
+                </a-form-item>
+                <a-form-item :label="tx('表类型')">
+                  <gateway-select v-model="model.meterType" searchable allow-clear mode="tags">
+                    <a-select-option v-for="item in meterTypeItems" :key="item" :label="tx(item)" :value="item">
+                      {{ item }}
+                    </a-select-option>
+                  </gateway-select>
+                </a-form-item>
+              </div>
+            </template>
+            <a-divider orientation="left">{{ tx('业务信息') }}</a-divider>
+            <div class="form-grid tag-fields-grid">
+              <a-form-item :label="tx('单位')"><gateway-input v-model="model.unit" /></a-form-item>
+              <a-form-item :label="tx('点位编码')"><gateway-input v-model="model.pointCode" /></a-form-item>
+              <a-form-item :label="tx('业务类型')"><gateway-input v-model="model.businessType" /></a-form-item>
+              <a-form-item class="tag-span-all" :label="tx('资产路径')"><gateway-input v-model="model.assetPath" /></a-form-item>
+            </div>
+            <a-form-item :label="tx('描述')">
+              <gateway-input v-model="model.description" type="textarea" :rows="2" />
+            </a-form-item>
         </div>
-      </a-form-item>
-      <p class="form-help">
-        {{ tx('虚拟标签不会写入 PLC；模型在独立队列执行，结果可进入历史、MQTT、Web API 和规则引擎。') }}
-      </p>
-    </template>
-    <a-divider orientation="left">{{ tx('数值缩放') }}</a-divider>
-    <div class="form-grid">
-      <a-form-item :label="tx('启用缩放')"><a-switch v-model:checked="model.scaling.enabled" /></a-form-item>
-      <a-form-item :label="tx('倍率')" :name="['scaling', 'multiplier']">
-        <gateway-number-input
-          v-model="model.scaling.multiplier"
-          :disabled="!model.scaling.enabled"
-          :controls="false"
-          :step="0.1"
-          :placeholder="tx('例如：10 或 0.1')"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('偏移')" :name="['scaling', 'offset']">
-        <gateway-number-input
-          v-model="model.scaling.offset"
-          :disabled="!model.scaling.enabled"
-          :controls="false"
-          :step="0.1"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('小数位')" :name="['scaling', 'decimalPlaces']">
-        <gateway-number-input
-          v-model="model.scaling.decimalPlaces"
-          :disabled="!model.scaling.enabled"
-          :min="0"
-          :max="8"
-          :step="1"
-          integer
-          :controls="false"
-        />
-      </a-form-item>
-    </div>
-    <p class="form-help">{{ tx(scalingPreview) }}</p>
-    <a-divider orientation="left">{{ tx('数据清洗') }}</a-divider>
-    <div class="form-grid">
-      <a-form-item :label="tx('启用清洗')"><a-switch v-model:checked="model.cleaning.enabled" /></a-form-item>
-      <a-form-item :label="tx('过滤保留上次值')">
-        <a-switch v-model:checked="model.cleaning.preserveLastGoodOnFilter" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('越界标记')">
-        <a-switch v-model:checked="model.cleaning.outOfRangeEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('越界范围')">
-        <div class="inline-number-pair">
-          <gateway-number-input
-            v-model="model.cleaning.minValue"
-            :disabled="!model.cleaning.enabled || !model.cleaning.outOfRangeEnabled"
-            :controls="false"
-            :placeholder="tx('最小值')"
-          />
-          <gateway-number-input
-            v-model="model.cleaning.maxValue"
-            :disabled="!model.cleaning.enabled || !model.cleaning.outOfRangeEnabled"
-            :controls="false"
-            :placeholder="tx('最大值')"
-          />
+      </a-tab-pane>
+      <a-tab-pane key="cleaning" force-render>
+        <template #tab><span class="tag-cleaning-tab">{{ tx('数据清洗') }}<span v-if="model.cleaning.enabled" class="tag-cleaning-dot" /></span></template>
+        <div class="tag-tab-panel">
+            <div class="tag-cleaning-master">
+              <a-form-item :label="tx('启用清洗')"><a-switch v-model:checked="model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('过滤保留上次值')">
+                <a-switch v-model:checked="model.cleaning.preserveLastGoodOnFilter" :disabled="!model.cleaning.enabled" />
+              </a-form-item>
+            </div>
+            <a-divider orientation="left">{{ tx('数据过滤') }}</a-divider>
+            <div class="form-grid tag-fields-grid">
+              <a-form-item :label="tx('越界标记')"><a-switch v-model:checked="model.cleaning.outOfRangeEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('越界最小值')"><gateway-number-input v-model="model.cleaning.minValue" :disabled="!model.cleaning.enabled || !model.cleaning.outOfRangeEnabled" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('越界最大值')"><gateway-number-input v-model="model.cleaning.maxValue" :disabled="!model.cleaning.enabled || !model.cleaning.outOfRangeEnabled" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('死区过滤')"><a-switch v-model:checked="model.cleaning.deadbandEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('死区值')" :name="['cleaning', 'deadband']"><gateway-number-input v-model="model.cleaning.deadband" :disabled="!model.cleaning.enabled || !model.cleaning.deadbandEnabled" :min="0" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('重复值过滤')"><a-switch v-model:checked="model.cleaning.duplicateFilterEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('毛刺过滤')"><a-switch v-model:checked="model.cleaning.spikeFilterEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('毛刺阈值')" :name="['cleaning', 'spikeThreshold']"><gateway-number-input v-model="model.cleaning.spikeThreshold" :disabled="!model.cleaning.enabled || !model.cleaning.spikeFilterEnabled" :min="0" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('毛刺窗口(s)')"><gateway-number-input v-model="model.cleaning.spikeWindowSeconds" :disabled="!model.cleaning.enabled || !model.cleaning.spikeFilterEnabled" :min="0" :controls="false" /></a-form-item>
+            </div>
+            <a-divider orientation="left">{{ tx('单位换算') }}</a-divider>
+            <div class="form-grid tag-fields-grid">
+              <a-form-item :label="tx('启用单位换算')"><a-switch v-model:checked="model.cleaning.unitConversionEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item :label="tx('源单位')"><gateway-input v-model="model.cleaning.sourceUnit" :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled" /></a-form-item>
+              <a-form-item :label="tx('目标单位')"><gateway-input v-model="model.cleaning.targetUnit" :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled" /></a-form-item>
+              <a-form-item :label="tx('单位倍率')" :name="['cleaning', 'unitMultiplier']"><gateway-number-input v-model="model.cleaning.unitMultiplier" :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled" :controls="false" :step="0.1" /></a-form-item>
+              <a-form-item :label="tx('单位偏移')"><gateway-number-input v-model="model.cleaning.unitOffset" :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled" :controls="false" :step="0.1" /></a-form-item>
+            </div>
+            <a-form-item :label="tx('枚举映射')" class="tag-enum-toggle">
+              <a-switch v-model:checked="model.cleaning.enumMappingEnabled" :disabled="!model.cleaning.enabled" />
+              <span class="tag-inline-help">{{ tx('开启后配置原始值与显示值的对应关系') }}</span>
+            </a-form-item>
+            <div v-if="model.cleaning.enabled && model.cleaning.enumMappingEnabled" class="enum-mapping-list">
+              <div v-for="(item, index) in model.cleaning.enumMappings" :key="index" class="enum-mapping-row">
+                <gateway-input v-model="item.rawValue" :placeholder="tx('原始值，如 1')" />
+                <gateway-input v-model="item.cleanValue" :placeholder="tx('显示值，如 运行')" />
+                <gateway-input v-model="item.description" :placeholder="tx('说明')" />
+                <a-button @click="removeEnumMapping(index)" type="link" danger>{{ tx('删除') }}</a-button>
+              </div>
+              <a-button @click="addEnumMapping">{{ tx('新增映射') }}</a-button>
+            </div>
+            <a-divider orientation="left">{{ tx('值处理脚本') }}</a-divider>
+            <div class="form-grid tag-fields-grid">
+              <a-form-item :label="tx('启用脚本处理')"><a-switch v-model:checked="model.cleaning.valueScriptEnabled" :disabled="!model.cleaning.enabled" /></a-form-item>
+              <a-form-item class="tag-span-two" :label="tx('已发布脚本')" :name="['cleaning', 'valueScriptId']">
+                <gateway-select v-model="model.cleaning.valueScriptId" searchable allow-clear :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
+                  :placeholder="tx('选择或输入筛选')" :filter-option="false" @search="filterValueScripts" @change="applySelectedValueScript" @dropdown-visible-change="handleValueScriptDropdownVisible">
+                  <a-select-option v-for="script in compatibleValueScripts" :key="script.id" :label="script.name + '（v' + script.version + '，' + script.inputDataType + ' → ' + script.outputDataType + '）'" :value="script.id">
+                    {{ script.name + '（v' + script.version + '，' + script.inputDataType + ' → ' + script.outputDataType + '）' }}
+                  </a-select-option>
+                </gateway-select>
+              </a-form-item>
+              <a-form-item :label="tx('固定版本')"><gateway-number-input v-model="model.cleaning.valueScriptVersion" :disabled="true" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('脚本超时(ms)')"><gateway-number-input v-model="model.cleaning.valueScriptTimeoutMilliseconds" :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled" :min="10" :max="5000" :controls="false" /></a-form-item>
+              <a-form-item :label="tx('失败策略')">
+                <gateway-select v-model="model.cleaning.valueScriptFailurePolicy" :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled">
+                  <a-select-option :label="tx('保留上次有效值')" value="KeepLastGood">{{ tx('保留上次有效值') }}</a-select-option>
+                  <a-select-option :label="tx('使用本次原始值')" value="UseOriginal">{{ tx('使用本次原始值') }}</a-select-option>
+                  <a-select-option :label="tx('标记坏质量')" value="MarkBad">{{ tx('标记坏质量') }}</a-select-option>
+                </gateway-select>
+              </a-form-item>
+            </div>
+            <p class="form-help">{{ tx('选择脚本后，保存标签时固定当前发布版本。') }}</p>
         </div>
-      </a-form-item>
-      <a-form-item :label="tx('死区过滤')">
-        <a-switch v-model:checked="model.cleaning.deadbandEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('死区值')" :name="['cleaning', 'deadband']">
-        <gateway-number-input
-          v-model="model.cleaning.deadband"
-          :disabled="!model.cleaning.enabled || !model.cleaning.deadbandEnabled"
-          :min="0"
-          :controls="false"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('重复值过滤')">
-        <a-switch v-model:checked="model.cleaning.duplicateFilterEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('毛刺过滤')">
-        <a-switch v-model:checked="model.cleaning.spikeFilterEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('毛刺阈值')" :name="['cleaning', 'spikeThreshold']">
-        <gateway-number-input
-          v-model="model.cleaning.spikeThreshold"
-          :disabled="!model.cleaning.enabled || !model.cleaning.spikeFilterEnabled"
-          :min="0"
-          :controls="false"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('毛刺窗口(s)')">
-        <gateway-number-input
-          v-model="model.cleaning.spikeWindowSeconds"
-          :disabled="!model.cleaning.enabled || !model.cleaning.spikeFilterEnabled"
-          :min="0"
-          :controls="false"
-        />
-      </a-form-item>
-    </div>
-    <div class="form-grid">
-      <a-form-item :label="tx('单位换算')">
-        <a-switch v-model:checked="model.cleaning.unitConversionEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('源/目标单位')">
-        <div class="inline-number-pair">
-          <gateway-input
-            v-model="model.cleaning.sourceUnit"
-            :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled"
-            :placeholder="tx('源单位')"
-          />
-          <gateway-input
-            v-model="model.cleaning.targetUnit"
-            :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled"
-            :placeholder="tx('目标单位')"
-          />
-        </div>
-      </a-form-item>
-      <a-form-item :label="tx('单位倍率')" :name="['cleaning', 'unitMultiplier']">
-        <gateway-number-input
-          v-model="model.cleaning.unitMultiplier"
-          :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled"
-          :controls="false"
-          :step="0.1"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('单位偏移')">
-        <gateway-number-input
-          v-model="model.cleaning.unitOffset"
-          :disabled="!model.cleaning.enabled || !model.cleaning.unitConversionEnabled"
-          :controls="false"
-          :step="0.1"
-        />
-      </a-form-item>
-    </div>
-    <a-form-item :label="tx('枚举映射')">
-      <a-switch v-model:checked="model.cleaning.enumMappingEnabled" :disabled="!model.cleaning.enabled" />
-    </a-form-item>
-    <div v-if="model.cleaning.enabled && model.cleaning.enumMappingEnabled" class="enum-mapping-list">
-      <div v-for="(item, index) in model.cleaning.enumMappings" :key="index" class="enum-mapping-row">
-        <gateway-input v-model="item.rawValue" :placeholder="tx('原始值，如 1')" />
-        <gateway-input v-model="item.cleanValue" :placeholder="tx('显示值，如 运行')" />
-        <gateway-input v-model="item.description" :placeholder="tx('说明')" />
-        <a-button @click="removeEnumMapping(index)" type="link" danger>{{ tx('删除') }}</a-button>
-      </div>
-      <a-button @click="addEnumMapping">{{ tx('新增映射') }}</a-button>
-    </div>
-    <a-divider orientation="left">{{ tx('值处理脚本') }}</a-divider>
-    <div class="form-grid">
-      <a-form-item :label="tx('启用脚本处理')">
-        <a-switch v-model:checked="model.cleaning.valueScriptEnabled" :disabled="!model.cleaning.enabled" />
-      </a-form-item>
-      <a-form-item :label="tx('已发布脚本')" :name="['cleaning', 'valueScriptId']">
-        <gateway-select
-          v-model="model.cleaning.valueScriptId"
-          searchable
-          allow-clear
-          :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
-          :placeholder="tx('选择或输入筛选')"
-          :no-data-text="tx('没有输入类型兼容的已发布标签清洗脚本')"
-          :filter-method="filterValueScripts"
-          @change="applySelectedValueScript"
-          @visible-change="handleValueScriptDropdownVisible"
-        >
-          <a-select-option
-            v-for="script in compatibleValueScripts"
-            :key="script.id"
-            :label="tx(`${script.name}（v${script.version}，${script.inputDataType} → ${script.outputDataType}）`)"
-            :value="script.id"
-          >
-            {{ `${script.name}（v${script.version}，${script.inputDataType} → ${script.outputDataType}）` }}
-          </a-select-option>
-        </gateway-select>
-      </a-form-item>
-      <a-form-item :label="tx('固定版本')">
-        <gateway-number-input v-model="model.cleaning.valueScriptVersion" :disabled="true" :controls="false" />
-      </a-form-item>
-      <a-form-item :label="tx('脚本超时(ms)')">
-        <gateway-number-input
-          v-model="model.cleaning.valueScriptTimeoutMilliseconds"
-          :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
-          :min="10"
-          :max="5000"
-          :controls="false"
-        />
-      </a-form-item>
-      <a-form-item :label="tx('失败策略')">
-        <gateway-select
-          v-model="model.cleaning.valueScriptFailurePolicy"
-          :disabled="!model.cleaning.enabled || !model.cleaning.valueScriptEnabled"
-        >
-          <a-select-option :label="tx('保留上次有效值')" value="KeepLastGood">
-            {{ tx('保留上次有效值') }}
-          </a-select-option>
-          <a-select-option :label="tx('使用本次原始值')" value="UseOriginal">
-            {{ tx('使用本次原始值') }}
-          </a-select-option>
-          <a-select-option :label="tx('标记坏质量')" value="MarkBad">{{ tx('标记坏质量') }}</a-select-option>
-        </gateway-select>
-      </a-form-item>
-    </div>
-    <p class="form-help">
-      {{ tx('下拉框内可按脚本名称、说明、输入/输出类型或版本筛选；保存标签时会固定当前发布版本。') }}
-    </p>
-    <template v-if="isMeter">
-      <a-divider orientation="left">{{ tx('表计字段') }}</a-divider>
-      <div class="form-grid">
-        <a-form-item :label="tx('协议')" :name="['protocol']" required>
-          <gateway-select v-model="model.protocol" searchable :disabled="!!deviceProtocol" @change="applyMeterDefaults">
-            <a-select-option
-              v-for="item in meterProtocolOptions"
-              :key="item.value"
-              :label="tx(item.label)"
-              :value="item.value"
-            >
-              {{ tx(item.label) }}
-            </a-select-option>
-          </gateway-select>
-        </a-form-item>
-        <a-form-item :label="tx('表地址')" :name="['meterAddress']" required>
-          <gateway-input v-model="model.meterAddress" :placeholder="tx(meterAddressHint)" />
-        </a-form-item>
-        <a-form-item :label="tx('数据标识')" :name="['meterDataIdentifier']" required>
-          <gateway-input v-model="model.meterDataIdentifier" :placeholder="tx(meterDataIdentifierHint)" />
-        </a-form-item>
-        <a-form-item :label="tx('表类型')">
-          <gateway-select v-model="model.meterType" searchable allow-clear mode="tags">
-            <a-select-option v-for="item in meterTypeItems" :key="item" :label="tx(item)" :value="item">
-              {{ item }}
-            </a-select-option>
-          </gateway-select>
-        </a-form-item>
-      </div>
-    </template>
-    <a-divider orientation="left">{{ tx('业务信息') }}</a-divider>
-    <div class="form-grid">
-      <a-form-item :label="tx('单位')"><gateway-input v-model="model.unit" /></a-form-item>
-      <a-form-item :label="tx('点位编码')"><gateway-input v-model="model.pointCode" /></a-form-item>
-      <a-form-item :label="tx('资产路径')"><gateway-input v-model="model.assetPath" /></a-form-item>
-      <a-form-item :label="tx('业务类型')"><gateway-input v-model="model.businessType" /></a-form-item>
-    </div>
-    <a-form-item :label="tx('描述')">
-      <gateway-input v-model="model.description" type="textarea" :rows="3" />
-    </a-form-item>
+      </a-tab-pane>
+    </a-tabs>
   </a-form>
 </template>
 
 <script setup lang="ts">
 import { formatMessage } from '../i18n'
-import { tx } from '../i18n'
+import { locale, tx } from '../i18n'
 import { toAntRules, type FormRules } from '../utils/ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { ProjectConfig, TagConfig } from '../api'
 import { loadValueTransformCatalog, type ValueTransformCatalogItem } from '../scriptingApi'
@@ -437,6 +342,26 @@ const props = defineProps<{
 }>()
 
 const formRef = ref<FormInstance>()
+const activeTab = ref('basic')
+const tagSource = computed({
+  get: () => props.model.isVirtual ? 'ONNX' : 'Device',
+  set: (value: string) => {
+    props.model.isVirtual = value === 'ONNX'
+    changeTagSource(props.model.isVirtual)
+  }
+})
+
+function accessModeLabel(value: string) {
+  return ({ ReadOnly: '只读', ReadWrite: '可读可写', WriteOnly: '只写' } as Record<string, string>)[value] ?? value
+}
+
+watch(() => props.model, async () => {
+  activeTab.value = 'basic'
+  valueScriptFilterKeyword.value = ''
+  await nextTick()
+  formRef.value?.clearValidate()
+})
+
 const valueScripts = ref<ValueTransformCatalogItem[]>([])
 const models = ref<OnnxModelDefinition[]>([])
 const valueScriptFilterKeyword = ref('')
@@ -670,7 +595,14 @@ async function validate() {
   try {
     await formRef.value.validate()
     return true
-  } catch {
+  } catch (error) {
+    const fields = (error as { errorFields?: Array<{ name: Array<string | number> }> })?.errorFields
+    const firstField = fields?.[0]?.name
+    if (firstField?.length) {
+      activeTab.value = firstField[0] === 'cleaning' ? 'cleaning' : 'basic'
+      await nextTick()
+      formRef.value?.scrollToField(firstField, { block: 'center', behavior: 'smooth' })
+    }
     return false
   }
 }
@@ -780,6 +712,200 @@ defineExpose({ validate })
 </script>
 
 <style scoped>
+.tag-editor-form {
+  --tag-form-label-width: 108px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+}
+.tag-editor-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tag-editor-tabs :deep(> .ant-tabs-nav) {
+  flex: none;
+  margin: 0 24px;
+}
+.tag-editor-tabs :deep(> .ant-tabs-nav .ant-tabs-tab) {
+  padding: 10px 0 12px;
+}
+.tag-editor-tabs :deep(> .ant-tabs-content-holder) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.tag-tab-panel {
+  padding: 12px 24px 10px;
+}
+.tag-fields-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.tag-editor-form :deep(.ant-form-item) {
+  min-width: 0;
+  margin-bottom: 12px;
+}
+.tag-editor-form :deep(.ant-form-item-row) {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.tag-editor-form :deep(.ant-form-item-label) {
+  flex: none;
+  width: var(--tag-form-label-width) !important;
+  max-width: 50%;
+  padding-right: 8px;
+  white-space: normal;
+}
+.tag-editor-form :deep(.ant-form-item-label > label) {
+  height: auto;
+  min-height: 32px;
+  line-height: 1.4;
+  white-space: normal;
+  color: var(--ui-text-color-primary);
+}
+.tag-editor-form :deep(.ant-form-item-control) {
+  min-width: 0;
+}
+.tag-editor-form :deep(.ant-form-item-control-input) {
+  min-height: 32px;
+}
+.tag-editor-form :deep(.ant-divider-horizontal) {
+  margin: 4px 0 12px;
+  font-size: inherit;
+  font-weight: 600;
+}
+.tag-editor-form :deep(.ant-divider-horizontal:first-child) {
+  margin-top: 0;
+}
+.tag-editor-form :deep(.ant-divider-horizontal::before) {
+  display: none;
+}
+.tag-editor-form :deep(.ant-divider-inner-text) {
+  padding-left: 0;
+  font-weight: 600;
+  color: var(--ui-text-color-primary);
+}
+.tag-editor-form :deep(.ant-input-number) {
+  width: 100%;
+}
+.tag-editor-form :deep(.ant-switch) {
+  min-width: 32px;
+}
+.tag-editor-form :deep(.form-help) {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.tag-basic-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+}
+.tag-basic-toggles,
+.tag-cleaning-master {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.tag-basic-toggles :deep(.ant-form-item-label),
+.tag-cleaning-master :deep(.ant-form-item-label) {
+  width: auto !important;
+  max-width: none;
+  padding-right: 12px;
+}
+.tag-scaling-grid {
+  --tag-form-label-width: 76px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.tag-span-two {
+  grid-column: span 2;
+}
+.tag-span-all {
+  grid-column: 1 / -1;
+}
+.tag-cleaning-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.tag-cleaning-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-color-primary);
+}
+.tag-inline-help {
+  margin-left: 18px;
+  color: var(--ui-text-color-secondary);
+  font-size: 12px;
+}
+.tag-enum-toggle :deep(.ant-form-item-control-input-content) {
+  display: flex;
+  align-items: center;
+}
+.enum-mapping-list {
+  margin-bottom: 16px;
+}
+.enum-mapping-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.tag-editor-form--english {
+  --tag-form-label-width: 132px;
+}
+.tag-editor-form--english .tag-fields-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.tag-editor-form--english .tag-scaling-grid {
+  --tag-form-label-width: 132px;
+}
+@media (max-width: 950px) {
+  .tag-fields-grid,
+  .tag-scaling-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tag-basic-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+@media (max-width: 640px) {
+  .tag-tab-panel {
+    padding-inline: 16px;
+  }
+  .tag-editor-tabs :deep(> .ant-tabs-nav) {
+    margin-inline: 16px;
+  }
+  .tag-fields-grid,
+  .tag-editor-form--english .tag-fields-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tag-span-two {
+    grid-column: auto;
+  }
+  .tag-basic-toggles,
+  .tag-cleaning-master {
+    column-gap: 18px;
+    row-gap: 0;
+  }
+  .enum-mapping-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tag-inline-help {
+    margin-left: 10px;
+  }
+}
 .model-input-list {
   width: 100%;
   display: flex;

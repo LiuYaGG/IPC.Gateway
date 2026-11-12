@@ -18,8 +18,16 @@ namespace IPC.Plc.Communication.Core
                     return Network("127.0.0.1", "502", false, new[]
                     {
                         Number("rack", "Unit ID", "1", 1, 247, string.Empty),
+                        Select("driverOptions.modbusDataFormat", "数据格式", "ABCD", new[] { "ABCD", "BADC", "CDAB", "DCBA" }, false),
                         InGroup(Number("driverOptions.maxBatchGapPoints", "批读允许间隔", "2", 0, 64, "点"), "批读优化")
-                    });
+                    }, "Tcp", false);
+                case PlcProtocol.ModbusUdp:
+                    return Network("127.0.0.1", "502", false, new[]
+                    {
+                        Number("rack", "Unit ID", "1", 1, 247, string.Empty),
+                        Select("driverOptions.modbusDataFormat", "数据格式", "ABCD", new[] { "ABCD", "BADC", "CDAB", "DCBA" }, false),
+                        InGroup(Number("driverOptions.maxBatchGapPoints", "批读允许间隔", "2", 0, 64, "点"), "批读优化")
+                    }, "Udp", false);
                 case PlcProtocol.SiemensS7:
                     return Network("127.0.0.1", "102", false, new[]
                     {
@@ -163,6 +171,7 @@ namespace IPC.Plc.Communication.Core
                     return Network("127.0.0.1", "9600", true, new[]
                     {
                         InGroup(Select("driverOptions.controllerProfile", "控制器系列", "Auto", new[] { "Auto", "CS/CJ/CP", "NJ/NX" }, false), "欧姆龙控制器"),
+                        InGroup(Select("driverOptions.finsDataFormat", "数据格式", "ABCD", new[] { "ABCD", "BADC", "CDAB", "DCBA" }, false), "欧姆龙控制器"),
                         InGroup(WithHelp(Number("driverOptions.sourceNode", "源节点", "0", 0, 254, string.Empty), "0 表示根据本机 IPv4 地址自动推导。"), "FINS 路由"),
                         InGroup(WithHelp(Number("driverOptions.destinationNode", "目标节点", "0", 0, 254, string.Empty), "0 表示根据 PLC IPv4 地址自动推导；跨网段或特殊路由请显式设置。"), "FINS 路由"),
                         InGroup(Number("driverOptions.sourceNetwork", "源网络号", "0", 0, 127, string.Empty), "FINS 路由"),
@@ -174,7 +183,7 @@ namespace IPC.Plc.Communication.Core
                         InGroup(Number("driverOptions.maxGapWords", "允许合并间隔", "4", 0, 64, "word"), "批读优化"),
                         InGroup(WithHelp(Number("driverOptions.maxEmBank", "最大 EM 银行（十进制）", "24", 0, 24, string.Empty), "24 对应 FINS 地址中的十六进制银行 E18。"), "地址能力"),
                         InGroup(Number("driverOptions.udpReadRetries", "UDP 读重试次数", "1", 0, 1, string.Empty), "UDP 可靠性")
-                    }, "Udp");
+                    }, "Udp", false);
                 case PlcProtocol.BacnetIp:
                     return Network("127.0.0.1", "47808", true, new[]
                     {
@@ -211,14 +220,16 @@ namespace IPC.Plc.Communication.Core
                     return Serial(new[]
                     {
                         Number("rack", "Slave ID", "1", 1, 247, string.Empty),
+                        Select("driverOptions.modbusDataFormat", "数据格式", "ABCD", new[] { "ABCD", "BADC", "CDAB", "DCBA" }, false),
                         InGroup(Number("driverOptions.maxBatchGapPoints", "批读允许间隔", "2", 0, 64, "点"), "批读优化")
-                    });
+                    }, includeWordOrder: false);
                 case PlcProtocol.ModbusAscii:
                     return Serial(new[]
                     {
                         Number("rack", "Slave ID", "1", 1, 247, string.Empty),
+                        Select("driverOptions.modbusDataFormat", "数据格式", "ABCD", new[] { "ABCD", "BADC", "CDAB", "DCBA" }, false),
                         InGroup(Number("driverOptions.maxBatchGapPoints", "批读允许间隔", "2", 0, 64, "点"), "批读优化")
-                    }, "7", "Even", "One");
+                    }, "7", "Even", "One", false);
                 case PlcProtocol.MitsubishiSerial:
                 case PlcProtocol.MitsubishiQlSerial:
                     return Serial();
@@ -297,7 +308,7 @@ namespace IPC.Plc.Communication.Core
             {
                 Text("host", "主机 / 地址", host, host),
                 Number("port", "端口", port, 0, 65535, string.Empty),
-                Select("transport", "传输", defaultTransport, allowUdp ? new[] { "Tcp", "Udp" } : new[] { "Tcp" }, !allowUdp),
+                Select("transport", "传输", defaultTransport, allowUdp ? new[] { "Tcp", "Udp" } : new[] { defaultTransport }, !allowUdp),
                 Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms")
             };
             items.AddRange(extra);
@@ -315,7 +326,8 @@ namespace IPC.Plc.Communication.Core
             IEnumerable<PlcConnectionParameterDefinition> extra,
             string dataBits = "8",
             string parity = "None",
-            string stopBits = "One")
+            string stopBits = "One",
+            bool includeWordOrder = true)
         {
             List<PlcConnectionParameterDefinition> items = new List<PlcConnectionParameterDefinition>
             {
@@ -324,9 +336,10 @@ namespace IPC.Plc.Communication.Core
                 Number("dataBits", "数据位", dataBits, 5, 8, string.Empty),
                 Select("serialParity", "校验", parity, new[] { "None", "Odd", "Even", "Mark", "Space" }, false),
                 Select("serialStopBits", "停止位", stopBits, new[] { "One", "Two", "OnePointFive", "None" }, false),
-                Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms"),
-                Select("wordOrder", "字序", "HighWordFirst", new[] { "HighWordFirst", "LowWordFirst" }, false)
+                Number("timeoutMilliseconds", "超时", "3000", 100, 60000, "ms")
             };
+            if (includeWordOrder)
+                items.Add(Select("wordOrder", "字序", "HighWordFirst", new[] { "HighWordFirst", "LowWordFirst" }, false));
             items.AddRange(extra);
             return items;
         }

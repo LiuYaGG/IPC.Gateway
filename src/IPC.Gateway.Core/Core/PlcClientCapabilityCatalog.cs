@@ -18,6 +18,7 @@ namespace IPC.Plc.Communication.Core
                     return NativeIo(128);
 
                 case PlcProtocol.ModbusTcp:
+                case PlcProtocol.ModbusUdp:
                     return NativeIo(256);
 
                 case PlcProtocol.Dlt6452007:

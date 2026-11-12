@@ -293,6 +293,9 @@ public class EdgeRuleConfigurationDto
     public double TrendMinSlopePerSecond { get; set; }
     public double TrendChangeThreshold { get; set; }
     public double TrendStableDeadband { get; set; }
+    public int NoChangeTimeoutSeconds { get; set; } = 30;
+    public double NoChangeDeadband { get; set; }
+    public int NoChangeMaxAgeSeconds { get; set; } = 10;
     public string StateName { get; set; } = "State";
     public string StateExpectedValue { get; set; } = "1";
     public string StateClearValue { get; set; } = string.Empty;
@@ -487,6 +490,9 @@ public sealed class FlowRuleNodeDto
     public double TrendMinSlopePerSecond { get; set; }
     public double TrendChangeThreshold { get; set; }
     public double TrendStableDeadband { get; set; }
+    public int NoChangeTimeoutSeconds { get; set; } = 30;
+    public double NoChangeDeadband { get; set; }
+    public int NoChangeMaxAgeSeconds { get; set; } = 10;
     public string StateName { get; set; } = "State";
     public string StateExpectedValue { get; set; } = "1";
     public string StateClearValue { get; set; } = string.Empty;
@@ -941,6 +947,7 @@ public sealed class TagValueSnapshotDto
     public string Quality { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
     public string ErrorMessage { get; set; } = string.Empty;
+    public string LastReadError { get; set; } = string.Empty;
     public string TagState { get; set; } = string.Empty;
     public bool IsTagIsolated { get; set; }
     public bool IsStaticValidationError { get; set; }

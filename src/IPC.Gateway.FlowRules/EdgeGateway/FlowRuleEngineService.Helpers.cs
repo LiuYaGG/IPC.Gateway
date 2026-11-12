@@ -177,6 +177,7 @@ namespace IPC.EdgeGateway
                    IsNodeType(node, FlowRuleNodeTypes.Aggregation) ||
                    IsNodeType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsNodeType(node, FlowRuleNodeTypes.Trend) ||
+                   IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout) ||
                    IsNodeType(node, FlowRuleNodeTypes.StateMachine) ||
                    IsNodeType(node, FlowRuleNodeTypes.CycleTime) ||
                    IsNodeType(node, FlowRuleNodeTypes.ProcessTakt) ||
@@ -277,6 +278,8 @@ namespace IPC.EdgeGateway
                 return EdgeRuleConditionType.Aggregation;
             if (IsNodeType(node, FlowRuleNodeTypes.WindowCalculation))
                 return EdgeRuleConditionType.WindowCalculation;
+            if (IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout))
+                return EdgeRuleConditionType.NoChangeTimeout;
             if (IsNodeType(node, FlowRuleNodeTypes.Trend))
                 return EdgeRuleConditionType.Trend;
             if (IsNodeType(node, FlowRuleNodeTypes.StateMachine))

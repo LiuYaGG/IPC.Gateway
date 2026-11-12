@@ -40,6 +40,7 @@ namespace IPC.Plc.Communication.Infrastructure
         static PlcDriverPluginRegistry()
         {
             RegisterBuiltIn(new ModbusTcpProtocolDriver());
+            RegisterBuiltIn(new ModbusUdpProtocolDriver());
             RegisterBuiltIn(new Dlt645ProtocolDriver());
             RegisterBuiltIn(new Cjt188ProtocolDriver());
             RegisterBuiltIn(new Cjt1882018ProtocolDriver());

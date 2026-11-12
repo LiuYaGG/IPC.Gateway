@@ -391,6 +391,9 @@ internal static class ProjectProtobufContracts
             .Add(115, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.SequenceResetOnMismatch))
             .Add(116, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.ClearDurationSeconds))
             .Add(117, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.Actions))
+            .Add(118, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeTimeoutSeconds))
+            .Add(119, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeDeadband))
+            .Add(120, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeMaxAgeSeconds))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.FlowRuleAlarmLevel), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.FlowRuleAlarmLevel.Id))
@@ -565,6 +568,9 @@ internal static class ProjectProtobufContracts
             .Add(138, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.WebhookContentType))
             .Add(139, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.WebhookTimeoutSeconds))
             .Add(140, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.WebhookRetryCount))
+            .Add(141, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeTimeoutSeconds))
+            .Add(142, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeDeadband))
+            .Add(143, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeMaxAgeSeconds))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.GroupConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.GroupConfig.Id))

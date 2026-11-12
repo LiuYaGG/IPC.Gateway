@@ -7,41 +7,9 @@
         <a-button @click="$emit('delete')" type="link" danger>{{ tx('删除') }}</a-button>
       </div>
       <a-form layout="vertical">
-        <a-form-item :label="tx('名称')"><gateway-input v-model="node.label" /></a-form-item>
+        <a-form-item :label="tx('名称')"><gateway-input v-model="nodeLabel" /></a-form-item>
         <a-form-item :label="tx('类型')">
-          <gateway-select v-model="node.nodeType">
-            <a-select-option :label="tx('质量门控')" value="QualityGate">{{ tx('质量门控') }}</a-select-option>
-            <a-select-option :label="tx('窗口统计')" value="SlidingWindow">{{ tx('窗口统计') }}</a-select-option>
-            <a-select-option :label="tx('窗口计算')" value="WindowCalculation">{{ tx('窗口计算') }}</a-select-option>
-            <a-select-option :label="tx('聚合计算')" value="Aggregation">{{ tx('聚合计算') }}</a-select-option>
-            <a-select-option :label="tx('趋势判断')" value="Trend">{{ tx('趋势判断') }}</a-select-option>
-            <a-select-option :label="tx('状态机')" value="StateMachine">{{ tx('状态机') }}</a-select-option>
-            <a-select-option :label="tx('标签输入')" value="TagInput">{{ tx('标签输入') }}</a-select-option>
-            <a-select-option :label="tx('条件')" value="Condition">{{ tx('条件') }}</a-select-option>
-            <a-select-option :label="tx('滞回规则')" value="Hysteresis">{{ tx('滞回规则') }}</a-select-option>
-            <a-select-option :label="tx('多级告警')" value="MultiLevelAlarm">{{ tx('多级告警') }}</a-select-option>
-            <a-select-option :label="tx('表达式规则')" value="Expression">{{ tx('表达式规则') }}</a-select-option>
-            <a-select-option :label="tx('数据处理')" value="Transform">{{ tx('数据处理') }}</a-select-option>
-            <a-select-option :label="tx('函数节点')" value="Function">{{ tx('函数节点') }}</a-select-option>
-            <a-select-option v-if="node.nodeType === 'ValueScript'" :label="tx('值处理脚本')" value="ValueScript">
-              {{ tx('值处理脚本') }}
-            </a-select-option>
-            <a-select-option label="AND/OR" value="Logic">{{ 'AND/OR' }}</a-select-option>
-            <a-select-option :label="tx('持续确认')" value="Duration">{{ tx('持续确认') }}</a-select-option>
-            <a-select-option :label="tx('顺序/时序')" value="Sequence">{{ tx('顺序/时序') }}</a-select-option>
-            <a-select-option label="Cycle Time" value="CycleTime">{{ 'Cycle Time' }}</a-select-option>
-            <a-select-option :label="tx('工艺节拍')" value="ProcessTakt">{{ tx('工艺节拍') }}</a-select-option>
-            <a-select-option :label="tx('异常检测')" value="AnomalyDetection">{{ tx('异常检测') }}</a-select-option>
-            <a-select-option :label="tx('ONNX 推理')" value="ModelInference">{{ tx('ONNX 推理') }}</a-select-option>
-            <a-select-option label="Tag Relation" value="TagRelation">{{ 'Tag Relation' }}</a-select-option>
-            <a-select-option label="Context Gate" value="ContextGate">{{ 'Context Gate' }}</a-select-option>
-            <a-select-option label="Alarm Lifecycle" value="AlarmLifecycle">{{ 'Alarm Lifecycle' }}</a-select-option>
-            <a-select-option label="Action Policy" value="ActionPolicy">{{ 'Action Policy' }}</a-select-option>
-            <a-select-option label="Debug Probe" value="DebugProbe">{{ 'Debug Probe' }}</a-select-option>
-            <a-select-option :label="tx('MQTT 发布')" value="MqttPublish">{{ tx('MQTT 发布') }}</a-select-option>
-            <a-select-option :label="tx('邮件通知')" value="EmailNotify">{{ tx('邮件通知') }}</a-select-option>
-            <a-select-option label="Webhook" value="WebhookCall">{{ 'Webhook' }}</a-select-option>
-          </gateway-select>
+          <gateway-input :model-value="tx(flowNodeTypeLabel(node.nodeType))" readonly />
         </a-form-item>
         <template v-if="needsTagSource">
           <a-form-item :label="tx('标签来源')">
@@ -60,14 +28,9 @@
           </a-form-item>
           <a-form-item :label="tx('质量列表')">
             <gateway-select v-model="qualityValuesList" searchable mode="tags">
-              <a-select-option label="Good" value="Good">{{ 'Good' }}</a-select-option>
-              <a-select-option label="OutOfRange" value="OutOfRange">{{ 'OutOfRange' }}</a-select-option>
-              <a-select-option label="Filtered" value="Filtered">{{ 'Filtered' }}</a-select-option>
-              <a-select-option label="Spike" value="Spike">{{ 'Spike' }}</a-select-option>
-              <a-select-option label="Bad" value="Bad">{{ 'Bad' }}</a-select-option>
-              <a-select-option label="ReadError" value="ReadError">{{ 'ReadError' }}</a-select-option>
-              <a-select-option label="NotConnected" value="NotConnected">{{ 'NotConnected' }}</a-select-option>
-              <a-select-option label="Unknown" value="Unknown">{{ 'Unknown' }}</a-select-option>
+              <a-select-option v-for="option in qualityOptions" :key="option.value" :label="option.label" :value="option.value">
+                {{ option.label }}
+              </a-select-option>
             </gateway-select>
           </a-form-item>
         </template>
@@ -133,9 +96,9 @@
               <a-form-item :label="tx('级别名称')"><gateway-input v-model="level.name" /></a-form-item>
               <a-form-item :label="tx('严重度')">
                 <gateway-select v-model="level.severity">
-                  <a-select-option label="Info" value="Info">{{ 'Info' }}</a-select-option>
-                  <a-select-option label="Warning" value="Warning">{{ 'Warning' }}</a-select-option>
-                  <a-select-option label="Critical" value="Critical">{{ 'Critical' }}</a-select-option>
+                  <a-select-option v-for="severity in severityValues" :key="severity" :label="flowOptionLabel('severity', severity, tx)" :value="severity">
+                    {{ flowOptionLabel('severity', severity, tx) }}
+                  </a-select-option>
                 </gateway-select>
               </a-form-item>
               <a-form-item :label="tx('运算符')">
@@ -257,6 +220,18 @@
             <gateway-number-input v-model="node.trendStableDeadband" :min="0" :controls="false" />
           </a-form-item>
         </template>
+        <template v-if="node.nodeType === 'NoChangeTimeout'">
+          <a-form-item :label="tx('无变化超时（秒）')">
+            <gateway-number-input v-model="node.noChangeTimeoutSeconds" :min="1" :precision="0" :controls="false" />
+          </a-form-item>
+          <a-form-item :label="tx('变化死区')">
+            <gateway-number-input v-model="node.noChangeDeadband" :min="0" :controls="false" />
+          </a-form-item>
+          <a-form-item :label="tx('数据最大间隔（秒）')">
+            <gateway-number-input v-model="node.noChangeMaxAgeSeconds" :min="1" :precision="0" :controls="false" />
+          </a-form-item>
+          <a-alert class="protocol-compatibility-notice" type="info" show-icon :message="tx('收到首个正常样本后计时；值变化后重新计时。数据质量异常或更新间隔过长时暂停判断，正常采集恢复后重新计时。')" />
+        </template>
         <template v-if="node.nodeType === 'StateMachine'">
           <a-form-item :label="tx('状态名称')"><gateway-input v-model="node.stateName" /></a-form-item>
           <a-form-item :label="tx('目标状态值')"><gateway-input v-model="node.stateExpectedValue" /></a-form-item>
@@ -286,7 +261,7 @@
         <template v-if="node.nodeType === 'AnomalyDetection'">
           <a-form-item :label="tx('检测模式')">
             <gateway-select v-model="node.anomalyMode">
-              <a-select-option label="Z-Score" value="ZScore">{{ 'Z-Score' }}</a-select-option>
+              <a-select-option :label="flowOptionLabel('anomaly', 'ZScore', tx)" value="ZScore">{{ flowOptionLabel('anomaly', 'ZScore', tx) }}</a-select-option>
               <a-select-option :label="tx('均值偏差')" value="Deviation">{{ tx('均值偏差') }}</a-select-option>
               <a-select-option :label="tx('突变')" value="Spike">{{ tx('突变') }}</a-select-option>
             </gateway-select>
@@ -388,9 +363,9 @@
         <template v-if="node.nodeType === 'AlarmLifecycle'">
           <a-form-item :label="tx('告警级别')">
             <gateway-select v-model="node.alarmSeverity">
-              <a-select-option label="Info" value="Info">{{ 'Info' }}</a-select-option>
-              <a-select-option label="Warning" value="Warning">{{ 'Warning' }}</a-select-option>
-              <a-select-option label="Critical" value="Critical">{{ 'Critical' }}</a-select-option>
+              <a-select-option v-for="severity in severityValues" :key="severity" :label="flowOptionLabel('severity', severity, tx)" :value="severity">
+                {{ flowOptionLabel('severity', severity, tx) }}
+              </a-select-option>
             </gateway-select>
           </a-form-item>
           <a-form-item :label="tx('抑制重复（秒）')">
@@ -482,7 +457,7 @@
           </a-form-item>
         </template>
         <a-form-item v-if="node.nodeType === 'Logic'" :label="tx('组合方式')">
-          <gateway-choice v-model="node.logicalOperator" :options="['And', 'Or']" />
+          <gateway-choice v-model="node.logicalOperator" :options="logicOptions" />
         </a-form-item>
         <a-form-item v-if="node.nodeType === 'Duration'" :label="tx('持续时间（秒）')">
           <gateway-number-input v-model="node.durationSeconds" :min="0" :controls="false" />
@@ -546,7 +521,7 @@
           <a-form-item :label="tx('触发时调用')"><a-switch v-model:checked="node.executeOnActive" /></a-form-item>
           <a-form-item :label="tx('恢复时调用')"><a-switch v-model:checked="node.executeOnClear" /></a-form-item>
           <a-form-item label="URL"><gateway-input v-model="node.webhookUrl" /></a-form-item>
-          <a-form-item label="Method">
+          <a-form-item :label="tx('请求方法')">
             <gateway-select v-model="node.webhookMethod">
               <a-select-option label="POST" value="POST">{{ 'POST' }}</a-select-option>
               <a-select-option label="PUT" value="PUT">{{ 'PUT' }}</a-select-option>
@@ -555,11 +530,11 @@
               <a-select-option label="DELETE" value="DELETE">{{ 'DELETE' }}</a-select-option>
             </gateway-select>
           </a-form-item>
-          <a-form-item label="Content-Type"><gateway-input v-model="node.webhookContentType" /></a-form-item>
-          <a-form-item label="Headers">
+          <a-form-item :label="tx('内容类型（Content-Type）')"><gateway-input v-model="node.webhookContentType" /></a-form-item>
+          <a-form-item :label="tx('请求头')">
             <gateway-input v-model="node.webhookHeaders" type="textarea" :rows="3" />
           </a-form-item>
-          <a-form-item :label="tx('Body 模板')">
+          <a-form-item :label="tx('请求正文模板')">
             <gateway-input v-model="node.webhookBodyTemplate" type="textarea" :rows="5" />
           </a-form-item>
           <a-form-item :label="tx('超时（秒）')">
@@ -582,7 +557,8 @@ import type { FlowRuleNode, ProjectConfig } from '../api'
 import type { ValueTransformCatalogItem } from '../scriptingApi'
 import { PlusOutlined as Plus } from '@ant-design/icons-vue'
 import TagSelector from './TagSelector.vue'
-import { applyTagSelectionToNode } from '../utils/flowRules'
+import { applyTagSelectionToNode, flowNodeLabel, flowNodeTypeLabel, flowOptionLabel } from '../utils/flowRules'
+import { qualityText, tagQualityValues } from '../utils/display'
 import { findTagSelectionKey, type TagSelection } from '../utils/tagSelection'
 
 const props = defineProps<{
@@ -594,6 +570,18 @@ const props = defineProps<{
 defineEmits<{
   delete: []
 }>()
+
+const nodeLabel = computed({
+  get: () => {
+    if (!props.node) return ''
+    const label = props.node.label ?? ''
+    const typeLabel = flowNodeTypeLabel(props.node.nodeType)
+    return label.trim() && flowNodeLabel(props.node) === typeLabel ? tx(typeLabel) : label
+  },
+  set: (value: string) => {
+    if (props.node) props.node.label = value
+  }
+})
 
 const tagKey = computed(() =>
   props.node
@@ -621,7 +609,7 @@ const contextTagKey = computed(() =>
 
 const qualityValuesList = computed<string[]>({
   get() {
-    return (props.node?.qualityValues || 'Good')
+    return (props.node?.qualityValues ?? '')
       .split(/[,\s;|]+/)
       .map((item) => item.trim())
       .filter(Boolean)
@@ -631,6 +619,13 @@ const qualityValuesList = computed<string[]>({
     props.node.qualityValues = (values || []).join(',')
   }
 })
+
+const qualityOptions = computed(() => [...new Set<string>([...tagQualityValues, ...qualityValuesList.value])].map((value) => ({
+  value,
+  label: tx(qualityText(value))
+})))
+const severityValues = ['Info', 'Warning', 'Critical']
+const logicOptions = computed(() => ['And', 'Or'].map((value) => ({ value, label: flowOptionLabel('logic', value, tx) })))
 
 const modelPurposeOptions = [
   { label: '设备异常预警', value: 'DeviceAnomaly' },
@@ -660,6 +655,7 @@ const needsTagSource = computed(
       'WindowCalculation',
       'Aggregation',
       'Trend',
+      'NoChangeTimeout',
       'StateMachine',
       'CycleTime',
       'ProcessTakt',

@@ -146,7 +146,21 @@
           <gateway-number-input v-model="device.connection.slot" :min="0" :max="16" />
         </a-form-item>
       </div>
-      <div v-if="['ModbusTcp', 'MitsubishiMc', 'MitsubishiMc1E'].includes(protocol)" class="form-grid">
+      <div v-if="isModbusProtocol" class="form-grid">
+        <a-form-item :label="tx('数据格式')">
+          <gateway-select v-model="modbusDataFormat">
+            <a-select-option v-for="format in ['ABCD', 'BADC', 'CDAB', 'DCBA']" :key="format" :value="format">{{ format }}</a-select-option>
+          </gateway-select>
+        </a-form-item>
+      </div>
+      <a-form-item v-if="protocol === 'OmronFins'" :label="tx('数据格式')">
+        <gateway-select v-model="finsDataFormat">
+          <a-select-option v-for="item in ['ABCD', 'BADC', 'CDAB', 'DCBA']" :key="item" :label="item" :value="item">
+            {{ item }}
+          </a-select-option>
+        </gateway-select>
+      </a-form-item>
+      <div v-if="['MitsubishiMc', 'MitsubishiMc1E'].includes(protocol)" class="form-grid">
         <a-form-item :label="tx('字序')">
           <gateway-select v-model="device.connection.wordOrder">
             <a-select-option v-for="item in wordOrderOptions" :key="item" :label="tx(item)" :value="item">
@@ -234,7 +248,7 @@
         </a-form-item>
       </div>
       <div
-        v-if="['ModbusRtu', 'ModbusAscii', 'MitsubishiSerial', 'MitsubishiQlSerial'].includes(protocol)"
+        v-if="['MitsubishiSerial', 'MitsubishiQlSerial'].includes(protocol)"
         class="form-grid"
       >
         <a-form-item :label="tx('字序')">
@@ -403,6 +417,7 @@ const networkPortLabel = computed(() =>
 const transportLocked = computed(
   () =>
     props.protocol === 'ModbusTcp' ||
+    props.protocol === 'ModbusUdp' ||
     props.protocol === 'SiemensS7' ||
     props.protocol === 'RockwellCip' ||
     props.protocol === 'EtherNetIp' ||
@@ -418,6 +433,23 @@ const transportLocked = computed(
     props.protocol === 'Cjt1882018'
 )
 const serialHostLabel = computed(() => (props.protocol === 'CanOpen' ? 'CAN适配器串口' : '串口'))
+const isModbusProtocol = computed(() => ['ModbusTcp', 'ModbusUdp', 'ModbusRtu', 'ModbusAscii'].includes(props.protocol))
+const modbusDataFormat = computed({
+  get: () => String(getParameterValueByKey('driverOptions.modbusDataFormat')),
+  set: (value: string) => {
+    const options = readDriverOptions()
+    options.modbusDataFormat = value
+    props.device.connection.driverOptionsJson = JSON.stringify(options)
+  }
+})
+const finsDataFormat = computed({
+  get: () => String(getParameterValueByKey('driverOptions.finsDataFormat')),
+  set: (value: string) => {
+    const options = readDriverOptions()
+    options.finsDataFormat = value
+    props.device.connection.driverOptionsJson = JSON.stringify(options)
+  }
+})
 const serialPortLabel = computed(() => (props.protocol === 'CanOpen' ? '适配器波特率' : '波特率'))
 watch(
   () => [props.protocol, props.device.connection.transport] as const,
@@ -497,17 +529,16 @@ function updateSwitchParameter(parameter: GatewayConnectionParameterDefinition, 
 }
 
 function getParameterValue(parameter: GatewayConnectionParameterDefinition) {
-  const key = parameter.key
-  if (key.startsWith('driverOptions.')) {
-    const options = readDriverOptions()
-    return options[key.slice('driverOptions.'.length)]
-  }
-  return (props.device.connection as unknown as Record<string, unknown>)[key]
+  return getParameterValueByKey(parameter.key)
 }
 
 function getParameterValueByKey(key: string) {
   if (key.startsWith('driverOptions.')) {
     const options = readDriverOptions()
+    if (key === 'driverOptions.modbusDataFormat' && !options.modbusDataFormat)
+      return props.device.connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD'
+    if (key === 'driverOptions.finsDataFormat' && !options.finsDataFormat)
+      return props.device.connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD'
     return options[key.slice('driverOptions.'.length)]
   }
   return (props.device.connection as unknown as Record<string, unknown>)[key]

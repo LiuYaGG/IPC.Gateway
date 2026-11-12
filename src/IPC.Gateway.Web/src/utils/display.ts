@@ -43,6 +43,7 @@ const statusLabels: Record<string, string> = {
   warning: "警告",
   timeout: "超时",
   timedout: "超时",
+  nochangetimeout: "连续无变化超时",
   canceled: "已取消",
   cancelled: "已取消",
   completed: "已完成",
@@ -109,11 +110,37 @@ export function statusText(value: unknown, fallback = "未知") {
   return statusLabels[text.replace(/[\s_-]/g, "").toLowerCase()] ?? text;
 }
 
+export const tagQualityValues = [
+  "Good", "OutOfRange", "Filtered", "Spike", "Bad", "ReadError",
+  "NotConnected", "Unknown", "Disabled", "NotFound", "AccessDenied",
+] as const;
+
+const qualityLabels: Record<string, string> = {
+  good: "正常",
+  unknown: "无数据",
+  bad: "异常",
+  readerror: "读取失败",
+  notconnected: "未连接",
+  disabled: "停用",
+  outofrange: "越界",
+  filtered: "已过滤",
+  spike: "毛刺",
+  notfound: "未找到",
+  accessdenied: "拒绝访问",
+};
+
+// Return UI labels only; quality keys sent to the gateway stay unchanged.
+export function qualityText(value: unknown, fallback = "无数据") {
+  if (value === undefined || value === null || value === "") return fallback;
+  const text = String(value);
+  return qualityLabels[text.replace(/[\s_-]/g, "").toLowerCase()] ?? text;
+}
+
 export function driverSignatureText(value?: string | null) {
   const labels: Record<string, string> = {
     builtin: "内置驱动",
     trusted: "已签名",
-    upgradetrusted: "升级可信",
+    upgradetrusted: "已签名",
     signed: "已签名",
     unsigned: "未签名",
     unverified: "签名未验证",

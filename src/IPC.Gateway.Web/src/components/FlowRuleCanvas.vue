@@ -55,7 +55,7 @@
             @pointerdown.stop
           />
           <span>{{ tx(flowNodeTypeLabel(node.nodeType)) }}</span>
-          <strong>{{ nodeDisplayName(node) }}</strong>
+          <strong>{{ nodeDisplayName(node, tx) }}</strong>
           <small>{{ nodeFooter(node) }}</small>
           <button
             type="button"
@@ -98,7 +98,7 @@ import { formatMessage } from '../i18n'
 import { tx } from '../i18n'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FlowRuleEdge, FlowRuleNode } from '../api'
-import { flowNodeTypeLabel, nodeDisplayName } from '../utils/flowRules'
+import { flowNodeTypeLabel, nodeDisplayName, flowOptionLabel, flowQualityValuesLabel, operatorSymbol } from '../utils/flowRules'
 
 const canvasWidth = 1400
 const canvasHeight = 820
@@ -424,47 +424,49 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function nodeFooter(node: FlowRuleNode) {
-  if (node.nodeType === 'TagInput') return node.pointCode || node.tagName || '未选择标签'
+  if (node.nodeType === 'TagInput') return node.pointCode || node.tagName || tx('未选择标签')
+  if (node.nodeType === 'QualityGate') return `${flowOptionLabel('qualityOperator', node.qualityOperator, tx)} ${flowQualityValuesLabel(node.qualityValues, tx)}`.trimEnd()
   if (node.nodeType === 'Hysteresis')
     return formatMessage('{0} {1}/{2}', [
-      node.hysteresisMode === 'Low' ? '低限' : '高限',
+      flowOptionLabel('hysteresis', node.hysteresisMode, tx),
       node.hysteresisOnValue,
       node.hysteresisOffValue
     ])
   if (node.nodeType === 'MultiLevelAlarm') return formatMessage('{0} 个级别', [(node.alarmLevels ?? []).length])
   if (node.nodeType === 'Expression') return node.expression || '{value} > 0'
-  if (node.nodeType === 'WindowCalculation')
-    return `${node.windowStatistic || 'Average'} ${node.operator} ${node.compareValue}`
+  if (node.nodeType === 'SlidingWindow' || node.nodeType === 'WindowCalculation')
+    return `${flowOptionLabel('statistic', node.windowStatistic, tx)} ${operatorSymbol(node.operator)} ${node.compareValue}`
   if (node.nodeType === 'Aggregation')
-    return `${node.aggregationStatistic || 'Average'} ${node.operator} ${node.compareValue}`
-  if (node.nodeType === 'Trend') return `${node.trendMode || 'Slope'} ${node.trendWindowSeconds || 300}s`
+    return `${flowOptionLabel('statistic', node.aggregationStatistic, tx)} ${operatorSymbol(node.operator)} ${node.compareValue}`
+  if (node.nodeType === 'Trend') return `${flowOptionLabel('trend', node.trendMode, tx)} ${node.trendWindowSeconds || 300}s`
+  if (node.nodeType === 'NoChangeTimeout') return `${node.noChangeTimeoutSeconds || 30}s`
   if (node.nodeType === 'CycleTime') return `${node.cycleStartValue || '1'} -> ${node.cycleEndValue || '0'}`
   if (node.nodeType === 'ProcessTakt') return `${node.taktTargetSeconds || 60}s ±${node.taktTolerancePercent ?? 10}%`
-  if (node.nodeType === 'AnomalyDetection') return `${node.anomalyMode || 'ZScore'} ${node.anomalyThreshold || 3}`
+  if (node.nodeType === 'AnomalyDetection') return `${flowOptionLabel('anomaly', node.anomalyMode, tx)} ${node.anomalyThreshold || 3}`
   if (node.nodeType === 'ModelInference')
     return formatMessage('{0} {1} {2}', [
-      node.modelPurpose === 'QualityPrediction' ? '质量预测' : '异常预警',
-      node.modelOperator || '>=',
+      flowOptionLabel('purpose', node.modelPurpose, tx),
+      operatorSymbol(node.modelOperator || 'GreaterThanOrEqual'),
       node.modelThreshold ?? 0.5
     ])
-  if (node.nodeType === 'TagRelation') return node.relatedPointCode || node.relatedTagName || '关联标签'
+  if (node.nodeType === 'TagRelation') return node.relatedPointCode || node.relatedTagName || tx('关联标签')
   if (node.nodeType === 'ContextGate')
-    return formatMessage('{0}={1}', [node.contextName || '上下文', node.contextExpectedValue || ''])
-  if (node.nodeType === 'AlarmLifecycle') return formatMessage('{0} 生命周期', [node.alarmSeverity || 'Warning'])
+    return formatMessage('{0}={1}', [node.contextName || tx('上下文'), node.contextExpectedValue || ''])
+  if (node.nodeType === 'AlarmLifecycle') return formatMessage('{0} 生命周期', [flowOptionLabel('severity', node.alarmSeverity, tx)])
   if (node.nodeType === 'ActionPolicy') return formatMessage('{0}s 冷却', [node.actionCooldownSeconds || 0])
-  if (node.nodeType === 'DebugProbe') return node.debugLabel || '调试跟踪'
+  if (node.nodeType === 'DebugProbe') return node.debugLabel || tx('调试跟踪')
   if (node.nodeType === 'Transform')
     return `${node.transformUseAbsolute ? 'abs, ' : ''}x${node.transformMultiplier ?? 1} ${formatOffset(node.transformOffset ?? 0)}`
   if (node.nodeType === 'Function') return node.transformExpression || '{value}'
   if (node.nodeType === 'ValueScript')
     return `v${node.valueScriptVersion || 0} · ${node.valueScriptInputDataType || '?'} → ${node.valueScriptOutputDataType || '?'}`
-  if (node.nodeType === 'Logic') return node.logicalOperator || 'And'
+  if (node.nodeType === 'Logic') return flowOptionLabel('logic', node.logicalOperator, tx)
   if (node.nodeType === 'Duration') return `${node.durationSeconds || 0}s`
   if (node.nodeType === 'Sequence') return formatMessage('{0}s 窗口', [node.sequenceWindowSeconds || 60])
-  if (node.nodeType === 'MqttPublish') return node.publishToMqtt ? `QoS ${node.publishQos}` : '未发布'
-  if (node.nodeType === 'EmailNotify') return node.emailTo || '未配置收件人'
+  if (node.nodeType === 'MqttPublish') return node.publishToMqtt ? `QoS ${node.publishQos}` : tx('未发布')
+  if (node.nodeType === 'EmailNotify') return node.emailTo || tx('未配置收件人')
   if (node.nodeType === 'WebhookCall') return node.webhookUrl || node.webhookMethod || 'POST'
-  return node.pointCode || node.tagName || `${node.operator} ${node.compareValue}`
+  return node.pointCode || node.tagName || `${operatorSymbol(node.operator)} ${node.compareValue}`
 }
 
 function formatOffset(offset: number) {

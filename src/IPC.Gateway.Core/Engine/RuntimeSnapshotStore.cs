@@ -38,13 +38,15 @@ namespace IPC.Runtime.Engine
             return result;
         }
 
-        public bool Upsert(IDictionary<string, TagValueSnapshot> snapshots, TagValueSnapshot snapshot, out TagValueSnapshot clone)
+        public bool Upsert(IDictionary<string, TagValueSnapshot> snapshots, TagValueSnapshot snapshot, out TagValueSnapshot clone, bool preserveLastReadError = false)
         {
             string key = TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
             clone = snapshot.Clone();
 
-            TagValueSnapshot? previous;
-            bool changed = !snapshots.TryGetValue(key, out previous) || HasChanged(previous, clone);
+            bool exists = snapshots.TryGetValue(key, out TagValueSnapshot? previous);
+            if (preserveLastReadError && previous != null)
+                clone.LastReadError = previous.LastReadError ?? string.Empty;
+            bool changed = !exists || HasChanged(previous, clone);
             snapshots[key] = clone;
             return changed;
         }
@@ -63,7 +65,8 @@ namespace IPC.Runtime.Engine
                    previous.CleaningApplied != current.CleaningApplied ||
                    !string.Equals(previous.CleaningAction ?? string.Empty, current.CleaningAction ?? string.Empty, StringComparison.Ordinal) ||
                    !string.Equals(previous.CleaningMessage ?? string.Empty, current.CleaningMessage ?? string.Empty, StringComparison.Ordinal) ||
-                   !string.Equals(previous.ErrorMessage ?? string.Empty, current.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+                   !string.Equals(previous.ErrorMessage ?? string.Empty, current.ErrorMessage ?? string.Empty, StringComparison.Ordinal) ||
+                   !string.Equals(previous.LastReadError ?? string.Empty, current.LastReadError ?? string.Empty, StringComparison.Ordinal);
         }
     }
 }

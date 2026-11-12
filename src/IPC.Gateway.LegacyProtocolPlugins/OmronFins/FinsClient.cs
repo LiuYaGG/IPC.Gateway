@@ -42,6 +42,7 @@ namespace IPC.Plc.Communication.OmronFins
 
         private readonly PlcConnectionOptions _options;
         private readonly FinsDriverOptions _driverOptions;
+        private readonly FinsDataFormat _dataFormat;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private UdpClient _udpClient;
@@ -56,6 +57,7 @@ namespace IPC.Plc.Communication.OmronFins
                 throw new ArgumentNullException("options");
             _options = options;
             _driverOptions = FinsDriverOptions.Parse(options);
+            _dataFormat = _driverOptions.ResolveDataFormat(options.WordOrder);
         }
 
         public bool IsConnected
@@ -212,7 +214,7 @@ namespace IPC.Plc.Communication.OmronFins
             int words = FinsDataCodec.GetWordCount(dataType, usesCount ? elementCount : 1);
             wordStart.EnsureRange(words, false);
             byte[] data = ReadMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, _driverOptions.MaxWordCount);
-            object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _options.WordOrder);
+            object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _dataFormat);
             return new PlcReadResult(wordStart.Area.WordCode, wordStart.Area.Name + ".WORD", result);
         }
 
@@ -248,7 +250,7 @@ namespace IPC.Plc.Communication.OmronFins
             int words = FinsDataCodec.GetWordCount(dataType, usesCount ? elementCount : 1);
             wordStart.EnsureRange(words, false);
             byte[] data = await ReadMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, words, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
-            object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _options.WordOrder);
+            object result = FinsDataCodec.DecodeWords(dataType, data, usesCount ? elementCount : 1, _dataFormat);
             return new PlcReadResult(wordStart.Area.WordCode, wordStart.Area.Name + ".WORD", result);
         }
 
@@ -259,7 +261,7 @@ namespace IPC.Plc.Communication.OmronFins
             {
                 ReadMemory = ReadMemory,
                 ReadMultipleMemory = ReadMultipleMemory,
-                WordOrder = _options.WordOrder,
+                DataFormat = _dataFormat,
                 MaxWordCount = _driverOptions.MaxWordCount,
                 MaxBitCount = _driverOptions.MaxBitCount,
                 MaxGapWords = _driverOptions.MaxGapWords,
@@ -277,7 +279,7 @@ namespace IPC.Plc.Communication.OmronFins
             {
                 ReadMemoryAsync = ReadMemoryAsync,
                 ReadMultipleMemoryAsync = ReadMultipleMemoryAsync,
-                WordOrder = _options.WordOrder,
+                DataFormat = _dataFormat,
                 MaxWordCount = _driverOptions.MaxWordCount,
                 MaxBitCount = _driverOptions.MaxBitCount,
                 MaxGapWords = _driverOptions.MaxGapWords,
@@ -323,7 +325,7 @@ namespace IPC.Plc.Communication.OmronFins
 
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
-            byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _options.WordOrder);
+            byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _dataFormat);
             wordStart.EnsureRange(data.Length / 2, false);
             WriteMemory(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, _driverOptions.MaxWordCount);
         }
@@ -354,7 +356,7 @@ namespace IPC.Plc.Communication.OmronFins
 
             int wordOffset = PlcDataTypeHelper.IsArray(dataType) ? FinsDataCodec.GetWordOffset(dataType, elementOffset) : 0;
             FinsAddress wordStart = address.OffsetWords(wordOffset);
-            byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _options.WordOrder);
+            byte[] data = FinsDataCodec.EncodeWords(dataType, valueText, _dataFormat);
             wordStart.EnsureRange(data.Length / 2, false);
             await WriteMemoryAsync(wordStart.Area.WordCode, wordStart.WordAddress, 0, data, data.Length / 2, _driverOptions.MaxWordCount, cancellationToken).ConfigureAwait(false);
         }

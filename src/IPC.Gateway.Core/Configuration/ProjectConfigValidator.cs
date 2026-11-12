@@ -197,6 +197,7 @@ namespace IPC.Runtime.Configuration
                 return;
 
             if (device.Protocol == PlcProtocol.ModbusTcp ||
+                device.Protocol == PlcProtocol.ModbusUdp ||
                 device.Protocol == PlcProtocol.BacnetIp ||
                 device.Protocol == PlcProtocol.Dlt6452007 ||
                 device.Protocol == PlcProtocol.Cjt1882004 ||

@@ -1,6 +1,17 @@
 // Only presentation text is localized. Parameters such as topics, endpoints and
 // counts are copied verbatim; backend diagnostics and stored events are untouched.
 export const runtimeMessages: ReadonlyArray<readonly [string, string]> = [
+  ['FINS 数据格式必须为 ABCD、BADC、CDAB 或 DCBA。', 'FINS data format must be ABCD, BADC, CDAB, or DCBA.'],
+  ['连续无变化超时的数值处理节点需要数值输入。', 'Numeric processing before the unchanged timeout requires numeric input.'],
+  ['连续无变化超时参数无效：超时和数据最大间隔必须大于 0，变化死区必须为非负有限数。', 'Invalid unchanged timeout settings: timeout and sample gap must be positive, and deadband must be finite and non-negative.'],
+  ['Modbus 数据格式必须为 ABCD、BADC、CDAB 或 DCBA。', 'Modbus data format must be ABCD, BADC, CDAB, or DCBA.'],
+  ['Modbus UDP 响应超时（{0} ms）。', 'Modbus UDP response timed out after {0} ms.'],
+  ['Modbus UDP 异常：功能码 0x{0}，异常码 0x{1}。', 'Modbus UDP exception: function 0x{0}, code 0x{1}.'],
+  ['Modbus UDP 报文头或数据报长度无效。', 'Invalid Modbus UDP MBAP header or datagram length.'],
+  ['Modbus UDP 异常响应长度无效。', 'Invalid Modbus UDP exception response length.'],
+  ['Modbus UDP 响应功能码与请求不匹配。', 'Modbus UDP response function does not match the request.'],
+  ['Modbus UDP 读取响应字节数与请求不匹配。', 'Modbus UDP read response byte count does not match the request.'],
+  ['Modbus UDP 写入响应的地址或值/数量与请求不匹配。', 'Modbus UDP write response does not echo the requested address and value/count.'],
   ['Protobuf 项目文件或格式版本不受支持。', 'Unsupported Protobuf project file or format version.'],
   ['Protobuf 项目备份或格式版本不受支持。', 'Unsupported Protobuf project backup or format version.'],
   ['Protobuf 项目备份内容不完整。', 'The Protobuf project backup is incomplete.'],

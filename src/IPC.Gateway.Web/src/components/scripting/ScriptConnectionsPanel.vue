@@ -13,7 +13,7 @@
       :columns="
         localizeColumns([
           { key: 'column-0', title: tx('名称'), dataIndex: 'name', width: '160' },
-          { key: 'column-1', title: tx('数据库'), dataIndex: 'provider', width: '125' },
+          { key: 'column-1', title: tx('数据库'), dataIndex: 'provider', customRender: ({ text }: any) => tx(databaseProviderLabel(text)), width: '125' },
           { key: 'column-2', title: tx('状态'), width: '100' },
           { key: 'column-3', title: tx('超时(秒)'), dataIndex: 'connectionTimeoutSeconds', width: '105' },
           { key: 'column-4', title: tx('连接串'), dataIndex: 'connectionString', width: '230', ellipsis: true },
@@ -46,7 +46,6 @@
       :title="tx('数据库连接')"
       width="680px"
       destroy-on-close
-      :footer="null"
     >
       <a-form
         :model="form"
@@ -76,7 +75,7 @@
             :rows="5"
             :placeholder="tx(connectionPlaceholder)"
           />
-          <span class="connection-hint">{{ providerHint }}</span>
+          <span class="connection-hint">{{ tx(providerHint) }}</span>
         </a-form-item>
         <a-form-item :label="tx('连接超时')">
           <gateway-number-input v-model="form.connectionTimeoutSeconds" :min="1" :max="120" />
@@ -105,7 +104,7 @@ import {
   testScriptConnection,
   type ScriptDatabaseConnection
 } from '../../scriptingApi'
-import { cloneValue, createConnection } from './scriptingModel'
+import { cloneValue, createConnection, databaseProviderLabel } from './scriptingModel'
 
 defineProps<{ connections: ScriptDatabaseConnection[]; canManage: boolean }>()
 const emit = defineEmits<{ changed: [] }>()

@@ -21,6 +21,7 @@ using IPC.Plc.Communication.Core;
 using IPC.Plc.Communication.Metering.Cjt188;
 using IPC.Plc.Communication.Metering.Dlt645;
 using IPC.Plc.Communication.ModbusTcp;
+using IPC.Plc.Communication.ModbusUdp;
 using IPC.Plc.Communication.VirtualPlc;
 
 namespace IPC.Plc.Communication.Infrastructure
@@ -81,6 +82,14 @@ namespace IPC.Plc.Communication.Infrastructure
         {
             return new ModbusTcpClient(options);
         }
+    }
+
+    public sealed class ModbusUdpProtocolDriver : ProtocolDriverBase
+    {
+        public ModbusUdpProtocolDriver()
+            : base("builtin.modbus-udp", "Built-in Modbus UDP", PlcProtocol.ModbusUdp) { }
+
+        public override IPlcClient CreateClient(PlcConnectionOptions options) => new ModbusUdpClient(options);
     }
 
     public sealed class Dlt645ProtocolDriver : ProtocolDriverBase

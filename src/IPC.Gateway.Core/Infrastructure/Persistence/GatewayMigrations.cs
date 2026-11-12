@@ -85,7 +85,14 @@ public static class GatewayMigrations
             "alter table gateway_configurations add column payload_binary bytea null;",
             "alter table gateway_configurations add column payload_binary longblob null;",
             "alter table gateway_configurations add payload_binary varbinary(max) null;",
-            "alter table gateway_configurations add column payload_binary blob null;")
+            "alter table gateway_configurations add column payload_binary blob null;"),
+        new DatabaseMigration(
+            "202611110001_runtime_last_read_error",
+            "Keep actual tag read errors separate from gateway operational messages.",
+            "alter table gateway_runtime_tag_snapshots add column last_read_error text null;",
+            "alter table gateway_runtime_tag_snapshots add column last_read_error longtext null;",
+            "alter table gateway_runtime_tag_snapshots add last_read_error nvarchar(max) null;",
+            "alter table gateway_runtime_tag_snapshots add column last_read_error text null;")
     };
 
     private const string PostgreSqlInitialSchema = @"

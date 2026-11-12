@@ -116,6 +116,8 @@ namespace IPC.EdgeGateway
             FlowRuleRuntimeStateEntry result = new FlowRuleRuntimeStateEntry
             {
                 RuleId = ruleId,
+                NoChangeTracker = state.NoChangeTracker?.Clone(),
+                NoChangeClearRequested = state.NoChangeClearRequested,
                 Fingerprint = fingerprint,
                 ActiveState = state.ActiveState,
                 ActiveSeverity = state.ActiveSeverity,
@@ -161,6 +163,8 @@ namespace IPC.EdgeGateway
         {
             EdgeRuleState state = new EdgeRuleState
             {
+                NoChangeTracker = source.NoChangeTracker?.Clone(),
+                NoChangeClearRequested = source.NoChangeClearRequested,
                 ActiveState = source.ActiveState ?? string.Empty,
                 ActiveSeverity = source.ActiveSeverity ?? string.Empty,
                 ActiveMessageOverride = source.ActiveMessageOverride ?? string.Empty,

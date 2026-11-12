@@ -59,6 +59,7 @@ namespace IPC.Runtime.Values
             Quality = TagQuality.Unknown;
             Timestamp = DateTime.MinValue;
             ErrorMessage = string.Empty;
+            LastReadError = string.Empty;
             TagState = "Unknown";
         }
 
@@ -90,6 +91,7 @@ namespace IPC.Runtime.Values
         public TagQuality Quality { get; set; }
         public DateTime Timestamp { get; set; }
         public string ErrorMessage { get; set; }
+        public string LastReadError { get; set; }
         public string TagState { get; set; }
         public bool IsTagIsolated { get; set; }
         public bool IsStaticValidationError { get; set; }

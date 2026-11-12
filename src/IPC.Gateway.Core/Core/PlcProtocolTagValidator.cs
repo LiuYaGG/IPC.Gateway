@@ -55,6 +55,7 @@ namespace IPC.Plc.Communication.Core
                             return Invalid("PCCC String 必须使用 ST 文件地址。");
                         break;
                     case PlcProtocol.ModbusTcp:
+                    case PlcProtocol.ModbusUdp:
                     case PlcProtocol.ModbusRtu:
                     case PlcProtocol.ModbusAscii:
                         _ = ModbusAddress.Parse(normalizedAddress, dataType);

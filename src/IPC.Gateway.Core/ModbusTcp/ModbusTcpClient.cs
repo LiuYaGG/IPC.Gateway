@@ -23,6 +23,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
 using NModbus;
+using IPC.Plc.Communication.ModbusUdp;
 
 namespace IPC.Plc.Communication.ModbusTcp
 {
@@ -35,7 +36,7 @@ namespace IPC.Plc.Communication.ModbusTcp
     
     
     
-    public sealed class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
         private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;
@@ -44,27 +45,35 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         private readonly PlcConnectionOptions _options;
         private readonly ModbusDriverOptions _driverOptions;
+        private readonly PlcProtocol _protocol;
+        private UdpClient? _udpClient;
         private TcpClient? _tcpClient;
         private NetworkStream? _stream;
-        private NModbusMasterAdapter? _adapter;
+        private IModbusMasterAdapter? _adapter;
         private ushort _transactionId;
 
         public ModbusTcpClient(PlcConnectionOptions options)
+            : this(options, PlcProtocol.ModbusTcp)
+        {
+        }
+
+        protected ModbusTcpClient(PlcConnectionOptions options, PlcProtocol protocol)
         {
             if (options == null)
                 throw new ArgumentNullException("options");
             _options = options;
+            _protocol = protocol;
             _driverOptions = ModbusDriverOptions.Parse(options.DriverOptionsJson);
         }
 
         public bool IsConnected
         {
-            get { return _tcpClient != null && _tcpClient.Connected && _adapter != null; }
+            get { return _adapter != null && (_protocol == PlcProtocol.ModbusUdp ? _udpClient != null : _tcpClient != null && _tcpClient.Connected); }
         }
 
         public PlcProtocol Protocol
         {
-            get { return PlcProtocol.ModbusTcp; }
+            get { return _protocol; }
         }
 
         public void Connect()
@@ -80,6 +89,19 @@ namespace IPC.Plc.Communication.ModbusTcp
             cancellationToken.ThrowIfCancellationRequested();
 
             int port = _options.Port <= 0 ? 502 : _options.Port;
+            if (_protocol == PlcProtocol.ModbusUdp)
+            {
+                var addresses = await System.Net.Dns.GetHostAddressesAsync(_options.Host, cancellationToken).ConfigureAwait(false);
+                var udp = new UdpClient(addresses[0].AddressFamily);
+                try
+                {
+                    udp.Connect(new System.Net.IPEndPoint(addresses[0], port));
+                    _udpClient = udp;
+                    _adapter = new ModbusUdpMasterAdapter(udp, GetUnitId(), _options.TimeoutMilliseconds);
+                }
+                catch { udp.Dispose(); _udpClient = null; _adapter = null; throw; }
+                return;
+            }
             TcpClient client = new TcpClient();
             try
             {
@@ -110,6 +132,9 @@ namespace IPC.Plc.Communication.ModbusTcp
                 _adapter.Dispose();
                 _adapter = null;
             }
+
+            _udpClient?.Dispose();
+            _udpClient = null;
 
             if (_stream != null)
             {
@@ -167,7 +192,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
             int registers = ModbusDataCodec.GetRegisterCount(dataType, usesCount ? elementCount : 1);
             byte[] data = ReadRegisters(registerStart.Area, registerStart.Address, registers);
-            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1);
+            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1, _driverOptions.ResolveDataFormat(_options.WordOrder));
             return new PlcReadResult(GetTypeCode(registerStart.Area), GetTypeName(registerStart.Area), value);
         }
 
@@ -214,7 +239,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
             int registers = ModbusDataCodec.GetRegisterCount(dataType, usesCount ? elementCount : 1);
             byte[] data = await ReadRegistersAsync(registerStart.Area, registerStart.Address, registers, cancellationToken).ConfigureAwait(false);
-            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1);
+            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1, _driverOptions.ResolveDataFormat(_options.WordOrder));
             return new PlcReadResult(GetTypeCode(registerStart.Area), GetTypeName(registerStart.Area), value);
         }
 
@@ -262,7 +287,7 @@ namespace IPC.Plc.Communication.ModbusTcp
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
             int registers = ModbusDataCodec.GetRegisterCount(dataType, usesCount ? elementCount : 1);
             byte[] data = await ReadRegistersAsync(registerStart.Area, registerStart.Address, registers, cancellationToken).ConfigureAwait(false);
-            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1);
+            object value = ModbusDataCodec.DecodeRegisters(dataType, data, usesCount ? elementCount : 1, _driverOptions.ResolveDataFormat(_options.WordOrder));
             return new PlcReadResult(GetTypeCode(registerStart.Area), GetTypeName(registerStart.Area), value);
         }
 
@@ -277,7 +302,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
                 MaxReadRegisters = MaxReadRegisters,
-                MaxGapPoints = _driverOptions.MaxBatchGapPoints
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints,
+                DataFormat = _driverOptions.ResolveDataFormat(_options.WordOrder)
             });
         }
 
@@ -294,7 +320,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 GetTypeName = GetTypeName,
                 MaxReadBits = MaxReadCoils,
                 MaxReadRegisters = MaxReadRegisters,
-                MaxGapPoints = _driverOptions.MaxBatchGapPoints
+                MaxGapPoints = _driverOptions.MaxBatchGapPoints,
+                DataFormat = _driverOptions.ResolveDataFormat(_options.WordOrder)
             }, cancellationToken).ConfigureAwait(false);
         }
 
@@ -354,7 +381,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
             int registerOffset = PlcDataTypeHelper.IsArray(dataType) ? ModbusDataCodec.GetRegisterOffset(dataType, elementOffset) : 0;
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
-            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText);
+            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText, _driverOptions.ResolveDataFormat(_options.WordOrder));
             WriteRegisters(registerStart.Address, data);
         }
 
@@ -402,7 +429,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
             int registerOffset = PlcDataTypeHelper.IsArray(dataType) ? ModbusDataCodec.GetRegisterOffset(dataType, elementOffset) : 0;
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
-            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText);
+            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText, _driverOptions.ResolveDataFormat(_options.WordOrder));
             await WriteRegistersAsync(registerStart.Address, data, cancellationToken).ConfigureAwait(false);
         }
 
@@ -451,7 +478,7 @@ namespace IPC.Plc.Communication.ModbusTcp
 
             int registerOffset = PlcDataTypeHelper.IsArray(dataType) ? ModbusDataCodec.GetRegisterOffset(dataType, elementOffset) : 0;
             ModbusAddress registerStart = address.OffsetRegisters(registerOffset);
-            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText);
+            byte[] data = ModbusDataCodec.EncodeRegisters(dataType, valueText, _driverOptions.ResolveDataFormat(_options.WordOrder));
             await WriteRegistersAsync(registerStart.Address, data, cancellationToken).ConfigureAwait(false);
         }
 
@@ -911,10 +938,10 @@ namespace IPC.Plc.Communication.ModbusTcp
             return new NModbusMasterAdapter(master, GetUnitId(), _options.TimeoutMilliseconds);
         }
 
-        private NModbusMasterAdapter GetAdapter()
+        private IModbusMasterAdapter GetAdapter()
         {
             EnsureConnected();
-            return _adapter ?? throw new IOException("Modbus TCP adapter is not connected.");
+            return _adapter ?? throw new IOException("Modbus adapter is not connected.");
         }
 
         private NetworkStream GetConnectedStream()

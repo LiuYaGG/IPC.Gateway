@@ -183,6 +183,48 @@ body .ant-tooltip {
   padding-top: 12px;
   border-top: 1px solid var(--gateway-border);
 }
+.gateway-tag-form-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: min(760px, 85dvh);
+  padding: 0;
+  overflow: hidden;
+}
+.gateway-tag-form-modal .ant-modal-header {
+  flex: none;
+  margin: 0;
+  padding: 18px 24px 12px;
+}
+.gateway-tag-form-modal .ant-modal-title {
+  font-weight: 600;
+}
+.gateway-tag-form-modal .ant-modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+.gateway-tag-form-modal .tag-dialog-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.gateway-tag-form-modal .ant-modal-footer {
+  flex: none;
+  margin: 0;
+  padding: 12px 24px;
+}
+.gateway-tag-form-modal .drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.gateway-tag-form-modal .ant-modal-footer .ant-btn {
+  min-width: 76px;
+}
 .ant-modal .ant-alert,
 .ant-form .ant-alert {
   margin-bottom: 16px;

@@ -1,6 +1,33 @@
 import type { FlowRuleDefinition, FlowRuleEdge, FlowRuleNode } from '../api'
 import type { ValueTransformCatalogItem } from '../scriptingApi'
 import type { TagSelection } from './tagSelection'
+import { qualityText } from './display'
+
+const FLOW_OPTION_LABELS = {
+  qualityOperator: { In: '包含', NotIn: '排除', Include: '包含', Exclude: '排除' },
+  statistic: { Average: '平均值', Min: '最小值', Max: '最大值', Sum: '求和', Count: '计数', StdDev: '标准差', First: '首值', Last: '末值', Range: '极差' },
+  trend: { Slope: '斜率变化', Rising: '上升', Falling: '下降', Stable: '稳定' },
+  anomaly: { ZScore: 'Z 分数', Deviation: '均值偏差', Spike: '突变' },
+  severity: { Info: '信息', Warning: '警告', Critical: '严重' },
+  logic: { And: '全部满足（AND）', Or: '任一满足（OR）' },
+  hysteresis: { Low: '低限', High: '高限' },
+  purpose: { QualityPrediction: '质量预测', DeviceAnomaly: '设备异常预警' }
+} satisfies Record<string, Record<string, string>>
+
+export function flowOptionLabel(
+  kind: keyof typeof FLOW_OPTION_LABELS,
+  value: unknown,
+  translate: (label: string) => string = (label) => label
+) {
+  if (value === undefined || value === null || value === '') return ''
+  const text = String(value)
+  const labels: Record<string, string> = FLOW_OPTION_LABELS[kind]
+  return labels[text] ? translate(labels[text]) : text
+}
+
+export function flowQualityValuesLabel(value: string | null | undefined, translate: (label: string) => string = (label) => label) {
+  return (value ?? '').split(/[,\s;|]+/).filter(Boolean).map((quality) => translate(qualityText(quality))).join(', ')
+}
 
 export const FLOW_NODE_GROUPS = [
   {
@@ -47,6 +74,7 @@ FLOW_NODE_GROUPS[1]?.nodes.push(
   { type: 'WindowCalculation', label: '窗口计算' },
   { type: 'Aggregation', label: '聚合计算' },
   { type: 'Trend', label: '趋势判断' },
+  { type: 'NoChangeTimeout', label: '连续无变化超时' },
   { type: 'StateMachine', label: '状态机' }
 )
 
@@ -64,7 +92,15 @@ FLOW_NODE_GROUPS[3]?.nodes.push(
 )
 FLOW_NODE_GROUPS[4]?.nodes.push({ type: 'DebugProbe', label: '调试探针' })
 export const FLOW_NODE_TYPES = FLOW_NODE_GROUPS.flatMap((group) => group.nodes)
+const FLOW_NODE_TYPE_LABELS: Record<string, string> = {
+  ...Object.fromEntries(FLOW_NODE_TYPES.map((node) => [node.type, node.label])),
+  ValueScript: '值处理脚本',
+  Threshold: '阈值上下限',
+  Deadband: '死区变化',
+  RateOfChange: '变化率'
+}
 const LEGACY_DEFAULT_NODE_LABELS: Record<string, string> = {
+  Condition: '条件',
   CycleTime: 'Cycle Time',
   TagRelation: 'Tag Relation',
   ContextGate: 'Context Gate',
@@ -85,6 +121,7 @@ const CONDITION_NODE_TYPES = new Set([
   'WindowCalculation',
   'Aggregation',
   'Trend',
+  'NoChangeTimeout',
   'StateMachine',
   'CycleTime',
   'ProcessTakt',
@@ -131,7 +168,7 @@ export function createFlowRuleTemplate(): FlowRuleDefinition {
 
 export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
   const baseX = 72 + index * 220
-  const label = FLOW_NODE_TYPES.find((item) => item.type === nodeType)?.label ?? nodeType
+  const label = flowNodeTypeLabel(nodeType)
   return {
     id: createId(),
     nodeType,
@@ -172,6 +209,9 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     trendMinSlopePerSecond: 0,
     trendChangeThreshold: 0,
     trendStableDeadband: 0,
+    noChangeTimeoutSeconds: 30,
+    noChangeDeadband: 0,
+    noChangeMaxAgeSeconds: 10,
     stateName: 'State',
     stateExpectedValue: '1',
     stateClearValue: '',
@@ -411,6 +451,10 @@ function validateFlowGraph(rule: FlowRuleDefinition) {
   return errors
 }
 
+function isFiniteRuleNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 export function validateFlowRule(rule: FlowRuleDefinition) {
   const errors: string[] = []
   if (!rule.name?.trim()) errors.push('规则名称不能为空')
@@ -424,13 +468,23 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
     if (node.nodeType === 'TagInput' && !hasPrimaryTagSource(node)) {
       errors.push(`${node.label || '标签输入'} 必须选择标签`)
     }
-    if (node.nodeType === 'Condition' && !Number.isFinite(Number(node.compareValue))) {
-      errors.push(`${node.label || '基础条件'} 的比较值不合法`)
+    if (node.nodeType === 'Condition') {
+      if (node.conditionType === 'Threshold') {
+        if (!isFiniteRuleNumber(node.lowLimit) || !isFiniteRuleNumber(node.highLimit) || node.lowLimit > node.highLimit)
+          errors.push('阈值上下限不合法')
+      } else if (node.conditionType === 'Deadband') {
+        if (!isFiniteRuleNumber(node.deadband) || node.deadband < 0) errors.push('死区值必须为非负有限数')
+      } else if (node.conditionType === 'RateOfChange') {
+        if (!isFiniteRuleNumber(node.rateLimitPerSecond) || node.rateLimitPerSecond < 0)
+          errors.push('变化率限值必须为非负有限数')
+      } else if (!isFiniteRuleNumber(node.compareValue)) {
+        errors.push(`${node.label || '基础条件'} 的比较值不合法`)
+      }
     }
     if (node.nodeType === 'Hysteresis') {
       const onValue = Number(node.hysteresisOnValue)
       const offValue = Number(node.hysteresisOffValue)
-      if (!Number.isFinite(onValue) || !Number.isFinite(offValue)) {
+      if (!isFiniteRuleNumber(node.hysteresisOnValue) || !isFiniteRuleNumber(node.hysteresisOffValue)) {
         errors.push(`${node.label || '滞回规则'} 的动作值和恢复值不合法`)
       } else if (node.hysteresisMode === 'Low' && onValue >= offValue) {
         errors.push(`${node.label || '滞回规则'} 的低限动作值必须小于恢复值`)
@@ -443,7 +497,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!levels.length) errors.push(`${node.label || '多级告警'} 至少需要一个告警级别`)
       for (const level of levels) {
         if (!level.name?.trim()) errors.push('多级告警级别名称不能为空')
-        if (!Number.isFinite(Number(level.compareValue))) errors.push(`${level.name || '告警级别'} 的比较值不合法`)
+        if (!isFiniteRuleNumber(level.compareValue)) errors.push(`${level.name || '告警级别'} 的比较值不合法`)
       }
     }
     if (node.nodeType === 'Expression' && !node.expression?.trim()) {
@@ -456,11 +510,11 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
     if (node.nodeType === 'SlidingWindow' || node.nodeType === 'WindowCalculation') {
       if (!['Average', 'Min', 'Max', 'Sum', 'Count', 'StdDev'].includes(node.windowStatistic || ''))
         errors.push('窗口统计方法不合法')
-      if (!Number.isFinite(Number(node.windowSeconds)) || Number(node.windowSeconds) <= 0)
+      if (!isFiniteRuleNumber(node.windowSeconds) || Number(node.windowSeconds) <= 0)
         errors.push('窗口统计时间窗口必须大于 0 秒')
-      if (!Number.isFinite(Number(node.windowSampleCount)) || Number(node.windowSampleCount) < 0)
+      if (!isFiniteRuleNumber(node.windowSampleCount) || Number(node.windowSampleCount) < 0)
         errors.push('窗口统计样本数不能小于 0')
-      if (!Number.isFinite(Number(node.compareValue))) errors.push('窗口统计比较值不合法')
+      if (!isFiniteRuleNumber(node.compareValue)) errors.push('窗口统计比较值不合法')
     }
     if (node.nodeType === 'Aggregation') {
       if (
@@ -469,25 +523,33 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         )
       )
         errors.push('聚合统计方法不合法')
-      if (!Number.isFinite(Number(node.compareValue))) errors.push('聚合比较值不合法')
+      if (!isFiniteRuleNumber(node.compareValue)) errors.push('聚合比较值不合法')
+    }
+    if (node.nodeType === 'NoChangeTimeout') {
+      if (!Number.isInteger(node.noChangeTimeoutSeconds) || node.noChangeTimeoutSeconds <= 0)
+        errors.push('无变化超时必须为大于 0 的整数秒')
+      if (!Number.isFinite(node.noChangeDeadband) || node.noChangeDeadband < 0)
+        errors.push('变化死区必须为非负有限数')
+      if (!Number.isInteger(node.noChangeMaxAgeSeconds) || node.noChangeMaxAgeSeconds <= 0)
+        errors.push('数据最大间隔必须为大于 0 的整数秒')
     }
     if (node.nodeType === 'Trend') {
       if (!['Slope', 'Rising', 'Falling', 'Stable'].includes(node.trendMode || '')) errors.push('趋势判断模式不合法')
-      if (!Number.isFinite(Number(node.trendWindowSeconds)) || Number(node.trendWindowSeconds) <= 0)
+      if (!isFiniteRuleNumber(node.trendWindowSeconds) || Number(node.trendWindowSeconds) <= 0)
         errors.push('趋势判断时间窗口必须大于 0 秒')
-      if (!Number.isFinite(Number(node.trendSampleCount)) || Number(node.trendSampleCount) < 0)
+      if (!isFiniteRuleNumber(node.trendSampleCount) || Number(node.trendSampleCount) < 0)
         errors.push('趋势判断样本数不能小于 0')
-      if (!Number.isFinite(Number(node.trendMinSlopePerSecond)) || Number(node.trendMinSlopePerSecond) < 0)
+      if (!isFiniteRuleNumber(node.trendMinSlopePerSecond) || Number(node.trendMinSlopePerSecond) < 0)
         errors.push('趋势判断最小斜率不能小于 0')
-      if (!Number.isFinite(Number(node.trendChangeThreshold)) || Number(node.trendChangeThreshold) < 0)
+      if (!isFiniteRuleNumber(node.trendChangeThreshold) || Number(node.trendChangeThreshold) < 0)
         errors.push('趋势判断变化阈值不能小于 0')
-      if (!Number.isFinite(Number(node.trendStableDeadband)) || Number(node.trendStableDeadband) < 0)
+      if (!isFiniteRuleNumber(node.trendStableDeadband) || Number(node.trendStableDeadband) < 0)
         errors.push('趋势判断稳定死区不能小于 0')
     }
     if (node.nodeType === 'StateMachine') {
       if (!node.stateName?.trim()) errors.push('状态机状态名称不能为空')
       if (!node.stateExpectedValue?.trim()) errors.push('状态机目标状态值不能为空')
-      if (!Number.isFinite(Number(node.stateTimeoutSeconds)) || Number(node.stateTimeoutSeconds) < 0)
+      if (!isFiniteRuleNumber(node.stateTimeoutSeconds) || Number(node.stateTimeoutSeconds) < 0)
         errors.push('状态机超时不能小于 0 秒')
       if (node.stateClearValue?.trim() && node.stateClearValue.trim() === node.stateExpectedValue?.trim())
         errors.push('状态机目标值与明确恢复值不能相同')
@@ -496,9 +558,9 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!hasPrimaryTagSource(node)) errors.push('节拍规则需要选择标签来源')
       if (!node.cycleStartValue?.trim()) errors.push('节拍规则开始值不能为空')
       if (!node.cycleEndValue?.trim()) errors.push('节拍规则结束值不能为空')
-      if (!Number.isFinite(Number(node.cycleMinSeconds)) || Number(node.cycleMinSeconds) < 0)
+      if (!isFiniteRuleNumber(node.cycleMinSeconds) || Number(node.cycleMinSeconds) < 0)
         errors.push('节拍规则最短周期不能小于 0')
-      if (!Number.isFinite(Number(node.cycleMaxSeconds)) || Number(node.cycleMaxSeconds) < 0)
+      if (!isFiniteRuleNumber(node.cycleMaxSeconds) || Number(node.cycleMaxSeconds) < 0)
         errors.push('节拍规则最长周期不能小于 0')
       if (node.cycleStartValue?.trim() === node.cycleEndValue?.trim()) errors.push('周期开始值与结束值不能相同')
       if (
@@ -509,19 +571,19 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         errors.push('周期最小时间不能大于最大时间')
       }
       if (node.nodeType === 'ProcessTakt') {
-        if (!Number.isFinite(Number(node.taktTargetSeconds)) || Number(node.taktTargetSeconds) <= 0)
+        if (!isFiniteRuleNumber(node.taktTargetSeconds) || Number(node.taktTargetSeconds) <= 0)
           errors.push('工艺节拍目标秒数必须大于 0')
-        if (!Number.isFinite(Number(node.taktTolerancePercent)) || Number(node.taktTolerancePercent) < 0)
+        if (!isFiniteRuleNumber(node.taktTolerancePercent) || Number(node.taktTolerancePercent) < 0)
           errors.push('工艺节拍容差不能小于 0')
       }
     }
     if (node.nodeType === 'AnomalyDetection') {
       if (!['ZScore', 'Deviation', 'Spike'].includes(node.anomalyMode || '')) errors.push('异常检测模式不合法')
-      if (!Number.isFinite(Number(node.anomalyThreshold)) || Number(node.anomalyThreshold) <= 0)
+      if (!isFiniteRuleNumber(node.anomalyThreshold) || Number(node.anomalyThreshold) <= 0)
         errors.push('异常检测阈值必须大于 0')
-      if (!Number.isFinite(Number(node.anomalyBaselineWindowSeconds)) || Number(node.anomalyBaselineWindowSeconds) <= 0)
+      if (!isFiniteRuleNumber(node.anomalyBaselineWindowSeconds) || Number(node.anomalyBaselineWindowSeconds) <= 0)
         errors.push('异常检测基线窗口必须大于 0 秒')
-      if (!Number.isFinite(Number(node.anomalyBaselineSampleCount)) || Number(node.anomalyBaselineSampleCount) < 0)
+      if (!isFiniteRuleNumber(node.anomalyBaselineSampleCount) || Number(node.anomalyBaselineSampleCount) < 0)
         errors.push('异常检测样本数不能小于 0')
     }
     if (node.nodeType === 'ModelInference') {
@@ -533,11 +595,11 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         )
       )
         errors.push('ONNX 推理判断符不合法')
-      if (!Number.isFinite(Number(node.modelThreshold))) errors.push('ONNX 推理阈值不合法')
-      if (!Number.isFinite(Number(node.modelOutputIndex)) || Number(node.modelOutputIndex) < 0)
+      if (!isFiniteRuleNumber(node.modelThreshold)) errors.push('ONNX 推理阈值不合法')
+      if (!isFiniteRuleNumber(node.modelOutputIndex) || Number(node.modelOutputIndex) < 0)
         errors.push('ONNX 推理输出序号不能小于 0')
       if (
-        !Number.isFinite(Number(node.modelTimeoutMilliseconds)) ||
+        !isFiniteRuleNumber(node.modelTimeoutMilliseconds) ||
         Number(node.modelTimeoutMilliseconds) <= 0 ||
         Number(node.modelTimeoutMilliseconds) > 30000
       ) {
@@ -547,35 +609,37 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
     if (node.nodeType === 'TagRelation') {
       if (!hasPrimaryTagSource(node)) errors.push('Tag Relation requires a source tag')
       if (!hasRelatedTagSource(node)) errors.push('Tag Relation requires a related tag')
-      if (!Number.isFinite(Number(node.relationMultiplier))) errors.push('Tag Relation multiplier is invalid')
-      if (!Number.isFinite(Number(node.relationOffset))) errors.push('Tag Relation offset is invalid')
+      if (!isFiniteRuleNumber(node.relationMultiplier)) errors.push('Tag Relation multiplier is invalid')
+      if (!isFiniteRuleNumber(node.relationOffset)) errors.push('Tag Relation offset is invalid')
     }
     if (node.nodeType === 'ContextGate') {
       if (!hasPrimaryTagSource(node) && !hasContextTagSource(node)) errors.push('Context Gate requires a context tag')
       if (!node.contextExpectedValue?.trim()) errors.push('Context Gate expected value is required')
     }
     if (node.nodeType === 'AlarmLifecycle') {
-      if (!Number.isFinite(Number(node.alarmSuppressSeconds)) || Number(node.alarmSuppressSeconds) < 0)
+      if (!isFiniteRuleNumber(node.alarmSuppressSeconds) || Number(node.alarmSuppressSeconds) < 0)
         errors.push('Alarm Lifecycle suppress seconds must be >= 0')
-      if (!Number.isFinite(Number(node.alarmReTriggerSeconds)) || Number(node.alarmReTriggerSeconds) < 0)
+      if (!isFiniteRuleNumber(node.alarmReTriggerSeconds) || Number(node.alarmReTriggerSeconds) < 0)
         errors.push('Alarm Lifecycle retrigger seconds must be >= 0')
-      if (!Number.isFinite(Number(node.alarmEscalateAfterSeconds)) || Number(node.alarmEscalateAfterSeconds) < 0)
+      if (!isFiniteRuleNumber(node.alarmEscalateAfterSeconds) || Number(node.alarmEscalateAfterSeconds) < 0)
         errors.push('Alarm Lifecycle escalation seconds must be >= 0')
     }
     if (node.nodeType === 'ActionPolicy') {
-      if (!Number.isFinite(Number(node.actionDelaySeconds)) || Number(node.actionDelaySeconds) < 0)
+      if (!isFiniteRuleNumber(node.actionDelaySeconds) || Number(node.actionDelaySeconds) < 0)
         errors.push('Action Policy delay seconds must be >= 0')
-      if (!Number.isFinite(Number(node.actionCooldownSeconds)) || Number(node.actionCooldownSeconds) < 0)
+      if (!isFiniteRuleNumber(node.actionCooldownSeconds) || Number(node.actionCooldownSeconds) < 0)
         errors.push('Action Policy cooldown seconds must be >= 0')
-      if (!Number.isFinite(Number(node.actionMaxPerMinute)) || Number(node.actionMaxPerMinute) < 0)
+      if (!isFiniteRuleNumber(node.actionMaxPerMinute) || Number(node.actionMaxPerMinute) < 0)
         errors.push('Action Policy max per minute must be >= 0')
     }
     if (node.nodeType === 'Transform' || node.nodeType === 'Function') {
-      if (!Number.isFinite(Number(node.transformMultiplier))) errors.push('数据处理乘数不合法')
-      if (!Number.isFinite(Number(node.transformOffset))) errors.push('数据处理偏移不合法')
+      if (node.nodeType === 'Transform') {
+        if (!isFiniteRuleNumber(node.transformMultiplier)) errors.push('数据处理乘数不合法')
+        if (!isFiniteRuleNumber(node.transformOffset)) errors.push('数据处理偏移不合法')
+      }
       if (node.nodeType === 'Function' && !node.transformExpression?.trim()) errors.push('函数节点表达式不能为空')
       if (
-        !Number.isFinite(Number(node.transformTimeoutMilliseconds)) ||
+        !isFiniteRuleNumber(node.transformTimeoutMilliseconds) ||
         Number(node.transformTimeoutMilliseconds) <= 0 ||
         Number(node.transformTimeoutMilliseconds) > 5000
       ) {
@@ -586,7 +650,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!node.valueScriptId?.trim() || Number(node.valueScriptVersion) <= 0)
         errors.push('值处理脚本节点必须选择一个已发布版本')
       if (
-        !Number.isFinite(Number(node.transformTimeoutMilliseconds)) ||
+        !isFiniteRuleNumber(node.transformTimeoutMilliseconds) ||
         Number(node.transformTimeoutMilliseconds) < 10 ||
         Number(node.transformTimeoutMilliseconds) > 5000
       ) {
@@ -594,26 +658,26 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       }
     }
     if (node.nodeType === 'Sequence') {
-      if (!Number.isFinite(Number(node.sequenceWindowSeconds)) || Number(node.sequenceWindowSeconds) <= 0) {
+      if (!isFiniteRuleNumber(node.sequenceWindowSeconds) || Number(node.sequenceWindowSeconds) <= 0) {
         errors.push('顺序/时序总窗口必须大于 0 秒')
       }
-      if (!Number.isFinite(Number(node.sequenceStepTimeoutSeconds)) || Number(node.sequenceStepTimeoutSeconds) < 0) {
+      if (!isFiniteRuleNumber(node.sequenceStepTimeoutSeconds) || Number(node.sequenceStepTimeoutSeconds) < 0) {
         errors.push('顺序/时序单步超时不能小于 0 秒')
       }
-      if (!Number.isFinite(Number(node.sequenceMinIntervalSeconds)) || Number(node.sequenceMinIntervalSeconds) < 0) {
+      if (!isFiniteRuleNumber(node.sequenceMinIntervalSeconds) || Number(node.sequenceMinIntervalSeconds) < 0) {
         errors.push('顺序/时序最小间隔不能小于 0 秒')
       }
     }
-    if (
-      node.nodeType === 'Duration' &&
-      (!Number.isFinite(Number(node.clearDurationSeconds)) || Number(node.clearDurationSeconds) < 0)
-    ) {
-      errors.push('恢复确认时间不能小于 0 秒')
+    if (node.nodeType === 'Duration') {
+      if (!isFiniteRuleNumber(node.durationSeconds) || node.durationSeconds < 0)
+        errors.push('持续确认时间不能小于 0 秒')
+      if (!isFiniteRuleNumber(node.clearDurationSeconds) || node.clearDurationSeconds < 0)
+        errors.push('恢复确认时间不能小于 0 秒')
     }
     if (node.nodeType === 'MqttPublish' && node.publishToMqtt && !node.topicTemplate?.trim()) {
       errors.push('MQTT topic 模板不能为空')
     }
-    if (node.nodeType === 'MqttPublish' && ![0, 1, 2].includes(Number(node.publishQos))) {
+    if (node.nodeType === 'MqttPublish' && ![0, 1, 2].includes(node.publishQos)) {
       errors.push('MQTT QoS 只能是 0/1/2')
     }
     if (node.nodeType === 'EmailNotify') {
@@ -621,7 +685,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!node.emailSmtpHost?.trim()) errors.push('邮件通知 SMTP 服务器不能为空')
       if (!node.emailFrom?.trim()) errors.push('邮件通知发件人不能为空')
       if (!node.emailTo?.trim()) errors.push('邮件通知收件人不能为空')
-      if (!Number.isFinite(Number(node.emailSmtpPort)) || Number(node.emailSmtpPort) <= 0)
+      if (!isFiniteRuleNumber(node.emailSmtpPort) || Number(node.emailSmtpPort) <= 0)
         errors.push('邮件通知 SMTP 端口不合法')
     }
     if (node.nodeType === 'WebhookCall') {
@@ -629,9 +693,9 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       if (!node.webhookUrl?.trim()) errors.push('Webhook URL 不能为空')
       if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes((node.webhookMethod || '').toUpperCase()))
         errors.push('Webhook Method 不合法')
-      if (!Number.isFinite(Number(node.webhookTimeoutSeconds)) || Number(node.webhookTimeoutSeconds) <= 0)
+      if (!isFiniteRuleNumber(node.webhookTimeoutSeconds) || Number(node.webhookTimeoutSeconds) <= 0)
         errors.push('Webhook 超时时间不合法')
-      if (!Number.isFinite(Number(node.webhookRetryCount)) || Number(node.webhookRetryCount) < 0)
+      if (!isFiniteRuleNumber(node.webhookRetryCount) || Number(node.webhookRetryCount) < 0)
         errors.push('Webhook 重试次数不合法')
     }
   }
@@ -645,13 +709,13 @@ export function legacyValidateFlowRule(rule: FlowRuleDefinition) {
     errors.push('至少需要选择一个标签来源')
   }
   for (const node of rule.nodes ?? []) {
-    if (node.nodeType === 'Condition' && !Number.isFinite(Number(node.compareValue))) {
+    if (node.nodeType === 'Condition' && !isFiniteRuleNumber(node.compareValue)) {
       errors.push(`${node.label || '条件'} 的比较值不合法`)
     }
     if (node.nodeType === 'MqttPublish' && node.publishToMqtt && !node.topicTemplate?.trim()) {
       errors.push('MQTT topic 模板不能为空')
     }
-    if (node.nodeType === 'MqttPublish' && ![0, 1, 2].includes(Number(node.publishQos))) {
+    if (node.nodeType === 'MqttPublish' && ![0, 1, 2].includes(node.publishQos)) {
       errors.push('MQTT QoS 只能是 0/1/2')
     }
   }
@@ -674,46 +738,56 @@ function hasContextTagSource(node: FlowRuleNode) {
   return !!node.contextTagId?.trim()
 }
 
-export function nodeDisplayName(node: FlowRuleNode) {
-  const title = flowNodeLabel(node)
+export function nodeDisplayName(node: FlowRuleNode, translate: (label: string) => string = (label) => label) {
+  const title = flowNodeLabel(node, translate)
   if (node.nodeType === 'TagInput' && node.tagName) return `${title}: ${node.tagName}`
-  if (node.nodeType === 'Condition') return `${title}: ${operatorSymbol(node.operator)} ${node.compareValue}`
+  if (node.nodeType === 'Condition') {
+    if (node.conditionType === 'Threshold') return `${title}: ${node.lowLimit ?? ''} ~ ${node.highLimit ?? ''}`
+    if (node.conditionType === 'Deadband') return `${title}: ${node.deadband ?? ''}`
+    if (node.conditionType === 'RateOfChange') return `${title}: ${node.rateLimitPerSecond ?? ''}`
+    return `${title}: ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
+  }
   if (node.nodeType === 'Hysteresis')
-    return `${title}: ${node.hysteresisMode === 'Low' ? '低限' : '高限'} ${node.hysteresisOnValue}/${node.hysteresisOffValue}`
-  if (node.nodeType === 'MultiLevelAlarm') return `${title}: ${(node.alarmLevels ?? []).length} 级`
-  if (node.nodeType === 'Expression') return `${title}: ${node.expression || '{value} > 0'}`
+    return `${title}: ${flowOptionLabel('hysteresis', node.hysteresisMode, translate)} ${node.hysteresisOnValue ?? ''}/${node.hysteresisOffValue ?? ''}`
+  if (node.nodeType === 'MultiLevelAlarm') return `${title}: ${(node.alarmLevels ?? []).length} ${translate('级别')}`
+  if (node.nodeType === 'Expression') return `${title}: ${node.expression ?? ''}`
   if (node.nodeType === 'QualityGate')
-    return `${title}: ${node.qualityOperator || 'In'} ${node.qualityValues || 'Good'}`
+    return `${title}: ${flowOptionLabel('qualityOperator', node.qualityOperator, translate)} ${flowQualityValuesLabel(node.qualityValues, translate)}`.trimEnd()
   if (node.nodeType === 'SlidingWindow')
-    return `${title}: ${node.windowStatistic || 'Average'} ${operatorSymbol(node.operator)} ${node.compareValue}`
+    return `${title}: ${flowOptionLabel('statistic', node.windowStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
   if (node.nodeType === 'WindowCalculation')
-    return `${title}: ${node.windowStatistic || 'Average'} ${operatorSymbol(node.operator)} ${node.compareValue}`
+    return `${title}: ${flowOptionLabel('statistic', node.windowStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
   if (node.nodeType === 'Aggregation')
-    return `${title}: ${node.aggregationStatistic || 'Average'} ${operatorSymbol(node.operator)} ${node.compareValue}`
-  if (node.nodeType === 'Trend') return `${title}: ${node.trendMode || 'Slope'}`
-  if (node.nodeType === 'StateMachine') return `${title}: ${node.stateName || 'State'}=${node.stateExpectedValue || ''}`
-  if (node.nodeType === 'CycleTime') return `${title}: ${node.cycleStartValue || '1'} -> ${node.cycleEndValue || '0'}`
-  if (node.nodeType === 'ProcessTakt') return `${title}: ${node.taktTargetSeconds || 60}s`
-  if (node.nodeType === 'AnomalyDetection') return `${title}: ${node.anomalyMode || 'ZScore'}`
+    return `${title}: ${flowOptionLabel('statistic', node.aggregationStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
+  if (node.nodeType === 'Trend') return `${title}: ${flowOptionLabel('trend', node.trendMode, translate)}`
+  if (node.nodeType === 'NoChangeTimeout') return `${title}: ${formatSeconds(node.noChangeTimeoutSeconds)}`
+  if (node.nodeType === 'StateMachine') return `${title}: ${node.stateName ?? ''}=${node.stateExpectedValue ?? ''}`
+  if (node.nodeType === 'CycleTime') return `${title}: ${node.cycleStartValue ?? ''} -> ${node.cycleEndValue ?? ''}`
+  if (node.nodeType === 'ProcessTakt') return `${title}: ${formatSeconds(node.taktTargetSeconds)}`
+  if (node.nodeType === 'AnomalyDetection') return `${title}: ${flowOptionLabel('anomaly', node.anomalyMode, translate)}`
   if (node.nodeType === 'ModelInference')
-    return `${title}: ${node.modelPurpose === 'QualityPrediction' ? '质量预测' : '异常预警'} ${operatorSymbol(node.modelOperator || 'GreaterThanOrEqual')} ${node.modelThreshold ?? 0.5}`
+    return `${title}: ${flowOptionLabel('purpose', node.modelPurpose, translate)} ${operatorSymbol(node.modelOperator ?? '')} ${node.modelThreshold ?? ''}`
   if (node.nodeType === 'TagRelation')
-    return `${title}: ${operatorSymbol(node.relationOperator || node.operator)} ${node.relatedPointCode || node.relatedTagName || 'related'}`
+    return `${title}: ${operatorSymbol(node.relationOperator || node.operator)} ${node.relatedPointCode || node.relatedTagName || translate('关联标签')}`
   if (node.nodeType === 'ContextGate')
-    return `${title}: ${node.contextName || 'Context'}=${node.contextExpectedValue || ''}`
-  if (node.nodeType === 'AlarmLifecycle') return `${title}: ${node.alarmSeverity || 'Warning'}`
-  if (node.nodeType === 'ActionPolicy') return `${title}: cd ${node.actionCooldownSeconds || 0}s`
-  if (node.nodeType === 'DebugProbe') return `${title}: ${node.debugLabel || 'trace'}`
+    return `${title}: ${node.contextName ?? ''}=${node.contextExpectedValue ?? ''}`
+  if (node.nodeType === 'AlarmLifecycle') return `${title}: ${flowOptionLabel('severity', node.alarmSeverity, translate)}`
+  if (node.nodeType === 'ActionPolicy') return `${title}: ${translate('冷却')} ${formatSeconds(node.actionCooldownSeconds)}`
+  if (node.nodeType === 'DebugProbe') return `${title}: ${node.debugLabel || translate('调试跟踪')}`
   if (node.nodeType === 'Transform')
-    return `${title}: x${node.transformMultiplier ?? 1} ${formatOffset(node.transformOffset ?? 0)}`
-  if (node.nodeType === 'Function') return `${title}: ${node.transformExpression || '{value}'}`
+    return `${title}: x${node.transformMultiplier ?? ''} ${node.transformOffset == null ? '' : formatOffset(node.transformOffset)}`
+  if (node.nodeType === 'Function') return `${title}: ${node.transformExpression ?? ''}`
   if (node.nodeType === 'ValueScript')
     return `${title}: v${node.valueScriptVersion || 0} ${node.valueScriptInputDataType || '?'} → ${node.valueScriptOutputDataType || '?'}`
-  if (node.nodeType === 'Sequence') return `${title}: ${node.sequenceWindowSeconds || 60}s`
-  if (node.nodeType === 'EmailNotify') return `${title}: ${node.emailTo || '未配置收件人'}`
+  if (node.nodeType === 'Sequence') return `${title}: ${formatSeconds(node.sequenceWindowSeconds)}`
+  if (node.nodeType === 'EmailNotify') return `${title}: ${node.emailTo || translate('未配置收件人')}`
   if (node.nodeType === 'WebhookCall') return `${title}: ${node.webhookMethod || 'POST'}`
-  if (node.nodeType === 'Logic') return `${title}: ${node.logicalOperator}`
+  if (node.nodeType === 'Logic') return `${title}: ${flowOptionLabel('logic', node.logicalOperator, translate)}`
   return title
+}
+
+function formatSeconds(value: number | null | undefined) {
+  return value == null ? '' : `${value}s`
 }
 
 export function legacyNodeDisplayName(node: FlowRuleNode) {
@@ -725,13 +799,14 @@ export function legacyNodeDisplayName(node: FlowRuleNode) {
 }
 
 export function flowNodeTypeLabel(nodeType: string) {
-  return FLOW_NODE_TYPES.find((item) => item.type === nodeType)?.label || nodeType
+  return FLOW_NODE_TYPE_LABELS[nodeType] || nodeType
 }
 
-export function flowNodeLabel(node: FlowRuleNode) {
+export function flowNodeLabel(node: FlowRuleNode, translate: (label: string) => string = (label) => label) {
   const label = (node.label || '').trim()
   const typeLabel = flowNodeTypeLabel(node.nodeType)
-  if (!label || label === node.nodeType || label === LEGACY_DEFAULT_NODE_LABELS[node.nodeType]) return typeLabel
+  if (!label || label === typeLabel || label === node.nodeType || label === LEGACY_DEFAULT_NODE_LABELS[node.nodeType])
+    return translate(typeLabel)
   return label
 }
 
@@ -740,7 +815,7 @@ function formatOffset(offset: number) {
   return offset > 0 ? `+${offset}` : `${offset}`
 }
 
-function operatorSymbol(operator: string) {
+export function operatorSymbol(operator: string) {
   return (
     (
       {

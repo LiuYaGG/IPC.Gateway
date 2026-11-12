@@ -39,6 +39,7 @@ namespace IPC.Runtime.Configuration
         Trend = 17,
         ProcessTakt = 18,
         AnomalyDetection = 19,
-        ModelInference = 20
+        ModelInference = 20,
+        NoChangeTimeout = 21
     }
 }
