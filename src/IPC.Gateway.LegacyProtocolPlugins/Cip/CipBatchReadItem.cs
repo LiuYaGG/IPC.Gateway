@@ -77,12 +77,12 @@ namespace IPC.Plc.Communication.Cip
 
         public PlcBatchReadResult BuildResult()
         {
-            for (int i = 0; i < Operations.Count; i++)
-            {
-                CipBatchReadOperation operation = Operations[i];
-                if (!operation.Success)
+            foreach (var operation in Operations)
+                if (operation.WasDispatched && !operation.Success)
                     return PlcBatchReadResult.FromFailure(Request, operation.ErrorMessage, operation.FailureScope);
-            }
+            foreach (var operation in Operations)
+                if (!operation.WasDispatched)
+                    return PlcBatchReadResult.FromDeferred(Request, "CIP read deferred after an earlier operation stopped.");
 
             try
             {
@@ -279,7 +279,7 @@ namespace IPC.Plc.Communication.Cip
         {
             int existingIndex;
             if (TrySplitTrailingSingleIndex(tagName, out baseTag, out existingIndex))
-                bitOffset = existingIndex + elementOffset;
+                bitOffset = checked(existingIndex + elementOffset);
             else
             {
                 baseTag = tagName;
@@ -317,7 +317,7 @@ namespace IPC.Plc.Communication.Cip
             return tagName + "[" + elementOffset.ToString() + "]";
         }
 
-        private static bool TrySplitTrailingSingleIndex(string tagName, out string baseTag, out int index)
+        internal static bool TrySplitTrailingSingleIndex(string tagName, out string baseTag, out int index)
         {
             baseTag = tagName;
             index = 0;

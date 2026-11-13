@@ -10,12 +10,15 @@ internal sealed class GatewayRuntimeLatestQueue
     private readonly object _sync = new();
     private readonly Channel<GatewayRuntimeEventEnvelope> _signal = Channel.CreateBounded<GatewayRuntimeEventEnvelope>(
         new BoundedChannelOptions(1) { SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest });
-    private readonly Dictionary<string, TagValueSnapshotDto> _tags = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DeviceRuntimeStatusDto> _devices = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _removed = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<GatewayRuntimeEventEnvelope> _other = new();
+    private Dictionary<string, TagValueSnapshotDto> _tags = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, DeviceRuntimeStatusDto> _devices = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _removed = new(StringComparer.OrdinalIgnoreCase);
+    private List<GatewayRuntimeEventEnvelope> _other = new();
     private GatewayRuntimeEventEnvelope? _tagEvent, _deviceEvent, _statusEvent;
     private bool _completed;
+
+    public GatewayRuntimeLatestQueue(bool includeDeviceData) => IncludeDeviceData = includeDeviceData;
+    public bool IncludeDeviceData { get; }
 
     public ChannelReader<GatewayRuntimeEventEnvelope> Reader => _signal.Reader;
 
@@ -29,7 +32,8 @@ internal sealed class GatewayRuntimeLatestQueue
                 foreach (var tag in tags.Tags)
                 {
                     string key = string.Join("/", tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId);
-                    if (!_tags.TryGetValue(key, out var previous) || tag.Timestamp >= previous.Timestamp)
+                    if (!_tags.TryGetValue(key, out var previous) || (tag.RuntimeRevision > 0 || previous.RuntimeRevision > 0
+                        ? tag.RuntimeRevision >= previous.RuntimeRevision : tag.Timestamp >= previous.Timestamp))
                         _tags[key] = tag;
                 }
                 _tagEvent = envelope;
@@ -68,30 +72,40 @@ internal sealed class GatewayRuntimeLatestQueue
 
     public IReadOnlyList<GatewayRuntimeEventEnvelope> Drain()
     {
+        Dictionary<string, TagValueSnapshotDto> tags;
+        Dictionary<string, DeviceRuntimeStatusDto> devices;
+        HashSet<string> removed;
+        List<GatewayRuntimeEventEnvelope> result;
+        GatewayRuntimeEventEnvelope? tagEvent, deviceEvent, statusEvent;
         lock (_sync)
         {
-            var result = new List<GatewayRuntimeEventEnvelope>(_other);
-            if (_tagEvent != null)
+            tags = _tags; devices = _devices; removed = _removed; result = _other;
+            tagEvent = _tagEvent; deviceEvent = _deviceEvent; statusEvent = _statusEvent;
+            if (tagEvent != null) _tags = new(StringComparer.OrdinalIgnoreCase);
+            if (deviceEvent != null)
             {
-                var tags = _tags.Values.ToList();
-                for (int offset = 0; offset < tags.Count; offset += 500)
-                {
-                    int count = Math.Min(500, tags.Count - offset);
-                    result.Add(Copy(_tagEvent, new GatewayRuntimeTagsChangedEvent
-                    {
-                        Tags = tags.GetRange(offset, count), PendingCount = tags.Count - offset - count
-                    }));
-                }
+                _devices = new(StringComparer.OrdinalIgnoreCase);
+                _removed = new(StringComparer.OrdinalIgnoreCase);
             }
-            if (_deviceEvent != null)
-                result.Add(Copy(_deviceEvent, new GatewayRuntimeDevicesChangedEvent
-                {
-                    Devices = _devices.Values.ToList(), RemovedDeviceKeys = _removed.ToList()
-                }));
-            if (_statusEvent != null) result.Add(_statusEvent);
-            Clear();
-            return result.OrderBy(item => item.Sequence).ToList();
+            _other = [];
+            _tagEvent = _deviceEvent = _statusEvent = null;
         }
+        if (tagEvent != null)
+        {
+            int remaining = tags.Count;
+            foreach (var batch in tags.Values.Chunk(500))
+            {
+                remaining -= batch.Length;
+                result.Add(Copy(tagEvent, new GatewayRuntimeTagsChangedEvent { Tags = batch, PendingCount = remaining }));
+            }
+        }
+        if (deviceEvent != null)
+            result.Add(Copy(deviceEvent, new GatewayRuntimeDevicesChangedEvent
+            {
+                Devices = devices.Values.ToList(), RemovedDeviceKeys = removed.ToList()
+            }));
+        if (statusEvent != null) result.Add(statusEvent);
+        return result.OrderBy(item => item.Sequence).ToList();
     }
 
     public void Complete()

@@ -88,7 +88,7 @@ public static class GatewayCoreServiceCollectionExtensions
             {
                 IsolationStrategy = section["IsolationStrategy"] ?? "SemaphoreLimitedPerDeviceQueue",
                 MaxConcurrentDevicePolls = GetInt(section, "MaxConcurrentDevicePolls", Math.Max(2, Math.Min(8, Environment.ProcessorCount))),
-                SchedulerIntervalMs = GetInt(section, "SchedulerIntervalMs", 100),
+                SchedulerIntervalMs = GetInt(section, "SchedulerIntervalMs", 50),
                 RecoveryProbeIntervalMs = GetInt(section, "RecoveryProbeIntervalMs", 1000),
                 RecoveryProbeTimeoutMs = GetInt(section, "RecoveryProbeTimeoutMs", 1000),
                 MaxConcurrentRecoveryProbes = GetInt(section, "MaxConcurrentRecoveryProbes", 4),
@@ -107,7 +107,12 @@ public static class GatewayCoreServiceCollectionExtensions
                 DeviceStatusFailureDebounceMs = GetInt(section, "DeviceStatusFailureDebounceMs", 2000),
                 DeviceStatusRecoveryDebounceCount = GetInt(section, "DeviceStatusRecoveryDebounceCount", 1),
                 DeviceStatusRecoveryDebounceMs = GetInt(section, "DeviceStatusRecoveryDebounceMs", 0),
-                TagValueChangedQueueLimit = GetInt(section, "TagValueChangedQueueLimit", 100000)
+                TagValueChangedQueueLimit = GetInt(section, "TagValueChangedQueueLimit", 100000),
+                MaxReadItemsPerTurn = GetInt(section, "MaxReadItemsPerTurn", 128),
+                InitialReadItemsPerTurn = GetInt(section, "InitialReadItemsPerTurn", 16),
+                SingleReadsPerTurn = GetInt(section, "SingleReadsPerTurn", 4),
+                ReadTurnBudgetMs = GetInt(section, "ReadTurnBudgetMs", 50),
+                TagRecoveryProbeIntervalMs = GetInt(section, "TagRecoveryProbeIntervalMs", 1000)
             }
         };
     }
@@ -185,6 +190,7 @@ public static class GatewayCoreServiceCollectionExtensions
             CaCertificatePath = section["CaCertificatePath"] ?? string.Empty,
             SubscribeTopic = section["SubscribeTopic"] ?? "gateway/IPC-Gateway-Web/config",
             PublishEnabled = GetBool(section, "PublishEnabled", true),
+            CoalescePendingTelemetry = GetBool(section, "CoalescePendingTelemetry", false),
             PublishTopicTemplate = section["PublishTopicTemplate"] ?? "ipc/data/{channel}/{device}/{group}/{tag}",
             PublishQos = GetInt(section, "PublishQos", 0),
             HeartbeatEnabled = GetBool(section, "HeartbeatEnabled", true),
@@ -222,6 +228,8 @@ public static class GatewayCoreServiceCollectionExtensions
     private static LocalHistoryOptions CreateHistoryOptions(IConfiguration configuration)
     {
         IConfigurationSection section = configuration.GetSection("Gateway:History");
+        IConfigurationSection storage = section.GetSection("Storage");
+        var defaults = new LocalHistoryStorageOptions();
         return new LocalHistoryOptions
         {
             Enabled = GetBool(section, "Enabled", true),
@@ -232,7 +240,23 @@ public static class GatewayCoreServiceCollectionExtensions
             BatchFlushIntervalMs = GetInt(section, "BatchFlushIntervalMs", 1000),
             BatchMaxLines = GetInt(section, "BatchMaxLines", 1000),
             BatchQueueLimit = GetInt(section, "BatchQueueLimit", 100000),
-            DataProcessing = CreateDataProcessingOptions(section.GetSection("DataProcessing"))
+            DataProcessing = CreateDataProcessingOptions(section.GetSection("DataProcessing")),
+            Storage = new LocalHistoryStorageOptions
+            {
+                TieringEnabled = GetBool(storage, "TieringEnabled", defaults.TieringEnabled),
+                ColdDirectory = storage["ColdDirectory"] ?? defaults.ColdDirectory,
+                RetentionPolicy = storage["RetentionPolicy"] ?? defaults.RetentionPolicy,
+                HotRetentionDays = GetInt(storage, "HotRetentionDays", defaults.HotRetentionDays),
+                ColdRetentionDays = GetInt(storage, "ColdRetentionDays", defaults.ColdRetentionDays),
+                CompressionEnabled = GetBool(storage, "CompressionEnabled", defaults.CompressionEnabled),
+                CompressHotFiles = GetBool(storage, "CompressHotFiles", defaults.CompressHotFiles),
+                CompressColdFiles = GetBool(storage, "CompressColdFiles", defaults.CompressColdFiles),
+                CompressAfterDays = GetInt(storage, "CompressAfterDays", defaults.CompressAfterDays),
+                AutoCleanupEnabled = GetBool(storage, "AutoCleanupEnabled", defaults.AutoCleanupEnabled),
+                CleanupIntervalHours = GetInt(storage, "CleanupIntervalHours", defaults.CleanupIntervalHours),
+                MaxStorageMegabytes = GetInt(storage, "MaxStorageMegabytes", defaults.MaxStorageMegabytes),
+                ValueFileSegmentMegabytes = GetInt(storage, "ValueFileSegmentMegabytes", defaults.ValueFileSegmentMegabytes)
+            }
         };
     }
 

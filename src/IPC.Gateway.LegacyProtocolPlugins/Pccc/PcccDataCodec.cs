@@ -55,6 +55,8 @@ namespace IPC.Plc.Communication.Pccc
         {
             if (address.BitNumber.HasValue)
                 return 2;
+            if (dataType == PlcDataType.Bool) return 2;
+            if (dataType == PlcDataType.BoolArray) return checked(((count + 15) / 16) * 2);
             if (dataType == PlcDataType.String)
             {
                 if (address.FileTypeName != "ST") throw new ArgumentException("PCCC String 必须使用 ST 文件地址。");

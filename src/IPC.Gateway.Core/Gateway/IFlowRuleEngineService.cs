@@ -39,7 +39,8 @@ namespace IPC.Gateway.Core.Gateway
             Func<string, string, int, bool> mqttPublisher,
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
-            IModelInferenceService modelInference);
+            IModelInferenceService modelInference,
+            Action<GatewayAlarmRecord, bool>? recordAlarm = null);
     }
 
     internal sealed class NoopFlowRuleEngineFactory : IFlowRuleEngineFactory
@@ -50,7 +51,8 @@ namespace IPC.Gateway.Core.Gateway
             Func<string, string, int, bool> mqttPublisher,
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
-            IModelInferenceService modelInference)
+            IModelInferenceService modelInference,
+            Action<GatewayAlarmRecord, bool>? recordAlarm = null)
         {
             return new NoopFlowRuleEngineService();
         }

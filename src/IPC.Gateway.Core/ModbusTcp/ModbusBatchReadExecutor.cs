@@ -19,6 +19,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         public int MaxReadBits { get; set; }
         public int MaxReadRegisters { get; set; }
         public int MaxGapPoints { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
         public ModbusDataFormat DataFormat { get; set; }
     }
 
@@ -31,6 +32,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         public int MaxReadBits { get; set; }
         public int MaxReadRegisters { get; set; }
         public int MaxGapPoints { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
         public ModbusDataFormat DataFormat { get; set; }
     }
 
@@ -43,6 +45,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 return output;
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
+            context.Recovery = PlcBatchReadRecovery.Start(context.ReadRegisters?.Target ?? context.ReadBits?.Target,
+                "modbus|" + context.DataFormat + "|" + context.MaxGapPoints + "|" + context.MaxReadRegisters + "|" + context.MaxReadBits);
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
@@ -52,18 +56,17 @@ namespace IPC.Plc.Communication.ModbusTcp
                 {
                     group.Sort(CompareItems);
                     ExecuteSegments(group, context, results);
-                    if (HasConnectionFailure(results)) break;
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
             {
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                output.Add(results[i] ?? PlcBatchReadResult.FromFailure(request, "Batch read did not produce a result.", true));
+                output.Add(results[i] ?? PlcBatchReadResult.FromDeferred(request, "Batch read was not attempted."));
             }
 
             return output;
@@ -81,6 +84,8 @@ namespace IPC.Plc.Communication.ModbusTcp
             cancellationToken.ThrowIfCancellationRequested();
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
+            context.Recovery = PlcBatchReadRecovery.Start(context.ReadRegistersAsync?.Target ?? context.ReadBitsAsync?.Target,
+                "modbus|" + context.DataFormat + "|" + context.MaxGapPoints + "|" + context.MaxReadRegisters + "|" + context.MaxReadBits);
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
@@ -91,18 +96,17 @@ namespace IPC.Plc.Communication.ModbusTcp
                     cancellationToken.ThrowIfCancellationRequested();
                     group.Sort(CompareItems);
                     await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
-                    if (HasConnectionFailure(results)) break;
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
             {
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                output.Add(results[i] ?? PlcBatchReadResult.FromFailure(request, "Batch read did not produce a result.", true));
+                output.Add(results[i] ?? PlcBatchReadResult.FromDeferred(request, "Batch read was not attempted."));
             }
 
             return output;
@@ -176,8 +180,6 @@ namespace IPC.Plc.Communication.ModbusTcp
                 }
 
                 ExecuteSegment(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results);
-                if (HasConnectionFailure(results))
-                    return;
             }
         }
 
@@ -213,132 +215,57 @@ namespace IPC.Plc.Communication.ModbusTcp
                 }
 
                 await ExecuteSegmentAsync(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results, cancellationToken).ConfigureAwait(false);
-                if (HasConnectionFailure(results))
-                    return;
             }
         }
 
         private static void ExecuteSegment(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            ModbusBatchReadContext context,
-            PlcBatchReadResult[] results)
+            List<BatchReadItem> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
+            ModbusBatchReadContext context, PlcBatchReadResult[] results)
         {
-            BatchReadItem first = items[startIndex];
-            int pointCount = segmentEnd - segmentStart + 1;
-
-            try
-            {
-                if (first.Kind == ReadKind.Bit)
+            context.Recovery.ReadRange(items, startIndex, endIndex, item => item.Request, item => item.Index,
+                (left, right) =>
                 {
-                    bool[] values = context.ReadBits(first.Area, segmentStart, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeBitResult(items[i], values, segmentStart, context);
-                }
-                else
-                {
-                    byte[] data = context.ReadRegisters(first.Area, segmentStart, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeRegisterResult(items[i], data, segmentStart, context);
-                }
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
-                    ex,
-                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (failureScope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, failureScope);
-            }
+                    BatchReadItem first = items[left];
+                    int start = first.StartAddress;
+                    int count = GetSegmentEnd(items, left, right) - start + 1;
+                    if (first.Kind == ReadKind.Bit)
+                    {
+                        bool[] values = context.ReadBits(first.Area, start, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeBitResult(items[i], values, start, context);
+                    }
+                    else
+                    {
+                        byte[] data = context.ReadRegisters(first.Area, start, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeRegisterResult(items[i], data, start, context);
+                    }
+                }, results, items[startIndex].Area + "|" + items[startIndex].Kind);
         }
 
         private static async ValueTask ExecuteSegmentAsync(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            ModbusAsyncBatchReadContext context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
+            List<BatchReadItem> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
+            ModbusAsyncBatchReadContext context, PlcBatchReadResult[] results, CancellationToken cancellationToken)
         {
-            BatchReadItem first = items[startIndex];
-            int pointCount = segmentEnd - segmentStart + 1;
-
-            try
-            {
-                if (first.Kind == ReadKind.Bit)
+            await context.Recovery.ReadRangeAsync(items, startIndex, endIndex, item => item.Request, item => item.Index,
+                async (left, right) =>
                 {
-                    bool[] values = await context.ReadBitsAsync(first.Area, segmentStart, pointCount, cancellationToken).ConfigureAwait(false);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeBitResult(items[i], values, segmentStart, context);
-                }
-                else
-                {
-                    byte[] data = await context.ReadRegistersAsync(first.Area, segmentStart, pointCount, cancellationToken).ConfigureAwait(false);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeRegisterResult(items[i], data, segmentStart, context);
-                }
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
-                    ex,
-                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (failureScope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, failureScope);
-            }
-        }
-
-        private static bool HasConnectionFailure(PlcBatchReadResult[] results)
-        {
-            for (int index = 0; index < results.Length; index++)
-            {
-                PlcBatchReadResult result = results[index];
-                if (result != null && PlcBatchReadResult.IsConnectionFailureScope(result.FailureScope))
-                    return true;
-            }
-            return false;
-        }
-
-        private static void RetrySegmentBySplitting(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            ModbusBatchReadContext context,
-            PlcBatchReadResult[] results)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            ExecuteSegment(items, startIndex, middle, items[startIndex].StartAddress, GetSegmentEnd(items, startIndex, middle), context, results);
-            ExecuteSegment(items, middle, endIndex, items[middle].StartAddress, GetSegmentEnd(items, middle, endIndex), context, results);
-        }
-
-        private static async ValueTask RetrySegmentBySplittingAsync(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            ModbusAsyncBatchReadContext context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            await ExecuteSegmentAsync(items, startIndex, middle, items[startIndex].StartAddress, GetSegmentEnd(items, startIndex, middle), context, results, cancellationToken).ConfigureAwait(false);
-            await ExecuteSegmentAsync(items, middle, endIndex, items[middle].StartAddress, GetSegmentEnd(items, middle, endIndex), context, results, cancellationToken).ConfigureAwait(false);
+                    BatchReadItem first = items[left];
+                    int start = first.StartAddress;
+                    int count = GetSegmentEnd(items, left, right) - start + 1;
+                    if (first.Kind == ReadKind.Bit)
+                    {
+                        bool[] values = await context.ReadBitsAsync(first.Area, start, count, cancellationToken).ConfigureAwait(false);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeBitResult(items[i], values, start, context);
+                    }
+                    else
+                    {
+                        byte[] data = await context.ReadRegistersAsync(first.Area, start, count, cancellationToken).ConfigureAwait(false);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeRegisterResult(items[i], data, start, context);
+                    }
+                }, results, items[startIndex].Area + "|" + items[startIndex].Kind, cancellationToken).ConfigureAwait(false);
         }
 
         private static int GetSegmentEnd(List<BatchReadItem> items, int startIndex, int endIndex)

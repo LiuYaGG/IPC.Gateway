@@ -535,6 +535,8 @@ namespace IPC.EdgeGateway
             {
                 case TagQuality.Good:
                     return StatusCodes.Good;
+                case TagQuality.Uncertain:
+                    return StatusCodes.Uncertain;
                 case TagQuality.Unknown:
                     return StatusCodes.BadWaitingForInitialData;
                 case TagQuality.Disabled:

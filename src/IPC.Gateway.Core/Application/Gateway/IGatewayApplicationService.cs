@@ -28,6 +28,8 @@ public interface IGatewayApplicationService : IDisposable
     void Start();
     void Stop();
     GatewayRuntimeStatusDto GetStatus();
+    GatewayRuntimeStatusDto GetRuntimeStreamSnapshot() => GetStatus();
+    GatewayRuntimeStatusDto GetStatusSummary() => GetStatus();
     MqttRuntimeStatusDto GetMqttStatus();
     OpcUaServerRuntimeStatusDto GetOpcUaStatus();
     HistoryStatsDto GetHistoryStatus();

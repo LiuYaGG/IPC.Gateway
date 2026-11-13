@@ -115,6 +115,7 @@ namespace IPC.EdgeGateway
         public bool PublishEnabled { get; set; }
         public bool PublishSelectedTagsOnly { get; set; }
         public bool PublishChangedOnly { get; set; }
+        public bool CoalescePendingTelemetry { get; set; }
         public int PublishUnchangedHeartbeatSeconds { get; set; }
         public string PublishTopicTemplate { get; set; }
         public int PublishQos { get; set; }
@@ -186,6 +187,7 @@ namespace IPC.EdgeGateway
                 PublishEnabled = PublishEnabled,
                 PublishSelectedTagsOnly = PublishSelectedTagsOnly,
                 PublishChangedOnly = PublishChangedOnly,
+                CoalescePendingTelemetry = CoalescePendingTelemetry,
                 PublishUnchangedHeartbeatSeconds = PublishUnchangedHeartbeatSeconds,
                 PublishTopicTemplate = PublishTopicTemplate,
                 PublishQos = PublishQos,

@@ -8,6 +8,7 @@ export interface ApiResult<T> {
 }
 
 export interface GatewayStatus {
+  projectRevision?: string;
   isRunning: boolean;
   projectName: string;
   configurationStore: string;
@@ -321,6 +322,7 @@ export interface DeviceRuntimeStatus {
 }
 
 export interface TagValueSnapshot {
+  runtimeRevision?: number;
   channelId: string;
   channelName: string;
   deviceId: string;
@@ -330,28 +332,35 @@ export interface TagValueSnapshot {
   deviceName: string;
   groupName: string;
   tagName: string;
-  rawValueText: string;
+  rawValueText?: string;
   valueText: string;
-  unit: string;
-  pointCode: string;
-  assetPath: string;
-  businessType: string;
-  source: string;
-  precision: number;
+  unit?: string;
+  pointCode?: string;
+  assetPath?: string;
+  businessType?: string;
+  source?: string;
+  precision?: number;
   dataType: string;
   mqttPublishEnabled: boolean;
-  cleaningApplied: boolean;
-  cleaningAction: string;
-  cleaningMessage: string;
+  cleaningApplied?: boolean;
+  cleaningAction?: string;
+  cleaningMessage?: string;
   quality: string;
   timestamp: string;
-  errorMessage: string;
+  errorMessage?: string;
   tagState: string;
-  lastReadError: string;
-  isTagIsolated: boolean;
-  isStaticValidationError: boolean;
-  tagConsecutiveFailures: number;
-  nextTagRecoveryProbeTime: string;
+  lastReadError?: string;
+  isTagIsolated?: boolean;
+  isStaticValidationError?: boolean;
+  tagConsecutiveFailures?: number;
+  nextTagRecoveryProbeTime?: string;
+}
+
+// Each row is a full sample. An omitted raw value is identical to the current
+// processed value; an explicit empty string must stay empty.
+export function decodeTagSnapshot(tag: TagValueSnapshot) {
+  tag.rawValueText ??= tag.valueText;
+  return tag;
 }
 
 export interface RuntimeErrorDetail {
@@ -622,6 +631,7 @@ export interface EdgeRuleConfig {
 }
 
 export interface EdgeRuleActionConfig {
+  alarmMessage?: boolean;
   id: string;
   actionType: string;
   enabled: boolean;
@@ -692,6 +702,7 @@ export interface FlowRuleDefinition {
 }
 
 export interface FlowRuleNode {
+  alarmMessage?: boolean;
   id: string;
   nodeType: string;
   label: string;
@@ -1113,6 +1124,8 @@ export interface MqttRuntimeStatus {
   sparkplugDeathCount: number;
   sparkplugDataCount: number;
   outboxPendingCount: number;
+  alarmPendingCount: number;
+  alarmOldestPendingAgeSeconds: number;
   outboxEnqueuedCount: number;
   outboxBytes: number;
   outboxExpiredDeletedCount: number;
@@ -1241,6 +1254,7 @@ export interface HistoryStorageConfig {
   autoCleanupEnabled: boolean;
   cleanupIntervalHours: number;
   maxStorageMegabytes: number;
+  valueFileSegmentMegabytes: number;
 }
 
 export interface HistoryDataProcessingConfig {
@@ -1367,7 +1381,7 @@ export interface WriteTagResult {
   dataType: string;
   quality: string;
   timestamp: string;
-  errorMessage: string;
+  errorMessage?: string;
   currentValueText: string;
 }
 
@@ -1650,7 +1664,13 @@ export interface GatewayProtocolDriverInfo {
   capabilities: GatewayProtocolCapabilities;
 }
 
-export async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export class SessionExpiredError extends Error {}
+export class NetworkRequestError extends Error {}
+export class HttpRequestError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
+export async function request<T>(url: string, init?: RequestInit, legacyFallback?: () => Promise<T>): Promise<T> {
   const saving = url.startsWith('/api/config/') && !!init?.method && !['GET', 'HEAD'].includes(init.method.toUpperCase());
   if (saving) beginConfigurationSave();
   try {
@@ -1666,22 +1686,23 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
     });
   } catch (error) {
     if (isAbortError(error)) throw error;
-    throw new Error(
+    throw new NetworkRequestError(
       localizeErrorMessage(
         error instanceof Error ? error.message : undefined,
       ) || "网络请求失败，请检查后端服务。",
     );
   }
 
+  if (legacyFallback && (response.status === 404 ||
+    (response.ok && response.headers.get("Content-Type")?.includes("text/html")))) {
+    return legacyFallback();
+  }
   if (!response.ok) {
     const payload = (await response.json().catch(() => undefined)) as
       { errorMessage?: string } | undefined;
     const message = localizeErrorMessage(payload?.errorMessage);
-    throw new Error(
-      response.status === 401
-        ? message || "登录已过期，请重新登录"
-        : message || `请求失败（HTTP ${response.status}）`,
-    );
+    if (response.status === 401) throw new SessionExpiredError(message || "登录已过期，请重新登录");
+    throw new HttpRequestError(response.status, message || `请求失败（HTTP ${response.status}）`);
   }
 
   return (await response.json()) as T;
@@ -1733,8 +1754,8 @@ export async function logout() {
   return request<{ success: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
-export async function loadCurrentUser() {
-  return request<GatewayCurrentUserResponse>("/api/auth/me");
+export async function loadCurrentUser(signal?: AbortSignal) {
+  return request<GatewayCurrentUserResponse>("/api/auth/me", { signal });
 }
 
 export async function changeCurrentPassword(
@@ -1916,6 +1937,7 @@ export async function loadSync(signal?: AbortSignal) {
     throw new Error(
       localizeErrorMessage(result.errorMessage) || "同步运行数据失败",
     );
+  result.data.status.tags.forEach(decodeTagSnapshot);
   return result.data;
 }
 
@@ -1928,6 +1950,7 @@ export async function loadStatus(signal?: AbortSignal) {
       localizeErrorMessage(result.errorMessage) ||
         "Runtime status failed to load",
     );
+  result.data.tags.forEach(decodeTagSnapshot);
   return result.data;
 }
 
@@ -2033,6 +2056,17 @@ export async function loadUpdateStatus(signal?: AbortSignal) {
     throw new Error(
       localizeErrorMessage(result.errorMessage) || "安装升级状态加载失败",
     );
+  return result.data;
+}
+
+export async function loadUpdateProgress(signal: AbortSignal) {
+  type Progress = Pick<GatewayUpdateStatus, "currentVersion" | "pendingAction">;
+  const init = { signal, cache: "no-store" as const };
+  const result = await request<ApiResult<Progress>>(
+    "/api/maintenance/updates/progress", init,
+    () => request<ApiResult<Progress>>("/api/maintenance/updates/status", init),
+  );
+  if (!result.success) throw new Error(localizeErrorMessage(result.errorMessage) || "安装升级状态加载失败");
   return result.data;
 }
 
@@ -2354,6 +2388,7 @@ export async function loadTagSnapshots(
     throw new Error(
       localizeErrorMessage(result.errorMessage) || "标签实时值加载失败",
     );
+  result.data.forEach(decodeTagSnapshot);
   return result.data;
 }
 
@@ -2795,6 +2830,34 @@ export async function deleteFlowRule(ruleId: string) {
     throw new Error(
       localizeErrorMessage(result.errorMessage) || "规则引擎删除失败",
     );
+  return result.data;
+}
+
+export interface AlarmHistoryRow {
+  eventId: string;
+  timestamp: string;
+  channelName: string;
+  deviceName: string;
+  groupName: string;
+  tagName: string;
+  tagId: string;
+  source: string;
+  ruleName: string;
+  eventType: string;
+  previousState: string;
+  state: string;
+  value: number | null;
+  threshold: number | null;
+  message: string;
+  deliveryStatus: string;
+}
+
+export async function loadAlarmHistoryPage(page: number, pageSize: number) {
+  const result = await request<ApiResult<{ total: number; items: AlarmHistoryRow[] }>>(
+    `/api/config/history/alarms?page=${page}&pageSize=${pageSize}`,
+  );
+  if (!result.success)
+    throw new Error(localizeErrorMessage(result.errorMessage) || "读取报警记录失败");
   return result.data;
 }
 

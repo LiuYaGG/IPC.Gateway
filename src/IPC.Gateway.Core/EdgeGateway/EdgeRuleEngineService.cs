@@ -85,6 +85,7 @@ namespace IPC.EdgeGateway
         private readonly IRuntimeService _runtime;
         private readonly ProjectConfig _projectConfig;
         private readonly Func<string, string, int, bool> _mqttPublisher;
+        private readonly Action<GatewayAlarmRecord, bool>? _recordAlarm;
         private readonly MqttGatewayOptions _gatewayOptions;
         private readonly IModelInferenceService _modelInference;
         private readonly IValueTransformScriptRuntime _valueTransformScripts;
@@ -118,11 +119,13 @@ namespace IPC.EdgeGateway
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
             IModelInferenceService? modelInference = null,
-            IValueTransformScriptRuntime? valueTransformScripts = null)
+            IValueTransformScriptRuntime? valueTransformScripts = null,
+            Action<GatewayAlarmRecord, bool>? recordAlarm = null)
         {
             _runtime = runtime;
             _projectConfig = projectConfig;
             _mqttPublisher = mqttPublisher;
+            _recordAlarm = recordAlarm;
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
             _ruleCircuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
@@ -1509,10 +1512,11 @@ namespace IPC.EdgeGateway
             if (!CanPublishActiveEvent(rule, state, now))
                 return;
 
+            string previousState = state.ActiveState;
             state.ActiveState = newState;
             state.ActiveSince = now;
             state.EscalationPublished = false;
-            PublishEvent(rule, snapshot, "active", newState, value, threshold, BuildStateActiveMessage(rule, snapshot, newState, state), rule.PublishToMqtt);
+            PublishEvent(rule, snapshot, "active", newState, value, threshold, BuildStateActiveMessage(rule, snapshot, newState, state), rule.PublishToMqtt, previousState);
         }
 
         private EdgeRuleState GetState(EdgeRuleConfig? rule)
@@ -1533,7 +1537,7 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private bool PublishEvent(EdgeRuleConfig rule, TagValueSnapshot snapshot, string eventType, string state, double value, double threshold, string message, bool publishCustomEvent)
+        private bool PublishEvent(EdgeRuleConfig rule, TagValueSnapshot snapshot, string eventType, string state, double value, double threshold, string message, bool publishCustomEvent, string? previousState = null)
         {
             DateTime now = DateTime.Now;
             EdgeRuleState ruleState = GetState(rule);
@@ -1569,7 +1573,20 @@ namespace IPC.EdgeGateway
 
             if (rule.Actions != null && rule.Actions.Count > 0)
             {
-                if (CanDispatchActions(rule, ruleState, now, eventType))
+                bool dispatch = CanDispatchActions(rule, ruleState, now, eventType);
+                foreach (var action in rule.Actions.Where(IsAlarmOutput))
+                {
+                    try
+                    {
+                        RecordAlarmOutput(ruleEvent, action, previousState, dispatch && ShouldExecuteAction(ruleEvent, action), rule.ActionDelaySeconds);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordActionFailure(ruleEvent, action, ex);
+                        IpcLogService.WriteError("Failed to persist rule alarm: " + ruleEvent.RuleName, ex);
+                    }
+                }
+                if (dispatch)
                     DispatchActions(ruleEvent, rule.Actions, Math.Max(0, rule.ActionDelaySeconds));
                 return true;
             }
@@ -1578,7 +1595,7 @@ namespace IPC.EdgeGateway
                 return true;
 
             int qos = ClampQos(rule.PublishQos);
-            if (_mqttPublisher(cloudTopic, ruleEvent.Payload, qos))
+            if (_mqttPublisher(cloudTopic, BuildPayload(ruleEvent, compactMqtt: true), qos))
                 return true;
 
             RecordActionFailure(
@@ -1804,6 +1821,39 @@ namespace IPC.EdgeGateway
                 RecordActionQueueFailure(ruleEvent);
         }
 
+        private static bool IsAlarmOutput(EdgeRuleActionConfig action) =>
+            action != null && action.AlarmMessage && string.Equals(action.ActionType, FlowRuleNodeTypes.MqttPublish, StringComparison.OrdinalIgnoreCase);
+
+        private void RecordAlarmOutput(EdgeRuleRuntimeEvent source, EdgeRuleActionConfig action, string? previousState, bool publish, int delaySeconds)
+        {
+            if (_recordAlarm == null)
+                throw new InvalidOperationException("Rule alarm journal is unavailable.");
+
+            bool clear = string.Equals(source.EventType, "clear", StringComparison.OrdinalIgnoreCase);
+            var message = CloneEvent(source);
+            message.EventId = source.EventId + ":" + action.Id;
+            message.Topic = BuildActionTopic(action, source);
+            string template = clear ? action.ClearMessage : action.ActiveMessage;
+            if (!string.IsNullOrWhiteSpace(template))
+                message.Message = RenderActionTemplate(template, source);
+            var tag = source.Snapshot;
+            DateTime occurredUtc = source.Timestamp.ToUniversalTime();
+            _recordAlarm(new GatewayAlarmRecord
+            {
+                Source = "rule", EventId = message.EventId, Timestamp = occurredUtc,
+                RuleId = source.RuleId, RuleName = source.RuleName,
+                ChannelId = tag.ChannelId, ChannelName = tag.ChannelName, DeviceId = tag.DeviceId, DeviceName = tag.DeviceName,
+                GroupId = tag.GroupId, GroupName = tag.GroupName, TagId = tag.TagId, TagName = tag.TagName,
+                EventType = clear ? "recovery" : "alarm",
+                PreviousState = clear ? source.State : FirstText(previousState ?? string.Empty, "Normal"),
+                State = clear ? "Normal" : source.State, Message = message.Message,
+                Value = double.IsFinite(source.Value) ? source.Value : null,
+                Threshold = double.IsFinite(source.Threshold) ? source.Threshold : null,
+                Topic = message.Topic, Payload = BuildPayload(message, compactMqtt: true), Qos = ClampQos(action.Qos),
+                NotBeforeUtc = publish && delaySeconds > 0 ? occurredUtc.AddSeconds(Math.Min(3600, delaySeconds)) : null
+            }, publish);
+        }
+
         private void ExecuteActions(EdgeRuleRuntimeEvent ruleEvent, IList<EdgeRuleActionConfig> actions)
         {
             for (int i = 0; i < actions.Count; i++)
@@ -1876,7 +1926,7 @@ namespace IPC.EdgeGateway
             string topic = BuildActionTopic(action, ruleEvent);
             if (string.IsNullOrWhiteSpace(topic))
                 topic = ruleEvent.Topic;
-            if (!_mqttPublisher(topic, ruleEvent.Payload, ClampQos(action.Qos)))
+            if (!_mqttPublisher(topic, BuildPayload(ruleEvent, compactMqtt: true), ClampQos(action.Qos)))
                 throw new InvalidOperationException("MQTT publisher rejected the rule action.");
         }
 
@@ -2172,6 +2222,8 @@ namespace IPC.EdgeGateway
 
             for (int i = 0; i < source.Count; i++)
             {
+                // Alarm outputs were durably recorded at the transition, before state can change again.
+                if (IsAlarmOutput(source[i])) continue;
                 EdgeRuleActionConfig? action = CloneAction(source[i]);
                 if (action != null)
                     target.Add(action);
@@ -3195,7 +3247,7 @@ namespace IPC.EdgeGateway
             return topic.Trim('/');
         }
 
-        private string BuildPayload(EdgeRuleRuntimeEvent ruleEvent)
+        private string BuildPayload(EdgeRuleRuntimeEvent ruleEvent, bool compactMqtt = false)
         {
             TagValueSnapshot snapshot = ruleEvent.Snapshot;
             return "{" +
@@ -3211,11 +3263,11 @@ namespace IPC.EdgeGateway
                    "\"ruleName\":\"" + JsonEscape(ruleEvent.RuleName) + "\"," +
                    "\"conditionType\":\"" + JsonEscape(ruleEvent.ConditionType.ToString()) + "\"," +
                    "\"state\":\"" + JsonEscape(ruleEvent.State) + "\"," +
-                   "\"action\":\"" + JsonEscape(ruleEvent.EventType) + "\"," +
+                   (compactMqtt ? string.Empty : "\"action\":\"" + JsonEscape(ruleEvent.EventType) + "\",") +
                    "\"message\":\"" + JsonEscape(ruleEvent.Message) + "\"," +
                    "\"severity\":\"" + JsonEscape(ruleEvent.Severity) + "\"," +
-                   "\"value\":" + ruleEvent.Value.ToString("R", CultureInfo.InvariantCulture) + "," +
-                   "\"threshold\":" + ruleEvent.Threshold.ToString("R", CultureInfo.InvariantCulture) + "," +
+                   "\"value\":" + FormatJsonValue(ruleEvent.Value) + "," +
+                   "\"threshold\":" + FormatJsonValue(ruleEvent.Threshold) + "," +
                    "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
                    "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
                    "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
@@ -3227,15 +3279,15 @@ namespace IPC.EdgeGateway
                    "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
                    "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
                    "\"businessType\":\"" + JsonEscape(snapshot.BusinessType) + "\"," +
-                   "\"source\":\"RuleEngine\"," +
+                   (compactMqtt ? string.Empty : "\"source\":\"RuleEngine\",") +
                    "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
                    "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
                    "\"timestamp\":\"" + JsonEscape(ruleEvent.Timestamp.ToString("o")) + "\"," +
-                   "\"sourceValues\":" + BuildSourceValuesPayload(ruleEvent.SourceValues) +
+                   "\"sourceValues\":" + BuildSourceValuesPayload(ruleEvent.SourceValues, compactMqtt) +
                    "}";
         }
 
-        private static string BuildSourceValuesPayload(IList<EdgeRuleRuntimeSourceValue> sourceValues)
+        private static string BuildSourceValuesPayload(IList<EdgeRuleRuntimeSourceValue> sourceValues, bool compactMqtt)
         {
             if (sourceValues == null || sourceValues.Count == 0)
                 return "[]";
@@ -3250,21 +3302,22 @@ namespace IPC.EdgeGateway
 
                 if (builder.Length > 1)
                     builder.Append(',');
-                builder.Append(BuildSourceValuePayload(sourceValue));
+                builder.Append(BuildSourceValuePayload(sourceValue, compactMqtt));
             }
 
             builder.Append(']');
             return builder.ToString();
         }
 
-        private static string BuildSourceValuePayload(EdgeRuleRuntimeSourceValue sourceValue)
+        private static string BuildSourceValuePayload(EdgeRuleRuntimeSourceValue sourceValue, bool compactMqtt)
         {
             TagValueSnapshot snapshot = sourceValue == null || sourceValue.Snapshot == null
                 ? new TagValueSnapshot()
                 : sourceValue.Snapshot;
 
-            return "{" +
-                   "\"role\":\"" + JsonEscape(sourceValue == null ? string.Empty : sourceValue.Role) + "\"," +
+            // The trigger source is a clone of the top-level event snapshot.
+            bool inheritTriggerMetadata = compactMqtt && sourceValue?.Role == "trigger";
+            string identity = inheritTriggerMetadata ? string.Empty :
                    "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
                    "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
                    "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
@@ -3273,14 +3326,17 @@ namespace IPC.EdgeGateway
                    "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
                    "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
                    "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
-                   "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
+                   "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\",";
+            return "{" +
+                   "\"role\":\"" + JsonEscape(sourceValue?.Role ?? string.Empty) + "\"," +
+                   identity +
                    "\"value\":" + FormatJsonValue(snapshot.Value) + "," +
                    "\"valueText\":\"" + JsonEscape(snapshot.ValueText) + "\"," +
                    "\"rawValue\":" + FormatJsonValue(snapshot.RawValue) + "," +
                    "\"rawValueText\":\"" + JsonEscape(snapshot.RawValueText) + "\"," +
                    "\"dataType\":\"" + JsonEscape(snapshot.DataType) + "\"," +
-                   "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
-                   "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
+                   (inheritTriggerMetadata ? string.Empty :
+                       "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\",\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\",") +
                    "\"timestamp\":\"" + JsonEscape(snapshot.Timestamp == DateTime.MinValue ? string.Empty : snapshot.Timestamp.ToString("o")) + "\"" +
                    "}";
         }

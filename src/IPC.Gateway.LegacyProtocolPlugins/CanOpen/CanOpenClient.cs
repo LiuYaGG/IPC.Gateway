@@ -95,7 +95,7 @@ namespace IPC.Plc.Communication.CanOpen
 
         public IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests)
         {
-            List<PlcBatchReadResult> results = new List<PlcBatchReadResult>();
+            PlcBatchReadResult[] results = new PlcBatchReadResult[requests?.Count ?? 0];
             if (requests == null || requests.Count == 0)
                 return results;
 
@@ -112,20 +112,19 @@ namespace IPC.Plc.Communication.CanOpen
                         Connect();
 
                     PlcReadResult readResult = Read(request.Address, request.DataType, request.ElementCount, request.ElementOffset);
-                    results.Add(PlcBatchReadResult.FromSuccess(request, readResult));
+                    results[i] = PlcBatchReadResult.FromSuccess(request, readResult);
                 }
                 catch (Exception ex)
                 {
                     PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
                         ex,
                         IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                    if (failureScope == PlcReadFailureScope.Device ||
-                        PlcBatchReadResult.IsConnectionFailureScope(failureScope))
-                        throw;
-                    results.Add(PlcBatchReadResult.FromFailure(
-                        request,
-                        ex.Message,
-                        failureScope));
+                    results[i] = PlcBatchReadResult.FromFailure(request, ex.Message, failureScope);
+                    if (PlcBatchReadResult.IsConnectionFailureScope(failureScope))
+                    {
+                        PlcBatchReadResult.DeferPending(requests, results, ex.Message);
+                        break;
+                    }
                 }
             }
 

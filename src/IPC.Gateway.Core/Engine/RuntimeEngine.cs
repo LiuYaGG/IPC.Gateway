@@ -48,14 +48,13 @@ namespace IPC.Runtime.Engine
     
     
     
-    public sealed class RuntimeEngine : IRuntimeService
+    public sealed partial class RuntimeEngine : IRuntimeService
     {
         private readonly object _syncRoot;
         private readonly Dictionary<string, DeviceRuntimeState> _deviceStatesById;
         private readonly ConcurrentDictionary<string, TagValueSnapshot> _snapshotsByPath;
         private readonly ConcurrentDictionary<string, DateTime> _nextReadUtcByTagId;
         private readonly Dictionary<string, string> _channelNamesById;
-        private readonly Dictionary<string, int> _devicePollStaggerOffsetMsByKey;
         private readonly object _queueSyncRoot;
         private readonly Queue<DeviceRuntimeState> _pendingHighPriorityDevicePolls;
         private readonly Queue<DeviceRuntimeState> _pendingRecoveryDevicePolls;
@@ -86,6 +85,11 @@ namespace IPC.Runtime.Engine
         private readonly int _deviceStatusRecoveryDebounceCount;
         private readonly int _deviceStatusRecoveryDebounceMs;
         private readonly int _tagValueChangedQueueLimit;
+        private readonly int _maxReadItemsPerTurn;
+        private readonly int _initialReadItemsPerTurn;
+        private readonly int _singleReadsPerTurn;
+        private readonly int _readTurnBudgetMs;
+        private readonly int _tagRecoveryProbeIntervalMs;
         private readonly int _minReconnectDelayMs;
         private readonly int _maxReconnectDelayMs;
         private readonly RuntimeErrorTimeline _runtimeEvents;
@@ -93,6 +97,7 @@ namespace IPC.Runtime.Engine
         private readonly RuntimeConfigDiffer _configDiffer;
         private readonly RuntimeHealthEvaluator _healthEvaluator;
         private readonly RuntimeSnapshotStore _snapshotStore;
+        private readonly AcquisitionLatencyMetrics _acquisitionMetrics = new AcquisitionLatencyMetrics();
         private readonly PhysicalChannelManager _physicalChannelManager;
         private readonly ConfiguredChannelScheduler _configuredChannelScheduler;
         private readonly IValueTransformScriptRuntime _valueTransformScripts;
@@ -108,6 +113,7 @@ namespace IPC.Runtime.Engine
         {
             Device,
             Batch,
+            Recovery,
             Subscription
         }
         private long _nextTaskId;
@@ -161,7 +167,6 @@ namespace IPC.Runtime.Engine
             _snapshotsByPath = new ConcurrentDictionary<string, TagValueSnapshot>(StringComparer.OrdinalIgnoreCase);
             _nextReadUtcByTagId = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
             _channelNamesById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            _devicePollStaggerOffsetMsByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             _queueSyncRoot = new object();
             _pendingHighPriorityDevicePolls = new Queue<DeviceRuntimeState>();
             _pendingRecoveryDevicePolls = new Queue<DeviceRuntimeState>();
@@ -192,6 +197,11 @@ namespace IPC.Runtime.Engine
             _deviceStatusRecoveryDebounceCount = options.DeviceStatusRecoveryDebounceCount;
             _deviceStatusRecoveryDebounceMs = options.DeviceStatusRecoveryDebounceMs;
             _tagValueChangedQueueLimit = options.TagValueChangedQueueLimit;
+            _maxReadItemsPerTurn = options.MaxReadItemsPerTurn;
+            _initialReadItemsPerTurn = options.InitialReadItemsPerTurn;
+            _singleReadsPerTurn = options.SingleReadsPerTurn;
+            _readTurnBudgetMs = options.ReadTurnBudgetMs;
+            _tagRecoveryProbeIntervalMs = options.TagRecoveryProbeIntervalMs;
             _minReconnectDelayMs = 1000;
             _maxReconnectDelayMs = 30000;
             _runtimeEvents = new RuntimeErrorTimeline(100);
@@ -215,6 +225,8 @@ namespace IPC.Runtime.Engine
         }
 
         public event EventHandler<TagValueChangedEventArgs>? TagValueChanged;
+        internal event Action<TagValueSnapshot>? AlarmSampleCommitted;
+        public event EventHandler<TagValueChangedEventArgs>? TagDiagnosticsChanged;
 
         public bool IsRunning
         {
@@ -241,7 +253,6 @@ namespace IPC.Runtime.Engine
                 _configuredChannelScheduler.Configure(runtimeConfig);
                 _config = runtimeConfig;
                 RebuildChannelNameCacheNoLock(runtimeConfig);
-                RebuildDevicePollStaggerCacheNoLock(runtimeConfig);
                 _index = new TagRuntimeIndex(runtimeConfig);
                 _snapshotsByPath.Clear();
                 _nextReadUtcByTagId.Clear();
@@ -250,76 +261,10 @@ namespace IPC.Runtime.Engine
                 ResetSchedulerStats();
                 InitializeDeviceStates(runtimeConfig);
                 InitializeSnapshots(runtimeConfig);
-                InitializeDevicePollStaggerNoLock(runtimeConfig, DateTime.UtcNow);
+                InitializeDeviceCadencesNoLock(runtimeConfig, DateTime.UtcNow, staggerFirstPoll: true);
                 int runtimeGeneration = Interlocked.Increment(ref _runtimeGeneration);
                 _timer = new Timer(SchedulePolls, runtimeGeneration, 0, _schedulerIntervalMs);
             }
-        }
-
-        public void ApplyProject(ProjectConfig config)
-        {
-            if (config == null)
-                throw new ArgumentNullException("config");
-
-            ProjectConfig runtimeConfig = ProjectConfigCloner.Clone(config) ?? throw new InvalidOperationException("Project configuration clone failed.");
-            ProjectConfigStore.Normalize(runtimeConfig);
-            Dictionary<string, TagValueSnapshot> previousSnapshots;
-            Dictionary<string, TagValueSnapshot> previousSnapshotsByTagId;
-            Dictionary<string, DateTime> previousNextReadUtcByTagId;
-            Dictionary<string, DeviceRuntimeState> previousDeviceStatesById;
-            List<DeviceRuntimeState> statesToRelease = new List<DeviceRuntimeState>();
-            List<DeviceRuntimeState> statesToDisconnect = new List<DeviceRuntimeState>();
-            HashSet<string> devicesToPollImmediately = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            List<TagValueSnapshot> changedSnapshots = new List<TagValueSnapshot>();
-            Timer? oldTimer = null;
-            bool restartTimer;
-            int runtimeGeneration = Interlocked.Increment(ref _runtimeGeneration);
-
-            lock (_syncRoot)
-            {
-                _configuredChannelScheduler.Configure(runtimeConfig);
-                restartTimer = _timer != null;
-                if (restartTimer)
-                {
-                    oldTimer = _timer;
-                    _timer = null;
-                }
-
-                previousSnapshots = new Dictionary<string, TagValueSnapshot>(_snapshotsByPath, StringComparer.OrdinalIgnoreCase);
-                previousSnapshotsByTagId = BuildSnapshotLookupByTagIdNoLock(_snapshotsByPath);
-                previousNextReadUtcByTagId = new Dictionary<string, DateTime>(_nextReadUtcByTagId, StringComparer.OrdinalIgnoreCase);
-                previousDeviceStatesById = new Dictionary<string, DeviceRuntimeState>(_deviceStatesById, StringComparer.OrdinalIgnoreCase);
-
-                _config = runtimeConfig;
-                RebuildChannelNameCacheNoLock(runtimeConfig);
-                RebuildDevicePollStaggerCacheNoLock(runtimeConfig);
-                _index = new TagRuntimeIndex(runtimeConfig);
-                _snapshotsByPath.Clear();
-                _nextReadUtcByTagId.Clear();
-                _deviceStatesById.Clear();
-                ClearPollingQueue();
-                InitializeDeviceStates(runtimeConfig, previousDeviceStatesById, statesToRelease, statesToDisconnect, devicesToPollImmediately);
-                DateTime nowUtc = DateTime.UtcNow;
-                RebuildSnapshotsNoLock(runtimeConfig, previousSnapshots, previousSnapshotsByTagId, previousNextReadUtcByTagId, changedSnapshots, devicesToPollImmediately, nowUtc);
-                ForceDeviceReadableTagsDueNoLock(runtimeConfig, devicesToPollImmediately, nowUtc);
-
-                if (restartTimer)
-                    _timer = new Timer(SchedulePolls, runtimeGeneration, 0, _schedulerIntervalMs);
-            }
-
-            if (oldTimer != null)
-                oldTimer.Dispose();
-
-            ForceDevicePollsDue(devicesToPollImmediately, DateTime.UtcNow);
-
-            for (int i = 0; i < statesToRelease.Count; i++)
-                ReleaseDeviceStateWithoutWaiting(statesToRelease[i]);
-
-            for (int i = 0; i < statesToDisconnect.Count; i++)
-                DisconnectDisabledDeviceStateClientWithoutWaiting(statesToDisconnect[i]);
-
-            for (int i = 0; i < changedSnapshots.Count; i++)
-                EnqueueTagValueChanged(changedSnapshots[i], runtimeGeneration);
         }
 
         public void Stop()
@@ -341,6 +286,7 @@ namespace IPC.Runtime.Engine
             }
 
             ClearPollingQueue();
+            StopSubscriptionDispatchers();
             _eventBus.Drain(TimeSpan.FromSeconds(2));
             Interlocked.Increment(ref _runtimeGeneration);
 
@@ -386,7 +332,7 @@ namespace IPC.Runtime.Engine
                         continue;
 
                     if (CanRestoreSnapshot(current, persisted))
-                        _snapshotsByPath[key] = MergeRestoredSnapshot(current, persisted);
+                        _snapshotStore.Set(_snapshotsByPath, key, MergeRestoredSnapshot(current, persisted));
                 }
             }
         }
@@ -476,6 +422,7 @@ namespace IPC.Runtime.Engine
             RuntimeSchedulerStatus status = new RuntimeSchedulerStatus
             {
                 IsolationStrategy = _isolationStrategy,
+                AcquisitionLatency = _acquisitionMetrics.Snapshot(),
                 MaxConcurrentDevicePolls = _maxConcurrentDevicePolls,
                 SchedulerIntervalMs = _schedulerIntervalMs,
                 BackpressureEnabled = _backpressureEnabled,
@@ -775,127 +722,6 @@ namespace IPC.Runtime.Engine
             return response;
         }
 
-        public WriteTagResponse WriteTag(WriteTagRequest request)
-        {
-            if (request == null)
-                throw new ArgumentNullException("request");
-
-            DeviceConfig? device;
-            GroupConfig? group;
-            TagConfig? tag;
-            if (!TryFindWritableTag(request, out device, out group, out tag) || device == null || tag == null)
-                return CreateWriteErrorResponse(request, "Tag was not found.");
-
-            if (!device.Enabled)
-                return CreateWriteErrorResponse(request, "Device is disabled.");
-            if (!_configuredChannelScheduler.IsEnabled(device))
-                return CreateWriteErrorResponse(request, "Configured channel is disabled.");
-            if (group != null && !group.Enabled)
-                return CreateWriteErrorResponse(request, "Group is disabled.");
-            if (!tag.Enabled)
-                return CreateWriteErrorResponse(request, "Tag is disabled.");
-            if (!CanWrite(tag))
-                return CreateWriteErrorResponse(request, "Tag is read-only.");
-
-            PlcDataType requestDataType;
-            if (!TryParseDataType(request.DataType, out requestDataType))
-                return CreateWriteErrorResponse(request, "DataType is required and must be a valid PlcDataType name.");
-
-            if (requestDataType != tag.DataType)
-            {
-                return CreateWriteErrorResponse(
-                    request,
-                    "DataType does not match tag configuration. Requested: " + requestDataType + ", Configured: " + tag.DataType + ".");
-            }
-
-            string valueText = BuildWriteValueText(request, tag);
-            string validationError;
-            if (!TryValidateWriteValue(tag.DataType, valueText, tag.ElementCount, out validationError))
-                return CreateWriteErrorResponse(request, validationError);
-
-            DeviceRuntimeState? writeDeviceState = null;
-            try
-            {
-                writeDeviceState = GetDeviceState(device);
-                if (writeDeviceState == null)
-                    return CreateWriteErrorResponse(request, "Device runtime state was not found.");
-
-                using CancellationTokenSource writeCancellation = CreateOperationTimeoutCancellationTokenSource(device, PlcOperationTimeoutKind.Device);
-                ConfiguredChannelLease? configuredWriteLease = null;
-                try
-                {
-                    configuredWriteLease = _configuredChannelScheduler
-                        .AcquireWriteAsync(device, writeCancellation.Token)
-                        .AsTask().GetAwaiter().GetResult();
-                    return writeDeviceState.Actor.InvokeAsync(async actorToken =>
-                    {
-                        (bool connected, IPlcClient? client) = await TryEnsureClientAsync(writeDeviceState, actorToken).ConfigureAwait(false);
-                        if (!connected || client == null)
-                            return CreateWriteErrorResponse(request, "Device is not connected.");
-
-                        await WriteTagValueAsync(client, writeDeviceState, tag, valueText, actorToken).ConfigureAwait(false);
-                        writeDeviceState.ProtocolCircuitBreaker.RecordSuccess();
-
-                    int runtimeGeneration = Interlocked.CompareExchange(ref _runtimeGeneration, 0, 0);
-                    if (CanRead(tag))
-                    {
-                        (bool keepConnected, bool readSucceeded) = await ReadTagAsync(client, writeDeviceState, group, tag, runtimeGeneration, actorToken).ConfigureAwait(false);
-                        if (!readSucceeded)
-                        {
-                            string refreshError = keepConnected
-                                ? "Write succeeded, but the current value could not be refreshed."
-                                : "Write succeeded, but device communication failed while refreshing the current value.";
-                            return CreateWriteRefreshWarningResponse(device, group, tag, refreshError);
-                        }
-                    }
-
-                    TagValueSnapshot? snapshot;
-                    ReadTagResponse? currentValue = null;
-                    if (TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id, out snapshot) && snapshot != null)
-                        currentValue = ReadTagResponse.FromSnapshot(snapshot);
-
-                        return new WriteTagResponse
-                        {
-                            Success = true,
-                            ChannelId = device.ChannelId,
-                            ChannelName = GetChannelName(device.ChannelId),
-                            DeviceId = device.Id,
-                            GroupId = group == null ? string.Empty : group.Id,
-                            TagId = tag.Id,
-                            DeviceName = device.Name,
-                            GroupName = group == null ? string.Empty : group.Name,
-                            TagName = tag.Name,
-                            DataType = tag.DataType.ToString(),
-                            Quality = currentValue == null ? TagQuality.Good.ToString() : currentValue.Quality,
-                            Timestamp = DateTime.Now,
-                            CurrentValue = currentValue ?? new ReadTagResponse()
-                        };
-                    }, writeCancellation.Token).GetAwaiter().GetResult();
-                }
-                finally
-                {
-                    configuredWriteLease?.Dispose();
-                    TryStartQueuedDevicePolls(Interlocked.CompareExchange(ref _runtimeGeneration, 0, 0));
-                }
-            }
-            catch (Exception ex)
-            {
-                bool communicationError = IsCommunicationException(ex);
-                if (writeDeviceState != null && communicationError)
-                    writeDeviceState.ProtocolCircuitBreaker.RecordFailure(ex.Message);
-
-                if (writeDeviceState != null && communicationError)
-                {
-                    writeDeviceState.Actor.ExecuteAsync(async token =>
-                    {
-                        await DropDeviceConnectionAsync(writeDeviceState, ex.Message, token).ConfigureAwait(false);
-                    }).GetAwaiter().GetResult();
-                }
-
-                return CreateWriteErrorResponse(request, ex.Message);
-            }
-        }
-
         public void Dispose()
         {
             if (_disposed)
@@ -907,6 +733,7 @@ namespace IPC.Runtime.Engine
 
         private void ReleaseDeviceStateWithoutWaiting(DeviceRuntimeState state)
         {
+            InvalidateSubscriptionDispatcher(state);
             if (state == null)
                 return;
 
@@ -1046,116 +873,7 @@ namespace IPC.Runtime.Engine
             return result;
         }
 
-        private void RebuildSnapshotsNoLock(
-            ProjectConfig config,
-            IDictionary<string, TagValueSnapshot> previousSnapshots,
-            IDictionary<string, TagValueSnapshot> previousSnapshotsByTagId,
-            IDictionary<string, DateTime> previousNextReadUtcByTagId,
-            IList<TagValueSnapshot> changedSnapshots,
-            ISet<string>? devicesToPollImmediately,
-            DateTime nowUtc)
-        {
-            if (config == null || config.Devices == null)
-                return;
-
-            for (int d = 0; d < config.Devices.Count; d++)
-            {
-                DeviceConfig device = config.Devices[d];
-                if (device == null)
-                    continue;
-
-                RebuildTagSnapshotsNoLock(device, null, device.Tags, device.Enabled, previousSnapshots, previousSnapshotsByTagId, previousNextReadUtcByTagId, changedSnapshots, devicesToPollImmediately, nowUtc);
-
-                if (device.Groups == null)
-                    continue;
-
-                for (int g = 0; g < device.Groups.Count; g++)
-                {
-                    GroupConfig group = device.Groups[g];
-                    if (group == null)
-                        continue;
-
-                    group.DeviceId = device.Id;
-                    RebuildTagSnapshotsNoLock(device, group, group.Tags, device.Enabled && group.Enabled, previousSnapshots, previousSnapshotsByTagId, previousNextReadUtcByTagId, changedSnapshots, devicesToPollImmediately, nowUtc);
-                }
-            }
-        }
-
-        private void RebuildTagSnapshotsNoLock(
-            DeviceConfig device,
-            GroupConfig? group,
-            IList<TagConfig>? tags,
-            bool parentEnabled,
-            IDictionary<string, TagValueSnapshot> previousSnapshots,
-            IDictionary<string, TagValueSnapshot> previousSnapshotsByTagId,
-            IDictionary<string, DateTime> previousNextReadUtcByTagId,
-            IList<TagValueSnapshot> changedSnapshots,
-            ISet<string>? devicesToPollImmediately,
-            DateTime nowUtc)
-        {
-            if (tags == null)
-                return;
-
-            for (int t = 0; t < tags.Count; t++)
-            {
-                TagConfig tag = tags[t];
-                if (tag == null)
-                    continue;
-
-                tag.DeviceId = device.Id;
-                tag.GroupId = group == null ? string.Empty : group.Id;
-                if (tag.Scaling == null)
-                    tag.Scaling = ScalingConfig.Default();
-
-                TagValueSnapshot snapshot = CreateConfiguredSnapshot(device, group, tag, parentEnabled);
-                TagValueSnapshot? previous = FindPreviousSnapshot(device, group, tag, previousSnapshots, previousSnapshotsByTagId);
-                if (previous != null && parentEnabled && tag.Enabled && CanRead(tag) && CanRestoreConfiguredSnapshot(previous))
-                    snapshot = MergeRestoredSnapshot(snapshot, previous);
-
-                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id);
-                _snapshotsByPath[path] = snapshot;
-
-                DateTime nextReadUtc;
-                if (!string.IsNullOrWhiteSpace(tag.Id) && previousNextReadUtcByTagId.TryGetValue(tag.Id, out nextReadUtc))
-                    _nextReadUtcByTagId[tag.Id] = nextReadUtc;
-                else
-                    _nextReadUtcByTagId[tag.Id] = nowUtc;
-
-                if (previous == null || HasTagValueChanged(previous, snapshot))
-                    changedSnapshots.Add(snapshot.Clone());
-
-                if (previous == null && parentEnabled && tag.Enabled && CanDeviceRead(tag) && !string.IsNullOrWhiteSpace(device.Id))
-                    devicesToPollImmediately?.Add(device.Id);
-            }
-        }
-
-        private void ForceDeviceReadableTagsDueNoLock(ProjectConfig config, ISet<string> deviceIds, DateTime nowUtc)
-        {
-            if (config == null || config.Devices == null || deviceIds == null || deviceIds.Count == 0)
-                return;
-
-            for (int d = 0; d < config.Devices.Count; d++)
-            {
-                DeviceConfig device = config.Devices[d];
-                if (device == null || !device.Enabled || string.IsNullOrWhiteSpace(device.Id) || !deviceIds.Contains(device.Id))
-                    continue;
-
-                ForceReadableTagsDueNoLock(device.Tags, nowUtc);
-                if (device.Groups == null)
-                    continue;
-
-                for (int g = 0; g < device.Groups.Count; g++)
-                {
-                    GroupConfig group = device.Groups[g];
-                    if (group == null || !group.Enabled)
-                        continue;
-
-                    ForceReadableTagsDueNoLock(group.Tags, nowUtc);
-                }
-            }
-        }
-
-        private void ForceReadableTagsDueNoLock(IList<TagConfig>? tags, DateTime nowUtc)
+        private void ForceReadableTagsDueNoLock(DeviceRuntimeState deviceState, IList<TagConfig>? tags, DateTime nowUtc)
         {
             if (tags == null)
                 return;
@@ -1166,7 +884,9 @@ namespace IPC.Runtime.Engine
                 if (tag == null || !tag.Enabled || !CanDeviceRead(tag) || string.IsNullOrWhiteSpace(tag.Id))
                     continue;
 
-                _nextReadUtcByTagId[tag.Id] = nowUtc;
+                TagRuntimeState runtime = deviceState.ReadPlan.Get(tag).Runtime;
+                runtime.ResetHealthyBaseline();
+                _nextReadUtcByTagId[tag.Id] = runtime.HasRecoveryWork ? runtime.NextRecoveryProbeUtc : nowUtc;
             }
         }
 
@@ -1197,9 +917,16 @@ namespace IPC.Runtime.Engine
 
                 lock (state.SyncRoot)
                 {
-                    if (state.Config == null || !state.Config.Enabled || state.IsPolling || state.IsQueued)
+                    if (state.Config == null || !state.Config.Enabled)
                         continue;
 
+                    // A configuration change permits one prompt recovery attempt.
+                    // Keep isolation and circuit-breaker enforcement in place.
+                    if (state.IsIsolated)
+                    {
+                        state.NextReconnectUtc = nowUtc;
+                        state.NextRecoveryProbeUtc = nowUtc;
+                    }
                     state.NextPollUtc = state.NextReconnectUtc != DateTime.MinValue && state.NextReconnectUtc > nowUtc
                         ? state.NextReconnectUtc
                         : nowUtc;
@@ -1240,129 +967,6 @@ namespace IPC.Runtime.Engine
             if (!CanRead(tag))
                 return CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only.");
             return CreateSnapshot(device, group, tag, TagQuality.Unknown, "Waiting for first scan.");
-        }
-
-        private void InitializeSnapshots(ProjectConfig config)
-        {
-            if (config.Devices == null)
-                return;
-
-            for (int d = 0; d < config.Devices.Count; d++)
-            {
-                DeviceConfig device = config.Devices[d];
-                if (device == null)
-                    continue;
-
-                InitializeDeviceTags(device);
-
-                if (device.Groups == null)
-                    continue;
-
-                for (int g = 0; g < device.Groups.Count; g++)
-                {
-                    GroupConfig group = device.Groups[g];
-                    if (group == null || group.Tags == null)
-                        continue;
-
-                    group.DeviceId = device.Id;
-                    for (int t = 0; t < group.Tags.Count; t++)
-                    {
-                        TagConfig tag = group.Tags[t];
-                        if (tag == null)
-                            continue;
-
-                        tag.DeviceId = device.Id;
-                        tag.GroupId = group.Id;
-                        if (tag.Scaling == null)
-                            tag.Scaling = ScalingConfig.Default();
-
-                        string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group.Id, tag.Id);
-                        _snapshotsByPath[path] = CanRead(tag)
-                            ? CreateSnapshot(device, group, tag, TagQuality.Unknown, "Waiting for first scan.")
-                            : CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only.");
-                        _nextReadUtcByTagId[tag.Id] = DateTime.UtcNow;
-                    }
-                }
-            }
-        }
-
-        private void InitializeDeviceStates(ProjectConfig config)
-        {
-            InitializeDeviceStates(config, null, null, null, null);
-        }
-
-        private void InitializeDeviceStates(
-            ProjectConfig config,
-            IDictionary<string, DeviceRuntimeState>? previousStatesById,
-            IList<DeviceRuntimeState>? statesToRelease,
-            IList<DeviceRuntimeState>? statesToDisconnect,
-            ISet<string>? devicesToPollImmediately)
-        {
-            if (config == null || config.Devices == null)
-                return;
-
-            HashSet<string>? reusedDeviceIds = previousStatesById == null
-                ? null
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < config.Devices.Count; i++)
-            {
-                DeviceConfig device = config.Devices[i];
-                if (device == null)
-                    continue;
-
-                DeviceRuntimeState? previousState;
-                if (previousStatesById != null &&
-                    previousStatesById.TryGetValue(device.Id, out previousState) &&
-                    _configDiffer.CanReuseDeviceState(previousState.Config, device))
-                {
-                    DeviceRuntimeConfigTransition transition = previousState.ReuseConfig(device);
-                    _deviceStatesById[device.Id] = previousState;
-                    reusedDeviceIds?.Add(device.Id);
-                    if (transition == DeviceRuntimeConfigTransition.Disabled)
-                        statesToDisconnect?.Add(previousState);
-                    else if (transition == DeviceRuntimeConfigTransition.Enabled)
-                        devicesToPollImmediately?.Add(device.Id);
-                    continue;
-                }
-
-                _deviceStatesById[device.Id] = new DeviceRuntimeState(device, _protocolDriverCircuitBreakerOptions);
-            }
-
-            if (previousStatesById == null || statesToRelease == null)
-                return;
-
-            foreach (KeyValuePair<string, DeviceRuntimeState> pair in previousStatesById)
-            {
-                if (reusedDeviceIds != null && reusedDeviceIds.Contains(pair.Key))
-                    continue;
-                if (pair.Value != null)
-                    statesToRelease.Add(pair.Value);
-            }
-        }
-
-        private void InitializeDeviceTags(DeviceConfig device)
-        {
-            if (device.Tags == null)
-                return;
-
-            for (int t = 0; t < device.Tags.Count; t++)
-            {
-                TagConfig tag = device.Tags[t];
-                if (tag == null)
-                    continue;
-
-                tag.DeviceId = device.Id;
-                tag.GroupId = string.Empty;
-                if (tag.Scaling == null)
-                    tag.Scaling = ScalingConfig.Default();
-
-                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, string.Empty, tag.Id);
-                _snapshotsByPath[path] = CanRead(tag)
-                    ? CreateSnapshot(device, null, tag, TagQuality.Unknown, "Waiting for first scan.")
-                    : CreateSnapshot(device, null, tag, TagQuality.AccessDenied, "Tag is write-only.");
-                _nextReadUtcByTagId[tag.Id] = DateTime.UtcNow;
-            }
         }
 
         private void SchedulePolls(object? state)
@@ -1432,13 +1036,19 @@ namespace IPC.Runtime.Engine
                     if (!IsDeviceDue(deviceState, now))
                         continue;
 
-                    if (!deviceState.IsIsolated && !HasDueReadableTags(device, now))
+                    // Frequent notifications can keep every tag's fallback
+                    // deadline in the future. A quarantined monitor must still
+                    // be removed promptly when its fingerprint is invalidated.
+                    bool subscriptionRefreshPending = deviceState.Subscription?.IsActive == true &&
+                                                      string.IsNullOrEmpty(deviceState.SubscriptionFingerprint);
+                    if (!deviceState.IsIsolated && !subscriptionRefreshPending && !HasDueReadableTags(device, now))
                         continue;
 
-                    if (normalAdmissionPaused && !deviceState.IsIsolated)
+                    bool recoveryWork = ShouldQueueRecoveryPoll(deviceState, now);
+                    if (normalAdmissionPaused && !recoveryWork)
                         continue;
 
-                    if (deviceState.IsIsolated || IsLowPriorityPoll(deviceState))
+                    if (recoveryWork || IsLowPriorityPoll(deviceState))
                     {
                         if (lowPriorityCandidates == null)
                             lowPriorityCandidates = new List<DeviceRuntimeState>();
@@ -1471,7 +1081,7 @@ namespace IPC.Runtime.Engine
                     for (int i = 0; i < lowPriorityCandidates.Count; i++)
                     {
                         DeviceRuntimeState deviceState = lowPriorityCandidates[i];
-                        bool recoveryProbe = deviceState.IsIsolated;
+                        bool recoveryProbe = ShouldQueueRecoveryPoll(deviceState, now);
                         if (recoveryProbe && recoveryQueuedThisTick >= _maxConcurrentRecoveryProbes * 2)
                             continue;
                         if (!recoveryProbe && queuedThisTick >= _maxDevicePollsQueuedPerSchedulerTick)
@@ -1535,7 +1145,7 @@ namespace IPC.Runtime.Engine
                 }
 
                 string backpressureMessage;
-                recoveryProbe = deviceState.IsIsolated;
+                recoveryProbe = ShouldQueueRecoveryPoll(deviceState, now);
                 int pendingCount = recoveryProbe ? _pendingRecoveryDevicePolls.Count : GetNormalPendingDevicePollCountNoLock();
                 if (!recoveryProbe && IsBackpressureBlockedNoLock(pendingCount, now, out backpressureMessage))
                 {
@@ -1567,7 +1177,8 @@ namespace IPC.Runtime.Engine
                     deviceState.LastTaskStatus = "Queued";
                     deviceState.LastTaskError = string.Empty;
                     lowPriority = IsLowPriorityPollUnsafe(deviceState);
-                    recoveryProbe = deviceState.IsIsolated;
+                    recoveryProbe = ShouldQueueRecoveryPoll(deviceState, now);
+                    deviceState.CurrentPollIsRecovery = recoveryProbe;
                 }
 
                 if (recoveryProbe)
@@ -1657,7 +1268,15 @@ namespace IPC.Runtime.Engine
                 else
                     _devicePollSemaphore.Release();
                 Interlocked.Decrement(ref _runningPollTaskCount);
-                TryStartQueuedDevicePolls(runtimeGeneration);
+                int currentGeneration = GetCurrentRuntimeGeneration();
+                // Continue pending slices without waiting for the next timer
+                // tick, but go through normal admission and channel fairness.
+                if (IsCurrentDeviceState(deviceState) && deviceState.Config.Enabled &&
+                    _configuredChannelScheduler.IsEnabled(deviceState.Config) &&
+                    IsDeviceDue(deviceState, DateTime.UtcNow) &&
+                    (deviceState.IsIsolated || HasDueReadableTags(deviceState.Config, DateTime.UtcNow)))
+                    QueueDevicePoll(deviceState, currentGeneration);
+                TryStartQueuedDevicePolls(currentGeneration);
             }
         }
 
@@ -1776,99 +1395,6 @@ namespace IPC.Runtime.Engine
                 ScheduleDeviceNextPoll(deviceState, DateTime.UtcNow);
         }
 
-        private async Task PollDeviceAsync(DeviceRuntimeState deviceState, int runtimeGeneration, CancellationToken cancellationToken)
-        {
-            if (!IsCurrentGeneration(runtimeGeneration))
-                return;
-
-            DeviceConfig device = deviceState.Config;
-            DateTime now = DateTime.UtcNow;
-
-            await deviceState.Actor.ExecuteAsync(async actorToken =>
-            {
-                using IDisposable? recoveryIo = deviceState.IsIsolated ? PlcClientInvoker.BeginRecoveryProbe() : null;
-                cancellationToken.ThrowIfCancellationRequested();
-                actorToken.ThrowIfCancellationRequested();
-                deviceState.LastPollTime = DateTime.Now;
-                if (!IsCurrentGeneration(runtimeGeneration))
-                    return;
-
-                if (DateTime.UtcNow < deviceState.NextReconnectUtc)
-                    return;
-
-                (bool deviceConnected, IPlcClient? client) = await TryEnsureClientAsync(deviceState, actorToken).ConfigureAwait(false);
-                if (!IsCurrentGeneration(runtimeGeneration))
-                    return;
-
-                if (!deviceConnected || client == null)
-                {
-                    MarkDeviceUnavailableTagsOnce(deviceState);
-                    return;
-                }
-
-                if (deviceState.IsIsolated)
-                {
-                    await ProbeDeviceRecoveryAsync(deviceState, client, runtimeGeneration, actorToken).ConfigureAwait(false);
-                    return;
-                }
-
-                bool subscriptionFallback = false;
-                if (CanUseSubscription(client, device))
-                {
-                    subscriptionFallback = await TryEnsureDeviceSubscriptionAsync(
-                        deviceState,
-                        client,
-                        runtimeGeneration,
-                        actorToken).ConfigureAwait(false);
-                    if (!IsCurrentGeneration(runtimeGeneration))
-                        return;
-
-                    if (deviceState.Client == null || !deviceState.Client.IsConnected)
-                    {
-                        MarkDeviceUnavailableTagsOnce(deviceState);
-                        return;
-                    }
-
-                    client = deviceState.Client;
-                }
-
-                DevicePollReadContext pollContext = new DevicePollReadContext(client, deviceConnected);
-                List<PendingTagRead>? batchReads = PlcClientInvoker.SupportsBatchRead(client) ? new List<PendingTagRead>() : null;
-
-                await PollTagCollectionAsync(deviceState, null, device.Tags, now, runtimeGeneration, pollContext, batchReads, subscriptionFallback, actorToken).ConfigureAwait(false);
-                if (!IsCurrentGeneration(runtimeGeneration))
-                    return;
-
-                if (device.Groups == null)
-                {
-                    await ReadPendingBatchTagsAsync(deviceState, batchReads, now, runtimeGeneration, pollContext, subscriptionFallback, actorToken).ConfigureAwait(false);
-                    return;
-                }
-
-                for (int g = 0; g < device.Groups.Count; g++)
-                {
-                    if (!IsCurrentGeneration(runtimeGeneration))
-                        return;
-
-                    GroupConfig group = device.Groups[g];
-                    if (group == null || group.Tags == null)
-                        continue;
-
-                    if (!group.Enabled)
-                    {
-                        MarkGroup(device, group, TagQuality.Disabled, "Group is disabled.");
-                        continue;
-                    }
-
-                    await PollTagCollectionAsync(deviceState, group, group.Tags, now, runtimeGeneration, pollContext, batchReads, subscriptionFallback, actorToken).ConfigureAwait(false);
-                    if (!IsCurrentGeneration(runtimeGeneration))
-                        return;
-                }
-
-                await ReadPendingBatchTagsAsync(deviceState, batchReads, now, runtimeGeneration, pollContext, subscriptionFallback, actorToken).ConfigureAwait(false);
-            }, cancellationToken).ConfigureAwait(false);
-        }
-
         private async ValueTask ProbeDeviceRecoveryAsync(
             DeviceRuntimeState deviceState,
             IPlcClient client,
@@ -1877,29 +1403,49 @@ namespace IPC.Runtime.Engine
         {
             deviceState.RecoveryState = "Probing";
             deviceState.DeviceState = "Probing";
-            CompiledTagRead? probe = deviceState.ReadPlan.FindRecoveryProbe(deviceState.LastKnownGoodTagId);
+            CompiledTagRead? probe = deviceState.ReadPlan.FindRecoveryProbe(
+                deviceState.LastKnownGoodTagId, deviceState.LastRecoveryProbeTagId, DateTime.UtcNow);
             if (probe == null)
             {
-                RegisterDeviceFailure(deviceState, "设备没有可用于恢复探测的有效只读标签。", false);
+                // All candidates may temporarily be awaiting their own probe.
+                // This is not a failed connection attempt or a reason to grow
+                // the device backoff / reset its recovery cursor.
+                deviceState.RecoveryState = "Waiting";
+                deviceState.NextReconnectUtc = DateTime.UtcNow.AddMilliseconds(_recoveryProbeIntervalMs);
+                deviceState.NextRecoveryProbeUtc = deviceState.NextReconnectUtc;
+                deviceState.NextPollUtc = deviceState.NextReconnectUtc;
                 return;
             }
 
-            (bool keepConnected, bool succeeded) = await ReadTagAsync(
+            deviceState.LastRecoveryProbeTagId = probe.Tag.Id;
+            (bool keepConnected, bool succeeded, bool protocolResponseConfirmed) = await ReadTagAsync(
                 client,
                 deviceState,
                 probe.Group,
                 probe.Tag,
                 runtimeGeneration,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, recoveryProbe: true).ConfigureAwait(false);
 
-            if (succeeded)
+            if (!IsCurrentGeneration(runtimeGeneration))
+                return;
+
+            if (succeeded || protocolResponseConfirmed)
             {
+                // A valid PLC rejection proves that communication is restored;
+                // the rejected point still keeps its own error/isolation state.
+                if (!succeeded)
+                    RecordDeviceCommunicationSuccess(deviceState);
                 deviceState.RecoveryState = "Recovered";
                 deviceState.NextPollUtc = DateTime.MinValue;
             }
             else if (keepConnected)
             {
-                RegisterDeviceFailure(deviceState, "恢复探测标签读取失败：" + probe.Tag.Name, false);
+                // A local tag/decoding error does not confirm device recovery,
+                // but must not extend device backoff or pin the next probe.
+                deviceState.RecoveryState = "Waiting";
+                deviceState.NextReconnectUtc = DateTime.UtcNow.AddMilliseconds(_recoveryProbeIntervalMs);
+                deviceState.NextRecoveryProbeUtc = deviceState.NextReconnectUtc;
+                deviceState.NextPollUtc = deviceState.NextReconnectUtc;
             }
         }
 
@@ -1966,298 +1512,6 @@ namespace IPC.Runtime.Engine
                    capabilities.PreferredReadMode == PlcPreferredReadMode.Subscription;
         }
 
-        private async ValueTask<bool> TryEnsureDeviceSubscriptionAsync(
-            DeviceRuntimeState deviceState,
-            IPlcClient client,
-            int runtimeGeneration,
-            CancellationToken cancellationToken)
-        {
-            DateTime now = DateTime.UtcNow;
-            if (deviceState.SubscriptionUnavailable && now < deviceState.NextSubscriptionRetryUtc)
-                return deviceState.Subscription != null && deviceState.Subscription.IsActive;
-
-            DeviceConfig device = deviceState.Config;
-            List<PlcSubscriptionRequest> requests = BuildSubscriptionRequests(deviceState);
-            if (requests.Count == 0)
-            {
-                deviceState.DisposeSubscription();
-                deviceState.SubscriptionFingerprint = string.Empty;
-                return false;
-            }
-
-            PlcSubscriptionOptions options = CreateSubscriptionOptions(requests);
-            string fingerprint = CreateSubscriptionFingerprint(requests, options);
-            if (deviceState.Subscription != null &&
-                deviceState.Subscription.IsActive &&
-                string.Equals(deviceState.SubscriptionFingerprint, fingerprint, StringComparison.Ordinal))
-                return true;
-
-            try
-            {
-                Func<PlcSubscriptionUpdate, ValueTask> onUpdate = update =>
-                {
-                    int updateGeneration = GetCurrentRuntimeGeneration();
-                    deviceState.Actor.PostAsync(token => ProcessSubscriptionUpdateAsync(deviceState, update, updateGeneration, token));
-                    return ValueTask.CompletedTask;
-                };
-
-                if (deviceState.Subscription == null || !deviceState.Subscription.IsActive)
-                {
-                    deviceState.DisposeSubscription();
-                    deviceState.Subscription = await ExecutePlcOperationAsync(
-                        deviceState,
-                        token => PlcClientInvoker.SubscribeAsync(client, requests, options, onUpdate, token),
-                        CancellationToken.None,
-                        PlcOperationTimeoutKind.Subscription,
-                        false).ConfigureAwait(false);
-                }
-                else
-                {
-                    await ExecutePlcOperationAsync(
-                        deviceState,
-                        token => deviceState.Subscription.UpdateAsync(requests, options, token),
-                        CancellationToken.None,
-                        PlcOperationTimeoutKind.Subscription,
-                        false).ConfigureAwait(false);
-                }
-
-                deviceState.SubscriptionFingerprint = fingerprint;
-                deviceState.SubscriptionUnavailable = false;
-                deviceState.LastSubscriptionError = string.Empty;
-                deviceState.NextSubscriptionRetryUtc = DateTime.MinValue;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                deviceState.DisposeSubscription();
-                deviceState.SubscriptionFingerprint = string.Empty;
-                deviceState.SubscriptionUnavailable = true;
-                deviceState.LastSubscriptionError = ex.Message ?? string.Empty;
-                deviceState.NextSubscriptionRetryUtc = DateTime.UtcNow.AddMilliseconds(GetDeviceFailureRetryDelayMs(device));
-                deviceState.LastTaskStatus = "SubscriptionFallback";
-                deviceState.LastTaskError = deviceState.LastSubscriptionError;
-
-                if (ShouldDropDeviceConnectionAfterSubscriptionFailure(deviceState, ex))
-                    await DropDeviceConnectionAsync(deviceState, deviceState.LastSubscriptionError, cancellationToken).ConfigureAwait(false);
-
-                return false;
-            }
-        }
-
-        private List<PlcSubscriptionRequest> BuildSubscriptionRequests(DeviceRuntimeState deviceState)
-        {
-            DeviceConfig device = deviceState.Config;
-            List<PlcSubscriptionRequest> requests = new List<PlcSubscriptionRequest>();
-            AddSubscriptionRequests(deviceState, null, device == null ? null : device.Tags, requests);
-            if (device != null && device.Groups != null)
-            {
-                for (int g = 0; g < device.Groups.Count; g++)
-                {
-                    GroupConfig group = device.Groups[g];
-                    if (group == null || !group.Enabled)
-                        continue;
-                    AddSubscriptionRequests(deviceState, group, group.Tags, requests);
-                }
-            }
-
-            return requests;
-        }
-
-        private void AddSubscriptionRequests(
-            DeviceRuntimeState deviceState,
-            GroupConfig? group,
-            IList<TagConfig>? tags,
-            IList<PlcSubscriptionRequest> requests)
-        {
-            DeviceConfig device = deviceState.Config;
-            if (device == null || tags == null || requests == null)
-                return;
-
-            for (int i = 0; i < tags.Count; i++)
-            {
-                TagConfig tag = tags[i];
-                if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
-                    continue;
-
-                CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
-                if (!compiledRead.IsStaticallyValid || compiledRead.Runtime.IsIsolated)
-                    continue;
-
-                requests.Add(new PlcSubscriptionRequest(
-                    tag.Id,
-                    compiledRead.Address,
-                    tag.DataType,
-                    GetReadCount(tag),
-                    Math.Max(0, tag.ElementOffset),
-                    GetEffectiveScanRateMs(device, group, tag)));
-            }
-        }
-
-        private static PlcSubscriptionOptions CreateSubscriptionOptions(IList<PlcSubscriptionRequest> requests)
-        {
-            int minInterval = 1000;
-            bool hasInterval = false;
-            if (requests != null)
-            {
-                for (int i = 0; i < requests.Count; i++)
-                {
-                    PlcSubscriptionRequest request = requests[i];
-                    if (request == null || request.SamplingIntervalMs <= 0)
-                        continue;
-
-                    if (!hasInterval || request.SamplingIntervalMs < minInterval)
-                        minInterval = request.SamplingIntervalMs;
-                    hasInterval = true;
-                }
-            }
-
-            minInterval = ClampInterval(minInterval, 100, 86400000);
-            return new PlcSubscriptionOptions
-            {
-                PublishingIntervalMs = minInterval,
-                SamplingIntervalMs = minInterval,
-                QueueSize = 1,
-                DiscardOldest = true
-            };
-        }
-
-        private static string CreateSubscriptionFingerprint(IList<PlcSubscriptionRequest> requests, PlcSubscriptionOptions options)
-        {
-            List<string> parts = new List<string>();
-            if (requests != null)
-            {
-                for (int i = 0; i < requests.Count; i++)
-                {
-                    PlcSubscriptionRequest request = requests[i];
-                    if (request == null)
-                        continue;
-
-                    parts.Add(
-                        (request.Key ?? string.Empty) + "\u001f" +
-                        (request.Address ?? string.Empty) + "\u001f" +
-                        request.DataType + "\u001f" +
-                        request.ElementCount + "\u001f" +
-                        request.ElementOffset + "\u001f" +
-                        request.SamplingIntervalMs);
-                }
-            }
-
-            parts.Sort(StringComparer.OrdinalIgnoreCase);
-            return (options == null ? string.Empty : options.PublishingIntervalMs + ":" + options.QueueSize) +
-                   "\u001e" +
-                   string.Join("\u001e", parts.ToArray());
-        }
-
-        private async ValueTask ProcessSubscriptionUpdateAsync(
-            DeviceRuntimeState deviceState,
-            PlcSubscriptionUpdate update,
-            int runtimeGeneration,
-            CancellationToken cancellationToken)
-        {
-            if (deviceState != null)
-            {
-                try { PlcDriverPluginRegistry.EnsureDriverAllowed(deviceState.Config.Connection, deviceState.Config.Protocol); }
-                catch (PlcProtocolException ex)
-                {
-                    await DropDeviceConnectionAsync(deviceState, ex.Message, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-            }
-            if (deviceState == null ||
-                update == null ||
-                !IsCurrentGeneration(runtimeGeneration) ||
-                !IsCurrentDeviceState(deviceState))
-                return;
-
-            DeviceConfig device = deviceState.Config;
-            GroupConfig? group;
-            TagConfig? tag;
-            if (!TryFindTagById(device, update.Key, out group, out tag) || tag == null)
-                return;
-
-            DateTime now = DateTime.UtcNow;
-            deviceState.LastSubscriptionNotificationUtc = now;
-            if (!tag.Enabled)
-            {
-                ScheduleNextSubscriptionFallback(device, group, tag, now);
-                UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.Disabled, "Tag is disabled."));
-                return;
-            }
-
-            if (!CanDeviceRead(tag))
-            {
-                ScheduleNextSubscriptionFallback(device, group, tag, now);
-                UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."));
-                return;
-            }
-
-            deviceState.TotalReads++;
-            if (update.Success && update.Result != null)
-            {
-                ApplyReadSuccess(deviceState, group, tag, update.Result, recordDeviceSuccess: false);
-                RecordDeviceCommunicationSuccess(deviceState, confirmedSubscriptionUpdate: true);
-                ScheduleNextSubscriptionFallback(device, group, tag, now);
-                return;
-            }
-
-            bool connectionFailure = IsConnectionFailureScope(update.FailureScope);
-            await RecordReadFailureAsync(
-                deviceState,
-                group,
-                tag,
-                update.ErrorMessage,
-                connectionFailure,
-                LooksLikeTimeoutMessage(update.ErrorMessage),
-                connectionFailure,
-                update.FailureScope == PlcReadFailureScope.Tag,
-                cancellationToken).ConfigureAwait(false);
-            ScheduleNextRead(device, group, tag, now, true);
-        }
-
-        private static bool TryFindTagById(DeviceConfig device, string tagId, out GroupConfig? group, out TagConfig? tag)
-        {
-            group = null;
-            tag = null;
-            if (device == null || string.IsNullOrWhiteSpace(tagId))
-                return false;
-
-            if (device.Tags != null)
-            {
-                for (int i = 0; i < device.Tags.Count; i++)
-                {
-                    TagConfig candidate = device.Tags[i];
-                    if (candidate != null && string.Equals(candidate.Id, tagId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        tag = candidate;
-                        return true;
-                    }
-                }
-            }
-
-            if (device.Groups == null)
-                return false;
-
-            for (int g = 0; g < device.Groups.Count; g++)
-            {
-                GroupConfig candidateGroup = device.Groups[g];
-                if (candidateGroup == null || candidateGroup.Tags == null)
-                    continue;
-
-                for (int t = 0; t < candidateGroup.Tags.Count; t++)
-                {
-                    TagConfig candidate = candidateGroup.Tags[t];
-                    if (candidate != null && string.Equals(candidate.Id, tagId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        group = candidateGroup;
-                        tag = candidate;
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
         private async ValueTask<(bool Connected, IPlcClient? Client)> TryEnsureClientAsync(
             DeviceRuntimeState deviceState,
             CancellationToken cancellationToken)
@@ -2307,7 +1561,11 @@ namespace IPC.Runtime.Engine
                 {
                     await ExecutePlcOperationAsync(
                         deviceState,
-                        token => PlcClientInvoker.ConnectAsync(newClient, token),
+                        token =>
+                        {
+                            RecordRecoveryOperationStart(deviceState);
+                            return PlcClientInvoker.ConnectAsync(newClient, token);
+                        },
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch
@@ -2425,12 +1683,14 @@ namespace IPC.Runtime.Engine
             bool wasIsolated = deviceState.IsIsolated;
             if (wasIsolated)
             {
-                ForceReadableTagsDueNoLock(deviceState.Config.Tags, DateTime.UtcNow);
+                ForceReadableTagsDueNoLock(deviceState, deviceState.Config.Tags, DateTime.UtcNow);
                 foreach (GroupConfig group in deviceState.Config.Groups ?? new List<GroupConfig>())
                     if (group.Enabled)
-                        ForceReadableTagsDueNoLock(group.Tags, DateTime.UtcNow);
+                        ForceReadableTagsDueNoLock(deviceState, group.Tags, DateTime.UtcNow);
             }
             deviceState.IsIsolated = false;
+            // Preserve the cursor across successful recovery. A subsequent
+            // local timeout must not always pick the same successful anchor.
             deviceState.IsolatedSinceUtc = DateTime.MinValue;
             deviceState.NextRecoveryProbeUtc = DateTime.MinValue;
             deviceState.RecoveryState = wasIsolated ? "Recovered" : "Idle";
@@ -2665,10 +1925,15 @@ namespace IPC.Runtime.Engine
 
         private void MarkDeviceUnavailableTagsOnce(DeviceRuntimeState deviceState)
         {
-            if (deviceState.UnavailableTagsMarked)
-                return;
+            DeviceConfig device;
+            lock (_syncRoot)
+            {
+                device = deviceState.Config;
+                if (deviceState.UnavailableTagsMarked || !IsCurrentDeviceState(deviceState) ||
+                    !device.Enabled || !_configuredChannelScheduler.IsEnabled(device))
+                    return;
+            }
 
-            DeviceConfig device = deviceState.Config;
             MarkReadableTagsUnavailable(device, null, device.Tags);
 
             if (device.Groups != null)
@@ -2689,7 +1954,12 @@ namespace IPC.Runtime.Engine
                 }
             }
 
-            deviceState.UnavailableTagsMarked = true;
+            lock (_syncRoot)
+            {
+                // A rebuild can replace the device and its tags while this pass runs.
+                if (ReferenceEquals(deviceState.Config, device))
+                    deviceState.UnavailableTagsMarked = true;
+            }
         }
 
         private void MarkReadableTagsUnavailable(DeviceConfig device, GroupConfig? group, IList<TagConfig>? tags)
@@ -2708,343 +1978,174 @@ namespace IPC.Runtime.Engine
 
                 if (!tag.Enabled)
                 {
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.Disabled, "Tag is disabled."));
+                    CommitSnapshot(CreateSnapshot(device, group, tag, TagQuality.Disabled, "Tag is disabled."), expectedDevice: device);
                     continue;
                 }
 
                 if (!CanRead(tag))
                 {
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."));
+                    CommitSnapshot(CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."), expectedDevice: device);
                     continue;
                 }
 
-                UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.NotConnected, "Device is not connected."));
+                CommitSnapshot(CreateSnapshot(device, group, tag, TagQuality.NotConnected, "Device is not connected."), expectedDevice: device);
             }
-        }
-
-        private async ValueTask PollTagCollectionAsync(
-            DeviceRuntimeState deviceState,
-            GroupConfig? group,
-            IList<TagConfig>? tags,
-            DateTime now,
-            int runtimeGeneration,
-            DevicePollReadContext pollContext,
-            List<PendingTagRead>? sharedBatchReads,
-            bool subscriptionFallback,
-            CancellationToken cancellationToken)
-        {
-            DeviceConfig device = deviceState.Config;
-            if (tags == null)
-                return;
-
-            bool supportsBatchRead = pollContext.Client != null && PlcClientInvoker.SupportsBatchRead(pollContext.Client);
-            List<PendingTagRead>? batchReads = sharedBatchReads ?? (supportsBatchRead ? new List<PendingTagRead>() : null);
-
-            for (int t = 0; t < tags.Count; t++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!IsCurrentGeneration(runtimeGeneration))
-                    return;
-
-                TagConfig tag = tags[t];
-                if (tag == null)
-                    continue;
-
-                if (tag.IsVirtual)
-                    continue;
-
-                if (!IsDue(tag, now))
-                    continue;
-
-                if (!tag.Enabled)
-                {
-                    if (subscriptionFallback)
-                        ScheduleNextSubscriptionFallback(device, group, tag, now);
-                    else
-                        ScheduleNextRead(device, group, tag, now, false);
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.Disabled, "Tag is disabled."));
-                    continue;
-                }
-
-                if (!CanRead(tag))
-                {
-                    if (subscriptionFallback)
-                        ScheduleNextSubscriptionFallback(device, group, tag, now);
-                    else
-                        ScheduleNextRead(device, group, tag, now, false);
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."));
-                    continue;
-                }
-
-                CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
-                if (!compiledRead.IsStaticallyValid)
-                {
-                    ScheduleNextRead(device, group, tag, now, true);
-                    TagValueSnapshot invalidSnapshot = CreateSnapshot(device, group, tag, TagQuality.ReadError, compiledRead.ValidationError);
-                    ApplyTagRuntimeState(invalidSnapshot, compiledRead.Runtime);
-                    UpdateSnapshot(invalidSnapshot);
-                    continue;
-                }
-
-                if (!compiledRead.Runtime.CanProbe(DateTime.UtcNow))
-                {
-                    ScheduleTagRecoveryProbe(tag, compiledRead.Runtime.NextRecoveryProbeUtc);
-                    TagValueSnapshot isolatedSnapshot = CreateSnapshot(
-                        device,
-                        group,
-                        tag,
-                        TagQuality.ReadError,
-                        "标签已隔离，等待独立恢复探测。");
-                    ApplyTagRuntimeState(isolatedSnapshot, compiledRead.Runtime);
-                    UpdateSnapshot(isolatedSnapshot);
-                    continue;
-                }
-
-                if (!pollContext.DeviceConnected || pollContext.Client == null)
-                {
-                    ScheduleNextRead(device, group, tag, now, true);
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, TagQuality.NotConnected, "Device is not connected."));
-                    continue;
-                }
-
-                if (subscriptionFallback)
-                {
-                    ScheduleNextSubscriptionFallback(device, group, tag, now);
-                    continue;
-                }
-
-                if (supportsBatchRead && batchReads != null)
-                {
-                    AddPendingBatchRead(deviceState, group, tag, batchReads);
-                    continue;
-                }
-
-                (bool keepConnected, bool readSucceeded) = await ReadTagAsync(
-                    pollContext.Client,
-                    deviceState,
-                    group,
-                    tag,
-                    runtimeGeneration,
-                    cancellationToken).ConfigureAwait(false);
-                if (!keepConnected)
-                {
-                    ScheduleNextRead(device, group, tag, now, true);
-                    pollContext.DeviceConnected = false;
-                    pollContext.Client = null;
-                }
-                else
-                {
-                    if (subscriptionFallback && readSucceeded)
-                        ScheduleNextSubscriptionFallback(device, group, tag, now);
-                    else
-                        ScheduleNextRead(device, group, tag, now, !readSucceeded);
-                }
-            }
-
-            if (sharedBatchReads == null)
-                await ReadPendingBatchTagsAsync(deviceState, batchReads, now, runtimeGeneration, pollContext, subscriptionFallback, cancellationToken).ConfigureAwait(false);
-        }
-
-        private async ValueTask ReadPendingBatchTagsAsync(
-            DeviceRuntimeState deviceState,
-            List<PendingTagRead>? batchReads,
-            DateTime now,
-            int runtimeGeneration,
-            DevicePollReadContext pollContext,
-            bool subscriptionFallback,
-            CancellationToken cancellationToken)
-        {
-            if (batchReads != null &&
-                batchReads.Count > 0 &&
-                pollContext.DeviceConnected &&
-                pollContext.Client != null &&
-                PlcClientInvoker.SupportsBatchRead(pollContext.Client))
-            {
-                PlcClientCapabilities capabilities = PlcClientInvoker.GetCapabilities(pollContext.Client);
-                if (PlcDriverPluginRegistry.TryGetCapabilities(
-                    deviceState.Config.Connection,
-                    deviceState.Config.Protocol,
-                    out PlcClientCapabilities driverCapabilities) &&
-                    driverCapabilities.SupportsBatchRead)
-                    capabilities.MaxBatchItems = driverCapabilities.MaxBatchItems;
-                int maxBatchItems = capabilities.MaxBatchItems > 0
-                    ? capabilities.MaxBatchItems
-                    : batchReads.Count;
-
-                for (int offset = 0; offset < batchReads.Count; offset += maxBatchItems)
-                {
-                    int count = Math.Min(maxBatchItems, batchReads.Count - offset);
-                    List<PendingTagRead> chunk = batchReads.GetRange(offset, count);
-                    if (await ReadBatchTagsAsync(pollContext.Client, deviceState, chunk, now, runtimeGeneration, subscriptionFallback, cancellationToken).ConfigureAwait(false))
-                        continue;
-
-                    MarkUnattemptedBatchReads(deviceState, batchReads, offset + count, now, "协议批读因传输错误提前终止。");
-                    pollContext.DeviceConnected = false;
-                    pollContext.Client = null;
-                    break;
-                }
-
-                batchReads.Clear();
-            }
-        }
-
-        private void AddPendingBatchRead(DeviceRuntimeState deviceState, GroupConfig? group, TagConfig tag, List<PendingTagRead> batchReads)
-        {
-            CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
-            batchReads.Add(new PendingTagRead(group, tag, compiledRead.Request));
         }
 
         private async ValueTask<bool> ReadBatchTagsAsync(
-            IPlcClient client,
-            DeviceRuntimeState deviceState,
-            IList<PendingTagRead> batchReads,
-            DateTime now,
-            int runtimeGeneration,
-            bool subscriptionFallback,
-            CancellationToken cancellationToken)
+            IPlcClient client, DeviceRuntimeState state, IList<PendingTagRead> reads, DateTime now,
+            int generation, bool subscriptionFallback, CancellationToken cancellationToken, bool recoveryVerification = false)
         {
-            DeviceConfig device = deviceState.Config;
-            List<PlcBatchReadRequest> requests = new List<PlcBatchReadRequest>();
-            for (int i = 0; i < batchReads.Count; i++)
+            var requests = new List<PlcBatchReadRequest>(reads.Count);
+            bool hasAliases = !recoveryVerification && reads.Any(read => read.Definition.SharesRequest);
+            var resultIndexes = hasAliases ? new int[reads.Count] : null;
+            var shared = hasAliases ? new Dictionary<PlcBatchReadRequest, int>() : null;
+            for (int index = 0; index < reads.Count; index++)
             {
-                deviceState.TotalReads++;
-                requests.Add(batchReads[i].Request);
+                PendingTagRead read = reads[index];
+                int wireIndex = requests.Count;
+                if (read.Definition.SharesRequest && shared != null)
+                {
+                    if (shared.TryGetValue(read.Request, out int existing))
+                    {
+                        resultIndexes![index] = existing;
+                        continue;
+                    }
+                    shared.Add(read.Request, wireIndex);
+                }
+                requests.Add(read.Request);
+                if (resultIndexes != null) resultIndexes[index] = wireIndex;
             }
-
             IList<PlcBatchReadResult> results;
             try
             {
-                results = await ExecutePlcOperationAsync(
-                    deviceState,
-                    token => PlcClientInvoker.ReadManyAsync(client, requests, token),
-                    cancellationToken,
-                    PlcOperationTimeoutKind.Batch).ConfigureAwait(false);
+                results = await ExecutePlcOperationAsync(state,
+                    token =>
+                    {
+                        foreach (PendingTagRead read in reads) RecordRecoveryOperationStart(state, read.Definition);
+                        return PlcClientInvoker.ReadManyAsync(client, requests, token);
+                    }, cancellationToken,
+                    recoveryVerification ? PlcOperationTimeoutKind.Recovery : PlcOperationTimeoutKind.Batch).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception error)
             {
-                if (!IsCurrentGeneration(runtimeGeneration))
-                    return false;
-
-                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
-                    ex,
-                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Batch);
-                bool timeout = LooksLikeTimeout(ex);
-                return await RecordBatchReadExceptionAsync(deviceState, batchReads, now, ex.Message, failureScope, timeout, cancellationToken).ConfigureAwait(false);
+                if (!IsCurrentGeneration(generation)) return false;
+                // An opaque batch exception cannot identify every tag as bad.
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(error,
+                    IsCommunicationException(error) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Batch);
+                if (scope == PlcReadFailureScope.Tag && requests.Count > 1) scope = PlcReadFailureScope.Batch;
+                var failed = new List<PlcBatchReadResult>(reads.Count);
+                foreach (PlcBatchReadRequest request in requests)
+                    failed.Add(PlcBatchReadResult.FromFailure(request, error.Message, scope));
+                results = failed;
             }
+            if (!IsCurrentGeneration(generation)) return true;
 
-            if (!IsCurrentGeneration(runtimeGeneration))
-                return true;
-
-            bool stillConnected = true;
-            bool connectionDropped = false;
-            bool anyReadSucceeded = false;
-            for (int i = 0; i < batchReads.Count; i++)
+            bool connectionFailure = false;
+            bool anySuccess = false;
+            string connectionError = string.Empty;
+            for (int index = 0; index < reads.Count; index++)
             {
-                PendingTagRead read = batchReads[i];
-                PlcBatchReadResult? result = results != null && i < results.Count ? results[i] : null;
-                if (result != null && result.Success && result.Result != null)
+                if (!IsCurrentGeneration(generation)) return true;
+                PendingTagRead read = reads[index];
+                int resultIndex = resultIndexes == null ? index : resultIndexes[index];
+                PlcBatchReadResult? result = results != null && resultIndex < results.Count ? results[resultIndex] : null;
+                if (result == null || result.IsDeferred)
                 {
-                    ApplyReadSuccess(deviceState, read.Group, read.Tag, result.Result, false);
-                    anyReadSucceeded = true;
-                    if (subscriptionFallback)
-                        ScheduleNextSubscriptionFallback(device, read.Group, read.Tag, now);
-                    else
-                        ScheduleNextRead(device, read.Group, read.Tag, now, false);
+                    // Do not turn a diagnostic budget or an unexecuted segment
+                    // into a read failure, first attempt, or tag quarantine.
+                    TagValueSnapshot? rescheduled = null;
+                    lock (_syncRoot)
+                    {
+                        if (!IsCurrentGeneration(generation)) return true;
+                        DateTime retry = DateTime.UtcNow.AddMilliseconds(_schedulerIntervalMs);
+                        _nextReadUtcByTagId[read.Tag.Id] = retry;
+                        var runtime = read.Definition.Runtime;
+                        DateTime previousProbe = runtime.NextRecoveryProbeUtc;
+                        runtime.RecordDeferred(retry);
+                        if (runtime.NextRecoveryProbeUtc != previousProbe)
+                        {
+                            string key = TagPath.BuildIdentity(state.Config.ChannelId, state.Config.Id,
+                                read.Group?.Id ?? string.Empty, read.Tag.Id);
+                            if (_snapshotsByPath.TryGetValue(key, out var current))
+                            {
+                                rescheduled = current.Clone();
+                                ApplyTagRuntimeState(rescheduled, runtime);
+                                _snapshotStore.Set(_snapshotsByPath, key, rescheduled);
+                            }
+                        }
+                    }
+                    if (rescheduled != null)
+                        NotifyTagSubscribers(TagDiagnosticsChanged, rescheduled);
                     continue;
                 }
-
-                string errorMessage = result == null ? "Batch read did not return a result for the tag." : result.ErrorMessage;
-                PlcReadFailureScope failureScope = result == null ? PlcReadFailureScope.Batch : result.FailureScope;
-                bool connectionFailure = IsConnectionFailureScope(failureScope);
-                bool keepConnected = await RecordReadFailureAsync(
-                    deviceState,
-                    read.Group,
-                    read.Tag,
-                    errorMessage,
-                    connectionFailure,
-                    LooksLikeTimeoutMessage(errorMessage),
-                    connectionFailure && !connectionDropped,
-                    failureScope == PlcReadFailureScope.Tag,
-                    cancellationToken).ConfigureAwait(false);
-                ScheduleNextRead(device, read.Group, read.Tag, now, true);
-
-                if (connectionFailure)
+                state.TotalReads++;
+                bool wasRecovering = read.Definition.Runtime.HasRecoveryWork;
+                if (result.Success && result.Result != null)
                 {
-                    connectionDropped = true;
-                    stillConnected = false;
+                    try
+                    {
+                        var sample = result.Result;
+                        // Cleaning and user scripts may mutate arrays. Each alias owns its sample.
+                        if (resultIndexes != null && read.Definition.SharesRequest && sample.Value is Array array)
+                            sample = new PlcReadResult(sample.TypeCode, sample.TypeName, array.Clone())
+                            { SourceTimestampUtc = sample.SourceTimestampUtc, IsUncertain = sample.IsUncertain };
+                        ApplyReadSuccess(state, read.Group, read.Tag, sample, false,
+                            runtimeGeneration: generation, readDefinition: read.Definition);
+                        if (!IsCurrentGeneration(generation)) return true;
+                        anySuccess = true;
+                        if (subscriptionFallback && !wasRecovering)
+                            ScheduleNextSubscriptionFallback(state.Config, read.Group, read.Tag, now);
+                        else read.SchedulePeriodic = true;
+                        continue;
+                    }
+                    catch (Exception error)
+                    {
+                        // Value processing is local to this tag, even after a
+                        // successful wire batch. Keep other successful items.
+                        result = PlcBatchReadResult.FromFailure(read.Request, error.Message, PlcReadFailureScope.Tag);
+                    }
                 }
-                if (!keepConnected)
-                    stillConnected = false;
-            }
 
-            if (anyReadSucceeded && !connectionDropped)
-                RecordDeviceCommunicationSuccess(deviceState);
-
-            return stillConnected;
-        }
-
-        private async ValueTask<bool> RecordBatchReadExceptionAsync(
-            DeviceRuntimeState deviceState,
-            IList<PendingTagRead> batchReads,
-            DateTime now,
-            string errorMessage,
-            PlcReadFailureScope failureScope,
-            bool timeout,
-            CancellationToken cancellationToken)
-        {
-            DeviceConfig device = deviceState.Config;
-            bool connectionFailure = IsConnectionFailureScope(failureScope);
-            bool stillConnected = true;
-            bool connectionDropped = false;
-            for (int i = 0; i < batchReads.Count; i++)
-            {
-                PendingTagRead read = batchReads[i];
-                bool keepConnected = await RecordReadFailureAsync(
-                    deviceState,
-                    read.Group,
-                    read.Tag,
-                    errorMessage,
-                    connectionFailure,
-                    timeout,
-                    connectionFailure && !connectionDropped,
-                    false,
-                    cancellationToken).ConfigureAwait(false);
-                ScheduleNextRead(device, read.Group, read.Tag, now, true);
-
-                if (connectionFailure)
+                bool connectionFault = IsConnectionFailureScope(result.FailureScope);
+                await RecordReadFailureAsync(state, read.Group, read.Tag, result.ErrorMessage,
+                    connectionFault, LooksLikeTimeoutMessage(result.ErrorMessage), false,
+                    result.FailureScope == PlcReadFailureScope.Tag, cancellationToken,
+                    generation, read.Definition).ConfigureAwait(false);
+                if (!IsCurrentGeneration(generation)) return true;
+                if (connectionFault && requests.Count > 1 && !recoveryVerification)
+                    read.Definition.Runtime.BatchVerificationPending = true;
+                if (read.Definition.Runtime.HasRecoveryWork)
+                    ScheduleTagRecoveryProbe(read.Tag, read.Definition.Runtime.NextRecoveryProbeUtc);
+                else ScheduleNextRead(state, read.Group, read.Tag, generation, true);
+                if (connectionFault)
                 {
-                    connectionDropped = true;
-                    MarkUnattemptedBatchReads(deviceState, batchReads, i + 1, now, errorMessage);
-                    return false;
+                    connectionFailure = true;
+                    if (string.IsNullOrEmpty(connectionError)) connectionError = result.ErrorMessage;
                 }
-                if (!keepConnected)
-                    stillConnected = false;
             }
-
-            return stillConnected;
-        }
-
-        private void MarkUnattemptedBatchReads(
-            DeviceRuntimeState deviceState,
-            IList<PendingTagRead> batchReads,
-            int startIndex,
-            DateTime now,
-            string transportError)
-        {
-            DeviceConfig device = deviceState.Config;
-            string message = "设备批次因传输错误提前终止。";
-            if (!string.IsNullOrWhiteSpace(transportError))
-                message += " " + transportError;
-
-            for (int index = startIndex; index < batchReads.Count; index++)
+            if (!IsCurrentGeneration(generation)) return true;
+            if (anySuccess)
             {
-                PendingTagRead read = batchReads[index];
-                deviceState.FailedReads++;
-                ScheduleNextRead(device, read.Group, read.Tag, now, true);
-                TagValueSnapshot snapshot = CreateSnapshot(device, read.Group, read.Tag, TagQuality.NotConnected, message);
-                ApplyTagRuntimeState(snapshot, deviceState.ReadPlan.Get(read.Tag).Runtime);
-                UpdateSnapshot(snapshot);
+                // All successful periodic items in this turn use the same
+                // completion time, even if processing the batch crossed a slot.
+                lock (_syncRoot)
+                {
+                    if (!IsCurrentGeneration(generation)) return true;
+                    DateTime completedUtc = DateTime.UtcNow;
+                    foreach (PendingTagRead read in reads)
+                        if (read.SchedulePeriodic)
+                            SchedulePeriodicReadNoLock(state, read.Group, read.Tag, completedUtc);
+                }
             }
+            if (connectionFailure)
+            {
+                state.ProtocolCircuitBreaker.RecordFailure(connectionError);
+                await DropDeviceConnectionAsync(state, connectionError, cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+            if (anySuccess) RecordDeviceCommunicationSuccess(state);
+            return true;
         }
 
         private static bool IsConnectionFailureScope(PlcReadFailureScope failureScope)
@@ -3052,67 +2153,68 @@ namespace IPC.Runtime.Engine
             return PlcBatchReadResult.IsConnectionFailureScope(failureScope);
         }
 
-        private sealed class DevicePollReadContext
-        {
-            public DevicePollReadContext(IPlcClient? client, bool deviceConnected)
-            {
-                Client = client;
-                DeviceConnected = deviceConnected;
-            }
-
-            public IPlcClient? Client { get; set; }
-            public bool DeviceConnected { get; set; }
-        }
-
         private sealed class PendingTagRead
         {
-            public PendingTagRead(GroupConfig? group, TagConfig tag, PlcBatchReadRequest request)
+            public PendingTagRead(CompiledTagRead definition)
             {
-                Group = group;
-                Tag = tag;
-                Request = request;
+                Definition = definition;
+                Group = definition.Group;
+                Tag = definition.Tag;
+                Request = definition.Request;
             }
-
-            public GroupConfig? Group { get; private set; }
-            public TagConfig Tag { get; private set; }
-            public PlcBatchReadRequest Request { get; private set; }
+            public CompiledTagRead Definition { get; }
+            public GroupConfig? Group { get; }
+            public TagConfig Tag { get; }
+            public PlcBatchReadRequest Request { get; }
+            public bool SchedulePeriodic { get; set; }
         }
 
-        private async ValueTask<(bool KeepConnected, bool ReadSucceeded)> ReadTagAsync(
+        private async ValueTask<(bool KeepConnected, bool ReadSucceeded, bool ProtocolResponseConfirmed)> ReadTagAsync(
             IPlcClient client,
             DeviceRuntimeState deviceState,
             GroupConfig? group,
             TagConfig tag,
             int runtimeGeneration,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool recoveryProbe = false)
         {
             DeviceConfig device = deviceState.Config;
+            CompiledTagRead definition = deviceState.ReadPlan.Get(tag);
             try
             {
                 deviceState.TotalReads++;
+                definition.Runtime.RecordReadAttempt();
                 int count = GetReadCount(tag);
                 PlcReadResult result = await ExecutePlcOperationAsync(
                     deviceState,
-                    token => PlcClientInvoker.ReadAsync(
+                    token =>
+                    {
+                        RecordRecoveryOperationStart(deviceState, definition);
+                        return PlcClientInvoker.ReadAsync(
                         client,
-                        deviceState.ReadPlan.Get(tag).Address,
+                        definition.Address,
                         tag.DataType,
                         count,
                         Math.Max(0, tag.ElementOffset),
-                        token),
-                    cancellationToken).ConfigureAwait(false);
+                        token);
+                    },
+                    cancellationToken, recoveryProbe ? PlcOperationTimeoutKind.Recovery : PlcOperationTimeoutKind.Device).ConfigureAwait(false);
                 if (!IsCurrentGeneration(runtimeGeneration))
-                    return (true, false);
+                    return (true, false, false);
 
-                ApplyReadSuccess(deviceState, group, tag, result);
-                return (true, true);
+                ApplyReadSuccess(deviceState, group, tag, result, runtimeGeneration: runtimeGeneration, readDefinition: definition);
+                return (true, true, true);
             }
             catch (Exception ex)
             {
                 if (!IsCurrentGeneration(runtimeGeneration))
-                    return (false, false);
+                    return (false, false, false);
 
-                bool isCommunicationError = IsCommunicationException(ex);
+                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(ex,
+                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport :
+                    ex is ArgumentException || ex is FormatException || ex is OverflowException || ex is NotSupportedException || LooksLikeTagLevelError(ex.Message)
+                        ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch);
+                bool isCommunicationError = IsConnectionFailureScope(failureScope);
                 bool keepConnected = await RecordReadFailureAsync(
                     deviceState,
                     group,
@@ -3121,43 +2223,85 @@ namespace IPC.Runtime.Engine
                     isCommunicationError,
                     LooksLikeTimeout(ex),
                     isCommunicationError,
-                    ex is PlcTagException || LooksLikeTagLevelError(ex.Message),
-                    cancellationToken).ConfigureAwait(false);
-                return (keepConnected, false);
+                    failureScope == PlcReadFailureScope.Tag,
+                    cancellationToken, runtimeGeneration, definition).ConfigureAwait(false);
+                bool responseConfirmed = failureScope == PlcReadFailureScope.Tag && HasTagProtocolResponse(ex);
+                if (responseConfirmed && IsCurrentGeneration(runtimeGeneration))
+                    RecordDeviceCommunicationSuccess(deviceState);
+                return (keepConnected, false, responseConfirmed);
             }
         }
 
-        private void ApplyReadSuccess(
+        private static bool HasTagProtocolResponse(Exception exception)
+        {
+            for (Exception? current = exception; current != null; current = current.InnerException)
+            {
+                if (current is PlcProtocolException || current is NModbus.SlaveException)
+                    return PlcFailureClassifier.Classify(current, PlcReadFailureScope.Batch) == PlcReadFailureScope.Tag;
+            }
+            return false;
+        }
+
+        private bool ApplyReadSuccess(
             DeviceRuntimeState deviceState,
             GroupConfig? group,
             TagConfig tag,
             PlcReadResult result,
-            bool recordDeviceSuccess = true)
+            bool recordDeviceSuccess = true,
+            int runtimeGeneration = 0,
+            DateTime? sourceTimestampUtc = null,
+            CompiledTagRead? readDefinition = null)
         {
             DeviceConfig device = deviceState.Config;
+            CompiledTagRead compiledRead = readDefinition ?? deviceState.ReadPlan.Get(tag);
+            TagValueSnapshot? previousSnapshot;
+            lock (_syncRoot)
+            {
+                if (runtimeGeneration != 0 && !IsCurrentGeneration(runtimeGeneration)) return false;
+                TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id ?? string.Empty, out previousSnapshot);
+                if (IsValueProcessingResetPending(tag.Id)) previousSnapshot = null;
+            }
             object rawValue = result.Value;
             object? scaledValue = TagValueScaler.Scale(rawValue, tag.Scaling);
-            deviceState.SuccessfulReads++;
-            CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
-            compiledRead.Runtime.RecordSuccess();
-            deviceState.LastKnownGoodTagId = tag.Id ?? string.Empty;
-            if (recordDeviceSuccess)
-                RecordDeviceCommunicationSuccess(deviceState);
-
-            TagValueSnapshot snapshot = CreateSnapshot(device, group, tag, TagQuality.Good, string.Empty);
+            var sampleTimestamp = result.SourceTimestampUtc ?? sourceTimestampUtc;
+            var quality = result.IsUncertain ? TagQuality.Uncertain : TagQuality.Good;
+            TagValueSnapshot snapshot = CreateSnapshot(device, group, tag, quality, string.Empty);
+            if (sampleTimestamp.HasValue) snapshot.Timestamp = sampleTimestamp.Value.ToLocalTime();
             snapshot.RawValue = rawValue;
             snapshot.RawValueText = PlcValueFormatter.Format(rawValue);
             snapshot.Value = scaledValue ?? string.Empty;
             snapshot.ValueText = TagValueScaler.Format(scaledValue, tag.Scaling);
             snapshot.DataType = result.TypeName;
-            ApplyTagRuntimeState(snapshot, compiledRead.Runtime);
-
-            TagValueSnapshot? previousSnapshot;
-            TryGetSnapshotById(device.ChannelId, device.Id, group == null ? string.Empty : group.Id, tag.Id ?? string.Empty, out previousSnapshot);
             TagDataCleaner.Clean(snapshot, tag, previousSnapshot);
             ApplyValueTransformCleaning(snapshot, tag, previousSnapshot);
-
-            UpdateSnapshot(snapshot, isReadResult: true);
+            // Derived-value filters must not promote an uncertain source sample.
+            if (result.IsUncertain && snapshot.Quality != TagQuality.Bad) snapshot.Quality = TagQuality.Uncertain;
+            lock (_syncRoot)
+            {
+                if (runtimeGeneration != 0 && !IsCurrentGeneration(runtimeGeneration)) return false;
+                if (result.SourceTimestampUtc.HasValue
+                    ? result.SourceTimestampUtc.Value < compiledRead.Runtime.LastSourceTimestampUtc
+                    : sourceTimestampUtc.HasValue && IsOlderThanCurrentSnapshot(snapshot))
+                {
+                    PublishHistoricalRead(snapshot);
+                    return true;
+                }
+                if (result.SourceTimestampUtc.HasValue) compiledRead.Runtime.LastSourceTimestampUtc = result.SourceTimestampUtc.Value;
+                ConsumeValueProcessingReset(tag.Id);
+                DateTime observedUtc = sourceTimestampUtc?.ToUniversalTime() ?? DateTime.UtcNow;
+                if (!compiledRead.Runtime.HasSuccessfulRead)
+                    _acquisitionMetrics.RecordInitialReadLatencyMs((DateTime.UtcNow - compiledRead.Runtime.FirstQueuedUtc).TotalMilliseconds);
+                else if (!deviceState.IsIsolated && !compiledRead.Runtime.HasRecoveryWork && compiledRead.Runtime.HealthyReadBaselineUtc != DateTime.MinValue)
+                    _acquisitionMetrics.RecordHealthyRefreshGapMs((observedUtc - compiledRead.Runtime.HealthyReadBaselineUtc).TotalMilliseconds);
+                deviceState.SuccessfulReads++;
+                compiledRead.Runtime.RecordSuccess();
+                deviceState.LastKnownGoodTagId = tag.Id ?? string.Empty;
+                if (recordDeviceSuccess) RecordDeviceCommunicationSuccess(deviceState);
+                compiledRead.Runtime.HealthyReadBaselineUtc = observedUtc;
+                ApplyTagRuntimeState(snapshot, compiledRead.Runtime);
+                UpdateSnapshot(snapshot, isReadResult: true);
+                return true;
+            }
         }
 
         /// <summary>
@@ -3276,12 +2420,50 @@ namespace IPC.Runtime.Engine
             bool isTimeout,
             bool dropConnection,
             bool isolateTag,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            int runtimeGeneration = 0,
+            CompiledTagRead? readDefinition = null,
+            DateTime? sourceTimestampUtc = null,
+            DateTime? deviceTimestampUtc = null)
         {
             DeviceConfig device = deviceState.Config;
+            sourceTimestampUtc = deviceTimestampUtc ?? sourceTimestampUtc;
             string message = errorMessage ?? string.Empty;
-            deviceState.FailedReads++;
-            deviceState.LastFailureTime = DateTime.Now;
+            CompiledTagRead compiledRead = readDefinition ?? deviceState.ReadPlan.Get(tag);
+            lock (_syncRoot)
+            {
+                if (runtimeGeneration != 0 && !IsCurrentGeneration(runtimeGeneration)) return true;
+                if (sourceTimestampUtc.HasValue)
+                {
+                    TagValueSnapshot historical = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
+                    historical.Timestamp = sourceTimestampUtc.Value.ToLocalTime();
+                    historical.LastReadError = message;
+                    if (deviceTimestampUtc.HasValue ? deviceTimestampUtc.Value < compiledRead.Runtime.LastSourceTimestampUtc : IsOlderThanCurrentSnapshot(historical))
+                    {
+                        PublishHistoricalRead(historical);
+                        return true;
+                    }
+                }
+                if (deviceTimestampUtc.HasValue) compiledRead.Runtime.LastSourceTimestampUtc = deviceTimestampUtc.Value;
+                deviceState.FailedReads++;
+                deviceState.LastFailureTime = DateTime.Now;
+                bool wasRecovering = compiledRead.Runtime.HasRecoveryWork;
+                compiledRead.Runtime.RecoveryIntervalMs = _tagRecoveryProbeIntervalMs;
+                if (!isCommunicationError && isolateTag)
+                    compiledRead.Runtime.RecordFailure(message);
+                else
+                    compiledRead.Runtime.RecordUncertainFailure(message, _tagRecoveryProbeIntervalMs);
+                if (!wasRecovering && compiledRead.Runtime.HasRecoveryWork)
+                {
+                    deviceState.SubscriptionFingerprint = string.Empty;
+                    deviceState.NextPollUtc = DateTime.MinValue;
+                }
+                TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
+                if (sourceTimestampUtc.HasValue) failureSnapshot.Timestamp = sourceTimestampUtc.Value.ToLocalTime();
+                failureSnapshot.LastReadError = message;
+                ApplyTagRuntimeState(failureSnapshot, compiledRead.Runtime);
+                UpdateSnapshot(failureSnapshot, isReadResult: true);
+            }
             bool retainUdpConnection = isCommunicationError &&
                                        dropConnection &&
                                        isTimeout &&
@@ -3296,22 +2478,6 @@ namespace IPC.Runtime.Engine
             if (isCommunicationError && dropConnection && !retainUdpConnection)
                 await DropDeviceConnectionAsync(deviceState, message, cancellationToken).ConfigureAwait(false);
 
-            CompiledTagRead compiledRead = deviceState.ReadPlan.Get(tag);
-            if (!isCommunicationError && isolateTag)
-            {
-                bool wasIsolated = compiledRead.Runtime.IsIsolated;
-                compiledRead.Runtime.RecordFailure(message);
-                if (!wasIsolated && compiledRead.Runtime.IsIsolated)
-                {
-                    deviceState.SubscriptionFingerprint = string.Empty;
-                    deviceState.NextPollUtc = DateTime.MinValue;
-                }
-            }
-
-            TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
-            failureSnapshot.LastReadError = message;
-            ApplyTagRuntimeState(failureSnapshot, compiledRead.Runtime);
-            UpdateSnapshot(failureSnapshot, isReadResult: true);
             return !isCommunicationError;
         }
 
@@ -3357,6 +2523,7 @@ namespace IPC.Runtime.Engine
             string errorMessage,
             CancellationToken cancellationToken)
         {
+            InvalidateSubscriptionDispatcher(deviceState);
             deviceState.DisposeSubscription();
             IPlcClient? client = deviceState.Client;
             deviceState.Client = null;
@@ -3378,7 +2545,12 @@ namespace IPC.Runtime.Engine
                 DisposeClientAsync(client);
             }
 
-            RegisterDeviceFailure(deviceState, errorMessage);
+            if (IsCurrentDeviceState(deviceState) && deviceState.Config.Enabled &&
+                _configuredChannelScheduler.IsEnabled(deviceState.Config))
+            {
+                RegisterDeviceFailure(deviceState, errorMessage);
+                MarkDeviceUnavailableTagsOnce(deviceState);
+            }
         }
 
         private static bool ShouldDropDeviceConnectionAfterSubscriptionFailure(
@@ -3417,6 +2589,8 @@ namespace IPC.Runtime.Engine
             Exception? current = exception;
             while (current != null)
             {
+                if (current is PlcProtocolException || current is NModbus.SlaveException)
+                    return PlcFailureClassifier.IsConnectionFailure(current);
                 if (current is PlcCommunicationException)
                     return true;
                 if (current is PlcTagException)
@@ -3528,7 +2702,8 @@ namespace IPC.Runtime.Engine
             DeviceRuntimeState deviceState,
             TagConfig tag,
             string valueText,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action? beforeDispatch = null)
         {
             DeviceConfig device = deviceState.Config;
             int elementOffset = Math.Max(0, tag.ElementOffset);
@@ -3537,8 +2712,12 @@ namespace IPC.Runtime.Engine
                 if (client is IPlcStringWriter stringWriter)
                 {
                     await ExecutePlcOperationAsync(deviceState,
-                        token => stringWriter.WriteStringAsync(ResolveTagAddress(device, tag), valueText,
-                            tag.ElementCount, elementOffset, token), cancellationToken).ConfigureAwait(false);
+                        token =>
+                        {
+                            beforeDispatch?.Invoke();
+                            return stringWriter.WriteStringAsync(ResolveTagAddress(device, tag), valueText,
+                                tag.ElementCount, elementOffset, token);
+                        }, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 MethodInfo? writeWithCount = client.GetType().GetMethod(
@@ -3550,6 +2729,7 @@ namespace IPC.Runtime.Engine
                         deviceState,
                         token => PlcClientInvoker.InvokeSynchronousAsync(delegate
                         {
+                            beforeDispatch?.Invoke();
                             try
                             {
                                 writeWithCount.Invoke(client, new object[] { ResolveTagAddress(device, tag), tag.DataType, valueText, GetReadCount(tag), elementOffset });
@@ -3568,13 +2748,19 @@ namespace IPC.Runtime.Engine
 
             await ExecutePlcOperationAsync(
                 deviceState,
-                token => PlcClientInvoker.WriteAsync(
-                    client,
-                    ResolveTagAddress(device, tag),
-                    tag.DataType,
-                    valueText,
-                    elementOffset,
-                    token),
+                token =>
+                {
+                    if (client is IAsyncPlcClient asyncClient && PlcClientInvoker.GetCapabilities(client).SupportsNativeAsync)
+                    {
+                        beforeDispatch?.Invoke();
+                        return asyncClient.WriteAsync(ResolveTagAddress(device, tag), tag.DataType, valueText, elementOffset, token);
+                    }
+                    return PlcClientInvoker.InvokeSynchronousAsync(() =>
+                    {
+                        beforeDispatch?.Invoke();
+                        client.Write(ResolveTagAddress(device, tag), tag.DataType, valueText, elementOffset);
+                    }, token);
+                },
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -3909,6 +3095,7 @@ namespace IPC.Runtime.Engine
 
         private void ResetSchedulerStats()
         {
+            _acquisitionMetrics.Reset();
             Interlocked.Exchange(ref _nextTaskId, 0);
             Interlocked.Exchange(ref _totalPollTasksQueued, 0);
             Interlocked.Exchange(ref _totalPollTasksStarted, 0);
@@ -3977,7 +3164,7 @@ namespace IPC.Runtime.Engine
         private CancellationTokenSource CreatePollCancellationTokenSource(DeviceRuntimeState deviceState)
         {
             CancellationTokenSource cancellation = new CancellationTokenSource();
-            cancellation.CancelAfter(deviceState.UseFastRecovery
+            cancellation.CancelAfter(deviceState.UseFastRecovery || deviceState.CurrentPollIsRecovery
                 ? Math.Min(GetPollTimeoutMs(), _recoveryProbeTimeoutMs)
                 : GetPollTimeoutMs());
             return cancellation;
@@ -4091,6 +3278,8 @@ namespace IPC.Runtime.Engine
 
         private int GetPlcOperationTimeoutMs(DeviceConfig? device, PlcOperationTimeoutKind timeoutKind)
         {
+            if (timeoutKind == PlcOperationTimeoutKind.Recovery)
+                return Math.Min(GetDeviceOperationTimeoutMs(device), _recoveryProbeTimeoutMs);
             if (timeoutKind == PlcOperationTimeoutKind.Batch)
                 return GetBatchOperationTimeoutMs(device);
             if (timeoutKind == PlcOperationTimeoutKind.Subscription)
@@ -4101,7 +3290,7 @@ namespace IPC.Runtime.Engine
 
         private int GetBatchOperationTimeoutMs(DeviceConfig? device)
         {
-            int timeout = Math.Max(GetDeviceOperationTimeoutMs(device), GetPollTimeoutMs());
+            int timeout = GetDeviceOperationTimeoutMs(device);
             return ClampInterval(timeout, 100, 86400000);
         }
 
@@ -4136,6 +3325,12 @@ namespace IPC.Runtime.Engine
             if (deviceState == null || deviceState.Config == null)
                 return;
 
+            if (deviceState.Subscription?.IsActive == true && string.IsNullOrEmpty(deviceState.SubscriptionFingerprint))
+            {
+                deviceState.NextPollUtc = now;
+                return;
+            }
+
             // Recovery must not wait for a tag's long sampling interval or the
             // normal scan phase: it only reads the selected recovery probe.
             if (deviceState.IsIsolated)
@@ -4156,145 +3351,54 @@ namespace IPC.Runtime.Engine
             if (deviceState.NextReconnectUtc != DateTime.MinValue && deviceState.NextReconnectUtc > next)
                 next = deviceState.NextReconnectUtc;
 
-            next = AlignDevicePollTime(deviceState.Config, next, now, true);
-            deviceState.NextPollUtc = next;
+            // Periodic tag deadlines are already aligned by ScheduleNextRead.
+            // Aligning again delays first reads, overdue slices and probes by
+            // a complete device scan period.
+            deviceState.NextPollUtc = next <= now ? now : next;
         }
 
-        private void InitializeDevicePollStaggerNoLock(ProjectConfig config, DateTime nowUtc)
+        private void InitializeDeviceCadencesNoLock(ProjectConfig config, DateTime nowUtc, bool staggerFirstPoll)
         {
-            if (config == null || config.Devices == null)
-                return;
-
-            for (int i = 0; i < config.Devices.Count; i++)
+            // Devices with the same fastest period share a startup window. All
+            // periods on a device use one origin, including newly added tags.
+            // Reusing a device on a configuration save preserves its phase.
+            var devicesByPeriod = new Dictionary<int, List<DeviceRuntimeState>>();
+            foreach (DeviceConfig device in config.Devices)
             {
-                DeviceConfig device = config.Devices[i];
-                if (device == null || !device.Enabled || string.IsNullOrWhiteSpace(device.Id) || !HasReadableTagsForStagger(device))
+                if (device == null || !device.Enabled ||
+                    !_deviceStatesById.TryGetValue(device.Id, out var state))
                     continue;
 
-                DeviceRuntimeState? state;
-                if (!_deviceStatesById.TryGetValue(device.Id, out state) || state == null)
-                    continue;
+                int periodMs = GetFastestReadableScanRateMs(device);
+                if (periodMs <= 0) continue;
+                if (!devicesByPeriod.TryGetValue(periodMs, out var devices))
+                    devicesByPeriod[periodMs] = devices = new List<DeviceRuntimeState>();
+                devices.Add(state);
+            }
 
-                lock (state.SyncRoot)
+            foreach (var group in devicesByPeriod)
+            {
+                int spreadMs = Math.Min(1000, group.Key);
+                for (int i = 0; i < group.Value.Count; i++)
                 {
-                    state.NextPollUtc = AlignDevicePollTime(device, nowUtc, nowUtc, false);
+                    var state = group.Value[i];
+                    if (state.CadenceOriginUtc != DateTime.MinValue) continue;
+                    long offsetMs = (long)spreadMs * i / group.Value.Count;
+                    state.CadenceOriginUtc = nowUtc.AddMilliseconds(offsetMs);
+                    if (staggerFirstPoll)
+                        state.NextPollUtc = state.CadenceOriginUtc;
                 }
             }
         }
 
-        private DateTime AlignDevicePollTime(DeviceConfig device, DateTime dueUtc, DateTime referenceUtc, bool allowRecentPreviousPhase)
+        internal static DateTime GetNextPeriodicReadUtc(DateTime originUtc, int periodMs, DateTime completedUtc)
         {
-            if (device == null || dueUtc == DateTime.MinValue)
-                return dueUtc;
-
-            int periodMs = GetDevicePollStaggerPeriodMs(device);
-            if (periodMs <= _schedulerIntervalMs)
-                return dueUtc;
-
-            int toleranceMs = Math.Max(100, _schedulerIntervalMs * 2);
-            bool overdue = dueUtc < referenceUtc;
-            bool significantlyOverdue = overdue && (referenceUtc - dueUtc).TotalMilliseconds > toleranceMs;
-            int offsetMs;
-            if (!TryGetDevicePollStaggerOffsetMs(device, periodMs, out offsetMs))
-            {
-                if (!significantlyOverdue)
-                    return dueUtc;
-                offsetMs = GetStableDevicePollOffsetMs(device, periodMs);
-            }
-
-            if (overdue && !significantlyOverdue)
-                return dueUtc;
-
-            DateTime aligned = AlignUtcAfter(dueUtc, periodMs, offsetMs);
-            if (allowRecentPreviousPhase)
-            {
-                DateTime previous = aligned.AddMilliseconds(-periodMs);
-                if (previous >= referenceUtc && (dueUtc - previous).TotalMilliseconds <= toleranceMs)
-                    aligned = previous;
-            }
-
-            if (aligned < referenceUtc)
-                aligned = AlignUtcAfter(referenceUtc, periodMs, offsetMs);
-
-            return aligned;
-        }
-
-        private DateTime AlignDeviceReadDueTime(DeviceConfig device, int periodMs, DateTime dueUtc, DateTime referenceUtc)
-        {
-            if (device == null || dueUtc == DateTime.MinValue || periodMs <= _schedulerIntervalMs)
-                return dueUtc;
-
-            int offsetMs;
-            if (!TryGetDevicePollStaggerOffsetMs(device, periodMs, out offsetMs))
-                return dueUtc;
-
-            DateTime aligned = AlignUtcAfter(dueUtc, periodMs, offsetMs);
-            DateTime previous = aligned.AddMilliseconds(-periodMs);
-            int toleranceMs = Math.Max(100, _schedulerIntervalMs * 2);
-            if (previous >= referenceUtc && (dueUtc - previous).TotalMilliseconds <= toleranceMs)
-                return previous;
-
-            return aligned;
-        }
-
-        private static DateTime AlignUtcAfter(DateTime dueUtc, int periodMs, int offsetMs)
-        {
-            long dueMs = dueUtc.Ticks / TimeSpan.TicksPerMillisecond;
-            int phaseMs = PositiveModulo(dueMs, periodMs);
-            int deltaMs = offsetMs - phaseMs;
-            if (deltaMs < 0)
-                deltaMs += periodMs;
-            return dueUtc.AddMilliseconds(deltaMs);
-        }
-
-        private static int PositiveModulo(long value, int divisor)
-        {
-            if (divisor <= 0)
-                return 0;
-
-            long result = value % divisor;
-            if (result < 0)
-                result += divisor;
-            return (int)result;
-        }
-
-        private static int GetStableDevicePollOffsetMs(DeviceConfig device, int periodMs)
-        {
-            if (device == null || periodMs <= 0)
-                return 0;
-
-            string key = !string.IsNullOrWhiteSpace(device.Id) ? device.Id : device.Name ?? string.Empty;
-            unchecked
-            {
-                uint hash = 2166136261;
-                for (int i = 0; i < key.Length; i++)
-                {
-                    hash ^= key[i];
-                    hash *= 16777619;
-                }
-
-                return (int)(hash % (uint)periodMs);
-            }
-        }
-
-        private bool TryGetDevicePollStaggerOffsetMs(DeviceConfig device, int periodMs, out int offsetMs)
-        {
-            offsetMs = 0;
-            lock (_syncRoot)
-            {
-                ProjectConfig? config = _config;
-                if (config == null || config.Devices == null || config.Devices.Count <= 1)
-                    return false;
-
-                string key = BuildDevicePollStaggerKey(device, periodMs);
-                if (!_devicePollStaggerOffsetMsByKey.TryGetValue(key, out offsetMs))
-                {
-                    RebuildDevicePollStaggerCacheNoLock(config);
-                    if (!_devicePollStaggerOffsetMsByKey.TryGetValue(key, out offsetMs))
-                        return false;
-                }
-                return true;
-            }
+            long periodTicks = (long)periodMs * TimeSpan.TicksPerMillisecond;
+            if (completedUtc < originUtc) return originUtc;
+            // Completion can fall several slots behind. Advance to the first
+            // strictly future slot without replaying missed samples.
+            long elapsedTicks = completedUtc.Ticks - originUtc.Ticks;
+            return completedUtc.AddTicks(periodTicks - elapsedTicks % periodTicks);
         }
 
         private void RebuildChannelNameCacheNoLock(ProjectConfig config)
@@ -4322,64 +3426,6 @@ namespace IPC.Runtime.Engine
                     ? name ?? string.Empty
                     : string.Empty;
             }
-        }
-
-        private void RebuildDevicePollStaggerCacheNoLock(ProjectConfig config)
-        {
-            _devicePollStaggerOffsetMsByKey.Clear();
-            if (config?.Devices == null || config.Devices.Count <= 1)
-                return;
-
-            Dictionary<string, List<(DeviceConfig Device, int PeriodMs)>> groups =
-                new Dictionary<string, List<(DeviceConfig, int)>>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < config.Devices.Count; i++)
-            {
-                DeviceConfig candidate = config.Devices[i];
-                if (candidate == null || !candidate.Enabled || !HasReadableTagsForStagger(candidate))
-                    continue;
-                int periodMs = GetDevicePollStaggerPeriodMs(candidate);
-                string groupKey = candidate.Protocol + "|" + IsUdpTransport(candidate) + "|" + periodMs;
-                if (!groups.TryGetValue(groupKey, out List<(DeviceConfig Device, int PeriodMs)>? group))
-                {
-                    group = new List<(DeviceConfig, int)>();
-                    groups[groupKey] = group;
-                }
-                group.Add((candidate, periodMs));
-            }
-
-            foreach (List<(DeviceConfig Device, int PeriodMs)> group in groups.Values)
-            {
-                for (int index = 0; index < group.Count; index++)
-                {
-                    (DeviceConfig candidate, int periodMs) = group[index];
-                    _devicePollStaggerOffsetMsByKey[BuildDevicePollStaggerKey(candidate, periodMs)] =
-                        (int)((long)periodMs * index / group.Count);
-                }
-            }
-        }
-
-        private static string BuildDevicePollStaggerKey(DeviceConfig device, int periodMs)
-        {
-            string identity = !string.IsNullOrWhiteSpace(device?.Id) ? device.Id : device?.Name ?? string.Empty;
-            return identity + "|" + periodMs.ToString(CultureInfo.InvariantCulture);
-        }
-
-        private static bool IsSameDevicePollStaggerGroup(DeviceConfig device, DeviceConfig candidate, int periodMs)
-        {
-            if (device == null || candidate == null || !candidate.Enabled || !HasReadableTagsForStagger(candidate))
-                return false;
-
-            return candidate.Protocol == device.Protocol &&
-                   IsUdpTransport(candidate) == IsUdpTransport(device) &&
-                   GetDevicePollStaggerPeriodMs(candidate) == periodMs;
-        }
-
-        private static int GetDevicePollStaggerPeriodMs(DeviceConfig device)
-        {
-            int periodMs = GetFastestReadableScanRateMs(device);
-            if (periodMs <= 0)
-                periodMs = GetDeviceScanRateMs(device);
-            return ClampInterval(periodMs, 100, 86400000);
         }
 
         private static int GetFastestReadableScanRateMs(DeviceConfig device)
@@ -4415,11 +3461,6 @@ namespace IPC.Runtime.Engine
                 if (scanRate <= 0 || tagScanRate < scanRate)
                     scanRate = tagScanRate;
             }
-        }
-
-        private static bool HasReadableTagsForStagger(DeviceConfig device)
-        {
-            return GetFastestReadableScanRateMs(device) > 0;
         }
 
         private DateTime GetNextDeviceReadableTagDueUtc(DeviceConfig? device)
@@ -4459,16 +3500,23 @@ namespace IPC.Runtime.Engine
             }
         }
 
-        private void ScheduleNextRead(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now, bool failed)
+        private void ScheduleNextRead(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, int generation, bool failed)
         {
-            int scanRate = failed
-                ? GetFailureRetryDelayMs(device, tag)
-                : GetEffectiveScanRateMs(device, group, tag);
-            DateTime next = now.AddMilliseconds(scanRate);
-            if (!failed)
-                next = AlignDeviceReadDueTime(device, scanRate, next, now);
+            lock (_syncRoot)
+            {
+                if (!IsCurrentGeneration(generation)) return;
+                DateTime completedUtc = DateTime.UtcNow;
+                if (failed)
+                    _nextReadUtcByTagId[tag.Id] = completedUtc.AddMilliseconds(GetFailureRetryDelayMs(state.Config, tag));
+                else
+                    SchedulePeriodicReadNoLock(state, group, tag, completedUtc);
+            }
+        }
 
-            _nextReadUtcByTagId[tag.Id] = next;
+        private void SchedulePeriodicReadNoLock(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime completedUtc)
+        {
+            _nextReadUtcByTagId[tag.Id] = GetNextPeriodicReadUtc(state.CadenceOriginUtc,
+                GetEffectiveScanRateMs(state.Config, group, tag), completedUtc);
         }
 
         private void ScheduleNextSubscriptionFallback(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now)
@@ -4563,7 +3611,7 @@ namespace IPC.Runtime.Engine
                 {
                     TagConfig tag = device.Tags[t];
                     if (tag != null)
-                        UpdateSnapshot(CreateSnapshot(device, null, tag, quality, errorMessage));
+                        CommitSnapshot(CreateSnapshot(device, null, tag, quality, errorMessage), expectedDevice: device);
                 }
             }
 
@@ -4584,7 +3632,7 @@ namespace IPC.Runtime.Engine
             {
                 TagConfig tag = group.Tags[t];
                 if (tag != null)
-                    UpdateSnapshot(CreateSnapshot(device, group, tag, quality, errorMessage));
+                    CommitSnapshot(CreateSnapshot(device, group, tag, quality, errorMessage), expectedDevice: device);
             }
         }
 
@@ -4783,14 +3831,44 @@ namespace IPC.Runtime.Engine
         }
 
         private void UpdateSnapshot(TagValueSnapshot snapshot, bool isReadResult = false)
+            => CommitSnapshot(snapshot, isReadResult: isReadResult);
+
+        private void CommitSnapshot(TagValueSnapshot snapshot, DeviceConfig? expectedDevice = null, bool isReadResult = false)
         {
             TagValueSnapshot clone;
-            // Operational status updates must not replace the last actual read error.
-            // A completed read replaces it, including clearing it after success.
-            bool changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone, preserveLastReadError: !isReadResult);
+            bool diagnosticsOnly;
+            lock (_syncRoot)
+            {
+                if (expectedDevice != null && (!_deviceStatesById.TryGetValue(expectedDevice.Id, out var state) ||
+                    !ReferenceEquals(state.Config, expectedDevice)))
+                    return;
+                bool changed = _snapshotStore.Upsert(_snapshotsByPath, snapshot, out clone, out diagnosticsOnly,
+                    preserveLastReadError: !isReadResult);
+                // Evaluate numeric samples even when display precision masks a threshold crossing.
+                // Historical, out-of-order subscription samples bypass this commit path.
+                if (clone.Quality == TagQuality.Good && clone.Alarm?.Enabled == true)
+                    AlarmSampleCommitted?.Invoke(clone);
+                if (changed)
+                    EnqueueTagValueChanged(clone, GetCurrentRuntimeGeneration());
+            }
 
-            if (changed)
-                EnqueueTagValueChanged(clone, Interlocked.CompareExchange(ref _runtimeGeneration, 0, 0));
+            if (diagnosticsOnly)
+                NotifyTagSubscribers(TagDiagnosticsChanged, clone);
+        }
+
+        private bool IsOlderThanCurrentSnapshot(TagValueSnapshot snapshot)
+        {
+            return TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out var current) &&
+                   current != null && current.Timestamp > snapshot.Timestamp;
+        }
+
+        private void PublishHistoricalRead(TagValueSnapshot snapshot)
+        {
+            // Preserve observed transitions for history/rules while a delayed
+            // subscription notification must not roll the latest cache back.
+            if (!TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out var current) ||
+                HasTagValueChanged(current, snapshot))
+                EnqueueTagValueChanged(snapshot.Clone(), GetCurrentRuntimeGeneration());
         }
 
         private static bool HasTagValueChanged(TagValueSnapshot? previous, TagValueSnapshot current)
@@ -4824,8 +3902,10 @@ namespace IPC.Runtime.Engine
         }
 
         private void DispatchTagValueChanged(TagValueSnapshot snapshot)
+            => NotifyTagSubscribers(TagValueChanged, snapshot);
+
+        private void NotifyTagSubscribers(EventHandler<TagValueChangedEventArgs>? handler, TagValueSnapshot snapshot)
         {
-            EventHandler<TagValueChangedEventArgs>? handler = TagValueChanged;
             if (handler == null)
                 return;
 

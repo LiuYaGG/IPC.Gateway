@@ -20,6 +20,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         public byte[] BuildRequest(ushort command, ushort subcommand, McAddress address, int points, byte[] data)
         {
+            address.EnsureTransferRange(points, subcommand == 1);
             using MemoryStream body = new MemoryStream();
             WriteUInt16(body, 0x0010);
             WriteUInt16(body, command);

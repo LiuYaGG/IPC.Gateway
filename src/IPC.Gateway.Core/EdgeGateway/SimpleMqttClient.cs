@@ -80,6 +80,10 @@ namespace IPC.EdgeGateway
             ManualResetEvent stopEvent,
             Action<SimpleMqttClient>? idleAction,
             MqttWillMessage? willMessage)
+            => ConnectAndReadLoop(subscribeTopics, stopEvent, idleAction, willMessage, false);
+
+        public void ConnectAndReadLoop(IList<string> subscribeTopics, ManualResetEvent stopEvent,
+            Action<SimpleMqttClient>? idleAction, MqttWillMessage? willMessage, bool serviceQueueWhenBusy)
         {
             if (stopEvent == null)
                 throw new ArgumentNullException("stopEvent");
@@ -98,7 +102,7 @@ namespace IPC.EdgeGateway
             RaiseConnected();
             if (idleAction != null && !stopEvent.WaitOne(0))
                 idleAction(this);
-            ReadLoop(stopEvent, idleAction);
+            ReadLoop(stopEvent, idleAction, serviceQueueWhenBusy);
         }
 
         public void Disconnect()
@@ -227,17 +231,32 @@ namespace IPC.EdgeGateway
                 throw new InvalidOperationException("MQTT subscribe topic is empty.");
 
             MemoryStream payload = new MemoryStream();
-            WriteUInt16(payload, NextPacketId());
+            ushort packetId = NextPacketId();
+            WriteUInt16(payload, packetId);
             WriteUtf8(payload, topic.Trim());
             payload.WriteByte(0);
 
             SendPacket(0x82, payload.ToArray());
-            MqttPacket? packet = ReadPacket();
-            if (packet == null || packet.Type != 9)
-                throw new InvalidOperationException("MQTT broker did not return SUBACK.");
+            long deadline = Environment.TickCount64 + 5000;
+            while (Environment.TickCount64 < deadline)
+            {
+                MqttPacket? packet = ReadPacket();
+                if (packet == null) continue;
+                if (packet.Type == 3)
+                {
+                    HandlePublish(packet);
+                    continue;
+                }
+                if (packet.Type != 9 || packet.Payload.Length != 3 || ReadUInt16(packet.Payload, 0) != packetId)
+                    throw new IOException("MQTT broker returned an unexpected SUBACK.");
+                if (packet.Payload[2] != 0)
+                    throw new InvalidOperationException("MQTT broker did not grant the requested subscription.");
+                return;
+            }
+            throw new TimeoutException("MQTT broker did not return SUBACK.");
         }
 
-        private void ReadLoop(ManualResetEvent stopEvent, Action<SimpleMqttClient>? idleAction)
+        private void ReadLoop(ManualResetEvent stopEvent, Action<SimpleMqttClient>? idleAction, bool serviceQueueWhenBusy)
         {
             DateTime nextPingUtc = DateTime.UtcNow.AddSeconds(Math.Max(5, MqttGatewayOptions.ClampKeepAliveSeconds(_options.KeepAliveSeconds) / 2));
             while (!stopEvent.WaitOne(0))
@@ -260,10 +279,8 @@ namespace IPC.EdgeGateway
 
                     if (packet.Type == 3)
                         HandlePublish(packet);
-                    else if (packet.Type == 4)
-                        continue;
-                    else if (packet.Type == 13)
-                        continue;
+                    if (serviceQueueWhenBusy && !stopEvent.WaitOne(0))
+                        idleAction?.Invoke(this);
                 }
                 catch (IOException)
                 {
@@ -355,7 +372,7 @@ namespace IPC.EdgeGateway
                         pubRelSent = true;
                     }
                 }
-                else if (packet.Type == 7 && packet.Payload.Length >= 2)
+                else if (pubRelSent && packet.Type == 7 && packet.Payload.Length >= 2)
                 {
                     ushort packetId = ReadUInt16(packet.Payload, 0);
                     if (packetId == expectedPacketId)
@@ -382,7 +399,8 @@ namespace IPC.EdgeGateway
             {
                 first = stream.ReadByte();
             }
-            catch (IOException)
+            catch (IOException ex) when (ex.GetBaseException() is TimeoutException or SocketException
+                { SocketErrorCode: SocketError.TimedOut or SocketError.WouldBlock })
             {
                 return null;
             }
@@ -410,6 +428,8 @@ namespace IPC.EdgeGateway
                 stream.Flush();
             }
         }
+
+        internal void Interrupt() => _tcpClient?.Close();
 
         private void CloseSocket()
         {

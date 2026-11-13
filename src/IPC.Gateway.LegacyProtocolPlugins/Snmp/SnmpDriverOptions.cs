@@ -25,7 +25,10 @@ namespace IPC.Plc.Communication.Snmp
             {
                 using JsonDocument document = JsonDocument.Parse(connection.DriverOptionsJson);
                 JsonElement root = document.RootElement;
-                options.Version = GetString(root, "snmpVersion", options.Version);
+                if (root.ValueKind != JsonValueKind.Object)
+                    throw new FormatException("SNMP 驱动参数必须为 JSON 对象。");
+                if (root.TryGetProperty("snmpVersion", out var version))
+                    options.Version = version.ValueKind == JsonValueKind.String ? version.GetString() ?? "" : "";
                 options.Community = GetString(root, "snmpCommunity", options.Community);
                 options.UserName = GetString(root, "snmpUserName", options.UserName);
                 options.AuthenticationProtocol = GetString(root, "snmpAuthProtocol", options.AuthenticationProtocol);
@@ -35,8 +38,9 @@ namespace IPC.Plc.Communication.Snmp
                 options.ContextName = GetString(root, "snmpContextName", options.ContextName);
                 options.MaxOidsPerRequest = GetInt32(root, "snmpMaxOidsPerRequest", options.MaxOidsPerRequest, 1, 100);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                throw new FormatException("SNMP 驱动配置 JSON 无效。", ex);
             }
             return options;
         }

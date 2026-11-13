@@ -56,15 +56,28 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             return stream.ToArray();
         }
 
+        public static bool MatchesRequest(byte[] frame, Dlt645Address address)
+        {
+            if (frame.Length < 12 || !frame.AsSpan(1, 6).SequenceEqual(address.GetAddressBytes())) return false;
+            if (frame[8] == 0xD1) return true;
+            if (frame[8] is not (0x91 or 0xB1) || frame.Length < 16) return false;
+            var di = address.GetDataIdentifierBytes();
+            for (int i = 0; i < di.Length; i++)
+                if (Sub33(frame[10 + i]) != di[i]) return false;
+            return true;
+        }
+
         public static byte[] ExtractReadData(byte[] frame, Dlt645Address requestAddress)
         {
-            if (frame == null || frame.Length < 16)
+            if (frame == null || frame.Length < 12)
                 throw new FormatException("DLT645-2007响应帧长度不足。");
             if (frame[0] != 0x68 || frame[7] != 0x68 || frame[frame.Length - 1] != 0x16)
                 throw new FormatException("DLT645-2007响应帧格式错误。");
             if (Checksum(frame, 0, frame.Length - 2) != frame[frame.Length - 2])
                 throw new FormatException("DLT645-2007响应帧校验失败。");
 
+            if (!frame.AsSpan(1, 6).SequenceEqual(requestAddress.GetAddressBytes()))
+                throw new IOException("DL/T 645 响应表号与请求不一致。");
             byte control = frame[8];
             if ((control & 0x40) == 0x40)
                 throw new InvalidOperationException("DLT645-2007电表返回异常应答。");

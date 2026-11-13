@@ -168,10 +168,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private MitsubishiQlSerialAddress BuildAddress(string address, PlcDataType dataType, int elementOffset)
         {
-            MitsubishiQlSerialAddress parsed = MitsubishiQlSerialAddress.Parse(address);
-            if (dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray)
-                return parsed.AddBitOffset(elementOffset);
-            return parsed.AddDeviceOffset(McDataCodec.GetDeviceOffset(dataType, elementOffset));
+            return MitsubishiQlSerialAddress.Parse(address).ResolveOffset(dataType, elementOffset);
         }
 
         private PlcReadResult ReadBool(MitsubishiQlSerialAddress address)
@@ -254,12 +251,13 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private byte[] ReadWordsSegmented(MitsubishiQlSerialAddress address, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
-                byte[] data = ReadWords(address.AddDeviceOffset(offset), chunk);
+                byte[] data = ReadWords(address.AddWordOffset(offset), chunk);
                 result.Write(data, 0, data.Length);
                 offset += chunk;
             }
@@ -268,19 +266,21 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private void WriteWordsSegmented(MitsubishiQlSerialAddress address, byte[] data, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
                 byte[] chunkData = new byte[chunk * 2];
                 Buffer.BlockCopy(data, offset * 2, chunkData, 0, chunkData.Length);
-                WriteWords(address.AddDeviceOffset(offset), chunkData, chunk);
+                WriteWords(address.AddWordOffset(offset), chunkData, chunk);
                 offset += chunk;
             }
         }
 
         private bool[] ReadBitsSegmented(MitsubishiQlSerialAddress address, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             bool[] result = new bool[count];
             int offset = 0;
             while (offset < count)
@@ -295,6 +295,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private void WriteBitsSegmented(MitsubishiQlSerialAddress address, bool[] values, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             int offset = 0;
             while (offset < count)
             {
@@ -354,7 +355,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
                    subcommand +
                    address.DeviceCode +
                    address.FormatDeviceNumber() +
-                   points.ToString("D4", CultureInfo.InvariantCulture) +
+                   points.ToString("X4", CultureInfo.InvariantCulture) +
                    (data ?? string.Empty);
         }
 
@@ -396,8 +397,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
             string actual = Encoding.ASCII.GetString(checksumBytes);
             if (!expected.Equals(actual, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Mitsubishi Q/L 系列 sum check 校验失败");
-            if (contentText.Length < HeaderLength)
-                throw new InvalidOperationException("Mitsubishi Q/L 系列响应长度不足");
+            ValidateResponseHeader(contentText);
             return contentText.Substring(HeaderLength);
         }
 
@@ -409,34 +409,22 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
             if (first != Ack)
                 throw new InvalidOperationException("Mitsubishi Q/L 系列写入响应帧类型错误 0x" + first.ToString("X2", CultureInfo.InvariantCulture));
 
-            try
-            {
-                byte[] headerBytes = ReadExact(HeaderLength);
-                byte[] checksumBytes = ReadExact(2);
-                string header = Encoding.ASCII.GetString(headerBytes);
-                string expected = ComputeSumText(header, false);
-                string actual = Encoding.ASCII.GetString(checksumBytes);
-                if (!expected.Equals(actual, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("Mitsubishi Q/L 系列 ACK sum check 校验失败");
-            }
-            catch (TimeoutException)
-            {
-                
-            }
+            ValidateResponseHeader(Encoding.ASCII.GetString(ReadExact(HeaderLength)));
+        }
+
+        private void ValidateResponseHeader(string response)
+        {
+            if (!response.StartsWith(BuildHeader(), StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Mitsubishi Q/L 响应帧的站号或路由不匹配。");
         }
 
         private void ThrowNak()
         {
-            string detail = string.Empty;
-            try
-            {
-                byte[] rest = ReadExact(HeaderLength + 4 + 2);
-                detail = "响应 " + Encoding.ASCII.GetString(rest);
-            }
-            catch
-            {
-            }
-            throw new InvalidOperationException("Mitsubishi Q/L 系列 PLC 返回 NAK" + detail); 
+            ValidateResponseHeader(Encoding.ASCII.GetString(ReadExact(HeaderLength)));
+            string errorText = Encoding.ASCII.GetString(ReadExact(4));
+            if (!ushort.TryParse(errorText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort code))
+                throw new IOException("Mitsubishi Q/L 响应错误码无效。");
+            throw McProtocolErrors.EndCode(code);
         }
 
         private string BuildHeader()
@@ -477,10 +465,8 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
         private static byte[] DecodeWordData(string text, int points)
         {
             int expectedLength = points * 4;
-            if (text == null || text.Length < expectedLength)
-                throw new InvalidOperationException("Mitsubishi Q/L 系列字读取响应长度不足");
-            if (text.Length > expectedLength)
-                text = text.Substring(text.Length - expectedLength);
+            if (text == null || text.Length != expectedLength)
+                throw new IOException("Mitsubishi Q/L 系列字读取响应长度与请求不一致。");
 
             byte[] data = new byte[points * 2];
             for (int i = 0; i < points; i++)
@@ -506,14 +492,16 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
 
         private static bool[] DecodeBitData(string text, int points)
         {
-            if (text == null || text.Length < points)
-                throw new InvalidOperationException("Mitsubishi Q/L 系列位读取响应长度不足");
-            if (text.Length > points)
-                text = text.Substring(text.Length - points);
+            if (text == null || text.Length != points)
+                throw new IOException("Mitsubishi Q/L 系列位读取响应长度与请求不一致。");
 
             bool[] values = new bool[points];
             for (int i = 0; i < points; i++)
+            {
+                if (text[i] != '0' && text[i] != '1')
+                    throw new IOException("Mitsubishi Q/L 位响应包含无效字符。");
                 values[i] = text[i] == '1';
+            }
             return values;
         }
 

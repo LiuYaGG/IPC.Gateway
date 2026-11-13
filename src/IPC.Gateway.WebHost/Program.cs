@@ -29,7 +29,8 @@ using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
 
-string startupWebRoot = GatewayWebRoot.PrepareBeforeBuilder(Directory.GetCurrentDirectory(), AppContext.BaseDirectory);
+string startupContentRoot = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : Directory.GetCurrentDirectory();
+string startupWebRoot = GatewayWebRoot.PrepareBeforeBuilder(startupContentRoot, AppContext.BaseDirectory);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
@@ -47,6 +48,7 @@ builder.ConfigureGatewayTls(securityOptions);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    GatewayTagJson.Configure(options.SerializerOptions);
 });
 builder.Services.AddGatewayFlowRules();
 builder.Services.AddGatewayOnnxInference(new OnnxModelCatalogOptions
@@ -84,10 +86,6 @@ builder.Services.AddHostedService<VirtualModelTagRuntimeService>();
 builder.Services.AddGatewayWatchdog(builder.Configuration);
 
 var app = builder.Build();
-try { app.Services.GetRequiredService<GatewayUpdatePackageService>().RestoreCompletedUpgradeTrust(); }
-catch (Exception ex) { app.Logger.LogWarning(ex, "Upgrade driver trust could not be restored; normal signature verification remains active."); }
-if (observabilityOptions.MetricsEnabled)
-    _ = app.Services.GetRequiredService<GatewayMetricsInstrumentation>();
 
 app.UseConfiguredForwardedHeaders(builder.Configuration);
 app.UseGatewayTlsControls(securityOptions);

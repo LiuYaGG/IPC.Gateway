@@ -58,8 +58,13 @@ namespace IPC.Plc.Communication.Core
                     case PlcProtocol.ModbusUdp:
                     case PlcProtocol.ModbusRtu:
                     case PlcProtocol.ModbusAscii:
-                        _ = ModbusAddress.Parse(normalizedAddress, dataType);
-                        break;
+                        ModbusAddress start = ModbusAddress.Parse(normalizedAddress, dataType);
+                        if (elementOffset > 0 && PlcDataTypeHelper.IsArray(dataType))
+                            start = start.IsBitArea || dataType == PlcDataType.BoolArray
+                                ? start.OffsetBits(elementOffset)
+                                : start.OffsetRegisters(ModbusDataCodec.GetRegisterOffset(dataType, elementOffset));
+                        return PlcTagValidationResult.Valid(normalizedAddress, start.Area.ToString(),
+                            (long)start.Address * 16 + Math.Max(0, start.BitIndex));
                     case PlcProtocol.Dlt6452007:
                         _ = Dlt645Address.Parse(normalizedAddress);
                         break;
@@ -121,7 +126,7 @@ namespace IPC.Plc.Communication.Core
                         break;
                 }
             }
-            catch (Exception ex) when (ex is FormatException || ex is ArgumentException || ex is OverflowException)
+            catch (Exception ex) when (ex is FormatException || ex is ArgumentException || ex is OverflowException || ex is NotSupportedException)
             {
                 return PlcTagValidationResult.Invalid(normalizedAddress, ex.Message);
             }

@@ -82,8 +82,8 @@
           <div class="top-actions">
             <LanguageSwitcher />
             <div class="refresh-state">
-              <span>{{ autoRefresh ? tx('实时推送') : tx('手动刷新') }}</span>
-              <a-switch v-model:checked="autoRefresh" size="small" :aria-label="tx('实时推送')" />
+              <span>{{ tx(autoRefresh ? streamState : '手动刷新') }}</span>
+              <a-switch v-model:checked="autoRefresh" :disabled="!canStream" size="small" :aria-label="tx('实时推送')" />
             </div>
             <span class="refresh-time">{{ tx('最近刷新：') }}{{ tx(lastRefreshLabel) }}</span>
             <a-tooltip :title="tx('刷新数据')">
@@ -104,6 +104,7 @@
             <h1>{{ tx(pageTitle) }}</h1>
           </div>
           <div
+            :key="sessionScopeRevision"
             class="page-body"
             :class="{
               'page-body--fill': activeView === 'devices' || activeView === 'audit',
@@ -141,8 +142,10 @@
               v-else-if="activeView === 'devices'"
               :state-scope="deviceViewScope(currentUserIdentity, project?.projectId ?? '')"
               :project="project"
-              :runtime-devices="status?.devices ?? []"
-              :runtime-tags="status?.tags ?? []"
+              :runtime-devices="visibleDevices"
+              :runtime-tags="runtimeTags"
+              :enabled-tag-keys="projectScope.tagKeys"
+              :good-tags-by-device="goodTagsByDevice"
               @changed="handleDevicesChanged"
               @editing-state="deviceEditing = $event"
             />
@@ -181,7 +184,7 @@
             />
             <AuditView v-else-if="activeView === 'audit'" />
             <SecurityView v-else-if="activeView === 'security'" />
-            <MaintenanceView v-else-if="activeView === 'maintenance'" />
+            <MaintenanceView v-else-if="activeView === 'maintenance'" :account="currentUserIdentity" />
             <UsersView v-else-if="activeView === 'users'" />
             <RolesView v-else-if="activeView === 'roles'" />
             <PermissionsView v-else-if="activeView === 'permissions'" />
@@ -199,7 +202,7 @@
 <script setup lang="ts">
 import { notify } from './utils/ui'
 import { tx } from './i18n'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 
 import {
   HomeFilled,
@@ -223,6 +226,7 @@ import {
   loadSync,
   loadReadyHealth,
   loadCurrentUser,
+  SessionExpiredError,
   login,
   logout,
   saveHistory,
@@ -235,11 +239,7 @@ import {
   type HistoryConfig,
   type OpcUaServerConfig,
   type ProjectConfig,
-  type RuntimeDevicesChangedEvent,
-  type RuntimeEventEnvelope,
   type RuntimeErrorDetail,
-  type RuntimeStatusPatchEvent,
-  type RuntimeTagsChangedEvent,
   type StorageHealthConfig,
   type SyncPayload,
   type TagValueSnapshot
@@ -279,7 +279,7 @@ import ScriptingView from './components/scripting/ScriptingView.vue'
 import UsersView from './components/UsersView.vue'
 import { formatDateTime } from './utils/format'
 import { clearDeviceViewStates, deviceViewScope } from './utils/deviceViewState'
-import { createRuntimeEventGuard, shouldApplyRuntimeSnapshot } from './utils/runtimePush'
+import { connectRuntimeEvents, deviceKey, setLatestTag, tagKey, type RuntimeChanges } from './utils/runtimeStream'
 import { createPermissionSet, PermissionContextKey, PERMISSIONS, normalizePermission } from './utils/permissions'
 
 const defaultStartupView = 'bigScreen'
@@ -309,12 +309,32 @@ const currentPermissions = ref<string[]>([])
 const loginForm = reactive({ username: '', password: '' })
 const captchaRef = ref<InstanceType<typeof LoginCaptcha> | null>(null)
 let refreshController: AbortController | undefined
-let runtimeEvents: EventSource | undefined
-
-const status = computed(() =>
-  sync.value ? sanitizeStatus(sync.value.status, project.value ?? sync.value.project) : null
-)
+let closeStream: (() => void) | undefined
+let retryTimer: number | undefined
+let retries = 0
+let unmounted = false
+let httpProjectRevision: string | undefined
+const sessionScopeRevision = ref(0)
+const streamState = ref('连接中')
+const runtimeTags = shallowRef(shallowReactive(new Map<string, TagValueSnapshot>()))
+const runtimeDevices = shallowRef(shallowReactive(new Map<string, DeviceRuntimeStatus>()))
 const permissionSet = computed(() => createPermissionSet(currentPermissions.value))
+const canStream = computed(() => hasAnyPermission([
+  PERMISSIONS.dashboardView, PERMISSIONS.bigScreenView, PERMISSIONS.topologyView, PERMISSIONS.devicesView,
+  PERMISSIONS.flowRulesView, PERMISSIONS.mqttView, PERMISSIONS.opcUaView, PERMISSIONS.historyView
+]))
+const projectScope = computed(() => buildProjectScope(sync.value?.project ?? null))
+const qualityCounts = reactive({ good: 0, bad: 0 })
+const goodTagsByDevice = shallowReactive(new Map<string, number>())
+const visibleDevices = computed(() => Array.from(runtimeDevices.value.values())
+  .filter(device => projectScope.value.deviceKeys.has(deviceKey(device))))
+const visibleTags = computed(() => {
+  const tags: TagValueSnapshot[] = []
+  for (const [key, value] of runtimeTags.value)
+    if (projectScope.value.tagKeys.has(key)) tags.push(value)
+  return tags
+})
+const status = computed(() => sync.value ? sanitizeStatus(sync.value.status) : null)
 const lastRefreshLabel = computed(() => (lastRefreshTime.value ? formatDateTime(lastRefreshTime.value) : '-'))
 const pageTitle = computed(
   () =>
@@ -335,7 +355,7 @@ const pageTitle = computed(
       users: '人员管理',
       roles: '角色管理',
       permissions: '权限分配'
-    })[activeView.value] || '大屏总览'
+    })[activeView.value] || '暂无可访问的页面'
 )
 
 const pageSection = computed(() => {
@@ -391,11 +411,13 @@ provide(PermissionContextKey, {
 
 onMounted(() => {
   window.addEventListener('keydown', handleLoginEnter, true)
-  if (authenticated.value) initializeAuthenticatedSession()
-  syncAutoRefresh()
+  document.addEventListener('visibilitychange', onVisibilityChanged)
+  if (authenticated.value) void refresh({ silent: false })
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
+  document.removeEventListener('visibilitychange', onVisibilityChanged)
   window.removeEventListener('keydown', handleLoginEnter, true)
   stopRuntimeEvents()
   refreshController?.abort()
@@ -404,6 +426,7 @@ onBeforeUnmount(() => {
 watch([authenticated, autoRefresh], syncAutoRefresh)
 watch(authenticated, async (value) => {
   if (!value) {
+    clearSessionData()
     currentUserIdentity.value = ''
     currentUserName.value = ''
     currentLoginName.value = ''
@@ -430,7 +453,6 @@ async function handleLogin() {
     await login(loginForm.username, loginForm.password)
     localStorage.setItem('ipc.gateway.authenticated', 'true')
     authenticated.value = true
-    await loadSessionPermissions()
     await refresh({ silent: false })
   } catch (error) {
     captchaRef.value?.refresh()
@@ -449,63 +471,87 @@ async function handleLogout() {
   authenticated.value = false
 }
 
-async function refresh(options: { silent: boolean }) {
+async function refresh(options: { silent: boolean; reconnectOnly?: boolean }) {
   stopRuntimeEvents()
   refreshController?.abort()
   const controller = new AbortController()
   refreshController = controller
   if (!options.silent) loading.value = true
+  if (autoRefresh.value) streamState.value = '正在同步'
+  let completed = false
   try {
+    const session = await loadCurrentUser(controller.signal)
+    if (controller.signal.aborted || !authenticated.value) return
+    if (!session.user) throw new SessionExpiredError()
+    const identity = session.user.id || session.user.username || ''
+    const permissions = session.permissions ?? []
+    const allowed = createPermissionSet(permissions)
+    const scopeChanged = currentUserIdentity.value && (identity !== currentUserIdentity.value ||
+      allowed.size !== permissionSet.value.size || [...permissionSet.value].some(p => !allowed.has(p)))
+    if (scopeChanged) clearSessionData()
+    currentUserIdentity.value = identity
+    currentUserName.value = session.user.displayName || session.user.username || ''
+    currentLoginName.value = session.user.username || ''
+    currentPermissions.value = permissions
+    ensureActiveViewAllowed()
+    if (options.reconnectOnly && sync.value && !scopeChanged) {
+      completed = true
+      return
+    }
     const [data, healthData] = await Promise.all([
       loadSync(controller.signal),
-      loadReadyHealth(controller.signal).catch((error) => {
+      (canAccessView('dashboard') || canAccessView('bigScreen') ? loadReadyHealth(controller.signal) : Promise.resolve(null)).catch(error => {
         if (isAbortError(error)) throw error
         return null
       })
     ])
-    if (controller.signal.aborted || refreshController !== controller) return
+    if (controller.signal.aborted || !authenticated.value) return
     applySync(data, options, healthData)
+    completed = true
   } catch (error) {
-    if (isAbortError(error)) return
-    if (!options.silent) notify.error(error instanceof Error ? error.message : '加载失败')
-    if (error instanceof Error && error.message.includes('登录已过期')) {
+    if (controller.signal.aborted || isAbortError(error)) return
+    if (error instanceof SessionExpiredError) {
       localStorage.removeItem('ipc.gateway.authenticated')
       currentPermissions.value = []
       authenticated.value = false
+      return
     }
+    if (!options.silent) notify.error(error instanceof Error ? error.message : '加载失败')
   } finally {
     if (refreshController === controller) {
       refreshController = undefined
-      if (authenticated.value && autoRefresh.value) startRuntimeEvents()
+      if (completed) startRuntimeEvents()
+      else if (!controller.signal.aborted) scheduleReconnect()
     }
     if (!options.silent) loading.value = false
   }
 }
 
-async function initializeAuthenticatedSession() {
-  loading.value = true
-  try {
-    await loadSessionPermissions()
-    await refresh({ silent: false })
-  } catch (error) {
-    notify.error(error instanceof Error ? error.message : '会话加载失败')
-    if (error instanceof Error && error.message.includes('登录已过期')) {
-      localStorage.removeItem('ipc.gateway.authenticated')
-      currentPermissions.value = []
-      authenticated.value = false
-    }
-  } finally {
-    loading.value = false
+let deferredProject: ProjectConfig | undefined
+watch([deviceEditing, flowRulesEditing], ([device, rules]) => {
+  if (!device && !rules && deferredProject) {
+    project.value = structuredClone(deferredProject)
+    deferredProject = undefined
   }
-}
+})
 
-async function loadSessionPermissions() {
-  const session = await loadCurrentUser()
-  currentUserIdentity.value = session.user?.id || session.user?.username || ''
-  currentUserName.value = session.user?.displayName || session.user?.username || ''
-  currentLoginName.value = session.user?.username || ''
-  currentPermissions.value = session.permissions ?? []
-  ensureActiveViewAllowed()
+function clearSessionData() {
+  deferredProject = undefined
+  sessionScopeRevision.value++
+  sync.value = null
+  project.value = null
+  mqtt.value = opcUa.value = history.value = null
+  storageHealth.value = health.value = null
+  runtimeTags.value = shallowReactive(new Map())
+  goodTagsByDevice.clear()
+  qualityCounts.good = qualityCounts.bad = 0
+  runtimeDevices.value = shallowReactive(new Map())
+  trend.value = []
+  selectedError.value = null
+  errorDrawerVisible.value = false
+  lastRefreshTime.value = ''
+  deviceEditing.value = flowRulesEditing.value = false
+  httpProjectRevision = undefined
 }
 
 function hasPermission(permission: string) {
@@ -522,7 +568,7 @@ function canAccessView(view: string) {
 
 function ensureActiveViewAllowed() {
   if (!authenticated.value || canAccessView(activeView.value)) return
-  activeView.value = viewOrder.find(canAccessView) ?? defaultStartupView
+  activeView.value = viewOrder.find(canAccessView) ?? ''
 }
 
 function isAbortError(error: unknown) {
@@ -538,240 +584,125 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
   const preserveMqttConfig = shouldPreserveActiveConfigDraft('mqtt', options)
   const preserveOpcUaConfig = shouldPreserveActiveConfigDraft('opcUa', options)
   const preserveHistoryConfig = shouldPreserveActiveConfigDraft('history', options)
-  // A full HTTP snapshot may have been captured before the latest SSE update.
-  // Keep newer values only for identities still present in the returned snapshot.
-  if (sync.value) {
-    const returnedKeys = new Set((data.status.tags ?? []).map(runtimeTagKey))
-    data.status.tags = mergeRuntimeTags(data.status.tags ?? [],
-      (sync.value.status.tags ?? []).filter(tag => returnedKeys.has(runtimeTagKey(tag))))
-  }
-  sync.value = data
+  httpProjectRevision = data.status.projectRevision
+  sync.value = { ...data, status: { ...data.status, tags: [], devices: [] } }
+  replaceTags(new Map((data.status.tags ?? []).map(tag => [tagKey(tag), tag])))
+  runtimeDevices.value = shallowReactive(new Map((data.status.devices ?? []).map(device => [deviceKey(device), device])))
   health.value = healthData
   lastRefreshTime.value = new Date().toISOString()
-  if (!preserveProjectConfig) {
+  if (!preserveProjectConfig || !project.value) {
+    deferredProject = undefined
     project.value = structuredClone(data.project)
+  } else {
+    deferredProject = data.project
   }
-  if (!preserveMqttConfig) {
+  if (!preserveMqttConfig || !mqtt.value) {
     mqtt.value = structuredClone(data.mqtt)
   }
-  if (!preserveOpcUaConfig) {
+  if (!preserveOpcUaConfig || !opcUa.value) {
     opcUa.value = structuredClone(data.opcUa)
   }
-  if (!preserveHistoryConfig) {
+  if (!preserveHistoryConfig || !history.value) {
     history.value = structuredClone(data.history)
   }
   storageHealth.value = structuredClone(data.storageHealth)
-  pushTrend(data)
+  pushTrend()
 }
 
 function startRuntimeEvents() {
-  if (runtimeEvents || typeof EventSource === 'undefined') return
-
-  const source = new EventSource('/api/config/status/events', { withCredentials: true })
-  runtimeEvents = source
-  const guard = createRuntimeEventGuard()
-  source.addEventListener('hello', (event) => {
-    if (runtimeEvents !== source) return
-    const envelope = readRuntimeEnvelope<unknown>(event)
-    if (envelope) guard.reset(envelope.timestamp, envelope.sequence)
-  })
-  function receive<T>(event: Event): T | null {
-    if (runtimeEvents !== source) return null
-    const envelope = readRuntimeEnvelope<T>(event)
-    if (!envelope) return null
-    const action = guard.check(envelope)
-    if (action === 'resync') {
-      stopRuntimeEvents()
-      if (authenticated.value && autoRefresh.value) startRuntimeEvents()
-      return null
-    }
-    return action === 'accept' ? envelope.data : null
+  if (!authenticated.value || !autoRefresh.value || refreshController || document.hidden || unmounted || closeStream) return
+  if (!canStream.value || typeof EventSource === 'undefined') {
+    streamState.value = '推送不可用'
+    return
   }
-  source.addEventListener('tags', (event) => {
-    const payload = receive<RuntimeTagsChangedEvent>(event)
-    if (payload) applyRuntimeTags(payload)
+  if (!sync.value) return
+  streamState.value = retries ? '重连中' : '连接中'
+  closeStream = connectRuntimeEvents({
+    projectRevision: () => httpProjectRevision,
+    opened: () => { streamState.value = '正在同步' },
+    snapshot: changes => {
+      applyStreamChanges(changes, true)
+      retries = 0
+      streamState.value = '实时推送'
+    },
+    update: changes => applyStreamChanges(changes, false),
+    reconnect: () => {
+      closeStream = undefined
+      scheduleReconnect()
+    },
+    resync: () => {
+      closeStream = undefined
+      void refresh({ silent: true })
+    }
   })
-  source.addEventListener('devices', (event) => {
-    const payload = receive<RuntimeDevicesChangedEvent>(event)
-    if (payload) applyRuntimeDevices(payload)
-  })
-  source.addEventListener('status', (event) => {
-    const payload = receive<RuntimeStatusPatchEvent>(event)
-    if (payload) applyRuntimeStatusPatch(payload)
-  })
-  source.addEventListener('heartbeat', (event) => {
-    receive<unknown>(event)
-  })
+}
+
+function countQuality(key: string, tag: TagValueSnapshot | undefined, delta: number) {
+  if (!tag || !projectScope.value.tagKeys.has(key)) return
+  const quality = normalizeKey(tag.quality)
+  if (quality === 'good') {
+    qualityCounts.good += delta
+    if (projectScope.value.tagKeys.get(key)) {
+      const device = deviceIdentityKey(tag.channelId, tag.deviceId)
+      goodTagsByDevice.set(device, (goodTagsByDevice.get(device) ?? 0) + delta)
+    }
+  } else if (quality && quality !== 'unknown') qualityCounts.bad += delta
+}
+
+function replaceTags(tags: Map<string, TagValueSnapshot>) {
+  runtimeTags.value = shallowReactive(tags)
+  goodTagsByDevice.clear()
+  qualityCounts.good = qualityCounts.bad = 0
+  for (const [key, tag] of tags) countQuality(key, tag, 1)
+}
+
+function applyStreamChanges(changes: RuntimeChanges, full: boolean) {
+  if (!sync.value) return
+  if (full) {
+    replaceTags(changes.tags)
+    runtimeDevices.value = shallowReactive(changes.devices)
+  } else {
+    for (const [key, tag] of changes.tags) {
+      const current = runtimeTags.value.get(key)
+      if (setLatestTag(runtimeTags.value, key, tag) && current?.quality !== tag.quality) {
+        countQuality(key, current, -1)
+        countQuality(key, tag, 1)
+      }
+    }
+    for (const key of changes.removedDevices) runtimeDevices.value.delete(key)
+    for (const [key, device] of changes.devices) runtimeDevices.value.set(key, device)
+  }
+  if (changes.status) {
+    sync.value.status = { ...sync.value.status, ...changes.status, tags: [], devices: [] }
+    pushTrend()
+  }
+  lastRefreshTime.value = new Date().toISOString()
+}
+
+function scheduleReconnect() {
+  if (unmounted || !autoRefresh.value || document.hidden || !authenticated.value || retryTimer !== undefined) return
+  streamState.value = '重连中'
+  const delay = Math.min(1000 * 2 ** Math.min(retries++, 4), 15000)
+  retryTimer = window.setTimeout(() => {
+    retryTimer = undefined
+    void refresh({ silent: true, reconnectOnly: true })
+  }, delay)
 }
 
 function stopRuntimeEvents() {
-  runtimeEvents?.close()
-  runtimeEvents = undefined
+  closeStream?.()
+  closeStream = undefined
+  window.clearTimeout(retryTimer)
+  retryTimer = undefined
 }
 
-function readRuntimeEnvelope<T>(event: Event): RuntimeEventEnvelope<T> | null {
-  const data = (event as MessageEvent<string>).data
-  if (!data) return null
-  try {
-    const envelope = JSON.parse(data) as RuntimeEventEnvelope<T>
-    return envelope
-  } catch {
-    return null
+function onVisibilityChanged() {
+  if (document.hidden) {
+    stopRuntimeEvents()
+    if (autoRefresh.value) streamState.value = '已暂停'
+  } else if (authenticated.value && autoRefresh.value && !refreshController) {
+    void refresh({ silent: true, reconnectOnly: true })
   }
-}
-
-function applyRuntimeTags(payload: RuntimeTagsChangedEvent) {
-  if (!sync.value || !payload.tags?.length) return
-
-  const currentStatus = sync.value.status
-  const tags = mergeRuntimeTags(currentStatus.tags ?? [], payload.tags)
-  if (tags === currentStatus.tags) return
-
-  sync.value.status = { ...currentStatus, tags }
-  lastRefreshTime.value = new Date().toISOString()
-}
-
-function applyRuntimeDevices(payload: RuntimeDevicesChangedEvent) {
-  if (!sync.value) return
-
-  const currentStatus = sync.value.status
-  const devices = mergeRuntimeDevices(
-    currentStatus.devices ?? [],
-    payload.devices ?? [],
-    payload.removedDeviceKeys ?? []
-  )
-  if (devices === currentStatus.devices) return
-
-  sync.value.status = { ...currentStatus, devices }
-  lastRefreshTime.value = new Date().toISOString()
-}
-
-function applyRuntimeStatusPatch(payload: RuntimeStatusPatchEvent) {
-  if (!sync.value || !payload.status) return
-
-  const currentStatus = sync.value.status
-  const patch = payload.status
-  const nextStatus: GatewayStatus = {
-    ...currentStatus,
-    ...patch,
-    devices: patch.devices?.length ? patch.devices : currentStatus.devices,
-    tags: currentStatus.tags
-  }
-
-  sync.value.status = nextStatus
-  lastRefreshTime.value = new Date().toISOString()
-  pushTrend({ ...sync.value, status: nextStatus })
-}
-
-function mergeRuntimeTags(current: TagValueSnapshot[], changed: TagValueSnapshot[]) {
-  if (changed.length === 0) return current
-
-  const index = new Map<string, number>()
-  current.forEach((tag, itemIndex) => {
-    const key = runtimeTagKey(tag)
-    if (key) index.set(key, itemIndex)
-  })
-
-  let modified = false
-  const next = current.slice()
-  for (const tag of changed) {
-    const key = runtimeTagKey(tag)
-    if (!key) continue
-
-    const itemIndex = index.get(key)
-    if (itemIndex === undefined) {
-      index.set(key, next.length)
-      next.push(tag)
-      modified = true
-      continue
-    }
-
-    if (shouldApplyRuntimeSnapshot(next[itemIndex].timestamp, tag.timestamp) && !sameRuntimeTag(next[itemIndex], tag)) {
-      next[itemIndex] = { ...next[itemIndex], ...tag }
-      modified = true
-    }
-  }
-
-  return modified ? next : current
-}
-
-function mergeRuntimeDevices(current: DeviceRuntimeStatus[], changed: DeviceRuntimeStatus[], removedKeys: string[]) {
-  if (changed.length === 0 && removedKeys.length === 0) return current
-
-  const removed = new Set(removedKeys.map(normalizeKey).filter(Boolean))
-  const next =
-    removed.size > 0
-      ? current.filter((device) => !removed.has(normalizeKey(runtimeDeviceKey(device))))
-      : current.slice()
-  const index = new Map<string, number>()
-  next.forEach((device, itemIndex) => {
-    const key = runtimeDeviceKey(device)
-    if (key) index.set(key, itemIndex)
-  })
-
-  let modified = removed.size > 0 && next.length !== current.length
-  for (const device of changed) {
-    const key = runtimeDeviceKey(device)
-    if (!key) continue
-
-    const itemIndex = index.get(key)
-    if (itemIndex === undefined) {
-      index.set(key, next.length)
-      next.push(device)
-      modified = true
-      continue
-    }
-
-    if (!sameRuntimeDevice(next[itemIndex], device)) {
-      next[itemIndex] = { ...next[itemIndex], ...device }
-      modified = true
-    }
-  }
-
-  return modified ? next : current
-}
-
-function runtimeTagKey(tag: TagValueSnapshot) {
-  return `id:${tagIdentityKey(tag.channelId, tag.deviceId, tag.groupId, tag.tagId)}`
-}
-
-function runtimeDeviceKey(device: DeviceRuntimeStatus) {
-  return `id:${deviceIdentityKey(device.channelId, device.deviceId)}`
-}
-
-function sameRuntimeTag(left: TagValueSnapshot, right: TagValueSnapshot) {
-  return (
-    left.valueText === right.valueText &&
-    left.rawValueText === right.rawValueText &&
-    left.quality === right.quality &&
-    left.timestamp === right.timestamp &&
-    left.errorMessage === right.errorMessage &&
-    left.cleaningApplied === right.cleaningApplied &&
-    left.cleaningAction === right.cleaningAction &&
-    left.cleaningMessage === right.cleaningMessage
-  )
-}
-
-function sameRuntimeDevice(left: DeviceRuntimeStatus, right: DeviceRuntimeStatus) {
-  return (
-    left.isConnected === right.isConnected &&
-    left.isPolling === right.isPolling &&
-    left.status === right.status &&
-    left.consecutiveFailures === right.consecutiveFailures &&
-    left.totalReads === right.totalReads &&
-    left.successfulReads === right.successfulReads &&
-    left.failedReads === right.failedReads &&
-    left.successRate === right.successRate &&
-    left.lastPollTime === right.lastPollTime &&
-    left.lastSuccessTime === right.lastSuccessTime &&
-    left.lastFailureTime === right.lastFailureTime &&
-    left.nextPollTime === right.nextPollTime &&
-    left.lastTaskStatus === right.lastTaskStatus &&
-    left.lastTaskDurationMs === right.lastTaskDurationMs &&
-    left.slowPollCount === right.slowPollCount &&
-    left.timeoutCount === right.timeoutCount &&
-    left.lastError === right.lastError
-  )
 }
 
 function shouldPreserveActiveConfigDraft(view: string, options: { silent: boolean }) {
@@ -779,8 +710,8 @@ function shouldPreserveActiveConfigDraft(view: string, options: { silent: boolea
   return options.silent && activeView.value === view
 }
 
-function pushTrend(data: SyncPayload) {
-  const visibleStatus = sanitizeStatus(data.status, data.project)
+function pushTrend() {
+  const visibleStatus = status.value
   const devices = visibleStatus?.devices ?? []
   const successRate =
     devices.length === 0 ? 0 : devices.reduce((sum, item) => sum + (item.successRate || 0), 0) / devices.length
@@ -795,59 +726,39 @@ function pushTrend(data: SyncPayload) {
   ].slice(-48)
 }
 
-function sanitizeStatus(
-  source: GatewayStatus | null | undefined,
-  currentProject: ProjectConfig | null | undefined
-): GatewayStatus | null {
-  if (!source) return null
-  if (!currentProject) return source
-
-  const projectDevices = currentProject.devices ?? []
-  const activeChannelIds = new Set(
-    (currentProject.channels ?? [])
-      .filter(isConfigEnabled)
-      .map((channel) => normalizeKey(channel.id))
-      .filter(Boolean)
-  )
-  const activeDevices = projectDevices.filter(
-    (device) => isConfigEnabled(device) && activeChannelIds.has(normalizeKey(device.channelId))
-  )
+function buildProjectScope(currentProject: ProjectConfig | null) {
+  const activeChannelIds = new Set((currentProject?.channels ?? []).filter(isConfigEnabled).map(c => normalizeKey(c.id)))
+  const activeDevices = (currentProject?.devices ?? []).filter(device =>
+    isConfigEnabled(device) && activeChannelIds.has(normalizeKey(device.channelId)))
   const deviceKeys = new Set(activeDevices.map((device) => deviceIdentityKey(device.channelId, device.id)))
-  const tagScope = buildProjectTagScope(activeDevices)
-  const devices = filterRuntimeDevices(source.devices ?? [], deviceKeys)
-  const tags = filterRuntimeTags(source.tags ?? [], tagScope.tagKeys)
-  const goodTagCount = tags.filter((tag) => normalizeKey(tag.quality) === 'good').length
-  const badTagCount = tags.filter((tag) => {
-    const quality = normalizeKey(tag.quality)
-    return !!quality && quality !== 'good' && quality !== 'unknown'
-  }).length
-  const recentErrors = (source.recentErrors ?? [])
-    .filter((error) => isRuntimeErrorInScope(error, deviceKeys, tagScope.tagKeys))
-    .filter((error) => isRuntimeErrorActive(error, devices, tags))
+  return { deviceCount: activeDevices.length, deviceKeys, ...buildProjectTagScope(activeDevices) }
+}
+
+function sanitizeStatus(source: GatewayStatus): GatewayStatus {
+  const { deviceCount, deviceKeys, tagKeys, groupCount, tagCount } = projectScope.value
+  const devices = visibleDevices.value
+  const { good: goodTagCount, bad: badTagCount } = qualityCounts
+  const recentErrors = (source.recentErrors ?? []).filter(error =>
+    isRuntimeErrorInScope(error, deviceKeys, tagKeys) && isRuntimeErrorActive(error))
 
   return {
     ...source,
-    deviceCount: activeDevices.length,
-    groupCount: tagScope.groupCount,
-    tagCount: tagScope.tagCount,
-    enabledDeviceCount: activeDevices.length,
+    deviceCount,
+    groupCount,
+    tagCount,
+    enabledDeviceCount: deviceCount,
     onlineDeviceCount: devices.filter((device) => device.isConnected).length,
     goodTagCount,
     badTagCount,
-    noDataTagCount: Math.max(0, tagScope.tagCount - goodTagCount - badTagCount),
+    noDataTagCount: Math.max(0, tagCount - goodTagCount - badTagCount),
     devices,
-    tags,
+    get tags() { return visibleTags.value },
     recentErrors
   }
 }
 
-function filterRuntimeDevices(devices: DeviceRuntimeStatus[], deviceKeys: Set<string>) {
-  if (deviceKeys.size === 0) return []
-  return devices.filter((device) => deviceKeys.has(deviceIdentityKey(device.channelId, device.deviceId)))
-}
-
 function buildProjectTagScope(devices: ProjectConfig['devices']) {
-  const tagKeys = new Set<string>()
+  const tagKeys = new Map<string, boolean>()
   let groupCount = 0
   let tagCount = 0
 
@@ -857,7 +768,7 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
     for (const tag of device.tags ?? []) {
       if (!isConfigEnabled(tag)) continue
       tagCount += 1
-      tagKeys.add(tagIdentityKey(device.channelId, device.id, '', tag.id))
+      tagKeys.set(tagIdentityKey(device.channelId, device.id, '', tag.id), normalizeKey(tag.accessMode) !== 'writeonly')
     }
 
     for (const group of device.groups ?? []) {
@@ -866,7 +777,7 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
       for (const tag of group.tags ?? []) {
         if (!isConfigEnabled(tag)) continue
         tagCount += 1
-        tagKeys.add(tagIdentityKey(device.channelId, device.id, group.id, tag.id))
+        tagKeys.set(tagIdentityKey(device.channelId, device.id, group.id, tag.id), normalizeKey(tag.accessMode) !== 'writeonly')
       }
     }
   }
@@ -874,12 +785,7 @@ function buildProjectTagScope(devices: ProjectConfig['devices']) {
   return { tagKeys, groupCount, tagCount }
 }
 
-function filterRuntimeTags(tags: TagValueSnapshot[], tagKeys: Set<string>) {
-  if (tagKeys.size === 0) return []
-  return tags.filter((tag) => tagKeys.has(tagIdentityKey(tag.channelId, tag.deviceId, tag.groupId, tag.tagId)))
-}
-
-function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceKeys: Set<string>, tagKeys: Set<string>) {
+function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceKeys: Set<string>, tagKeys: ReadonlyMap<string, boolean>) {
   const deviceId = normalizeKey(error.deviceId)
   if (!deviceId) return true
   if (!deviceKeys.has(deviceIdentityKey(error.channelId, error.deviceId))) return false
@@ -889,23 +795,17 @@ function isRuntimeErrorInScope(error: RuntimeErrorDetail, deviceKeys: Set<string
   return tagKeys.has(tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId))
 }
 
-function isRuntimeErrorActive(error: RuntimeErrorDetail, devices: DeviceRuntimeStatus[], tags: TagValueSnapshot[]) {
+function isRuntimeErrorActive(error: RuntimeErrorDetail) {
   const category = normalizeKey(error.category)
   if (category === 'deviceconnectionrecovered') return false
 
   if (category.startsWith('deviceconnection') && normalizeKey(error.deviceId)) {
-    const device = devices.find(
-      (item) => deviceIdentityKey(item.channelId, item.deviceId) === deviceIdentityKey(error.channelId, error.deviceId)
-    )
+    const device = runtimeDevices.value.get(deviceIdentityKey(error.channelId, error.deviceId))
     if (device) return device.enabled !== false && !device.isConnected
   }
 
   if (category === 'tagread' && normalizeKey(error.tagId)) {
-    const tag = tags.find(
-      (item) =>
-        tagIdentityKey(item.channelId, item.deviceId, item.groupId, item.tagId) ===
-        tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId)
-    )
+    const tag = runtimeTags.value.get(tagIdentityKey(error.channelId, error.deviceId, error.groupId, error.tagId))
     if (tag) return normalizeKey(tag.quality) === 'readerror'
   }
 
@@ -935,9 +835,9 @@ function isConfigEnabled(item: { enabled?: boolean } | null | undefined) {
 
 function syncAutoRefresh() {
   stopRuntimeEvents()
-  if (!authenticated.value || !autoRefresh.value || refreshController) return
-
-  startRuntimeEvents()
+  retries = 0
+  if (sync.value && authenticated.value && autoRefresh.value && !refreshController && !document.hidden)
+    void refresh({ silent: true, reconnectOnly: true })
 }
 
 function toggleSidebar() {

@@ -17,8 +17,13 @@
 //----------------------------------------------------------------*/
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Resilience;
@@ -41,6 +46,12 @@ namespace IPC.EdgeGateway
     
     public sealed partial class MqttGatewayService : IDisposable
     {
+        private static readonly JsonSerializerOptions ClassicJson = new()
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         private readonly object _syncRoot;
         private readonly IRuntimeService _runtime;
         private readonly MqttGatewayOptions _options;
@@ -51,7 +62,15 @@ namespace IPC.EdgeGateway
         private readonly MqttOutboxStore _outboxStore;
         private readonly TagValueChangedWorker _tagValueWorker;
         private readonly Dictionary<string, MqttPublishValueState> _lastPublishedValues;
-        private readonly Dictionary<string, string> _lastAlarmStates;
+        private readonly GatewayAlarmJournal? _alarmJournal;
+        private readonly object _alarmStatusLock = new();
+        private DateTime _nextAlarmStatusRefreshUtc;
+        private (long Count, DateTime? OldestUtc) _alarmPending;
+        private string _alarmStatsError = string.Empty;
+        private DateTime _retryAlarmStorageUtc;
+        private int _consecutiveAlarms;
+        private const int AlarmBurst = 4;
+        private const int NormalBurst = 8;
         private ManualResetEvent? _stopEvent;
         private Thread? _workerThread;
         private SimpleMqttClient? _currentClient;
@@ -80,7 +99,8 @@ namespace IPC.EdgeGateway
             MqttGatewayOptions options,
             LocalHistoryService history,
             Action<string, string>? remoteConfigurationHandler,
-            CircuitBreakerOptions circuitBreakerOptions)
+            CircuitBreakerOptions circuitBreakerOptions,
+            GatewayAlarmJournal? alarmJournal = null)
         {
             _runtime = runtime;
             _options = options == null ? new MqttGatewayOptions() : options.Clone();
@@ -90,7 +110,7 @@ namespace IPC.EdgeGateway
             _circuitBreaker = new CircuitBreaker("MQTT", circuitBreakerOptions ?? new GatewayResilienceOptions().Mqtt);
             _syncRoot = new object();
             _lastPublishedValues = new Dictionary<string, MqttPublishValueState>(StringComparer.Ordinal);
-            _lastAlarmStates = new Dictionary<string, string>(StringComparer.Ordinal);
+            _alarmJournal = alarmJournal;
             _outboxStore = new MqttOutboxStore(ResolveOutboxDirectory(_options.OutboxDirectory));
             _tagValueWorker = new TagValueChangedWorker(
                 "IPC MQTT Tag Worker",
@@ -127,11 +147,46 @@ namespace IPC.EdgeGateway
 
         public MqttGatewayStatus GetStatus()
         {
+            MqttGatewayStatus status;
             lock (_syncRoot)
             {
-                MqttGatewayStatus status = _status.Clone();
+                status = _status.Clone();
                 status.CircuitBreaker = _circuitBreaker.Snapshot();
-                return status;
+            }
+            if (_alarmJournal != null)
+            {
+                lock (_alarmStatusLock)
+                {
+                    status.AlarmPendingCount = _alarmPending.Count;
+                    status.AlarmOldestPendingAgeSeconds = _alarmPending.OldestUtc.HasValue
+                        ? Math.Max(0, (long)(DateTime.UtcNow - _alarmPending.OldestUtc.Value).TotalSeconds) : 0;
+                    if (!string.IsNullOrEmpty(_alarmStatsError) && string.IsNullOrEmpty(status.LastError))
+                        status.LastError = _alarmStatsError;
+                    if (DateTime.UtcNow >= _nextAlarmStatusRefreshUtc)
+                    {
+                        _nextAlarmStatusRefreshUtc = DateTime.MaxValue;
+                        ThreadPool.QueueUserWorkItem(_ => RefreshAlarmStatus());
+                    }
+                }
+            }
+            return status;
+        }
+
+        private void RefreshAlarmStatus()
+        {
+            try
+            {
+                var pending = _alarmJournal!.GetPendingStats();
+                lock (_alarmStatusLock) { _alarmPending = pending; _alarmStatsError = string.Empty; }
+            }
+            catch (Exception ex)
+            {
+                lock (_alarmStatusLock) _alarmStatsError = ex.Message;
+                IpcLogService.WriteError("MQTT alarm queue statistics unavailable.", ex);
+            }
+            finally
+            {
+                lock (_alarmStatusLock) _nextAlarmStatusRefreshUtc = DateTime.UtcNow.AddSeconds(2);
             }
         }
 
@@ -183,8 +238,13 @@ namespace IPC.EdgeGateway
                 if (_workerThread != null && _workerThread.IsAlive)
                     return;
 
-                _stopEvent = new ManualResetEvent(false);
-                _workerThread = new Thread(WorkerLoop);
+                var stopEvent = new ManualResetEvent(false);
+                _stopEvent = stopEvent;
+                _workerThread = new Thread(() =>
+                {
+                    try { WorkerLoop(stopEvent); }
+                    finally { stopEvent.Dispose(); }
+                });
                 _workerThread.IsBackground = true;
                 _workerThread.Name = "IPC MQTT Gateway";
                 _workerThread.Start();
@@ -212,23 +272,23 @@ namespace IPC.EdgeGateway
 
         public void Stop()
         {
+            lock (_syncRoot)
+                if (_workerThread == null) return;
             if (_runtime != null)
                 _runtime.TagValueChanged -= OnRuntimeTagValueChanged;
             _tagValueWorker.Stop(TimeSpan.FromSeconds(3));
 
-            SimpleMqttClient? connectedClient;
-            lock (_syncRoot)
-                connectedClient = _currentClient;
             TryQueueSparkplugDeath();
-            if (connectedClient != null && connectedClient.IsConnected)
-                FlushOutbox(connectedClient);
 
             ManualResetEvent? stopEvent;
             Thread? thread;
+            SimpleMqttClient? client;
             lock (_syncRoot)
             {
                 stopEvent = _stopEvent;
                 thread = _workerThread;
+                client = _currentClient;
+                stopEvent?.Set();
                 _stopEvent = null;
                 _workerThread = null;
                 _currentClient = null;
@@ -236,12 +296,11 @@ namespace IPC.EdgeGateway
                 _status.IsConnected = false;
             }
 
-            if (stopEvent != null)
-                stopEvent.Set();
-            if (thread != null && thread.IsAlive)
+            if (thread != null && thread != Thread.CurrentThread && !thread.Join(3000))
+            {
+                client?.Interrupt();
                 thread.Join(3000);
-            if (stopEvent != null)
-                stopEvent.Close();
+            }
         }
 
         public void Dispose()
@@ -252,14 +311,11 @@ namespace IPC.EdgeGateway
             Stop();
         }
 
-        private void WorkerLoop()
+        private void WorkerLoop(ManualResetEvent stopEvent)
         {
             while (true)
             {
-                ManualResetEvent? stopEvent;
-                lock (_syncRoot)
-                    stopEvent = _stopEvent;
-                if (stopEvent == null || stopEvent.WaitOne(0))
+                if (stopEvent.WaitOne(0))
                     break;
 
                 if (!_circuitBreaker.CanExecute())
@@ -284,7 +340,10 @@ namespace IPC.EdgeGateway
                     {
                         int birthSequence = BeginSparkplugSession();
                         MqttWillMessage? willMessage = BuildSparkplugNodeDeathWill(birthSequence);
-                        client.ConnectAndReadLoop(BuildSubscribeTopics(), stopEvent, OnClientIdle, willMessage);
+                        client.ConnectAndReadLoop(BuildSubscribeTopics(), stopEvent, OnClientIdle, willMessage, serviceQueueWhenBusy: true);
+                        // Only the socket owner may read protocol acknowledgements.
+                        if (IsSparkplugMode() && client.IsConnected)
+                            FlushOutbox(client, stopping: true);
                     }
                     catch (Exception ex)
                     {
@@ -315,7 +374,7 @@ namespace IPC.EdgeGateway
 
                 lock (_syncRoot)
                 {
-                    if (_stopEvent == null)
+                    if (stopEvent.WaitOne(0))
                         break;
                     _status.ReconnectCount++;
                 }
@@ -505,8 +564,6 @@ namespace IPC.EdgeGateway
             if (snapshot == null)
                 return;
 
-            TryQueueAlarmPublish(snapshot);
-
             if (!_options.PublishEnabled)
                 return;
             if (_options.PublishSelectedTagsOnly && !snapshot.MqttPublishEnabled)
@@ -530,9 +587,12 @@ namespace IPC.EdgeGateway
                 }
                 else
                 {
-                    string payload = BuildPublishPayload(snapshot);
-                    topic = BuildPublishTopic(snapshot);
-                    _outboxStore.Enqueue(topic, payload, _options.PublishQos);
+                    string payload = BuildPointPayload(_options, snapshot);
+                    topic = BuildPublishTopic(_options, snapshot);
+                    if (_options.CoalescePendingTelemetry && !string.IsNullOrEmpty(snapshot.TagId))
+                        _outboxStore.EnqueueLatestTelemetry(BuildPublishStateKey(snapshot), topic, payload, _options.PublishQos);
+                    else
+                        _outboxStore.Enqueue(topic, payload, _options.PublishQos);
                     RecordPublish("value", topic, _options.PublishQos, payload);
                 }
                 MarkPublishQueued(stateKey, stateSignature, publishUtc);
@@ -561,127 +621,6 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private void TryQueueAlarmPublish(TagValueSnapshot snapshot)
-        {
-            MqttAlarmEvaluation evaluation;
-            if (!TryEvaluateAlarm(snapshot, out evaluation))
-                return;
-
-            string stateKey = BuildPublishStateKey(snapshot);
-            string stateSignature = evaluation.State + "\u001F" + evaluation.Value.ToString("R", CultureInfo.InvariantCulture);
-            lock (_syncRoot)
-            {
-                string? lastState;
-                if (_lastAlarmStates.TryGetValue(stateKey, out lastState) &&
-                    string.Equals(lastState, stateSignature, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                _lastAlarmStates[stateKey] = stateSignature;
-            }
-
-            if (evaluation.IsNormal)
-                return;
-
-            try
-            {
-                string topic = BuildAlarmTopic(snapshot, evaluation);
-                string payload = BuildAlarmPayload(snapshot, evaluation);
-                _outboxStore.Enqueue(topic, payload, _options.PublishQos);
-                RecordAlarm(snapshot, evaluation, topic);
-                RecordPublish(evaluation.EventType, topic, _options.PublishQos, payload);
-                MqttOutboxCleanupResult cleanup = CleanupOutbox();
-                UpdateStatus(delegate(MqttGatewayStatus status)
-                {
-                    status.OutboxEnqueuedCount++;
-                    ApplyOutboxCleanupResult(status, cleanup);
-                    UpdateOutboxStatus(status);
-                    status.LastPublishTime = DateTime.Now;
-                    status.LastPublishResult = "Queued: " + topic;
-                    status.LastError = string.Empty;
-                });
-            }
-            catch (Exception ex)
-            {
-                _circuitBreaker.RecordFailure(ex.Message);
-                UpdateStatus(delegate(MqttGatewayStatus status)
-                {
-                    status.FailedPublishes++;
-                    status.LastPublishResult = "Failed: " + ex.Message;
-                    status.LastError = ex.Message;
-                });
-            }
-        }
-
-        private static bool TryEvaluateAlarm(TagValueSnapshot snapshot, out MqttAlarmEvaluation evaluation)
-        {
-            evaluation = MqttAlarmEvaluation.Normal();
-            if (snapshot == null || snapshot.Quality != TagQuality.Good)
-                return false;
-
-            TagAlarmConfig alarm = snapshot.Alarm;
-            if (alarm == null || !alarm.Enabled)
-                return false;
-
-            double value;
-            if (!TryGetNumericValue(snapshot, out value))
-                return false;
-
-            if (alarm.LowLimit > alarm.HighLimit)
-                return false;
-
-            if (value > alarm.HighLimit)
-            {
-                evaluation = MqttAlarmEvaluation.Active("HighAlarm", "alarm", "High", value, alarm.HighLimit, alarm.HighAlarmMessage, "Value is above high alarm limit.");
-                return true;
-            }
-
-            if (value < alarm.LowLimit)
-            {
-                evaluation = MqttAlarmEvaluation.Active("LowAlarm", "alarm", "Low", value, alarm.LowLimit, alarm.LowAlarmMessage, "Value is below low alarm limit.");
-                return true;
-            }
-
-            double deviation = Math.Max(0D, alarm.WarningDeviation);
-            if (deviation > 0D && value >= alarm.HighLimit - deviation)
-            {
-                evaluation = MqttAlarmEvaluation.Active("HighWarning", "warning", "High", value, alarm.HighLimit - deviation, alarm.HighWarningMessage, "Value reached high warning deviation.");
-                return true;
-            }
-
-            if (deviation > 0D && value <= alarm.LowLimit + deviation)
-            {
-                evaluation = MqttAlarmEvaluation.Active("LowWarning", "warning", "Low", value, alarm.LowLimit + deviation, alarm.LowWarningMessage, "Value reached low warning deviation.");
-                return true;
-            }
-
-            evaluation = MqttAlarmEvaluation.Normal(value);
-            return true;
-        }
-
-        private static bool TryGetNumericValue(TagValueSnapshot snapshot, out double value)
-        {
-            value = 0D;
-            if (snapshot == null)
-                return false;
-
-            object current = snapshot.Value;
-            if (current is byte || current is sbyte || current is short || current is ushort ||
-                current is int || current is uint || current is long || current is ulong ||
-                current is float || current is double || current is decimal)
-            {
-                value = Convert.ToDouble(current, CultureInfo.InvariantCulture);
-                return true;
-            }
-
-            string text = snapshot.ValueText;
-            if (string.IsNullOrWhiteSpace(text) && current != null)
-                text = Convert.ToString(current, CultureInfo.InvariantCulture) ?? string.Empty;
-
-            return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
-                   double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
-        }
 
         private bool ShouldQueuePublish(TagValueSnapshot snapshot, DateTime publishUtc, out string stateKey, out string stateSignature)
         {
@@ -693,6 +632,10 @@ namespace IPC.EdgeGateway
 
             stateKey = BuildPublishStateKey(snapshot);
             stateSignature = BuildPublishStateSignature(snapshot);
+            if (!IsSparkplugMode())
+                stateSignature += "\u001F" + snapshot.ChannelName + "\u001F" + snapshot.DeviceName + "\u001F" +
+                    snapshot.GroupName + "\u001F" + snapshot.TagName + "\u001F" + snapshot.CleaningApplied + "\u001F" +
+                    snapshot.CleaningAction + "\u001F" + snapshot.CleaningMessage;
 
             lock (_syncRoot)
             {
@@ -722,82 +665,107 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private void FlushOutbox(SimpleMqttClient client)
+        private void FlushOutbox(SimpleMqttClient client, bool stopping = false)
         {
-            if (client == null || !client.IsConnected)
+            if (!client.IsConnected || DateTime.UtcNow < _nextFlushUtc)
                 return;
 
-            if (DateTime.UtcNow < _nextFlushUtc)
-                return;
-
-            while (client.IsConnected)
+            var cleanup = CleanupOutbox();
+            UpdateStatus(status =>
             {
-                MqttOutboxCleanupResult cleanup = CleanupOutbox();
-                int batchSize = MqttGatewayOptions.ClampPublishFlushBatchSize(_options.PublishFlushBatchSize);
-                IList<MqttOutboxEntry> entries = _outboxStore.ListPending(batchSize);
-                UpdateStatus(delegate(MqttGatewayStatus status)
+                ApplyOutboxCleanupResult(status, cleanup);
+                UpdateOutboxStatus(status);
+            });
+
+            // Keep the session responsive to pings and incoming packets while
+            // retaining the alarm/ordinary fairness counter across flushes.
+            int batchSize = MqttGatewayOptions.ClampPublishFlushBatchSize(_options.PublishFlushBatchSize);
+            var turn = Stopwatch.StartNew();
+            while (client.IsConnected && (stopping || IsRunning))
+            {
+                int alarmQuota = AlarmBurst - _consecutiveAlarms;
+                if (alarmQuota > 0 && _alarmJournal != null && DateTime.UtcNow >= _retryAlarmStorageUtc)
                 {
-                    ApplyOutboxCleanupResult(status, cleanup);
-                    UpdateOutboxStatus(status);
-                });
-
-                if (entries.Count == 0)
-                    return;
-
-                bool stopFlush = false;
-                for (int i = 0; i < entries.Count; i++)
-                {
-                    MqttOutboxEntry entry = entries[i];
-                    MqttPublishResult result = client.Publish(
-                        entry.Message.Topic,
-                        entry.Message.GetPayloadBytes(),
-                        entry.Message.Qos,
-                        MqttGatewayOptions.ClampAckTimeoutMilliseconds(_options.PublishAckTimeoutMilliseconds));
-
-                    if (result.Success)
+                    IReadOnlyList<GatewayAlarmRecord> alarms;
+                    try
                     {
-                        _circuitBreaker.RecordSuccess();
-                        _outboxStore.Delete(entry);
-                        UpdateStatus(delegate(MqttGatewayStatus status)
-                        {
-                            status.PublishedCount++;
-                            UpdateOutboxStatus(status);
-                            status.LastPublishTime = DateTime.Now;
-                            status.LastPublishResult = "OK: " + entry.Message.Topic;
-                            status.LastError = string.Empty;
-                            status.PublishRetryBackoffSeconds = 0;
-                            status.PublishConsecutiveFailureCount = 0;
-                            status.NextPublishRetryTime = DateTime.MinValue;
-                        });
-                        _flushFailureCount = 0;
-                        _nextFlushUtc = DateTime.MinValue;
+                        alarms = _alarmJournal.ReadPending(Math.Min(alarmQuota, batchSize));
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        _circuitBreaker.RecordFailure(result.ErrorMessage);
-                        int backoffSeconds = RegisterFlushFailure();
-                        UpdateStatus(delegate(MqttGatewayStatus status)
-                        {
-                            status.FailedPublishes++;
-                            UpdateOutboxStatus(status);
-                            status.PublishRetryBackoffSeconds = backoffSeconds;
-                            status.PublishConsecutiveFailureCount = _flushFailureCount;
-                            status.LastPublishFailureTime = DateTime.Now;
-                            status.NextPublishRetryTime = ToLocalTime(_nextFlushUtc);
-                            status.LastPublishResult = "Failed: " + result.ErrorMessage;
-                            status.LastError = result.ErrorMessage;
-                        });
-                        stopFlush = true;
-                        break;
+                        // The ordinary outbox is independent of the alarm database.
+                        _retryAlarmStorageUtc = DateTime.UtcNow.AddSeconds(5);
+                        IpcLogService.WriteError("MQTT alarm queue read failed.", ex);
+                        alarms = Array.Empty<GatewayAlarmRecord>();
                     }
+                    foreach (var alarm in alarms)
+                    {
+                        if (!PublishAndConfirm(client, alarm.Topic, Encoding.UTF8.GetBytes(alarm.Payload),
+                            Math.Max(1, alarm.Qos), () => _alarmJournal.ConfirmSent(alarm.EventId)))
+                            return;
+                        _consecutiveAlarms++;
+                        if (!stopping && (turn.ElapsedMilliseconds >= 250 || !IsRunning)) return;
+                    }
+                    if (alarms.Count == batchSize && _consecutiveAlarms < AlarmBurst) continue;
                 }
 
-                if (stopFlush)
-                    return;
-
-                if (entries.Count < batchSize)
-                    return;
+                var ordinary = _outboxStore.ListPending(_consecutiveAlarms > 0 ? 1 : Math.Min(NormalBurst, batchSize));
+                if (ordinary.Count == 0)
+                {
+                    if (_consecutiveAlarms == 0) return;
+                    _consecutiveAlarms = 0;
+                    continue;
+                }
+                foreach (var candidate in ordinary)
+                {
+                    var entry = _outboxStore.ClaimForSend(candidate);
+                    if (entry == null) continue;
+                    if (!PublishAndConfirm(client, entry.Message.Topic, entry.Message.GetPayloadBytes(),
+                        entry.Message.Qos, () => _outboxStore.Delete(entry)))
+                        return;
+                    _consecutiveAlarms = 0;
+                    if (!stopping && (turn.ElapsedMilliseconds >= 250 || !IsRunning)) return;
+                }
             }
+        }
+
+        private bool PublishAndConfirm(SimpleMqttClient client, string topic, byte[] payload, int qos, Action confirm)
+        {
+            var result = client.Publish(topic, payload, qos,
+                MqttGatewayOptions.ClampAckTimeoutMilliseconds(_options.PublishAckTimeoutMilliseconds));
+            if (result.Success)
+            {
+                confirm();
+                _circuitBreaker.RecordSuccess();
+                _flushFailureCount = 0;
+                _nextFlushUtc = DateTime.MinValue;
+                UpdateStatus(status =>
+                {
+                    status.PublishedCount++;
+                    UpdateOutboxStatus(status);
+                    status.LastPublishTime = DateTime.Now;
+                    status.LastPublishResult = "OK: " + topic;
+                    status.LastError = string.Empty;
+                    status.PublishRetryBackoffSeconds = 0;
+                    status.PublishConsecutiveFailureCount = 0;
+                    status.NextPublishRetryTime = DateTime.MinValue;
+                });
+                return true;
+            }
+
+            _circuitBreaker.RecordFailure(result.ErrorMessage);
+            int backoffSeconds = RegisterFlushFailure();
+            UpdateStatus(status =>
+            {
+                status.FailedPublishes++;
+                status.PublishRetryBackoffSeconds = backoffSeconds;
+                status.PublishConsecutiveFailureCount = _flushFailureCount;
+                status.LastPublishFailureTime = DateTime.Now;
+                status.NextPublishRetryTime = ToLocalTime(_nextFlushUtc);
+                status.LastPublishResult = "Failed: " + result.ErrorMessage;
+                status.LastError = result.ErrorMessage;
+            });
+            return false;
         }
 
         private void OnClientIdle(SimpleMqttClient client)
@@ -832,7 +800,7 @@ namespace IPC.EdgeGateway
                 else
                 {
                     topic = ResolveTopicTemplate(string.IsNullOrWhiteSpace(_options.HeartbeatTopic) ? "gateway/{gatewayId}/heartbeat" : _options.HeartbeatTopic, string.Empty);
-                    string payload = BuildHeartbeatPayload(nowUtc);
+                    string payload = BuildHeartbeatPayload(nowUtc, topic);
                     _outboxStore.Enqueue(topic, payload, MqttGatewayOptions.ClampQos(_options.HeartbeatQos));
                     RecordPublish("heartbeat", topic, MqttGatewayOptions.ClampQos(_options.HeartbeatQos), payload);
                 }
@@ -867,7 +835,7 @@ namespace IPC.EdgeGateway
             if (IsSparkplugMode())
                 return;
 
-            string topic = ResolveTopicTemplate(string.IsNullOrWhiteSpace(_options.StatusTopic) ? "gateway/{gatewayId}/status" : _options.StatusTopic, string.Empty);
+            string topic = ResolveStatusTopic();
             string heartbeatTopic = ResolveTopicTemplate(string.IsNullOrWhiteSpace(_options.HeartbeatTopic) ? "gateway/{gatewayId}/heartbeat" : _options.HeartbeatTopic, string.Empty);
             if (string.Equals(topic, heartbeatTopic, StringComparison.OrdinalIgnoreCase))
                 return;
@@ -1120,18 +1088,18 @@ namespace IPC.EdgeGateway
             return value == null ? string.Empty : value;
         }
 
-        private string BuildPublishTopic(TagValueSnapshot snapshot)
+        private static string BuildPublishTopic(MqttGatewayOptions options, TagValueSnapshot snapshot)
         {
-            string template = string.IsNullOrWhiteSpace(_options.PublishTopicTemplate)
+            string template = string.IsNullOrWhiteSpace(options.PublishTopicTemplate)
                 ? "ipc/data/{channel}/{device}/{group}/{tag}"
-                : _options.PublishTopicTemplate.Trim();
+                : options.PublishTopicTemplate.Trim();
 
             string groupName = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
             string pointCode = GetPointCode(snapshot);
             string topic = template
-                .Replace("{gatewayId}", SanitizeTopicSegment(_options.GatewayId))
-                .Replace("{gatewayName}", SanitizeTopicSegment(_options.GatewayName))
-                .Replace("{site}", SanitizeTopicSegment(_options.SiteName))
+                .Replace("{gatewayId}", SanitizeTopicSegment(options.GatewayId))
+                .Replace("{gatewayName}", SanitizeTopicSegment(options.GatewayName))
+                .Replace("{site}", SanitizeTopicSegment(options.SiteName))
                 .Replace("{channelId}", SanitizeTopicSegment(snapshot.ChannelId))
                 .Replace("{channel}", SanitizeTopicSegment(snapshot.ChannelName))
                 .Replace("{deviceId}", SanitizeTopicSegment(snapshot.DeviceId))
@@ -1149,67 +1117,96 @@ namespace IPC.EdgeGateway
             return topic.Trim('/');
         }
 
-        private string BuildPublishPayload(TagValueSnapshot snapshot)
+        private static string BuildPointPayload(MqttGatewayOptions options, TagValueSnapshot snapshot, AlarmPayload? alarm = null)
         {
-            return "{" +
-                   "\"messageType\":\"telemetry\"," +
-                   "\"protocolVersion\":\"" + JsonEscape(_options.CloudProtocolVersion) + "\"," +
-                   "\"gatewayId\":\"" + JsonEscape(_options.GatewayId) + "\"," +
-                   "\"gatewayName\":\"" + JsonEscape(_options.GatewayName) + "\"," +
-                   "\"siteName\":\"" + JsonEscape(_options.SiteName) + "\"," +
-                   "\"configVersion\":" + MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion).ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
-                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
-                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
-                   "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
-                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
-                   "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
-                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
-                   "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
-                   "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
-                   "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
-                   "\"businessType\":\"" + JsonEscape(snapshot.BusinessType) + "\"," +
-                   "\"source\":\"" + JsonEscape(snapshot.Source) + "\"," +
-                   "\"precision\":" + snapshot.Precision.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"valueText\":\"" + JsonEscape(snapshot.ValueText) + "\"," +
-                   "\"rawValueText\":\"" + JsonEscape(snapshot.RawValueText) + "\"," +
-                   "\"dataType\":\"" + JsonEscape(snapshot.DataType) + "\"," +
-                   "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
-                   "\"cleaningApplied\":" + (snapshot.CleaningApplied ? "true" : "false") + "," +
-                   "\"cleaningAction\":\"" + JsonEscape(snapshot.CleaningAction) + "\"," +
-                   "\"cleaningMessage\":\"" + JsonEscape(snapshot.CleaningMessage) + "\"," +
-                   "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
-                   "\"timestamp\":\"" + JsonEscape(snapshot.Timestamp.ToString("o")) + "\"," +
-                   "\"errorMessage\":\"" + JsonEscape(snapshot.ErrorMessage) + "\"" +
-                   "}";
+            // A missing rawValueText means that the raw and displayed text are identical.
+            string valueText = snapshot.ValueText ?? string.Empty;
+            string rawValueText = snapshot.RawValueText ?? string.Empty;
+            return JsonSerializer.Serialize(new
+            {
+                messageType = alarm?.EventType ?? "telemetry",
+                protocolVersion = options.CloudProtocolVersion,
+                gatewayId = options.GatewayId,
+                channelId = snapshot.ChannelId,
+                channel = snapshot.ChannelName,
+                deviceId = snapshot.DeviceId,
+                device = snapshot.DeviceName,
+                groupId = snapshot.GroupId ?? string.Empty,
+                group = snapshot.GroupName ?? string.Empty,
+                tagId = snapshot.TagId,
+                tag = snapshot.TagName,
+                pointCode = GetPointCode(snapshot),
+                dataType = snapshot.DataType,
+                valueText,
+                rawValueText = rawValueText == valueText ? null : rawValueText,
+                unit = OptionalText(snapshot.Unit),
+                quality = snapshot.Quality.ToString(),
+                timestamp = snapshot.Timestamp.ToString("o", CultureInfo.InvariantCulture),
+                errorMessage = OptionalText(snapshot.ErrorMessage),
+                assetPath = OptionalText(snapshot.AssetPath),
+                businessType = OptionalText(snapshot.BusinessType),
+                source = OptionalText(snapshot.Source),
+                precision = snapshot.Precision >= 0 ? (int?)snapshot.Precision : null,
+                cleaningApplied = snapshot.CleaningApplied ? (bool?)true : null,
+                cleaningAction = OptionalText(snapshot.CleaningAction),
+                cleaningMessage = OptionalText(snapshot.CleaningMessage),
+                eventId = alarm?.EventId,
+                transition = alarm?.Transition,
+                previousState = alarm?.PreviousState,
+                state = alarm?.State,
+                direction = alarm?.Direction,
+                message = alarm?.Message,
+                value = alarm?.Value,
+                threshold = alarm?.Threshold
+            }, ClassicJson);
         }
 
-        private string BuildHeartbeatPayload(DateTime timestampUtc)
+        private static string? OptionalText(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
+
+        private string ResolveStatusTopic() => ResolveTopicTemplate(
+            string.IsNullOrWhiteSpace(_options.StatusTopic) ? "gateway/{gatewayId}/status" : _options.StatusTopic, string.Empty);
+
+        private Dictionary<string, object> BuildMqttMetrics(MqttGatewayStatus status) => new()
         {
-            MqttGatewayStatus status = GetStatus();
-            return "{" +
-                   "\"messageType\":\"heartbeat\"," +
-                   "\"protocolVersion\":\"" + JsonEscape(_options.CloudProtocolVersion) + "\"," +
-                   "\"gatewayId\":\"" + JsonEscape(_options.GatewayId) + "\"," +
-                   "\"gatewayName\":\"" + JsonEscape(_options.GatewayName) + "\"," +
-                   "\"siteName\":\"" + JsonEscape(_options.SiteName) + "\"," +
-                   "\"clientId\":\"" + JsonEscape(_options.ClientId) + "\"," +
-                   "\"configVersion\":" + MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion).ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"broker\":\"" + JsonEscape(_options.BrokerAddress) + "\"," +
-                   "\"connected\":" + (status.IsConnected ? "true" : "false") + "," +
-                   "\"outboxPending\":" + status.OutboxPendingCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxOldestPendingAgeSeconds\":" + status.OutboxOldestPendingAgeSeconds.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxInvalidMessageCount\":" + status.OutboxInvalidMessageCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxQuarantinedMessageCount\":" + status.OutboxQuarantinedMessageCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxQuarantineCount\":" + status.OutboxQuarantineCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxQuarantineBytes\":" + status.OutboxQuarantineBytes.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"outboxQuarantineExpiredDeletedCount\":" + status.OutboxQuarantineExpiredDeletedCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"publishedCount\":" + status.PublishedCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"failedPublishes\":" + status.FailedPublishes.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"publishConsecutiveFailureCount\":" + status.PublishConsecutiveFailureCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"publishRetryBackoffSeconds\":" + status.PublishRetryBackoffSeconds.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"timestamp\":\"" + JsonEscape(timestampUtc.ToString("o")) + "\"" +
-                   "}";
+            ["broker"] = _options.BrokerAddress,
+            ["connected"] = status.IsConnected,
+            ["outboxPending"] = status.OutboxPendingCount,
+            ["outboxOldestPendingAgeSeconds"] = status.OutboxOldestPendingAgeSeconds,
+            ["alarmPendingCount"] = status.AlarmPendingCount,
+            ["alarmOldestPendingAgeSeconds"] = status.AlarmOldestPendingAgeSeconds,
+            ["outboxInvalidMessageCount"] = status.OutboxInvalidMessageCount,
+            ["outboxQuarantinedMessageCount"] = status.OutboxQuarantinedMessageCount,
+            ["outboxQuarantineCount"] = status.OutboxQuarantineCount,
+            ["outboxQuarantineBytes"] = status.OutboxQuarantineBytes,
+            ["outboxQuarantineExpiredDeletedCount"] = status.OutboxQuarantineExpiredDeletedCount,
+            ["publishedCount"] = status.PublishedCount,
+            ["failedPublishes"] = status.FailedPublishes,
+            ["publishConsecutiveFailureCount"] = status.PublishConsecutiveFailureCount,
+            ["publishRetryBackoffSeconds"] = status.PublishRetryBackoffSeconds
+        };
+
+        private string BuildHeartbeatPayload(DateTime timestampUtc, string heartbeatTopic)
+        {
+            Dictionary<string, object> payload;
+            if (string.Equals(heartbeatTopic, ResolveStatusTopic(), StringComparison.OrdinalIgnoreCase))
+            {
+                // A shared topic only receives heartbeats. Keep its original top-level metrics.
+                payload = BuildMqttMetrics(GetStatus());
+                payload["gatewayName"] = _options.GatewayName;
+                payload["siteName"] = _options.SiteName;
+                payload["configVersion"] = MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion);
+            }
+            else
+            {
+                lock (_syncRoot)
+                    payload = new() { ["connected"] = _status.IsConnected };
+            }
+            payload["messageType"] = "heartbeat";
+            payload["protocolVersion"] = _options.CloudProtocolVersion;
+            payload["gatewayId"] = _options.GatewayId;
+            payload["clientId"] = _options.ClientId;
+            payload["timestamp"] = timestampUtc.ToString("o", CultureInfo.InvariantCulture);
+            return JsonSerializer.Serialize(payload, ClassicJson);
         }
 
         private string BuildGatewayStatusPayload(DateTime timestampUtc)
@@ -1226,27 +1223,18 @@ namespace IPC.EdgeGateway
                    "\"siteName\":\"" + JsonEscape(_options.SiteName) + "\"," +
                    "\"configVersion\":" + MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion).ToString(CultureInfo.InvariantCulture) + "," +
                    "\"timestamp\":\"" + JsonEscape(timestampUtc.ToString("o")) + "\"," +
-                   "\"mqtt\":{\"connected\":" + (status.IsConnected ? "true" : "false") +
-                   ",\"outboxPending\":" + status.OutboxPendingCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxOldestPendingAgeSeconds\":" + status.OutboxOldestPendingAgeSeconds.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxInvalidMessageCount\":" + status.OutboxInvalidMessageCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxQuarantinedMessageCount\":" + status.OutboxQuarantinedMessageCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxQuarantineCount\":" + status.OutboxQuarantineCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxQuarantineBytes\":" + status.OutboxQuarantineBytes.ToString(CultureInfo.InvariantCulture) +
-                   ",\"outboxQuarantineExpiredDeletedCount\":" + status.OutboxQuarantineExpiredDeletedCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"publishedCount\":" + status.PublishedCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"failedPublishes\":" + status.FailedPublishes.ToString(CultureInfo.InvariantCulture) +
-                   ",\"publishConsecutiveFailureCount\":" + status.PublishConsecutiveFailureCount.ToString(CultureInfo.InvariantCulture) +
-                   ",\"publishRetryBackoffSeconds\":" + status.PublishRetryBackoffSeconds.ToString(CultureInfo.InvariantCulture) + "}," +
+                   "\"mqtt\":" + JsonSerializer.Serialize(BuildMqttMetrics(status), ClassicJson) + "," +
                    "\"channels\":" + BuildChannelStatusJson(devices) +
                    "}";
         }
 
-        private string BuildAlarmTopic(TagValueSnapshot snapshot, MqttAlarmEvaluation evaluation)
+        internal static (string Topic, string Payload) BuildAlarmMessage(MqttGatewayOptions options,
+            TagValueSnapshot snapshot, string eventId, string eventType, string state, string direction,
+            double value, double threshold, string message, string transition, string previousState = "")
         {
-            string topic = BuildPublishTopic(snapshot);
-            string suffix = evaluation.EventType == "warning" ? "warning" : "alarm";
-            return (topic.Trim('/') + "/" + suffix).Trim('/');
+            string suffix = eventType == "warning" ? "warning" : "alarm";
+            var alarm = new AlarmPayload(eventId, eventType, state, direction, value, threshold, message, transition, previousState);
+            return (BuildPublishTopic(options, snapshot) + "/" + suffix, BuildPointPayload(options, snapshot, alarm));
         }
 
         private static string GetPointCode(TagValueSnapshot snapshot)
@@ -1258,51 +1246,6 @@ namespace IPC.EdgeGateway
 
             string group = string.IsNullOrWhiteSpace(snapshot.GroupName) ? "_" : snapshot.GroupName.Trim();
             return (NormalizeStatePart(snapshot.ChannelName).Trim() + "." + NormalizeStatePart(snapshot.DeviceName).Trim() + "." + group + "." + NormalizeStatePart(snapshot.TagName).Trim()).Trim('.');
-        }
-
-        private string BuildAlarmPayload(TagValueSnapshot snapshot, MqttAlarmEvaluation evaluation)
-        {
-            string valueText = evaluation.Value.ToString("R", CultureInfo.InvariantCulture);
-            string thresholdText = evaluation.Threshold.ToString("R", CultureInfo.InvariantCulture);
-            string valueField = evaluation.EventType == "warning" ? "warningValue" : "alarmValue";
-
-            return "{" +
-                   "\"messageType\":\"" + JsonEscape(evaluation.EventType) + "\"," +
-                   "\"protocolVersion\":\"" + JsonEscape(_options.CloudProtocolVersion) + "\"," +
-                   "\"gatewayId\":\"" + JsonEscape(_options.GatewayId) + "\"," +
-                   "\"gatewayName\":\"" + JsonEscape(_options.GatewayName) + "\"," +
-                   "\"siteName\":\"" + JsonEscape(_options.SiteName) + "\"," +
-                   "\"configVersion\":" + MqttGatewayOptions.ClampConfigVersion(_options.ConfigVersion).ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"eventType\":\"" + JsonEscape(evaluation.EventType) + "\"," +
-                   "\"state\":\"" + JsonEscape(evaluation.State) + "\"," +
-                   "\"direction\":\"" + JsonEscape(evaluation.Direction) + "\"," +
-                   "\"message\":\"" + JsonEscape(evaluation.Message) + "\"," +
-                   "\"" + valueField + "\":" + valueText + "," +
-                   "\"value\":" + valueText + "," +
-                   "\"threshold\":" + thresholdText + "," +
-                   "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
-                   "\"channel\":\"" + JsonEscape(snapshot.ChannelName) + "\"," +
-                   "\"deviceId\":\"" + JsonEscape(snapshot.DeviceId) + "\"," +
-                   "\"device\":\"" + JsonEscape(snapshot.DeviceName) + "\"," +
-                   "\"groupId\":\"" + JsonEscape(snapshot.GroupId) + "\"," +
-                   "\"group\":\"" + JsonEscape(snapshot.GroupName) + "\"," +
-                   "\"tagId\":\"" + JsonEscape(snapshot.TagId) + "\"," +
-                   "\"tag\":\"" + JsonEscape(snapshot.TagName) + "\"," +
-                   "\"pointCode\":\"" + JsonEscape(GetPointCode(snapshot)) + "\"," +
-                   "\"assetPath\":\"" + JsonEscape(snapshot.AssetPath) + "\"," +
-                   "\"businessType\":\"" + JsonEscape(snapshot.BusinessType) + "\"," +
-                   "\"source\":\"" + JsonEscape(snapshot.Source) + "\"," +
-                   "\"precision\":" + snapshot.Precision.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"valueText\":\"" + JsonEscape(snapshot.ValueText) + "\"," +
-                   "\"rawValueText\":\"" + JsonEscape(snapshot.RawValueText) + "\"," +
-                   "\"dataType\":\"" + JsonEscape(snapshot.DataType) + "\"," +
-                   "\"quality\":\"" + JsonEscape(snapshot.Quality.ToString()) + "\"," +
-                   "\"cleaningApplied\":" + (snapshot.CleaningApplied ? "true" : "false") + "," +
-                   "\"cleaningAction\":\"" + JsonEscape(snapshot.CleaningAction) + "\"," +
-                   "\"cleaningMessage\":\"" + JsonEscape(snapshot.CleaningMessage) + "\"," +
-                   "\"unit\":\"" + JsonEscape(snapshot.Unit) + "\"," +
-                   "\"timestamp\":\"" + JsonEscape(snapshot.Timestamp.ToString("o")) + "\"" +
-                   "}";
         }
 
         private static string SanitizeTopicSegment(string value)
@@ -1993,18 +1936,6 @@ namespace IPC.EdgeGateway
             RecordPublish(source, topic, qos, preview);
         }
 
-        private void RecordAlarm(TagValueSnapshot snapshot, MqttAlarmEvaluation evaluation, string topic)
-        {
-            try
-            {
-                if (_history != null && evaluation != null)
-                    _history.RecordAlarm(snapshot, evaluation.EventType, evaluation.State, evaluation.Message, evaluation.Value, evaluation.Threshold, topic);
-            }
-            catch (Exception ex)
-            {
-                IpcLogService.WriteError("Local history alarm record failed.", ex);
-            }
-        }
 
         private void UpdateOutboxStatus(MqttGatewayStatus status)
         {
@@ -2210,56 +2141,7 @@ namespace IPC.EdgeGateway
         
         
         
-        private sealed class MqttAlarmEvaluation
-        {
-            private MqttAlarmEvaluation()
-            {
-                State = string.Empty;
-                EventType = string.Empty;
-                Direction = string.Empty;
-                Message = string.Empty;
-            }
-
-            public string State { get; private set; }
-            public string EventType { get; private set; }
-            public string Direction { get; private set; }
-            public double Value { get; private set; }
-            public double Threshold { get; private set; }
-            public string Message { get; private set; }
-            public bool IsNormal { get; private set; }
-
-            public static MqttAlarmEvaluation Normal()
-            {
-                return Normal(0D);
-            }
-
-            public static MqttAlarmEvaluation Normal(double value)
-            {
-                return new MqttAlarmEvaluation
-                {
-                    State = "Normal",
-                    EventType = "normal",
-                    Direction = string.Empty,
-                    Value = value,
-                    Threshold = 0D,
-                    Message = string.Empty,
-                    IsNormal = true
-                };
-            }
-
-            public static MqttAlarmEvaluation Active(string state, string eventType, string direction, double value, double threshold, string message, string fallbackMessage)
-            {
-                return new MqttAlarmEvaluation
-                {
-                    State = state ?? string.Empty,
-                    EventType = eventType ?? string.Empty,
-                    Direction = direction ?? string.Empty,
-                    Value = value,
-                    Threshold = threshold,
-                    Message = string.IsNullOrWhiteSpace(message) ? fallbackMessage : message,
-                    IsNormal = false
-                };
-            }
-        }
+        private sealed record AlarmPayload(string EventId, string EventType, string State, string Direction,
+            double Value, double Threshold, string Message, string Transition, string PreviousState);
     }
 }

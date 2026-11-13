@@ -33,8 +33,13 @@ namespace IPC.Plc.Communication.Metering
                     TAddress address = context.ParseAddress(request.Address);
                     string key = context.GetAddressKey(address);
                     RawReadState state = GetOrReadRawData(rawReads, key, address, context);
-                    PlcReadFailureScope scope = GetMeterFailureScope(state, key, countedTimeoutKeys, ref consecutiveMeterTimeouts);
+                    PlcReadFailureScope scope = GetMeterFailureScope(state, context.GetMeterKey(address), countedTimeoutKeys, ref consecutiveMeterTimeouts);
                     ordered[i] = BuildResult(request, address, state, context, scope);
+                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
+                    {
+                        PlcBatchReadResult.DeferPending(requests, ordered, state.ErrorMessage);
+                        break;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -68,15 +73,24 @@ namespace IPC.Plc.Communication.Metering
 
             for (int i = 0; i < requests.Count; i++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    PlcBatchReadResult.DeferPending(requests, ordered, "Meter scan cancelled.");
+                    break;
+                }
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
                 try
                 {
                     TAddress address = context.ParseAddress(request.Address);
                     string key = context.GetAddressKey(address);
                     RawReadState state = await GetOrReadRawDataAsync(rawReads, key, address, context, cancellationToken).ConfigureAwait(false);
-                    PlcReadFailureScope scope = GetMeterFailureScope(state, key, countedTimeoutKeys, ref consecutiveMeterTimeouts);
+                    PlcReadFailureScope scope = GetMeterFailureScope(state, context.GetMeterKey(address), countedTimeoutKeys, ref consecutiveMeterTimeouts);
                     ordered[i] = BuildResult(request, address, state, context, scope);
+                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
+                    {
+                        PlcBatchReadResult.DeferPending(requests, ordered, state.ErrorMessage);
+                        break;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -205,6 +219,7 @@ namespace IPC.Plc.Communication.Metering
             if (state.Success)
             {
                 consecutiveMeterTimeouts = 0;
+                countedTimeoutKeys.Clear();
                 return PlcReadFailureScope.None;
             }
 

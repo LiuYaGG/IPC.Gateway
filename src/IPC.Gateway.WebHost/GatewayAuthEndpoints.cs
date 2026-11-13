@@ -60,8 +60,10 @@ public static class GatewayAuthEndpoints
 
         group.MapPost("/logout", async (HttpContext context, IGatewayAuditLogStore auditStore) =>
         {
-            await WriteSecurityAuditAsync(context, auditStore, "logout", "success", "auth:logout", context.User?.Identity?.Name ?? string.Empty, context.User?.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, string.Empty);
+            if (context.User?.FindFirst("jti") is { } session)
+                context.RequestServices.GetRequiredService<GatewayAuthService>().InvalidateRuntimeAccess("session:" + session.Value);
             context.Response.Cookies.Delete(CookieName);
+            await WriteSecurityAuditAsync(context, auditStore, "logout", "success", "auth:logout", context.User?.Identity?.Name ?? string.Empty, context.User?.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, string.Empty);
             return Results.Ok(new { success = true });
         });
 
@@ -615,6 +617,7 @@ public static class GatewayAuthEndpoints
         try
         {
             T data = await handler();
+            context.RequestServices.GetRequiredService<GatewayAuthService>().InvalidateRuntimeAccess(target);
             await WriteSecurityAuditAsync(context, auditStore, action, "success", target, string.Empty, string.Empty, string.Empty);
             return Results.Ok(new { success = true, data });
         }

@@ -29,6 +29,7 @@ namespace IPC.Runtime.Values
             HealthMessage = string.Empty;
             Queue = new RuntimePollingQueueStatus();
             Timeout = new RuntimeTimeoutStats();
+            AcquisitionLatency = new RuntimeAcquisitionLatencyStats();
             Tasks = new List<RuntimePollingTaskStatus>();
         }
 
@@ -60,7 +61,33 @@ namespace IPC.Runtime.Values
         public long TotalTagValueChangedDropped { get; set; }
         public RuntimePollingQueueStatus Queue { get; set; }
         public RuntimeTimeoutStats Timeout { get; set; }
+        public RuntimeAcquisitionLatencyStats AcquisitionLatency { get; set; }
         public IList<RuntimePollingTaskStatus> Tasks { get; set; }
+    }
+
+    /// <summary>Recent fixed-size observation windows; probe delays exclude the time a PLC was physically offline.</summary>
+    public sealed class RuntimeAcquisitionLatencyStats
+    {
+        public int SampleCapacity { get; set; }
+        public DateTime SampleTimeUtc { get; set; }
+        public long RejectedSampleCount { get; set; }
+        public RuntimeLatencyDistribution InitialReadLatencyMs { get; set; } = new RuntimeLatencyDistribution();
+        public RuntimeLatencyDistribution HealthyRefreshGapMs { get; set; } = new RuntimeLatencyDistribution();
+        public RuntimeLatencyDistribution TagProbeQueueDelayMs { get; set; } = new RuntimeLatencyDistribution();
+        public RuntimeLatencyDistribution DeviceProbeQueueDelayMs { get; set; } = new RuntimeLatencyDistribution();
+    }
+
+    public sealed class RuntimeLatencyDistribution
+    {
+        /// <summary>Total valid observations since the counter was last reset.</summary>
+        public long Count { get; set; }
+        /// <summary>Observations retained in the recent sample window.</summary>
+        public int WindowCount { get; set; }
+        public double LastMs { get; set; }
+        public double AverageMs { get; set; }
+        public double P95Ms { get; set; }
+        public double P99Ms { get; set; }
+        public double MaxMs { get; set; }
     }
 
     public sealed class RuntimePollingQueueStatus

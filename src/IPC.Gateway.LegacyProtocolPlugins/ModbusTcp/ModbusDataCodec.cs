@@ -94,9 +94,9 @@ namespace IPC.Plc.Communication.ModbusTcp
         public static int GetRegisterCount(PlcDataType dataType, int elementCount)
         {
             if (dataType == PlcDataType.String)
-                return (GetStringByteCount(elementCount) + 1) / 2;
+                return checked((int)(((long)GetStringByteCount(elementCount) + 1) / 2));
 
-            return (PlcDataTypeHelper.GetElementSize(dataType) * elementCount + 1) / 2;
+            return checked((int)(((long)PlcDataTypeHelper.GetElementSize(dataType) * elementCount + 1) / 2));
         }
 
         public static int GetElementCount(PlcDataType dataType, string writeText, int readCount)

@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System;
+using IPC.Plc.Communication.MitsubishiMc;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -30,11 +31,13 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
     
     
     
-    internal sealed class MitsubishiQlSerialAddress
+    internal sealed class MitsubishiQlSerialAddress : IMitsubishiDeviceAddress<MitsubishiQlSerialAddress>
     {
         public string DeviceName { get; private set; }
         public string DeviceCode { get; private set; }
+        public int MaximumDeviceNumber => HexNumber ? 0xFFFFFF : 999999;
         public int DeviceNumber { get; private set; }
+        public bool HasBitOffset { get; private set; }
         public int BitOffset { get; private set; }
         public bool IsBitDevice { get; private set; }
         public bool HexNumber { get; private set; }
@@ -45,7 +48,8 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
             {
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + offset,
+                DeviceNumber = checked(DeviceNumber + offset),
+                HasBitOffset = HasBitOffset,
                 BitOffset = BitOffset,
                 IsBitDevice = IsBitDevice,
                 HexNumber = HexNumber
@@ -57,12 +61,13 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
             if (IsBitDevice)
                 return AddDeviceOffset(offset);
 
-            int totalBits = BitOffset + offset;
+            int totalBits = checked(BitOffset + offset);
             return new MitsubishiQlSerialAddress
             {
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + totalBits / 16,
+                DeviceNumber = checked(DeviceNumber + totalBits / 16),
+                HasBitOffset = true,
                 BitOffset = totalBits % 16,
                 IsBitDevice = false,
                 HexNumber = HexNumber
@@ -82,7 +87,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
                 throw new ArgumentException("Mitsubishi Q/L 串口地址不能为空。", "text");
 
             string address = text.Trim().ToUpperInvariant();
-            Match match = Regex.Match(address, @"^(ZR|[A-Z]+)([0-9A-FX]+)(?:\.(\d+))?$");
+            Match match = Regex.Match(address, @"^(ZR|M|L|F|V|X|Y|B|D|W|R)([0-9A-FX]+)(?:\.(\d+))?$");
             if (!match.Success)
                 throw new FormatException("不支持的 Mitsubishi Q/L 串口地址格式: " + text);
 
@@ -101,6 +106,7 @@ namespace IPC.Plc.Communication.MitsubishiQlSerial
                 DeviceName = device.Name,
                 DeviceCode = device.Code,
                 DeviceNumber = number,
+                HasBitOffset = match.Groups[3].Success,
                 BitOffset = bit,
                 IsBitDevice = device.IsBitDevice,
                 HexNumber = device.HexNumber

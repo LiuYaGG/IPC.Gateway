@@ -397,6 +397,10 @@ namespace IPC.Plc.Communication.Cip
             {
                 if (data.Length < 2)
                     throw new InvalidOperationException("Rockwell STRING结构响应缺少类型句柄。");
+                ushort handle = ReadUInt16(data, 0);
+                if (handle != CipTypeCodes.LogixStringHandle)
+                    throw new PlcProtocolException(PlcReadFailureScope.Tag,
+                        $"Logix STRING 类型句柄不匹配（0x{handle:X4}）。");
                 data = Slice(data, 2, data.Length - 2);
             }
             object value = CipDataCodec.Decode(dataType, actualType, data, elementCount);
@@ -584,58 +588,46 @@ namespace IPC.Plc.Communication.Cip
 
         private void WriteTagSingle(string tagName, PlcDataType dataType, byte[] data, int elementCount)
         {
-            WriteTagSingle(tagName, CipTypeCodes.FromPlcDataType(dataType), data, elementCount);
+            byte[] request = BuildWriteTagRequest(tagName, dataType, data, elementCount);
+            ParseCipReply(SendConnectedMessage(request), 0xCD);
         }
 
-        private void WriteTagSingle(string tagName, ushort typeCode, byte[] data, int elementCount)
+        private async ValueTask WriteTagSingleAsync(string tagName, PlcDataType dataType, byte[] data,
+            int elementCount, CancellationToken cancellationToken)
         {
-            if (elementCount <= 0)
-                throw new ArgumentOutOfRangeException("elementCount");
-
-            byte[] path = CipPath.EncodeTagPath(tagName);
-            MemoryStream request = new MemoryStream();
-            request.WriteByte(0x4D);
-            request.WriteByte((byte)(path.Length / 2));
-            request.Write(path, 0, path.Length);
-            WriteUInt16(request, typeCode);
-            WriteUInt16(request, (ushort)elementCount);
-            request.Write(data, 0, data.Length);
-
-            byte[] response = SendConnectedMessage(request.ToArray());
+            byte[] request = BuildWriteTagRequest(tagName, dataType, data, elementCount);
+            byte[] response = await SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
             ParseCipReply(response, 0xCD);
         }
 
-        private ValueTask WriteTagSingleAsync(
-            string tagName,
-            PlcDataType dataType,
-            byte[] data,
-            int elementCount,
-            CancellationToken cancellationToken)
+        private byte[] BuildWriteTagRequest(string tagName, PlcDataType dataType, byte[] data, int elementCount)
         {
-            return WriteTagSingleAsync(tagName, CipTypeCodes.FromPlcDataType(dataType), data, elementCount, cancellationToken);
-        }
-
-        private async ValueTask WriteTagSingleAsync(
-            string tagName,
-            ushort typeCode,
-            byte[] data,
-            int elementCount,
-            CancellationToken cancellationToken)
-        {
-            if (elementCount <= 0)
-                throw new ArgumentOutOfRangeException("elementCount");
+            if (elementCount <= 0 || elementCount > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(elementCount));
 
             byte[] path = CipPath.EncodeTagPath(tagName);
-            MemoryStream request = new MemoryStream();
+            using MemoryStream request = new MemoryStream();
             request.WriteByte(0x4D);
-            request.WriteByte((byte)(path.Length / 2));
-            request.Write(path, 0, path.Length);
-            WriteUInt16(request, typeCode);
-            WriteUInt16(request, (ushort)elementCount);
-            request.Write(data, 0, data.Length);
+            request.WriteByte(checked((byte)(path.Length / 2)));
+            request.Write(path);
+            if (dataType == PlcDataType.String && !_useStandardCipString)
+            {
+                // Built-in Logix STRING: DINT LEN, SINT DATA[82], 2 bytes of padding.
+                // The controller checks the template handle on the write itself.
+                if (elementCount != 1 || (data.Length != 86 && data.Length != 88) ||
+                    (uint)BitConverter.ToInt32(data, 0) > 82)
+                    throw new ArgumentException("Logix STRING requires the built-in LEN/DATA[82] structure.");
+                WriteUInt16(request, CipTypeCodes.AbbreviatedStructure);
+                WriteUInt16(request, CipTypeCodes.LogixStringHandle);
+            }
+            else
+                WriteUInt16(request, CipTypeCodes.FromPlcDataType(dataType));
 
-            byte[] response = await SendConnectedMessageAsync(request.ToArray(), cancellationToken).ConfigureAwait(false);
-            ParseCipReply(response, 0xCD);
+            WriteUInt16(request, (ushort)elementCount);
+            request.Write(data);
+            if (dataType == PlcDataType.String && !_useStandardCipString && data.Length == 86)
+                WriteUInt16(request, 0);
+            return request.ToArray();
         }
 
         private PlcReadResult ReadArraySegmented(string tagName, PlcDataType dataType, int elementOffset, int elementCount)
@@ -733,89 +725,68 @@ namespace IPC.Plc.Communication.Cip
 
         private void WriteBoolArrayElements(string tagName, byte[] data, int elementCount, int elementOffset)
         {
-            if (elementCount <= 0)
-                throw new ArgumentOutOfRangeException("elementCount");
-            if (data == null || data.Length < elementCount)
-                throw new ArgumentException("写入数据长度不足。", "data");
-
-            string baseTag;
-            int bitOffset;
-            NormalizeBoolArrayTag(tagName, elementOffset, out baseTag, out bitOffset);
-
-            int firstWord = bitOffset / 32;
-            int firstBit = bitOffset % 32;
-            int wordCount = (firstBit + elementCount + 31) / 32;
-
-            PlcReadResult current = ReadTagSingle(BuildArrayElementTagAlways(baseTag, firstWord), PlcDataType.Int32Array, wordCount);
-            int[] words = new int[wordCount];
-            Array.Copy((int[])current.Value, 0, words, 0, wordCount);
-
-            for (int i = 0; i < elementCount; i++)
-            {
-                int absoluteBit = firstBit + i;
-                int wordIndex = absoluteBit / 32;
-                int bitIndex = absoluteBit % 32;
-                int mask = 1 << bitIndex;
-                if (data[i] == 0)
-                    words[wordIndex] &= ~mask;
-                else
-                    words[wordIndex] |= mask;
-            }
-
-            byte[] packed = new byte[wordCount * 4];
-            for (int i = 0; i < wordCount; i++)
-            {
-                byte[] wordBytes = BitConverter.GetBytes(words[i]);
-                Buffer.BlockCopy(wordBytes, 0, packed, i * 4, 4);
-            }
-
-            WriteTagSingle(BuildArrayElementTagAlways(baseTag, firstWord), CipTypeCodes.Dword, packed, wordCount);
+            foreach (byte[] request in BuildPackedBoolWrites(tagName, data, elementCount, elementOffset))
+                ParseCipReply(SendConnectedMessage(request), (byte)(request[0] | 0x80));
         }
 
-        private async ValueTask WriteBoolArrayElementsAsync(
-            string tagName,
-            byte[] data,
-            int elementCount,
-            int elementOffset,
-            CancellationToken cancellationToken)
+        private async ValueTask WriteBoolArrayElementsAsync(string tagName, byte[] data, int elementCount,
+            int elementOffset, CancellationToken cancellationToken)
         {
-            if (elementCount <= 0)
-                throw new ArgumentOutOfRangeException("elementCount");
-            if (data == null || data.Length < elementCount)
-                throw new ArgumentException("Write data length is too short.", "data");
-
-            string baseTag;
-            int bitOffset;
-            NormalizeBoolArrayTag(tagName, elementOffset, out baseTag, out bitOffset);
-
-            int firstWord = bitOffset / 32;
-            int firstBit = bitOffset % 32;
-            int wordCount = (firstBit + elementCount + 31) / 32;
-
-            PlcReadResult current = await ReadTagSingleAsync(BuildArrayElementTagAlways(baseTag, firstWord), PlcDataType.Int32Array, wordCount, cancellationToken).ConfigureAwait(false);
-            int[] words = new int[wordCount];
-            Array.Copy((int[])current.Value, 0, words, 0, wordCount);
-
-            for (int i = 0; i < elementCount; i++)
+            foreach (byte[] request in BuildPackedBoolWrites(tagName, data, elementCount, elementOffset))
             {
-                int absoluteBit = firstBit + i;
-                int wordIndex = absoluteBit / 32;
-                int bitIndex = absoluteBit % 32;
-                int mask = 1 << bitIndex;
-                if (data[i] == 0)
-                    words[wordIndex] &= ~mask;
+                byte[] response = await SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
+                ParseCipReply(response, (byte)(request[0] | 0x80));
+            }
+        }
+
+        private IEnumerable<byte[]> BuildPackedBoolWrites(string tagName, byte[] data, int count, int offset)
+        {
+            if (count <= 0 || data == null || data.Length < count)
+                throw new ArgumentException("Packed BOOL data is incomplete.", nameof(data));
+            NormalizeBoolArrayTag(tagName, offset, out string baseTag, out int startBit);
+            _ = checked(startBit + count - 1);
+            int maxWords = GetMaxElementsPerPacket(PlcDataType.Int32Array);
+            for (int index = 0; index < count;)
+            {
+                int position = startBit + index;
+                int firstBit = position % 32;
+                byte[] path = CipPath.EncodeTagPath(BuildArrayElementTagAlways(baseTag, position / 32));
+                using MemoryStream request = new MemoryStream();
+                int words = firstBit == 0 ? Math.Min(maxWords, (count - index) / 32) : 0;
+                if (words > 0)
+                {
+                    request.WriteByte(0x4D);
+                    request.WriteByte(checked((byte)(path.Length / 2)));
+                    request.Write(path);
+                    WriteUInt16(request, CipTypeCodes.Dword);
+                    WriteUInt16(request, checked((ushort)words));
+                    for (int word = 0; word < words; word++)
+                    {
+                        uint bits = 0;
+                        for (int bit = 0; bit < 32; bit++)
+                            if (data[index++] != 0) bits |= 1u << bit;
+                        WriteUInt32(request, bits);
+                    }
+                }
                 else
-                    words[wordIndex] |= mask;
+                {
+                    int length = Math.Min(32 - firstBit, count - index);
+                    uint setMask = 0, keepMask = uint.MaxValue;
+                    for (int i = 0; i < length; i++)
+                    {
+                        uint mask = 1u << (firstBit + i);
+                        if (data[index++] != 0) setMask |= mask;
+                        else keepMask &= ~mask;
+                    }
+                    request.WriteByte(0x4E); // Logix Read Modify Write: OR mask, then AND mask.
+                    request.WriteByte(checked((byte)(path.Length / 2)));
+                    request.Write(path);
+                    WriteUInt16(request, 4);
+                    WriteUInt32(request, setMask);
+                    WriteUInt32(request, keepMask);
+                }
+                yield return request.ToArray();
             }
-
-            byte[] packed = new byte[wordCount * 4];
-            for (int i = 0; i < wordCount; i++)
-            {
-                byte[] wordBytes = BitConverter.GetBytes(words[i]);
-                Buffer.BlockCopy(wordBytes, 0, packed, i * 4, 4);
-            }
-
-            await WriteTagSingleAsync(BuildArrayElementTagAlways(baseTag, firstWord), CipTypeCodes.Dword, packed, wordCount, cancellationToken).ConfigureAwait(false);
         }
 
         private PlcReadResult ReadPackedBoolArray(string tagName, int elementOffset, int elementCount)
@@ -874,7 +845,7 @@ namespace IPC.Plc.Communication.Cip
         {
             int existingIndex;
             if (TrySplitTrailingSingleIndex(tagName, out baseTag, out existingIndex))
-                bitOffset = existingIndex + elementOffset;
+                bitOffset = checked(existingIndex + elementOffset);
             else
             {
                 baseTag = tagName;
@@ -1186,7 +1157,7 @@ namespace IPC.Plc.Communication.Cip
 
             if (generalStatus != 0)
                 throw new PlcProtocolException(
-                    CipStatusClassifier.Classify(generalStatus, false),
+                    CipStatusClassifier.Classify(generalStatus, expectedService),
                     "CIP错误: general status 0x" + generalStatus.ToString("X2") +
                     ", additional: " + FormatAdditionalStatus(response, 4, additionalWords),
                     "0x" + generalStatus.ToString("X2"));

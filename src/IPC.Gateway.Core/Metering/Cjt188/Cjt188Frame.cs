@@ -31,7 +31,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
     
     internal static class Cjt188Frame
     {
-        public static byte[] BuildReadRequest(Cjt188Address address)
+        public static byte[] BuildReadRequest(Cjt188Address address, byte sequence, bool lowByteFirst)
         {
             MemoryStream stream = new MemoryStream();
             stream.WriteByte(0xFE);
@@ -46,9 +46,9 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             stream.WriteByte(0x01);
             stream.WriteByte(0x03);
 
-            byte[] dataIdentifier = address.GetDataIdentifierBytes();
+            byte[] dataIdentifier = address.GetDataIdentifierBytes(lowByteFirst);
             stream.Write(dataIdentifier, 0, dataIdentifier.Length);
-            stream.WriteByte(0x00);
+            stream.WriteByte(sequence);
 
             byte[] withoutChecksum = stream.ToArray();
             byte checksum = Checksum(withoutChecksum, 4, withoutChecksum.Length - 4);
@@ -57,38 +57,47 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             return stream.ToArray();
         }
 
-        public static byte[] ExtractReadData(byte[] frame, Cjt188Address requestAddress)
+        public static bool MatchesRequest(byte[] frame, Cjt188Address address, byte sequence, bool lowByteFirst)
+        {
+            if (frame.Length < 16 || frame[1] != address.MeterType ||
+                !frame.AsSpan(2, 7).SequenceEqual(address.GetAddressBytes())) return false;
+            if (frame[9] == 0xC1) return frame[10] == 3 && frame[11] == sequence;
+            return frame[9] == 0x81 && frame[13] == sequence &&
+                frame.AsSpan(11, 2).SequenceEqual(address.GetDataIdentifierBytes(lowByteFirst));
+        }
+
+        public static byte[] ExtractReadData(byte[] frame, Cjt188Address requestAddress, byte sequence, bool lowByteFirst)
         {
             if (frame == null || frame.Length < 14)
-                throw new FormatException("CJ/T188-2004响应帧长度不足。");
+                throw new FormatException("CJ/T188响应帧长度不足。");
             if (frame[0] != 0x68 || frame[frame.Length - 1] != 0x16)
-                throw new FormatException("CJ/T188-2004响应帧格式错误。");
+                throw new FormatException("CJ/T188响应帧格式错误。");
             if (Checksum(frame, 0, frame.Length - 2) != frame[frame.Length - 2])
-                throw new FormatException("CJ/T188-2004响应帧校验失败。");
+                throw new FormatException("CJ/T188响应帧校验失败。");
             if (frame[1] != requestAddress.MeterType)
-                throw new FormatException("CJ/T188-2004响应仪表类型与请求不一致。");
+                throw new FormatException("CJ/T188响应仪表类型与请求不一致。");
             byte[] expectedAddress = requestAddress.GetAddressBytes();
             for (int i = 0; i < expectedAddress.Length; i++)
             {
                 if (frame[2 + i] != expectedAddress[i])
-                    throw new FormatException("CJ/T188-2004响应仪表地址与请求不一致。");
+                    throw new FormatException("CJ/T188响应仪表地址与请求不一致。");
             }
 
             byte control = frame[9];
             if ((control & 0x40) == 0x40)
-                throw new InvalidOperationException("CJ/T188-2004仪表返回异常应答。");
+                throw new InvalidOperationException("CJ/T188仪表返回异常应答。");
             if (control != 0x81)
-                throw new InvalidOperationException("CJ/T188-2004响应控制码不正确: 0x" + control.ToString("X2"));
+                throw new InvalidOperationException("CJ/T188响应控制码不正确: 0x" + control.ToString("X2"));
 
             int length = frame[10];
             if (length < 3 || frame.Length != length + 13)
-                throw new FormatException("CJ/T188-2004响应数据长度错误。");
+                throw new FormatException("CJ/T188响应数据长度错误。");
 
-            byte[] expectedDi = requestAddress.GetDataIdentifierBytes();
+            byte[] expectedDi = requestAddress.GetDataIdentifierBytes(lowByteFirst);
             if (frame[11] != expectedDi[0] || frame[12] != expectedDi[1])
-                throw new FormatException("CJ/T188-2004响应数据标识与请求不一致。");
+                throw new FormatException("CJ/T188响应数据标识与请求不一致。");
 
-            if (frame[13] != 0x00)
+            if (frame[13] != sequence)
                 throw new FormatException("CJ/T188 响应序号与请求不一致。");
 
             byte[] value = new byte[length - 3];

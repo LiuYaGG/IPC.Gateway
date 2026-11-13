@@ -100,7 +100,7 @@ namespace IPC.Plc.Communication.VirtualPlc
                 store.TryGetValue(key, out storedValue);
             }
 
-            object value = ConvertForRead(storedValue, dataType, elementCount);
+            object value = ConvertForRead(storedValue, dataType, elementCount, elementOffset);
             return new PlcReadResult(0, dataType.ToString(), value);
         }
 
@@ -132,7 +132,7 @@ namespace IPC.Plc.Communication.VirtualPlc
                     {
                         string key = NormalizeAddress(request.Address);
                         store.TryGetValue(key, out object? storedValue);
-                        object value = ConvertForRead(storedValue, request.DataType, request.ElementCount);
+                        object value = ConvertForRead(storedValue, request.DataType, request.ElementCount, request.ElementOffset);
                         results.Add(PlcBatchReadResult.FromSuccess(
                             request,
                             new PlcReadResult(0, request.DataType.ToString(), value)));
@@ -162,7 +162,27 @@ namespace IPC.Plc.Communication.VirtualPlc
 
             lock (StoreLock)
             {
-                Stores[_storeKey][key] = value;
+                ArgumentOutOfRangeException.ThrowIfNegative(elementOffset);
+                var store = Stores[_storeKey];
+                store.TryGetValue(key, out object? previous);
+                if (value is Array || previous is Array || elementOffset != 0)
+                {
+                    Array? input = value as Array;
+                    int count = input?.Length ?? 1;
+                    int oldLength = previous is Array old ? old.Length : previous == null ? 0 : 1;
+                    int length = Math.Max(oldLength, checked(elementOffset + count));
+                    Type type = input?.GetType().GetElementType() ?? value.GetType();
+                    Array updated = Array.CreateInstance(type!, length);
+                    for (int i = 0; i < oldLength; i++)
+                        if (i < elementOffset || i >= elementOffset + count)
+                            updated.SetValue(ConvertScalar(previous is Array items ? items.GetValue(i) : previous, ArrayElementType(dataType)), i);
+                    if (input != null)
+                        Array.Copy(input, 0, updated, elementOffset, count);
+                    else
+                        updated.SetValue(value, elementOffset);
+                    value = updated;
+                }
+                store[key] = value;
             }
         }
 
@@ -196,15 +216,18 @@ namespace IPC.Plc.Communication.VirtualPlc
             return address.Trim();
         }
 
-        private static object ConvertForRead(object? storedValue, PlcDataType dataType, int elementCount)
+        private static object ConvertForRead(object? storedValue, PlcDataType dataType, int elementCount, int elementOffset)
         {
+            ArgumentOutOfRangeException.ThrowIfNegative(elementOffset);
             if (storedValue == null)
                 return CreateDefaultValue(dataType, elementCount);
 
             if (PlcDataTypeHelper.IsArray(dataType))
-                return ConvertToArray(storedValue, dataType, Math.Max(1, elementCount));
+                return ConvertToArray(storedValue, dataType, Math.Max(1, elementCount), elementOffset);
 
-            return ConvertScalar(storedValue, dataType);
+            if (storedValue is Array items)
+                return ConvertScalar(elementOffset < items.Length ? items.GetValue(elementOffset) : null, dataType);
+            return ConvertScalar(elementOffset == 0 ? storedValue : null, dataType);
         }
 
         private static object CreateDefaultValue(PlcDataType dataType, int elementCount)
@@ -218,6 +241,9 @@ namespace IPC.Plc.Communication.VirtualPlc
                 case PlcDataType.Coil:
                 case PlcDataType.DiscreteInput:
                     return false;
+                case PlcDataType.Int8: return (sbyte)0;
+                case PlcDataType.Byte:
+                case PlcDataType.UInt8: return (byte)0;
                 case PlcDataType.Int16:
                     return (short)0;
                 case PlcDataType.UInt16:
@@ -241,14 +267,14 @@ namespace IPC.Plc.Communication.VirtualPlc
             }
         }
 
-        private static Array ConvertToArray(object storedValue, PlcDataType dataType, int count)
+        private static Array ConvertToArray(object storedValue, PlcDataType dataType, int count, int offset)
         {
             Array result = PlcDataTypeHelper.CreateArray(dataType, count);
             List<object> values = ToObjectList(storedValue);
 
             for (int i = 0; i < count; i++)
             {
-                object? item = i < values.Count ? values[i] : null;
+                object? item = i < values.Count - offset ? values[offset + i] : null;
                 result.SetValue(ConvertScalar(item, ArrayElementType(dataType)), i);
             }
 
@@ -282,6 +308,9 @@ namespace IPC.Plc.Communication.VirtualPlc
         {
             switch (dataType)
             {
+                case PlcDataType.Int8Array: return PlcDataType.Int8;
+                case PlcDataType.UInt8Array: return PlcDataType.UInt8;
+                case PlcDataType.ByteArray: return PlcDataType.Byte;
                 case PlcDataType.BoolArray:
                     return PlcDataType.Bool;
                 case PlcDataType.Int16Array:
@@ -343,6 +372,9 @@ namespace IPC.Plc.Communication.VirtualPlc
                 case PlcDataType.Coil:
                 case PlcDataType.DiscreteInput:
                     return ParseBool(value);
+                case PlcDataType.Int8: return Convert.ToSByte(value, CultureInfo.InvariantCulture);
+                case PlcDataType.Byte:
+                case PlcDataType.UInt8: return Convert.ToByte(value, CultureInfo.InvariantCulture);
                 case PlcDataType.Int16:
                     return Convert.ToInt16(value, CultureInfo.InvariantCulture);
                 case PlcDataType.UInt16:

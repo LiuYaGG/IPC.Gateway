@@ -30,8 +30,8 @@ namespace IPC.Plc.Communication.OmronFins
             FinsAddress start = address.OffsetBits(PlcDataTypeHelper.IsArray(request.DataType) ? request.ElementOffset : 0);
             start.EnsureRange(valueCount, true);
             int startPoint = start.Area.BitAddressUsesWordIndex
-                ? start.WordAddress
-                : start.WordAddress * 16 + start.BitIndex;
+                ? start.WireWordAddress
+                : start.WireWordAddress * 16 + start.BitIndex;
             return Create(index, request, start.Area, FinsBatchReadKind.Bit, start.Area.BitCode, startPoint, valueCount, valueCount);
         }
 
@@ -49,7 +49,7 @@ namespace IPC.Plc.Communication.OmronFins
             FinsAddress start = address.OffsetWords(wordOffset);
             int wordCount = FinsDataCodec.GetWordCount(request.DataType, valueCount);
             start.EnsureRange(wordCount, false);
-            return Create(index, request, start.Area, FinsBatchReadKind.Word, start.Area.WordCode, start.WordAddress, wordCount, valueCount);
+            return Create(index, request, start.Area, FinsBatchReadKind.Word, start.Area.WordCode, start.WireWordAddress, wordCount, valueCount);
         }
 
         private static FinsBatchReadItem Create(

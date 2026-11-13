@@ -289,6 +289,7 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     logicalOperator: 'And',
     durationSeconds: 0,
     publishToMqtt: true,
+    alarmMessage: false,
     publishOnClear: true,
     topicTemplate: 'ipc/rule/{pointCode}/{ruleName}',
     publishQos: 0,

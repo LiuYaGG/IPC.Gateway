@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Text.Json;
 using IPC.Plc.Communication.Core;
 
@@ -58,21 +57,15 @@ public static class DeviceConfigComparer
 
     private static string CreateRuntimeReuseFingerprint(DeviceConfig device, bool includeEnabled)
     {
-        DeviceConfig normalized = ProjectConfigCloner.Clone(new ProjectConfig
-        {
-            Devices = new List<DeviceConfig> { device }
-        }).Devices[0];
-
         DeviceRuntimeReuseProjection projection = new DeviceRuntimeReuseProjection
         {
-            Id = normalized.Id ?? string.Empty,
-            ChannelId = normalized.ChannelId ?? string.Empty,
-            Protocol = normalized.Protocol,
-            Enabled = includeEnabled ? normalized.Enabled : null,
-            Connection = NormalizeConnection(normalized.Protocol, normalized.Connection),
-            DefaultScanRateMs = normalized.DefaultScanRateMs,
-            FailureRetryDelayMs = normalized.FailureRetryDelayMs,
-            MaxFailureRetryDelayMs = normalized.MaxFailureRetryDelayMs
+            Id = device.Id ?? string.Empty,
+            ChannelId = device.ChannelId ?? string.Empty,
+            Protocol = device.Protocol,
+            Enabled = includeEnabled ? device.Enabled : null,
+            // Scheduling is updated in place; only a changed endpoint/driver
+            // requires replacing the actor, connection and quarantine state.
+            Connection = NormalizeConnection(device.Protocol, device.Connection)
         };
 
         return JsonSerializer.Serialize(projection, JsonOptions);
@@ -155,8 +148,5 @@ public static class DeviceConfigComparer
         public PlcProtocol Protocol { get; set; }
         public bool? Enabled { get; set; }
         public PlcConnectionOptions Connection { get; set; } = new PlcConnectionOptions();
-        public int DefaultScanRateMs { get; set; }
-        public int FailureRetryDelayMs { get; set; }
-        public int MaxFailureRetryDelayMs { get; set; }
     }
 }

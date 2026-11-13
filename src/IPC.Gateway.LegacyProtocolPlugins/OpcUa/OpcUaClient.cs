@@ -137,71 +137,75 @@ namespace IPC.Plc.Communication.OpcUa
         public PlcReadResult Read(string address, PlcDataType dataType, int elementCount, int elementOffset)
         {
             EnsureConnected();
-            string nodeId = NormalizeNodeId(address, elementOffset);
-            DataValue value = ReadNodes(new[] { NodeId.Parse(nodeId) })[0];
-            EnsureGoodStatus(value, nodeId);
-            object converted = ConvertForRead(value == null ? null : value.Value, dataType, elementCount);
-            return new PlcReadResult(0, dataType.ToString(), converted);
+            return ReadOneAsync(address, dataType, elementCount, elementOffset, CancellationToken.None).AsTask().GetAwaiter().GetResult();
         }
 
-        public ValueTask<PlcReadResult> ReadAsync(
-            string address,
-            PlcDataType dataType,
-            int elementCount,
-            int elementOffset,
-            CancellationToken cancellationToken)
+        public ValueTask<PlcReadResult> ReadAsync(string address, PlcDataType dataType, int elementCount, int elementOffset, CancellationToken cancellationToken)
+            => ReadOneAsync(address, dataType, elementCount, elementOffset, cancellationToken);
+
+        private async ValueTask<PlcReadResult> ReadOneAsync(string address, PlcDataType type, int count, int offset, CancellationToken token)
         {
-            return RunSynchronousAsync(() => Read(address, dataType, elementCount, elementOffset), cancellationToken);
+            EnsureConnected();
+            var node = CreateReadNode(address, type, count, offset);
+            var values = await ReadNodesAsync(new ReadValueIdCollection { node }, token).ConfigureAwait(false);
+            return DecodeValue(values[0], address, type, count, offset);
         }
 
         public IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests)
+            => ReadManyAsync(requests, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+        public async ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(IList<PlcBatchReadRequest> requests, CancellationToken cancellationToken)
         {
             EnsureConnected();
-            List<PlcBatchReadResult> results = new List<PlcBatchReadResult>();
-            if (requests == null || requests.Count == 0)
-                return results;
-
-            PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
-            List<PendingRead> pending = new List<PendingRead>();
-            List<NodeId> nodeIds = new List<NodeId>();
-
+            if (requests == null || requests.Count == 0) return Array.Empty<PlcBatchReadResult>();
+            var ordered = new PlcBatchReadResult[requests.Count];
+            var pending = new List<(int Index, PlcBatchReadRequest Request, ReadValueId Node)>();
             for (int i = 0; i < requests.Count; i++)
             {
-                PlcBatchReadRequest request = EnsureRequest(requests[i]);
+                var request = EnsureRequest(requests[i]);
                 try
                 {
-                    string nodeId = NormalizeNodeId(request.Address, request.ElementOffset);
-                    pending.Add(new PendingRead(i, request, nodeId));
-                    nodeIds.Add(NodeId.Parse(nodeId));
+                    var node = CreateReadNode(request.Address, request.DataType, request.ElementCount, request.ElementOffset);
+                    pending.Add((i, request, node));
                 }
+                catch (Exception ex) { ordered[i] = PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Tag); }
+            }
+
+            var recovery = PlcBatchReadRecovery.Start(_session, "OPC UA");
+            try
+            {
+                for (int offset = 0; offset < pending.Count; offset += _maxNodesPerBatchRead)
+                {
+                    int end = Math.Min(offset + _maxNodesPerBatchRead, pending.Count);
+                    await recovery.ReadRangeAsync(pending, offset, end, item => item.Request, item => item.Index,
+                        ReadRange, ordered, "Value", cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) { PlcBatchReadResult.DeferPending(requests, ordered, ex.Message); }
+            return ordered;
+
+            async ValueTask ReadRange(int start, int end)
+            {
+                var nodes = new ReadValueIdCollection();
+                for (int i = start; i < end; i++) nodes.Add(pending[i].Node);
+                IList<DataValue> values;
+                try { values = await ReadNodesAsync(nodes, cancellationToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    ordered[i] = PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Tag);
+                    throw new PlcProtocolException(ClassifyBatchReadExceptionScope(ex, IsSessionStillConnected(), end - start), ex.Message);
                 }
-            }
-
-            if (pending.Count > 0)
-            {
-                int offset = 0;
-                while (offset < pending.Count)
+                for (int i = start; i < end; i++)
                 {
-                    int count = Math.Min(_maxNodesPerBatchRead, pending.Count - offset);
-                    ReadPendingChunk(pending, nodeIds, ordered, offset, count);
-                    offset += count;
+                    var (index, request, _) = pending[i];
+                    try
+                    {
+                        var result = DecodeValue(values[i - start], request.Address, request.DataType, request.ElementCount, request.ElementOffset);
+                        ordered[index] = PlcBatchReadResult.FromSuccess(request, result);
+                    }
+                    catch (Exception ex) { ordered[index] = PlcBatchReadResult.FromFailure(request, ex.Message, PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag)); }
                 }
             }
-
-            for (int i = 0; i < ordered.Length; i++)
-                results.Add(ordered[i] ?? PlcBatchReadResult.FromFailure(EnsureRequest(requests[i]), "Batch read did not produce a result.", PlcReadFailureScope.Batch));
-
-            return results;
-        }
-
-        public ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
-            IList<PlcBatchReadRequest> requests,
-            CancellationToken cancellationToken)
-        {
-            return RunSynchronousAsync(() => ReadMany(requests), cancellationToken);
         }
 
         public ValueTask<IPlcSubscription> SubscribeAsync(
@@ -227,100 +231,50 @@ namespace IPC.Plc.Communication.OpcUa
             }, cancellationToken);
         }
 
-        private void ReadPendingChunk(
-            List<PendingRead> pending,
-            List<NodeId> nodeIds,
-            PlcBatchReadResult[] ordered,
-            int offset,
-            int count)
+        private ReadValueId CreateReadNode(string address, PlcDataType type, int count, int offset)
+            => new ReadValueId { NodeId = ResolveNodeId(address), AttributeId = Attributes.Value, IndexRange = GetIndexRange(type, count, offset) };
+
+        private NodeId ResolveNodeId(string address)
         {
-            IList<DataValue> values;
-            try
-            {
-                NodeId[] chunkNodeIds = new NodeId[count];
-                nodeIds.CopyTo(offset, chunkNodeIds, 0, count);
-                values = ReadNodes(chunkNodeIds);
-            }
-            catch (Exception ex)
-            {
-                bool sessionConnected = IsSessionStillConnected();
-                if (ShouldSplitBatchReadException(ex, sessionConnected, count))
-                {
-                    int leftCount = count / 2;
-                    ReadPendingChunk(pending, nodeIds, ordered, offset, leftCount);
-                    ReadPendingChunk(pending, nodeIds, ordered, offset + leftCount, count - leftCount);
-                    return;
-                }
-
-                PlcReadFailureScope failureScope = ClassifyBatchReadExceptionScope(ex, sessionConnected, count);
-                if (failureScope == PlcReadFailureScope.Transport)
-                    throw new PlcCommunicationException(ex.Message, ex);
-                MarkPendingChunkFailure(pending, ordered, offset, count, ex.Message, failureScope);
-                return;
-            }
-
-            for (int i = 0; i < count; i++)
-            {
-                PendingRead read = pending[offset + i];
-                if (ordered[read.Index] != null)
-                    continue;
-
-                try
-                {
-                    DataValue value = i < values.Count ? values[i] : null;
-                    EnsureGoodStatus(value, read.NodeId);
-                    object converted = ConvertForRead(value == null ? null : value.Value, read.Request.DataType, read.Request.ElementCount);
-                    PlcReadResult result = new PlcReadResult(0, read.Request.DataType.ToString(), converted);
-                    ordered[read.Index] = PlcBatchReadResult.FromSuccess(read.Request, result);
-                }
-                catch (Exception ex)
-                {
-                    ordered[read.Index] = PlcBatchReadResult.FromFailure(
-                        read.Request,
-                        ex.Message,
-                        PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag));
-                }
-            }
+            if (string.IsNullOrWhiteSpace(address)) throw new FormatException("OPC UA NodeId is empty.");
+            return ExpandedNodeId.ToNodeId(ExpandedNodeId.Parse(address.Trim()), _session.NamespaceUris)
+                ?? throw new FormatException("Unknown OPC UA namespace: " + address);
         }
 
-        private IList<DataValue> ReadNodes(IList<NodeId> nodeIds)
+        private static string GetIndexRange(PlcDataType type, int count, int offset)
         {
-            ReadValueIdCollection nodesToRead = new ReadValueIdCollection();
-            for (int i = 0; i < nodeIds.Count; i++)
-            {
-                nodesToRead.Add(new ReadValueId
-                {
-                    NodeId = nodeIds[i],
-                    AttributeId = Attributes.Value
-                });
-            }
+            if (offset < 0 || count < 1) throw new ArgumentOutOfRangeException(nameof(offset));
+            if (!PlcDataTypeHelper.IsArray(type) && offset == 0) return null;
+            int last = checked(offset + (PlcDataTypeHelper.IsArray(type) || type == PlcDataType.String ? count - 1 : 0));
+            return offset == last ? offset.ToString(CultureInfo.InvariantCulture)
+                : FormattableString.Invariant($"{offset}:{last}");
+        }
 
-            ReadResponse response = _session.ReadAsync(
-                    null,
-                    0,
-                    TimestampsToReturn.Both,
-                    nodesToRead,
-                    CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-            ClientBase.ValidateResponse(response.Results, nodesToRead);
-            ClientBase.ValidateDiagnosticInfos(response.DiagnosticInfos, nodesToRead);
+        private static PlcReadResult DecodeValue(DataValue sample, string address, PlcDataType type, int count, int offset)
+        {
+            EnsureGoodStatus(sample, address);
+            object raw = sample.Value;
+            if (offset > 0 && !PlcDataTypeHelper.IsArray(type) && raw is Array array && array.Length == 1)
+                raw = array.GetValue(0);
+            if (raw == null) throw new PlcTagException("OPC UA node returned no value: " + address);
+            if (PlcDataTypeHelper.IsArray(type) && (raw is not IList list || list.Count != count))
+                throw new PlcTagException("OPC UA array result length differs from the requested range: " + address);
+            return new PlcReadResult(0, type.ToString(), ConvertForRead(raw, type, count))
+            {
+                IsUncertain = StatusCode.IsUncertain(sample.StatusCode),
+                SourceTimestampUtc = GetSourceTime(sample)
+            };
+        }
+
+        private static DateTime? GetSourceTime(DataValue value)
+            => value == null || value.SourceTimestamp == DateTime.MinValue ? null : value.SourceTimestamp.ToUniversalTime();
+
+        private async ValueTask<IList<DataValue>> ReadNodesAsync(ReadValueIdCollection nodes, CancellationToken token)
+        {
+            ReadResponse response = await _session.ReadAsync(null, 0, TimestampsToReturn.Both, nodes, token).ConfigureAwait(false);
+            ClientBase.ValidateResponse(response.Results, nodes);
+            ClientBase.ValidateDiagnosticInfos(response.DiagnosticInfos, nodes);
             return response.Results;
-        }
-
-        private static void MarkPendingChunkFailure(
-            List<PendingRead> pending,
-            PlcBatchReadResult[] ordered,
-            int offset,
-            int count,
-            string errorMessage,
-            PlcReadFailureScope failureScope)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                PendingRead read = pending[offset + i];
-                ordered[read.Index] = PlcBatchReadResult.FromFailure(read.Request, errorMessage, failureScope);
-            }
         }
 
         private bool IsSessionStillConnected()
@@ -335,34 +289,12 @@ namespace IPC.Plc.Communication.OpcUa
             }
         }
 
-        private static bool ShouldSplitBatchReadException(Exception exception, bool sessionConnected, int count)
-        {
-            if (count <= 1)
-                return false;
-
-            // KepServer can report a downstream device or node as unavailable while the OPC UA session is still healthy.
-            return sessionConnected ||
-                   LooksLikeOpcUaNodeOrDownstreamError(exception) ||
-                   !IsSessionOrTransportException(exception);
-        }
-
-        private static bool ShouldTreatBatchReadExceptionAsCommunication(Exception exception, bool sessionConnected)
-        {
-            return PlcBatchReadResult.IsConnectionFailureScope(
-                ClassifyBatchReadExceptionScope(exception, sessionConnected, 1));
-        }
-
         private static PlcReadFailureScope ClassifyBatchReadExceptionScope(Exception exception, bool sessionConnected, int count)
         {
-            if (sessionConnected || LooksLikeOpcUaNodeOrDownstreamError(exception))
-                return count <= 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch;
-
-            if (!IsSessionOrTransportException(exception))
-                return count <= 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch;
-
-            return LooksLikeSessionException(exception)
-                ? PlcReadFailureScope.Session
-                : PlcReadFailureScope.Transport;
+            if (exception is PlcProtocolException protocol) return protocol.FailureScope;
+            if (exception is OperationCanceledException || IsSessionOrTransportException(exception) || !sessionConnected)
+                return LooksLikeSessionException(exception) ? PlcReadFailureScope.Session : PlcReadFailureScope.Transport;
+            return count <= 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch;
         }
 
         private static bool IsSessionOrTransportException(Exception exception)
@@ -428,49 +360,19 @@ namespace IPC.Plc.Communication.OpcUa
             return false;
         }
 
-        private static bool LooksLikeOpcUaNodeOrDownstreamError(Exception exception)
-        {
-            Exception current = exception;
-            while (current != null)
-            {
-                if (current is PlcTagException ||
-                    current is PlcProtocolException protocolException &&
-                    !PlcBatchReadResult.IsConnectionFailureScope(protocolException.FailureScope))
-                    return true;
-                if (current is ServiceResultException serviceException &&
-                    !PlcBatchReadResult.IsConnectionFailureScope(ClassifyStatus(serviceException.StatusCode)))
-                    return true;
-
-                string text = (current.Message ?? string.Empty).ToLowerInvariant();
-                if (text.IndexOf("badnodeid", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("nodeid", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("baddevice", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("badnotconnected", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("badwaitingforinitialdata", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("badoutofservice", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("item", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("unavailable", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("unreachable", StringComparison.Ordinal) >= 0)
-                    return true;
-
-                current = current.InnerException;
-            }
-
-            return false;
-        }
-
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
             EnsureConnected();
-            string nodeId = NormalizeNodeId(address, elementOffset);
+            string nodeId = address;
             object value = ParseValue(dataType, valueText);
             WriteValueCollection nodesToWrite = new WriteValueCollection
             {
                 new WriteValue
                 {
-                    NodeId = NodeId.Parse(nodeId),
+                    NodeId = ResolveNodeId(nodeId),
+                    IndexRange = GetIndexRange(dataType, value is Array array ? array.Length : value is string text ? Math.Max(1, text.Length) : 1, elementOffset),
                     AttributeId = Attributes.Value,
-                    Value = new DataValue(CreateWriteVariant(dataType, value))
+                    Value = new DataValue(CreateWriteVariant(dataType, value, elementOffset))
                 }
             };
 
@@ -632,7 +534,7 @@ namespace IPC.Plc.Communication.OpcUa
         {
             try
             {
-                DataValue value = ReadNodes(new[] { NodeId.Parse(nodeId) })[0];
+                DataValue value = ReadNodesAsync(new ReadValueIdCollection { new ReadValueId { NodeId = NodeId.Parse(nodeId), AttributeId = Attributes.Value } }, CancellationToken.None).AsTask().GetAwaiter().GetResult()[0];
                 if (value == null || StatusCode.IsBad(value.StatusCode))
                     return fallback;
                 int limit = Convert.ToInt32(value.Value, CultureInfo.InvariantCulture);
@@ -660,17 +562,6 @@ namespace IPC.Plc.Communication.OpcUa
             return builder.ToString();
         }
 
-        private static string NormalizeNodeId(string address, int elementOffset)
-        {
-            if (string.IsNullOrWhiteSpace(address))
-                throw new ArgumentException("OPC UA NodeId cannot be empty.", "address");
-
-            string nodeId = address.Trim();
-            if (elementOffset > 0 && nodeId.IndexOf("[", StringComparison.Ordinal) < 0)
-                nodeId += "[" + elementOffset.ToString(CultureInfo.InvariantCulture) + "]";
-            return nodeId;
-        }
-
         private void EnsureConnected()
         {
             if (!IsConnected)
@@ -682,7 +573,7 @@ namespace IPC.Plc.Communication.OpcUa
             StatusCode status = value == null ? StatusCodes.BadNoData : value.StatusCode;
             if (StatusCode.IsBad(status))
                 throw new PlcProtocolException(
-                    ClassifyStatus(status),
+                    PlcReadFailureScope.Tag,
                     "OPC UA 读取失败 " + nodeId + ": " + status,
                     status.ToString());
         }
@@ -733,8 +624,16 @@ namespace IPC.Plc.Communication.OpcUa
             return result;
         }
 
-        private static Variant CreateWriteVariant(PlcDataType dataType, object value)
+        private static Variant CreateWriteVariant(PlcDataType dataType, object value, int offset)
         {
+            if (offset > 0 && value is not Array && dataType != PlcDataType.String)
+            {
+                Array single = Array.CreateInstance(value.GetType(), 1);
+                single.SetValue(value, 0);
+                return dataType == PlcDataType.Byte || dataType == PlcDataType.UInt8
+                    ? new Variant(single, new TypeInfo(BuiltInType.Byte, ValueRanks.OneDimension))
+                    : new Variant(single);
+            }
             // OPC UA distinguishes Byte[] from the scalar ByteString, although
             // both use byte[] in .NET. Preserve the configured array type on write.
             return dataType == PlcDataType.ByteArray || dataType == PlcDataType.UInt8Array
@@ -854,20 +753,6 @@ namespace IPC.Plc.Communication.OpcUa
                 return false;
 
             return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
-        }
-
-        private sealed class PendingRead
-        {
-            public PendingRead(int index, PlcBatchReadRequest request, string nodeId)
-            {
-                Index = index;
-                Request = request;
-                NodeId = nodeId ?? string.Empty;
-            }
-
-            public int Index { get; private set; }
-            public PlcBatchReadRequest Request { get; private set; }
-            public string NodeId { get; private set; }
         }
 
         private sealed class OpcUaSubscription : IPlcSubscription
@@ -1076,8 +961,9 @@ namespace IPC.Plc.Communication.OpcUa
             {
                 return previous != null &&
                        current != null &&
+                       previous.ElementCount == current.ElementCount && previous.DataType == current.DataType &&
                        previous.ElementOffset == current.ElementOffset &&
-                       string.Equals(previous.Address, current.Address, StringComparison.OrdinalIgnoreCase);
+                       string.Equals(previous.Address, current.Address, StringComparison.Ordinal);
             }
 
             private void TrackItem(PlcSubscriptionRequest request, MonitoredItem item)
@@ -1107,13 +993,14 @@ namespace IPC.Plc.Communication.OpcUa
                 subscription.PublishingEnabled = true;
             }
 
-            private static void ConfigureMonitoredItem(
+            private void ConfigureMonitoredItem(
                 MonitoredItem item,
                 PlcSubscriptionRequest request,
                 PlcSubscriptionOptions options)
             {
                 item.DisplayName = string.IsNullOrWhiteSpace(request.Key) ? request.Address : request.Key;
-                item.StartNodeId = NodeId.Parse(NormalizeNodeId(request.Address, request.ElementOffset));
+                item.StartNodeId = _owner.ResolveNodeId(request.Address);
+                item.IndexRange = GetIndexRange(request.DataType, request.ElementCount, request.ElementOffset);
                 item.AttributeId = Attributes.Value;
                 item.MonitoringMode = MonitoringMode.Reporting;
                 item.SamplingInterval = Math.Max(100, request.SamplingIntervalMs > 0 ? request.SamplingIntervalMs : options.SamplingIntervalMs);
@@ -1128,13 +1015,10 @@ namespace IPC.Plc.Communication.OpcUa
                 if (request == null)
                     return;
 
+                DataValue value = (e?.NotificationValue as MonitoredItemNotification)?.Value;
                 try
                 {
-                    MonitoredItemNotification notification = e?.NotificationValue as MonitoredItemNotification;
-                    DataValue value = notification?.Value;
-                    EnsureGoodStatus(value, NormalizeNodeId(request.Address, request.ElementOffset));
-                    object converted = ConvertForRead(value == null ? null : value.Value, request.DataType, request.ElementCount);
-                    PlcReadResult result = new PlcReadResult(0, request.DataType.ToString(), converted);
+                    PlcReadResult result = DecodeValue(value, request.Address, request.DataType, request.ElementCount, request.ElementOffset);
                     PublishUpdate(PlcSubscriptionUpdate.FromSuccess(request, result));
                 }
                 catch (Exception ex)
@@ -1142,7 +1026,7 @@ namespace IPC.Plc.Communication.OpcUa
                     PublishUpdate(PlcSubscriptionUpdate.FromFailure(
                         request,
                         ex.Message,
-                        ClassifyBatchReadExceptionScope(ex, _owner.IsSessionStillConnected(), 1)));
+                        ClassifyBatchReadExceptionScope(ex, _owner.IsSessionStillConnected(), 1), GetSourceTime(value)));
                 }
             }
 
@@ -1207,7 +1091,7 @@ namespace IPC.Plc.Communication.OpcUa
                 }
             }
 
-            private static IList<PlcSubscriptionRequest> NormalizeRequests(IList<PlcSubscriptionRequest> requests)
+            private IList<PlcSubscriptionRequest> NormalizeRequests(IList<PlcSubscriptionRequest> requests)
             {
                 Dictionary<string, PlcSubscriptionRequest> result =
                     new Dictionary<string, PlcSubscriptionRequest>(StringComparer.OrdinalIgnoreCase);
@@ -1219,7 +1103,12 @@ namespace IPC.Plc.Communication.OpcUa
                         if (request == null || string.IsNullOrWhiteSpace(request.Address))
                             continue;
 
-                        result[request.Key] = request;
+                        try
+                        {
+                            _owner.CreateReadNode(request.Address, request.DataType, request.ElementCount, request.ElementOffset);
+                            result[request.Key] = request;
+                        }
+                        catch (Exception ex) { PublishUpdate(PlcSubscriptionUpdate.FromFailure(request, ex.Message, PlcReadFailureScope.Tag)); }
                     }
                 }
 

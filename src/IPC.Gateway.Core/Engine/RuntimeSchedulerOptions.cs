@@ -26,7 +26,7 @@ namespace IPC.Runtime.Engine
         {
             IsolationStrategy = "SemaphoreLimitedPerDeviceQueue";
             MaxConcurrentDevicePolls = Math.Max(16, Math.Min(64, Environment.ProcessorCount * 8));
-            SchedulerIntervalMs = 100;
+            SchedulerIntervalMs = 50;
             RecoveryProbeIntervalMs = 1000;
             RecoveryProbeTimeoutMs = 1000;
             MaxConcurrentRecoveryProbes = 4;
@@ -50,6 +50,11 @@ namespace IPC.Runtime.Engine
             DeviceStatusRecoveryDebounceCount = 1;
             DeviceStatusRecoveryDebounceMs = 0;
             TagValueChangedQueueLimit = 100000;
+            MaxReadItemsPerTurn = 128;
+            InitialReadItemsPerTurn = 16;
+            SingleReadsPerTurn = 4;
+            ReadTurnBudgetMs = 50;
+            TagRecoveryProbeIntervalMs = 1000;
         }
 
         public string IsolationStrategy { get; set; }
@@ -72,6 +77,11 @@ namespace IPC.Runtime.Engine
         public int DeviceStatusRecoveryDebounceCount { get; set; }
         public int DeviceStatusRecoveryDebounceMs { get; set; }
         public int TagValueChangedQueueLimit { get; set; }
+        public int MaxReadItemsPerTurn { get; set; }
+        public int InitialReadItemsPerTurn { get; set; }
+        public int SingleReadsPerTurn { get; set; }
+        public int ReadTurnBudgetMs { get; set; }
+        public int TagRecoveryProbeIntervalMs { get; set; }
 
         public RuntimeSchedulerOptions Normalize()
         {
@@ -108,7 +118,12 @@ namespace IPC.Runtime.Engine
                 DeviceStatusFailureDebounceMs = Clamp(DeviceStatusFailureDebounceMs, 0, 600000),
                 DeviceStatusRecoveryDebounceCount = Clamp(DeviceStatusRecoveryDebounceCount, 1, 100),
                 DeviceStatusRecoveryDebounceMs = Clamp(DeviceStatusRecoveryDebounceMs, 0, 600000),
-                TagValueChangedQueueLimit = Clamp(TagValueChangedQueueLimit, 1, 1000000)
+                TagValueChangedQueueLimit = Clamp(TagValueChangedQueueLimit, 1, 1000000),
+                MaxReadItemsPerTurn = Clamp(MaxReadItemsPerTurn, 1, 1024),
+                InitialReadItemsPerTurn = Clamp(InitialReadItemsPerTurn, 1, 128),
+                SingleReadsPerTurn = Clamp(SingleReadsPerTurn, 1, 32),
+                ReadTurnBudgetMs = Clamp(ReadTurnBudgetMs, 10, 1000),
+                TagRecoveryProbeIntervalMs = Clamp(TagRecoveryProbeIntervalMs, 100, 60000)
             };
         }
 

@@ -30,7 +30,7 @@ namespace IPC.Plc.Communication.Cip
             _inner = new CipClient(_options);
         }
 
-        public bool IsConnected => _driverOptions.UsesImplicitIo ? _implicitConnected : _inner.IsConnected;
+        public bool IsConnected => _driverOptions.UsesImplicitIo ? _implicitConnected && HasFreshInput(_ioClient) : _inner.IsConnected;
         public PlcProtocol Protocol => PlcProtocol.EtherNetIp;
 
         public void Connect()
@@ -41,10 +41,21 @@ namespace IPC.Plc.Communication.Cip
                 return;
             }
 
+            ConnectImplicit(CancellationToken.None);
+        }
+
+        private void ConnectImplicit(CancellationToken cancellationToken)
+        {
             lock (_ioSync)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (_implicitConnected)
-                    return;
+                {
+                    if (HasFreshInput(_ioClient)) return;
+                    if (_ioClient != null) SafeClose(_ioClient);
+                    _implicitConnected = false;
+                    _ioClient = null;
+                }
 
                 EEIPClient client = new EEIPClient
                 {
@@ -68,11 +79,23 @@ namespace IPC.Plc.Communication.Cip
                 try
                 {
                     client.RegisterSession();
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (client.O_T_Length == 0)
                         client.O_T_Length = client.Detect_O_T_Length();
                     if (client.T_O_Length == 0)
                         client.T_O_Length = client.Detect_T_O_Length();
+                    cancellationToken.ThrowIfCancellationRequested();
                     client.ForwardOpen(client.O_T_Length > 511 || client.T_O_Length > 511);
+                    // ForwardOpen only confirms connection setup. Wait for the first
+                    // target-to-originator packet before serving the output image.
+                    long deadline = Environment.TickCount64 + (_options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000);
+                    while (!HasFreshInput(client))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (Environment.TickCount64 >= deadline)
+                            throw new TimeoutException("EtherNet/IP 等待首个周期数据包超时。");
+                        Thread.Sleep(5);
+                    }
                     _ioClient = client;
                     _implicitConnected = true;
                 }
@@ -92,8 +115,7 @@ namespace IPC.Plc.Communication.Cip
                 return;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Run(Connect, cancellationToken).ConfigureAwait(false);
+            await PlcClientInvoker.InvokeSynchronousAsync(() => ConnectImplicit(cancellationToken), cancellationToken).ConfigureAwait(false);
         }
 
         public void Disconnect()
@@ -252,8 +274,6 @@ namespace IPC.Plc.Communication.Cip
         {
             EnsureImplicitConnected();
             EEIPClient client = _ioClient!;
-            if (address.Direction == EtherNetIpIoDirection.Input)
-                EnsureInputFresh(client);
 
             byte[] source = address.Direction == EtherNetIpIoDirection.Input
                 ? client.T_O_IOData ?? Array.Empty<byte>()
@@ -403,6 +423,7 @@ namespace IPC.Plc.Communication.Cip
                 throw new InvalidOperationException("Input/Output 周期地址需要把 EtherNet/IP I/O 模式设置为 Implicit。");
             if (!_implicitConnected)
                 Connect();
+            EnsureInputFresh(_ioClient!);
         }
 
         private void EnsureExplicitConnected()
@@ -417,14 +438,17 @@ namespace IPC.Plc.Communication.Cip
                 await _inner.ConnectAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        private bool HasFreshInput(EEIPClient? client)
+        {
+            DateTime received = client?.LastReceivedImplicitMessage ?? default;
+            return received != default && DateTime.UtcNow - received.ToUniversalTime() <=
+                TimeSpan.FromMilliseconds(_driverOptions.IoStaleTimeoutMilliseconds);
+        }
+
         private void EnsureInputFresh(EEIPClient client)
         {
-            DateTime lastReceived = client.LastReceivedImplicitMessage;
-            if (lastReceived == default)
-                throw new TimeoutException("EtherNet/IP 周期输入尚未收到数据。");
-            if (DateTime.UtcNow - lastReceived.ToUniversalTime() >
-                TimeSpan.FromMilliseconds(_driverOptions.IoStaleTimeoutMilliseconds))
-                throw new TimeoutException("EtherNet/IP 周期输入已超出新鲜度阈值。");
+            if (!HasFreshInput(client))
+                throw new TimeoutException("EtherNet/IP 周期连接尚未收到有效数据或已超时。");
         }
 
         private static RealTimeFormat ParseRealTimeFormat(string value, RealTimeFormat fallback)
@@ -463,8 +487,9 @@ namespace IPC.Plc.Communication.Cip
             if (requests == null)
                 throw new ArgumentNullException(nameof(requests));
             List<PlcBatchReadResult> results = new List<PlcBatchReadResult>(requests.Count);
-            foreach (PlcBatchReadRequest request in requests)
+            for (int i = 0; i < requests.Count; i++)
             {
+                PlcBatchReadRequest request = requests[i];
                 try
                 {
                     results.Add(PlcBatchReadResult.FromSuccess(
@@ -473,10 +498,13 @@ namespace IPC.Plc.Communication.Cip
                 }
                 catch (Exception ex)
                 {
-                    PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                        throw;
+                    PlcReadFailureScope scope = ex is OperationCanceledException ? PlcReadFailureScope.Transport : PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
                     results.Add(PlcBatchReadResult.FromFailure(request, ex.Message, scope));
+                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
+                    {
+                        DeferRemaining(requests, i + 1, results, ex.Message);
+                        break;
+                    }
                 }
             }
             return results;
@@ -489,9 +517,14 @@ namespace IPC.Plc.Communication.Cip
             if (requests == null)
                 throw new ArgumentNullException(nameof(requests));
             List<PlcBatchReadResult> results = new List<PlcBatchReadResult>(requests.Count);
-            foreach (PlcBatchReadRequest request in requests)
+            for (int i = 0; i < requests.Count; i++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                PlcBatchReadRequest request = requests[i];
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    DeferRemaining(requests, i, results, "EtherNet/IP read cancelled before dispatch.");
+                    break;
+                }
                 try
                 {
                     PlcReadResult result = await ReadAsync(
@@ -502,15 +535,25 @@ namespace IPC.Plc.Communication.Cip
                         cancellationToken).ConfigureAwait(false);
                     results.Add(PlcBatchReadResult.FromSuccess(request, result));
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex)
                 {
-                    PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                        throw;
+                    PlcReadFailureScope scope = ex is OperationCanceledException ? PlcReadFailureScope.Transport : PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
                     results.Add(PlcBatchReadResult.FromFailure(request, ex.Message, scope));
+                    if (PlcBatchReadResult.IsConnectionFailureScope(scope))
+                    {
+                        DeferRemaining(requests, i + 1, results, ex.Message);
+                        break;
+                    }
                 }
             }
             return results;
+        }
+
+        private static void DeferRemaining(IList<PlcBatchReadRequest> requests, int start,
+            List<PlcBatchReadResult> results, string message)
+        {
+            for (int i = start; i < requests.Count; i++)
+                results.Add(PlcBatchReadResult.FromDeferred(requests[i], message));
         }
 
         private static IList<PlcBatchReadRequest> NormalizeRequests(IList<PlcBatchReadRequest> requests)
@@ -541,6 +584,7 @@ namespace IPC.Plc.Communication.Cip
                 PlcBatchReadResult result = results[i];
                 remapped.Add(result.Success
                     ? PlcBatchReadResult.FromSuccess(original, result.Result!)
+                    : result.IsDeferred ? PlcBatchReadResult.FromDeferred(original, result.ErrorMessage)
                     : PlcBatchReadResult.FromFailure(original, result.ErrorMessage, result.FailureScope));
             }
             return remapped;

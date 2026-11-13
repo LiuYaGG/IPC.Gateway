@@ -55,6 +55,7 @@ namespace IPC.Gateway.Core.Gateway
         }
 
         public bool IsRunning { get; set; }
+        public string ProjectRevision { get; set; } = string.Empty;
         public string ProjectId { get; set; }
         public string ProjectName { get; set; }
         public string ProjectPath { get; set; }

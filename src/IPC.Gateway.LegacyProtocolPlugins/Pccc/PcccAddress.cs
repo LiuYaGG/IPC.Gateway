@@ -20,6 +20,8 @@ namespace IPC.Plc.Communication.Pccc
 
         public PcccAddress AddElementOffset(int offset)
         {
+            if (offset < 0 || offset > ushort.MaxValue - ElementNumber)
+                throw new ArgumentOutOfRangeException(nameof(offset), "PCCC 元素地址必须在 0 到 65535 之间。");
             return new PcccAddress
             {
                 FileTypeName = FileTypeName,
@@ -30,6 +32,12 @@ namespace IPC.Plc.Communication.Pccc
                 BitNumber = BitNumber,
                 NativeElementSize = NativeElementSize
             };
+        }
+
+        public void EnsureByteRange(int byteCount)
+        {
+            if (byteCount < 1 || (long)ElementNumber + (byteCount - 1L) / NativeElementSize > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(byteCount), "PCCC 请求超出元素地址范围。");
         }
 
         public static PcccAddress Parse(string text)
@@ -69,8 +77,8 @@ namespace IPC.Plc.Communication.Pccc
         {
             if (string.IsNullOrEmpty(member))
                 return 0;
-            if (int.TryParse(member, NumberStyles.None, CultureInfo.InvariantCulture, out int numeric) && numeric >= 0)
-                return numeric;
+            if (int.TryParse(member, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+                return ParseNonNegative(member, "子元素号");
 
             string normalized = member.ToUpperInvariant();
             if (type == "T" || type == "C")
@@ -107,9 +115,9 @@ namespace IPC.Plc.Communication.Pccc
             {
                 case "S": code = 0x84; nativeSize = 2; return;
                 case "B": code = 0x85; nativeSize = 2; return;
-                case "T": code = 0x86; nativeSize = 2; return;
-                case "C": code = 0x87; nativeSize = 2; return;
-                case "R": code = 0x88; nativeSize = 2; return;
+                case "T": code = 0x86; nativeSize = 6; return;
+                case "C": code = 0x87; nativeSize = 6; return;
+                case "R": code = 0x88; nativeSize = 6; return;
                 case "N": code = 0x89; nativeSize = 2; return;
                 case "F": code = 0x8A; nativeSize = 4; return;
                 case "O": code = 0x8B; nativeSize = 2; return;

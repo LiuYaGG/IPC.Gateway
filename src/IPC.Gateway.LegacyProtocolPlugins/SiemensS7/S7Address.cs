@@ -40,25 +40,23 @@ namespace IPC.Plc.Communication.SiemensS7
 
         public S7Address AddByteOffset(int bytes)
         {
-            return new S7Address
-            {
-                Area = Area,
-                DbNumber = DbNumber,
-                ByteOffset = ByteOffset + bytes,
-                BitOffset = BitOffset
-            };
+            return Create(Area, DbNumber, checked(ByteOffset + bytes), BitOffset);
         }
 
         public S7Address AddBitOffset(int bits)
         {
-            int totalBits = ByteOffset * 8 + BitOffset + bits;
-            return new S7Address
-            {
-                Area = Area,
-                DbNumber = DbNumber,
-                ByteOffset = totalBits / 8,
-                BitOffset = totalBits % 8
-            };
+            int totalBits = checked(ByteOffset * 8 + BitOffset + bits);
+            return Create(Area, DbNumber, totalBits / 8, totalBits % 8);
+        }
+
+        public static S7Address Parse(string text, PlcDataType dataType, int elementOffset)
+        {
+            S7Address address = Parse(text, dataType);
+            if (S7DataCodec.IsBoolType(dataType))
+                return address.AddBitOffset(elementOffset);
+            if (PlcDataTypeHelper.IsArray(dataType))
+                return address.AddByteOffset(checked(elementOffset * PlcDataTypeHelper.GetElementSize(dataType)));
+            return address;
         }
 
         public static S7Address Parse(string text, PlcDataType dataType)

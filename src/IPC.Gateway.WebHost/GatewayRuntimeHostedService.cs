@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using IPC.Gateway.Core.Application.Gateway;
+using System.Diagnostics;
 
 namespace IPC.Gateway.WebHost;
 
@@ -32,22 +33,43 @@ public sealed class GatewayRuntimeHostedService : IHostedService, IDisposable
 {
     private readonly ILogger<GatewayRuntimeHostedService> _logger;
     private readonly IGatewayApplicationService _gateway;
+    private readonly GatewayUpdatePackageService _updates;
+    private readonly IServiceProvider _services;
+    private readonly GatewayObservabilityOptions _observability;
     private bool _disposed;
 
     public GatewayRuntimeHostedService(
         IGatewayApplicationService gateway,
-        ILogger<GatewayRuntimeHostedService> logger)
+        ILogger<GatewayRuntimeHostedService> logger,
+        GatewayUpdatePackageService updates,
+        GatewayObservabilityOptions observability,
+        IServiceProvider services)
     {
         _logger = logger;
         _gateway = gateway;
+        _updates = updates;
+        _observability = observability;
+        _services = services;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // The host lifetime has connected to the Windows service manager here.
+        // Restore driver trust before the first project validation or PLC read.
+        cancellationToken.ThrowIfCancellationRequested();
+        var elapsed = Stopwatch.StartNew();
+        try { _updates.RestoreCompletedUpgradeTrust(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Upgrade driver trust could not be restored; normal signature verification remains active."); }
+        _logger.LogInformation("Gateway startup driver trust check finished in {ElapsedMs} ms.", elapsed.ElapsedMilliseconds);
+        if (_observability.MetricsEnabled)
+            _services.GetRequiredService<GatewayMetricsInstrumentation>();
+        cancellationToken.ThrowIfCancellationRequested();
+        elapsed.Restart();
         _gateway.Start();
-        var status = _gateway.GetStatus();
+        var status = _gateway.GetStatusSummary();
         _logger.LogInformation(
-            "IPC.Gateway started. Project={ProjectName}, Devices={DeviceCount}, Tags={TagCount}, Config={ProjectPath}",
+            "IPC.Gateway started in {ElapsedMs} ms. Project={ProjectName}, Devices={DeviceCount}, Tags={TagCount}, Config={ProjectPath}",
+            elapsed.ElapsedMilliseconds,
             status.ProjectName,
             status.DeviceCount,
             status.TagCount,

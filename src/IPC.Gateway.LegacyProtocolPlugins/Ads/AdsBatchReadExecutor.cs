@@ -19,6 +19,7 @@ namespace IPC.Plc.Communication.Ads
             CancellationToken cancellationToken)
         {
             PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
+            maxBatchItems = Math.Max(1, maxBatchItems);
             List<int> scalarIndexes = new List<int>();
             try
             {
@@ -31,9 +32,11 @@ namespace IPC.Plc.Communication.Ads
                             PlcReadResult value = await readSingle(requests[i], cancellationToken).ConfigureAwait(false);
                             ordered[i] = PlcBatchReadResult.FromSuccess(requests[i], value);
                         }
-                        catch (Exception ex) when (IsTagError(ex))
+                        catch (Exception ex)
                         {
-                            ordered[i] = PlcBatchReadResult.FromFailure(requests[i], ex.Message, PlcReadFailureScope.Tag);
+                            var scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                            ordered[i] = PlcBatchReadResult.FromFailure(requests[i], ex.Message, scope);
+                            if (PlcBatchReadResult.IsConnectionFailureScope(scope)) throw;
                         }
                     }
                     else
@@ -58,7 +61,7 @@ namespace IPC.Plc.Communication.Ads
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, ordered, ex);
+                PlcBatchReadResult.DeferPending(requests, ordered, ex.Message);
             }
 
             return ordered;
@@ -89,9 +92,11 @@ namespace IPC.Plc.Communication.Ads
                     types.Add(type);
                     validIndexes.Add(requestIndex);
                 }
-                catch (Exception ex) when (IsTagError(ex))
+                catch (Exception ex)
                 {
-                    ordered[requestIndex] = PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Tag);
+                    var scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
+                    ordered[requestIndex] = PlcBatchReadResult.FromFailure(request, ex.Message, scope);
+                    if (PlcBatchReadResult.IsConnectionFailureScope(scope)) throw;
                 }
             }
 
@@ -99,29 +104,57 @@ namespace IPC.Plc.Communication.Ads
                 return;
 
             SumHandleReadAnyType command = new SumHandleReadAnyType(client, handles.ToArray(), types.ToArray());
-            ResultSumValues result = await command.ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (!result.Succeeded)
-                throw AdsFailureClassifier.Create(result.ErrorCode, "执行 ADS Sum Read");
+            ResultSumValues result;
+            try
+            {
+                result = await command.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (!result.Succeeded && result.ErrorCode != AdsErrorCode.NoError)
+                    throw AdsFailureClassifier.Create(result.ErrorCode, "执行 ADS Sum Read");
+            }
+            catch (Exception error)
+            {
+                var scope = PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+                foreach (int requestIndex in validIndexes)
+                    ordered[requestIndex] = PlcBatchReadResult.FromFailure(requests[requestIndex], error.Message, scope);
+                throw;
+            }
 
+            Exception connectionError = ApplyScalarResults(requests, validIndexes, ordered, result.SubErrors, result.Values);
+            if (connectionError != null) throw connectionError;
+        }
+
+        internal static Exception ApplyScalarResults(
+            IList<PlcBatchReadRequest> requests, IList<int> validIndexes, PlcBatchReadResult[] ordered,
+            IReadOnlyList<AdsErrorCode> subErrors, IReadOnlyList<object> values)
+        {
+            if (subErrors == null || values == null || subErrors.Count != validIndexes.Count || values.Count != validIndexes.Count)
+            {
+                var error = new PlcProtocolException(PlcReadFailureScope.Session, "ADS Sum Read response item count is invalid.");
+                foreach (int requestIndex in validIndexes)
+                    ordered[requestIndex] ??= PlcBatchReadResult.FromFailure(requests[requestIndex], error.Message, error.FailureScope);
+                return error;
+            }
+            Exception connectionError = null;
             for (int i = 0; i < validIndexes.Count; i++)
             {
                 int requestIndex = validIndexes[i];
                 PlcBatchReadRequest request = requests[requestIndex];
-                AdsErrorCode subError = result.SubErrors[i];
+                AdsErrorCode subError = subErrors[i];
                 if (subError == AdsErrorCode.NoError)
                 {
                     ordered[requestIndex] = PlcBatchReadResult.FromSuccess(
                         request,
-                        new PlcReadResult(0, request.DataType.ToString(), result.Values[i]));
+                        new PlcReadResult(0, request.DataType.ToString(), values[i]));
                     continue;
                 }
 
                 Exception error = AdsFailureClassifier.Create(subError, "读取 ADS 标签 " + request.Address);
-                if (error is AdsTagException)
-                    ordered[requestIndex] = PlcBatchReadResult.FromFailure(request, error.Message, PlcReadFailureScope.Tag);
-                else
-                    throw error;
+                var failureScope = PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+                ordered[requestIndex] = PlcBatchReadResult.FromFailure(request, error.Message, failureScope);
+                if (PlcBatchReadResult.IsConnectionFailureScope(failureScope))
+                    connectionError = connectionError ?? error;
             }
+            return connectionError;
         }
 
         private static bool IsTagError(Exception exception)

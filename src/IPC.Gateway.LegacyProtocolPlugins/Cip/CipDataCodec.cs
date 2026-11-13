@@ -112,6 +112,8 @@ namespace IPC.Plc.Communication.Cip
 
         private static void ValidateActualType(PlcDataType requestedType, ushort actualType)
         {
+            if (requestedType == PlcDataType.Bool && (actualType & 0xF8FF) == CipTypeCodes.Bool)
+                return;
             if (requestedType == PlcDataType.BoolArray &&
                 (actualType == CipTypeCodes.Bool || actualType == CipTypeCodes.Dword || actualType == CipTypeCodes.Dint))
                 return;
@@ -219,7 +221,7 @@ namespace IPC.Plc.Communication.Cip
         {
             Require(data, 4);
             int length = BitConverter.ToInt32(data, 0);
-            if (length < 0 || length > data.Length - 4)
+            if (length < 0 || length > 82 || length > data.Length - 4)
                 throw new InvalidOperationException("Logix STRING 返回的长度字段无效或响应不完整。");
             return Encoding.ASCII.GetString(data, 4, length);
         }
@@ -249,7 +251,8 @@ namespace IPC.Plc.Communication.Cip
             MemoryStream stream = new MemoryStream();
             WriteInt32(stream, bytes.Length);
             stream.Write(bytes, 0, bytes.Length);
-            for (int i = bytes.Length; i < 82; i++)
+            // Rockwell STRING has 82 data bytes and two bytes of alignment padding.
+            for (int i = bytes.Length; i < 84; i++)
                 stream.WriteByte(0);
             return stream.ToArray();
         }

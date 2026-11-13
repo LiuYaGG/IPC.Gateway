@@ -12,6 +12,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
         public byte PcNumber { get; private set; } = 0xFF;
         public ushort ModuleIoNumber { get; private set; } = 0x03FF;
         public byte StationNumber { get; private set; }
+        public bool Hexadecimal1EXY { get; private set; }
         public int MaxBatchGapPoints { get; private set; } = 2;
 
         public static McDriverOptions Parse(PlcConnectionOptions connection)
@@ -28,6 +29,10 @@ namespace IPC.Plc.Communication.MitsubishiMc
             {
                 using JsonDocument document = JsonDocument.Parse(connection.DriverOptionsJson);
                 JsonElement root = document.RootElement;
+                string profile = GetString(root, "controllerProfile", "A/FX3");
+                // Keep the legacy combined A/FX3 profile octal until the CPU family is explicitly selected.
+                options.Hexadecimal1EXY = profile.Equals("A", StringComparison.OrdinalIgnoreCase) ||
+                                          profile.Equals("Q兼容1E", StringComparison.OrdinalIgnoreCase);
                 options.FrameType = GetString(root, "mcFrameType", options.FrameType);
                 options.DataCode = GetString(root, "mcDataCode", options.DataCode);
                 options.NetworkNumber = GetByte(root, "networkNumber", options.NetworkNumber);

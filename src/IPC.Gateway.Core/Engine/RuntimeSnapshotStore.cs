@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using IPC.Runtime.Indexing;
 using IPC.Runtime.Values;
 
@@ -7,6 +8,15 @@ namespace IPC.Runtime.Engine
 {
     internal sealed class RuntimeSnapshotStore
     {
+        private static long _revision;
+
+        // All commits are serialized by RuntimeEngine's configuration/state lock.
+        public void Set(IDictionary<string, TagValueSnapshot> snapshots, string key, TagValueSnapshot snapshot)
+        {
+            snapshot.RuntimeRevision = Interlocked.Increment(ref _revision);
+            snapshots[key] = snapshot;
+        }
+
         public bool TryGetById(
             IDictionary<string, TagValueSnapshot> snapshots,
             string channelId,
@@ -38,7 +48,8 @@ namespace IPC.Runtime.Engine
             return result;
         }
 
-        public bool Upsert(IDictionary<string, TagValueSnapshot> snapshots, TagValueSnapshot snapshot, out TagValueSnapshot clone, bool preserveLastReadError = false)
+        public bool Upsert(IDictionary<string, TagValueSnapshot> snapshots, TagValueSnapshot snapshot,
+            out TagValueSnapshot clone, out bool diagnosticsOnly, bool preserveLastReadError = false)
         {
             string key = TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
             clone = snapshot.Clone();
@@ -47,7 +58,13 @@ namespace IPC.Runtime.Engine
             if (preserveLastReadError && previous != null)
                 clone.LastReadError = previous.LastReadError ?? string.Empty;
             bool changed = !exists || HasChanged(previous, clone);
-            snapshots[key] = clone;
+            diagnosticsOnly = !changed && previous != null && (
+                previous.TagState != clone.TagState ||
+                previous.IsTagIsolated != clone.IsTagIsolated ||
+                previous.IsStaticValidationError != clone.IsStaticValidationError ||
+                previous.TagConsecutiveFailures != clone.TagConsecutiveFailures ||
+                previous.NextTagRecoveryProbeTime != clone.NextTagRecoveryProbeTime);
+            Set(snapshots, key, clone);
             return changed;
         }
 

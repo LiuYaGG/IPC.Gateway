@@ -196,7 +196,13 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         {
             string normalized = (address ?? string.Empty).Trim();
             if (!CipExplicitAddress.IsExplicit(normalized))
-                return base.ValidateTag(options, normalized, dataType, elementCount, elementOffset);
+            {
+                var validation = base.ValidateTag(options, normalized, dataType, elementCount, elementOffset);
+                if (!validation.IsValid) return validation;
+                if (CipBatchReadItem.TrySplitTrailingSingleIndex(normalized, out string symbol, out int index))
+                    return PlcTagValidationResult.Valid(normalized, symbol, (long)index + elementOffset);
+                return PlcTagValidationResult.Valid(normalized, normalized, elementOffset);
+            }
 
             try
             {
@@ -316,6 +322,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                 PcccAddress parsed = PcccAddress.Parse(normalized);
                 if (elementCount <= 0 || elementOffset < 0)
                     return PlcTagValidationResult.Invalid(normalized, "元素数量和偏移无效。");
+                parsed = parsed.AddElementOffset(elementOffset);
+                parsed.EnsureByteRange(PcccDataCodec.GetByteCount(parsed, dataType, elementCount));
                 if (parsed.BitNumber.HasValue && dataType != PlcDataType.Bool)
                     return PlcTagValidationResult.Invalid(normalized, "PCCC位地址必须使用Bool数据类型。");
                 if (dataType == PlcDataType.String && parsed.FileTypeName != "ST")
@@ -327,7 +335,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                     dataType == PlcDataType.Coil || dataType == PlcDataType.CoilArray ||
                     dataType == PlcDataType.DiscreteInput || dataType == PlcDataType.DiscreteInputArray)
                     return PlcTagValidationResult.Invalid(normalized, "PCCC不支持该数据类型。");
-                return PlcTagValidationResult.Valid(normalized);
+                return PlcTagValidationResult.Valid(normalized, $"{parsed.FileTypeCode}|{parsed.FileNumber}|{parsed.SubElement}",
+                    (long)parsed.ElementNumber * 16 + parsed.BitNumber.GetValueOrDefault());
             }
             catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
             {
@@ -358,7 +367,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins
             string normalized = (address ?? string.Empty).Trim();
             try
             {
-                _ = S7Address.Parse(normalized, dataType);
+                S7Address start = S7Address.Parse(normalized, dataType, elementOffset);
                 if (elementCount <= 0 || elementOffset < 0)
                     return PlcTagValidationResult.Invalid(normalized, "元素数量或偏移无效。");
                 if (dataType == PlcDataType.String && elementCount > 254)
@@ -369,7 +378,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                 bool hasBitSuffix = Regex.IsMatch(normalized, @"(?:DBX|[MIQVEA]X?)[0-9]+\.[0-9]+$", RegexOptions.IgnoreCase);
                 if (hasBitSuffix && dataType != PlcDataType.Bool && dataType != PlcDataType.BoolArray)
                     return PlcTagValidationResult.Invalid(normalized, "带 .bit 后缀的 S7 地址必须使用 Bool 或 BoolArray。" );
-                return PlcTagValidationResult.Valid(normalized);
+                return PlcTagValidationResult.Valid(normalized, $"{start.Area}|{start.DbNumber}", (long)start.ByteOffset * 8 + start.BitOffset);
             }
             catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
             {
@@ -395,10 +404,9 @@ namespace IPC.Gateway.LegacyProtocolPlugins
             string normalized = (address ?? string.Empty).Trim();
             try
             {
-                _ = McAddress.Parse(normalized);
-                if (elementCount <= 0 || elementOffset < 0)
-                    return PlcTagValidationResult.Invalid(normalized, "元素数量和偏移无效。");
-                return PlcTagValidationResult.Valid(normalized);
+                var start = McAddress.Parse(normalized, string.Equals(McDriverOptions.Parse(options).DataCode, "ASCII", StringComparison.OrdinalIgnoreCase)).ResolveOffset(dataType, elementOffset);
+                start.EnsureTagRange(dataType, elementCount);
+                return PlcTagValidationResult.Valid(normalized, start.DeviceName, (long)start.DeviceNumber * 16 + Math.Max(0, start.BitOffset));
             }
             catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
             {
@@ -424,10 +432,9 @@ namespace IPC.Gateway.LegacyProtocolPlugins
             string normalized = (address ?? string.Empty).Trim();
             try
             {
-                _ = Mc1EAddress.Parse(normalized);
-                if (elementCount <= 0 || elementOffset < 0)
-                    return PlcTagValidationResult.Invalid(normalized, "元素数量和偏移无效。");
-                return PlcTagValidationResult.Valid(normalized);
+                var start = Mc1EAddress.Parse(normalized, McDriverOptions.Parse(options).Hexadecimal1EXY).ResolveOffset(dataType, elementOffset);
+                start.EnsureTagRange(dataType, elementCount);
+                return PlcTagValidationResult.Valid(normalized, start.DeviceName, (long)start.DeviceNumber * 16 + Math.Max(0, start.BitOffset));
             }
             catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
             {
@@ -447,6 +454,21 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         {
             return new MitsubishiSerialClient(options);
         }
+
+        public override PlcTagValidationResult ValidateTag(PlcConnectionOptions options, string address, PlcDataType dataType, int elementCount, int elementOffset)
+        {
+            string normalized = (address ?? string.Empty).Trim();
+            try
+            {
+                var start = MitsubishiSerialAddress.Parse(normalized).ResolveOffset(dataType, elementOffset);
+                start.EnsureTagRange(dataType, elementCount);
+                return PlcTagValidationResult.Valid(normalized, start.DeviceName, (long)start.DeviceNumber * 16 + Math.Max(0, start.BitOffset));
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
+            {
+                return PlcTagValidationResult.Invalid(normalized, ex.Message);
+            }
+        }
     }
 
     public sealed class MitsubishiQlSerialProtocolDriver : LegacyProtocolDriver
@@ -459,6 +481,21 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         protected override IPlcClient CreateLicensedClient(PlcConnectionOptions options)
         {
             return new MitsubishiQlSerialClient(options);
+        }
+
+        public override PlcTagValidationResult ValidateTag(PlcConnectionOptions options, string address, PlcDataType dataType, int elementCount, int elementOffset)
+        {
+            string normalized = (address ?? string.Empty).Trim();
+            try
+            {
+                var start = MitsubishiQlSerialAddress.Parse(normalized).ResolveOffset(dataType, elementOffset);
+                start.EnsureTagRange(dataType, elementCount);
+                return PlcTagValidationResult.Valid(normalized, start.DeviceName, (long)start.DeviceNumber * 16 + Math.Max(0, start.BitOffset));
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is OverflowException)
+            {
+                return PlcTagValidationResult.Invalid(normalized, ex.Message);
+            }
         }
     }
 
@@ -492,10 +529,11 @@ namespace IPC.Gateway.LegacyProtocolPlugins
 
                 FinsDriverOptions driverOptions = FinsDriverOptions.Parse(options);
                 FinsAddress parsed = FinsAddress.Parse(normalized, dataType, driverOptions);
+                FinsAddress start;
                 if (FinsDataCodec.IsBitType(dataType))
                 {
                     int count = PlcDataTypeHelper.IsArray(dataType) ? elementCount : 1;
-                    FinsAddress start = parsed.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
+                    start = parsed.OffsetBits(PlcDataTypeHelper.IsArray(dataType) ? elementOffset : 0);
                     start.EnsureRange(count, true);
                 }
                 else
@@ -508,11 +546,11 @@ namespace IPC.Gateway.LegacyProtocolPlugins
                     int count = PlcDataTypeHelper.IsArray(dataType) || dataType == PlcDataType.String
                         ? elementCount
                         : 1;
-                    FinsAddress start = parsed.OffsetWords(offset);
+                    start = parsed.OffsetWords(offset);
                     start.EnsureRange(FinsDataCodec.GetWordCount(dataType, count), false);
                 }
 
-                return PlcTagValidationResult.Valid(normalized);
+                return PlcTagValidationResult.Valid(normalized, start.Area.Name, (long)start.WireWordAddress * 16 + Math.Max(0, start.BitIndex));
             }
             catch (Exception ex) when (
                 ex is ArgumentException ||
@@ -623,6 +661,18 @@ namespace IPC.Gateway.LegacyProtocolPlugins
         public OpcUaProtocolDriver()
             : base("legacy.opc-ua", "OPC UA", PlcProtocol.OpcUa)
         {
+        }
+
+        public override PlcTagValidationResult ValidateTag(PlcConnectionOptions options, string address, PlcDataType dataType, int elementCount, int elementOffset)
+        {
+            var validation = base.ValidateTag(options, address, dataType, elementCount, elementOffset);
+            if (!validation.IsValid) return validation;
+            try { _ = global::Opc.Ua.ExpandedNodeId.Parse(address.Trim()); }
+            catch (Exception ex) when (ex is global::Opc.Ua.ServiceResultException or FormatException or ArgumentException or OverflowException)
+            {
+                return PlcTagValidationResult.Invalid(address, ex.Message);
+            }
+            return validation;
         }
 
         protected override IPlcClient CreateLicensedClient(PlcConnectionOptions options)

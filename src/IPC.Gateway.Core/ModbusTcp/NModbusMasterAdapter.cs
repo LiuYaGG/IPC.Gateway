@@ -62,6 +62,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
 
     public bool[] ReadBits(bool discreteInputs, int startAddress, int count)
     {
+        ValidateRange(startAddress, count);
         ThrowIfDisposed();
         _operationLock.Wait();
         try
@@ -88,6 +89,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
 
     public byte[] ReadRegisters(bool inputRegisters, int startAddress, int count)
     {
+        ValidateRange(startAddress, count);
         ThrowIfDisposed();
         _operationLock.Wait();
         try
@@ -115,6 +117,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
     public void WriteBits(int startAddress, bool[] values)
     {
         ArgumentNullException.ThrowIfNull(values);
+        ValidateRange(startAddress, values.Length);
         ThrowIfDisposed();
         _operationLock.Wait();
         try
@@ -147,6 +150,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
     {
         ArgumentNullException.ThrowIfNull(data);
         ushort[] values = FromBigEndianBytes(data);
+        ValidateRange(startAddress, values.Length);
         ThrowIfDisposed();
         _operationLock.Wait();
         try
@@ -165,6 +169,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
         int count,
         CancellationToken cancellationToken)
     {
+        ValidateRange(startAddress, count);
         ThrowIfDisposed();
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -196,6 +201,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
         int count,
         CancellationToken cancellationToken)
     {
+        ValidateRange(startAddress, count);
         ThrowIfDisposed();
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -227,6 +233,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(values);
+        ValidateRange(startAddress, values.Length);
         ThrowIfDisposed();
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -263,6 +270,7 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
     {
         ArgumentNullException.ThrowIfNull(data);
         ushort[] values = FromBigEndianBytes(data);
+        ValidateRange(startAddress, values.Length);
         ThrowIfDisposed();
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -347,6 +355,12 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
             data[i * 2 + 1] = (byte)registers[i];
         }
         return data;
+    }
+
+    private static void ValidateRange(int address, int count)
+    {
+        if (address < 0 || count <= 0 || (long)address + count > 65536)
+            throw new ArgumentOutOfRangeException(nameof(address), "Modbus request extends outside the 16-bit address space.");
     }
 
     private static ushort ToUInt16(int value)

@@ -27,13 +27,14 @@ export function createDefaultHistoryStorage(): HistoryStorageConfig {
     retentionPolicy: 'DeleteOnly',
     hotRetentionDays: 7,
     coldRetentionDays: 90,
-    compressionEnabled: false,
-    compressHotFiles: false,
+    compressionEnabled: true,
+    compressHotFiles: true,
     compressColdFiles: true,
-    compressAfterDays: 3,
+    compressAfterDays: 0,
     autoCleanupEnabled: true,
     cleanupIntervalHours: 24,
-    maxStorageMegabytes: 0
+    maxStorageMegabytes: 0,
+    valueFileSegmentMegabytes: 64
   }
 }
 
@@ -144,7 +145,9 @@ function normalizeHistoryStorage(
     compressAfterDays: normalizeNumber(input?.compressAfterDays, fallback.compressAfterDays),
     autoCleanupEnabled: Boolean(input?.autoCleanupEnabled ?? fallback.autoCleanupEnabled),
     cleanupIntervalHours: normalizeNumber(input?.cleanupIntervalHours, fallback.cleanupIntervalHours),
-    maxStorageMegabytes: normalizeNumber(input?.maxStorageMegabytes, fallback.maxStorageMegabytes)
+    maxStorageMegabytes: normalizeNumber(input?.maxStorageMegabytes, fallback.maxStorageMegabytes),
+    valueFileSegmentMegabytes: Number(input?.valueFileSegmentMegabytes) > 0
+      ? Number(input?.valueFileSegmentMegabytes) : fallback.valueFileSegmentMegabytes
   }
 }
 

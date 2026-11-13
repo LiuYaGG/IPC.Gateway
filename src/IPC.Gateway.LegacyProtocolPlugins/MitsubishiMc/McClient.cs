@@ -330,11 +330,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private McAddress BuildAddress(string address, PlcDataType dataType, int elementOffset)
         {
-            McAddress parsed = McAddress.Parse(address);
-            if (dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray)
-                return parsed.AddBitOffset(elementOffset);
-
-            return parsed.AddDeviceOffset(McDataCodec.GetDeviceOffset(dataType, elementOffset));
+            return McAddress.Parse(address, _frameCodec is McAsciiFrameCodec).ResolveOffset(dataType, elementOffset);
         }
 
         private PlcReadResult ReadBool(McAddress address)
@@ -509,12 +505,13 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private byte[] ReadWordsSegmented(McAddress address, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
-                byte[] data = ReadWords(address.AddDeviceOffset(offset), chunk);
+                byte[] data = ReadWords(address.AddWordOffset(offset), chunk);
                 result.Write(data, 0, data.Length);
                 offset += chunk;
             }
@@ -526,13 +523,14 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int wordCount,
             CancellationToken cancellationToken)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < wordCount)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
-                byte[] data = await ReadWordsAsync(address.AddDeviceOffset(offset), chunk, cancellationToken).ConfigureAwait(false);
+                byte[] data = await ReadWordsAsync(address.AddWordOffset(offset), chunk, cancellationToken).ConfigureAwait(false);
                 result.Write(data, 0, data.Length);
                 offset += chunk;
             }
@@ -541,13 +539,14 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private void WriteWordsSegmented(McAddress address, byte[] data, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
                 byte[] chunkData = new byte[chunk * 2];
                 Buffer.BlockCopy(data, offset * 2, chunkData, 0, chunkData.Length);
-                WriteWords(address.AddDeviceOffset(offset), chunkData, chunk);
+                WriteWords(address.AddWordOffset(offset), chunkData, chunk);
                 offset += chunk;
             }
         }
@@ -558,6 +557,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int wordCount,
             CancellationToken cancellationToken)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             int offset = 0;
             while (offset < wordCount)
             {
@@ -565,13 +565,14 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
                 byte[] chunkData = new byte[chunk * 2];
                 Buffer.BlockCopy(data, offset * 2, chunkData, 0, chunkData.Length);
-                await WriteWordsAsync(address.AddDeviceOffset(offset), chunkData, chunk, cancellationToken).ConfigureAwait(false);
+                await WriteWordsAsync(address.AddWordOffset(offset), chunkData, chunk, cancellationToken).ConfigureAwait(false);
                 offset += chunk;
             }
         }
 
         private byte[] ReadBitsSegmented(McAddress address, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < count)
@@ -589,6 +590,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int count,
             CancellationToken cancellationToken)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < count)
@@ -604,6 +606,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private void WriteBitsSegmented(McAddress address, byte[] values, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             int offset = 0;
             while (offset < count)
             {
@@ -621,6 +624,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             int count,
             CancellationToken cancellationToken)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             int offset = 0;
             while (offset < count)
             {

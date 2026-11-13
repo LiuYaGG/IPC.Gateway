@@ -126,7 +126,7 @@ internal static class GatewayConfigurationSecurity
         return filtered;
     }
 
-    private static GatewayRuntimeStatusDto FilterStatus(GatewayRuntimeStatusDto? status, ClaimsPrincipal user)
+    internal static GatewayRuntimeStatusDto FilterStatus(GatewayRuntimeStatusDto? status, ClaimsPrincipal user)
     {
         status ??= new GatewayRuntimeStatusDto();
         if (CanViewRuntimeOverview(user))
@@ -136,11 +136,12 @@ internal static class GatewayConfigurationSecurity
         {
             IsRunning = status.IsRunning,
             ProjectId = status.ProjectId,
+            ProjectRevision = status.ProjectRevision,
             ProjectName = status.ProjectName,
             ConfigurationStore = status.ConfigurationStore,
             StartedTime = status.StartedTime,
             LastReloadTime = status.LastReloadTime,
-            ConfigValidation = status.ConfigValidation ?? new ProjectValidationResultDto()
+            ConfigValidation = new ProjectValidationResultDto { IsValid = status.ConfigValidation?.IsValid ?? true }
         };
 
         if (GatewayAuthEndpoints.CanViewMqtt(user))
@@ -155,7 +156,30 @@ internal static class GatewayConfigurationSecurity
         return filtered;
     }
 
-    private static bool CanViewRuntimeOverview(ClaimsPrincipal user)
+    internal static GatewayRuntimeEventEnvelope? FilterRuntimeEvent(GatewayRuntimeEventEnvelope envelope, ClaimsPrincipal user)
+    {
+        switch (envelope.Type)
+        {
+            case "tags":
+            case "devices":
+                return CanViewRuntimeOverview(user) ? envelope : null;
+            case "status" when envelope.Data is GatewayRuntimeStatusPatchEvent patch:
+                if (CanViewRuntimeOverview(user)) return envelope;
+                return new GatewayRuntimeEventEnvelope
+                {
+                    Type = envelope.Type,
+                    Sequence = envelope.Sequence,
+                    Timestamp = envelope.Timestamp,
+                    Data = new GatewayRuntimeStatusPatchEvent { Status = FilterStatus(patch.Status, user) }
+                };
+            case "resync":
+                return envelope;
+            default:
+                return null;
+        }
+    }
+
+    internal static bool CanViewRuntimeOverview(ClaimsPrincipal user)
     {
         return GatewayAuthEndpoints.CanViewDashboard(user) ||
                GatewayAuthEndpoints.CanViewBigScreen(user) ||

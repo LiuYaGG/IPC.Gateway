@@ -4,158 +4,67 @@ namespace IPC.Gateway.WebHost;
 
 public sealed class GatewayRuntimeEventHub
 {
-    private const int ClientQueueLimit = 4096;
-    private const int RingBufferLimit = 4096;
-    private readonly object _syncRoot = new();
-    private readonly Dictionary<Guid, Channel<GatewayRuntimeEventEnvelope>> _clients = new();
-    private readonly Dictionary<Guid, GatewayRuntimeLatestQueue> _latestClients = new();
-    private readonly GatewayRuntimeEventEnvelope[] _ring = new GatewayRuntimeEventEnvelope[RingBufferLimit];
-    private int _ringStart;
-    private int _ringCount;
+    private readonly object _subscriptionsLock = new();
+    private readonly object _publishLock = new();
+    private GatewayRuntimeLatestQueue[] _subscribers = [];
+    private int _deviceSubscribers;
     private long _sequence;
 
-    public int SubscriberCount
+    public int SubscriberCount => Volatile.Read(ref _subscribers).Length;
+    public bool HasDeviceSubscribers => Volatile.Read(ref _deviceSubscribers) != 0;
+    public long CurrentSequence => Interlocked.Read(ref _sequence);
+
+    // Register and capture the watermark atomically. New connections always receive
+    // an authoritative snapshot, so events from before registration need no replay log.
+    public GatewayRuntimeEventSubscription SubscribeLatest(out long snapshotSequence, bool includeDeviceData)
     {
-        get
+        var queue = new GatewayRuntimeLatestQueue(includeDeviceData);
+        lock (_subscriptionsLock)
         {
-            lock (_syncRoot)
-                return _clients.Count + _latestClients.Count;
+            if (includeDeviceData) Interlocked.Increment(ref _deviceSubscribers);
+            Volatile.Write(ref _subscribers, [.. _subscribers, queue]);
+            snapshotSequence = _sequence;
         }
+        return new GatewayRuntimeEventSubscription(Guid.NewGuid(), queue.Reader, () => Remove(queue), queue.Drain);
     }
 
-    public long CurrentSequence
+    public GatewayRuntimeEventEnvelope Create(string type, object? data, long sequence) => new()
     {
-        get
-        {
-            lock (_syncRoot)
-                return _sequence;
-        }
-    }
-
-    public GatewayRuntimeEventSubscription Subscribe(long afterSequence = 0)
-    {
-        Guid id = Guid.NewGuid();
-        Channel<GatewayRuntimeEventEnvelope> channel = Channel.CreateBounded<GatewayRuntimeEventEnvelope>(
-            new BoundedChannelOptions(ClientQueueLimit)
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                FullMode = BoundedChannelFullMode.DropOldest
-            });
-
-        lock (_syncRoot)
-        {
-            List<GatewayRuntimeEventEnvelope> replay = GetBufferedEventsAfterNoLock(afterSequence);
-            foreach (GatewayRuntimeEventEnvelope envelope in replay)
-                channel.Writer.TryWrite(envelope);
-
-            _clients[id] = channel;
-        }
-
-        return new GatewayRuntimeEventSubscription(id, channel.Reader, () => Remove(id));
-    }
-
-    public GatewayRuntimeEventEnvelope Create(string type, object? data)
-    {
-        lock (_syncRoot)
-            return CreateNoLock(type, data, ++_sequence);
-    }
-
-    // Browser subscriptions need current state, rather than a replay of every transition.
-    public GatewayRuntimeEventSubscription SubscribeLatest(long afterSequence)
-    {
-        Guid id = Guid.NewGuid();
-        var queue = new GatewayRuntimeLatestQueue();
-        lock (_syncRoot)
-        {
-            foreach (var envelope in GetBufferedEventsAfterNoLock(afterSequence))
-                queue.Publish(envelope);
-            _latestClients[id] = queue;
-        }
-        return new GatewayRuntimeEventSubscription(id, queue.Reader, () => Remove(id), queue.Drain);
-    }
-
-    public GatewayRuntimeEventEnvelope Create(string type, object? data, long sequence)
-    {
-        return new GatewayRuntimeEventEnvelope
-        {
-            Sequence = Math.Max(0, sequence),
-            Type = string.IsNullOrWhiteSpace(type) ? "message" : type.Trim(),
-            Timestamp = DateTime.UtcNow,
-            Data = data
-        };
-    }
+        Sequence = sequence,
+        Type = type,
+        Timestamp = DateTime.UtcNow,
+        Data = data
+    };
 
     public void Publish(string type, object? data)
     {
-        GatewayRuntimeEventEnvelope envelope;
-        lock (_syncRoot)
+        // Preserve order across publishers without blocking subscriptions, disconnects
+        // or acquisition callbacks on a slow subscriber's merge.
+        lock (_publishLock)
         {
-            envelope = CreateNoLock(type, data, ++_sequence);
-            AddToRingNoLock(envelope);
-            // Keep enqueue order consistent with sequence order across concurrent publishers.
-            foreach (var channel in _clients.Values)
-                channel.Writer.TryWrite(envelope);
-            foreach (var queue in _latestClients.Values)
-                queue.Publish(envelope);
+            GatewayRuntimeLatestQueue[] subscribers;
+            GatewayRuntimeEventEnvelope envelope;
+            lock (_subscriptionsLock)
+            {
+                subscribers = _subscribers;
+                if (subscribers.Length == 0) return;
+                envelope = Create(type, data, Interlocked.Increment(ref _sequence));
+            }
+            foreach (var queue in subscribers)
+                if (queue.IncludeDeviceData || type is not ("tags" or "devices"))
+                    queue.Publish(envelope);
         }
     }
 
-    public IList<GatewayRuntimeEventEnvelope> GetBufferedEventsAfter(long afterSequence)
+    private void Remove(GatewayRuntimeLatestQueue queue)
     {
-        lock (_syncRoot)
-            return GetBufferedEventsAfterNoLock(afterSequence);
-    }
-
-    private void Remove(Guid id)
-    {
-        Channel<GatewayRuntimeEventEnvelope>? channel;
-        GatewayRuntimeLatestQueue? latest;
-        lock (_syncRoot)
+        lock (_subscriptionsLock)
         {
-            _clients.Remove(id, out channel);
-            _latestClients.Remove(id, out latest);
+            if (!_subscribers.Contains(queue)) return;
+            Volatile.Write(ref _subscribers, _subscribers.Where(item => item != queue).ToArray());
+            if (queue.IncludeDeviceData) Interlocked.Decrement(ref _deviceSubscribers);
         }
-
-        channel?.Writer.TryComplete();
-        latest?.Complete();
-    }
-
-    private GatewayRuntimeEventEnvelope CreateNoLock(string type, object? data, long sequence)
-    {
-        return new GatewayRuntimeEventEnvelope
-        {
-            Sequence = sequence,
-            Type = string.IsNullOrWhiteSpace(type) ? "message" : type.Trim(),
-            Timestamp = DateTime.UtcNow,
-            Data = data
-        };
-    }
-
-    private void AddToRingNoLock(GatewayRuntimeEventEnvelope envelope)
-    {
-        if (_ringCount < RingBufferLimit)
-        {
-            _ring[(_ringStart + _ringCount) % RingBufferLimit] = envelope;
-            _ringCount++;
-            return;
-        }
-
-        _ring[_ringStart] = envelope;
-        _ringStart = (_ringStart + 1) % RingBufferLimit;
-    }
-
-    private List<GatewayRuntimeEventEnvelope> GetBufferedEventsAfterNoLock(long afterSequence)
-    {
-        List<GatewayRuntimeEventEnvelope> events = new List<GatewayRuntimeEventEnvelope>();
-        for (int i = 0; i < _ringCount; i++)
-        {
-            GatewayRuntimeEventEnvelope envelope = _ring[(_ringStart + i) % RingBufferLimit];
-            if (envelope != null && envelope.Sequence > afterSequence)
-                events.Add(envelope);
-        }
-
-        return events;
+        queue.Complete();
     }
 }
 

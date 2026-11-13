@@ -40,7 +40,6 @@ namespace IPC.Plc.Communication.Metering.Dlt645
     {
         private readonly PlcConnectionOptions _options;
         private SharedTransparentTcpLease? _channelLease;
-        private NetworkStream? _stream;
 
         public Dlt645Client(PlcConnectionOptions options)
         {
@@ -49,7 +48,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
 
         public bool IsConnected
         {
-            get { return _channelLease?.IsConnected == true && _stream != null; }
+            get { return _channelLease?.IsConnected == true; }
         }
 
         public PlcProtocol Protocol
@@ -66,13 +65,11 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             try
             {
                 _channelLease = SharedTransparentTcpChannelRegistry.Acquire(_options);
-                _stream = _channelLease.Stream;
             }
             catch
             {
                 _channelLease?.Dispose();
                 _channelLease = null;
-                _stream = null;
                 throw;
             }
         }
@@ -87,20 +84,17 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             try
             {
                 _channelLease = await SharedTransparentTcpChannelRegistry.AcquireAsync(_options, cancellationToken).ConfigureAwait(false);
-                _stream = _channelLease.Stream;
             }
             catch
             {
                 _channelLease?.Dispose();
                 _channelLease = null;
-                _stream = null;
                 throw;
             }
         }
 
         public void Disconnect()
         {
-            _stream = null;
             if (_channelLease != null)
             {
                 _channelLease.Dispose();
@@ -144,6 +138,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             {
                 ParseAddress = Dlt645Address.Parse,
                 GetAddressKey = GetAddressKey,
+                GetMeterKey = address => address.MeterAddress,
                 ReadRawData = ReadRawData,
                 DecodeValue = DecodeValue,
                 TypeCode = 0x6457,
@@ -160,6 +155,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             {
                 ParseAddress = Dlt645Address.Parse,
                 GetAddressKey = GetAddressKey,
+                GetMeterKey = address => address.MeterAddress,
                 ReadRawDataAsync = ReadRawDataAsync,
                 DecodeValue = DecodeValue,
                 TypeCode = 0x6457,
@@ -167,28 +163,36 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             }, cancellationToken).ConfigureAwait(false);
         }
 
-        private byte[] ReadRawData(Dlt645Address address)
+        private byte[] ReadRawData(Dlt645Address address) =>
+            ReadRawDataAsync(address, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+        private async ValueTask<byte[]> ReadRawDataAsync(Dlt645Address address, CancellationToken cancellationToken)
         {
-            using IDisposable operation = _channelLease!.Enter();
+            var lease = _channelLease ?? throw new IOException("表计透传连接已关闭。");
+            using IDisposable operation = await lease.EnterAsync(cancellationToken).ConfigureAwait(false);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(_options.TimeoutMilliseconds > 0 ? _options.TimeoutMilliseconds : 3000);
             byte[] request = Dlt645Frame.BuildReadRequest(address);
-            NetworkStream stream = GetConnectedStream();
-            stream.Write(request, 0, request.Length);
-
-            byte[] response = ReadResponse(stream);
-            return Dlt645Frame.ExtractReadData(response, address);
-        }
-
-        private async ValueTask<byte[]> ReadRawDataAsync(
-            Dlt645Address address,
-            CancellationToken cancellationToken)
-        {
-            using IDisposable operation = await _channelLease!.EnterAsync(cancellationToken).ConfigureAwait(false);
-            byte[] request = Dlt645Frame.BuildReadRequest(address);
-            NetworkStream stream = GetConnectedStream();
-            await stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
-
-            byte[] response = await ReadResponseAsync(stream, cancellationToken).ConfigureAwait(false);
-            return Dlt645Frame.ExtractReadData(response, address);
+            NetworkStream stream = lease.Stream;
+            try
+            {
+                await stream.WriteAsync(request, timeout.Token).ConfigureAwait(false);
+                while (true)
+                {
+                    byte[] response = await ReadResponseAsync(stream, timeout.Token).ConfigureAwait(false);
+                    if (Dlt645Frame.MatchesRequest(response, address))
+                        return Dlt645Frame.ExtractReadData(response, address);
+                }
+            }
+            catch (IOException)
+            {
+                lease.MarkTransportFailure();
+                throw;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("Dlt645 等待对应表计的回复超时。");
+            }
         }
 
         private static object DecodeValue(Dlt645Address address, byte[] data, PlcDataType dataType)
@@ -221,57 +225,6 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             Disconnect();
         }
 
-        private byte[] ReadResponse(NetworkStream stream)
-        {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
-            while (DateTime.UtcNow <= deadline && stream.ReadByte() != 0x68)
-            {
-            }
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("DLT645-2007 read timed out while waiting for frame start.");
-
-            byte[] header = new byte[10];
-            header[0] = 0x68;
-            ReadExact(stream, header, 1, 9);
-            byte[] frame = new byte[12 + header[9]];
-            Buffer.BlockCopy(header, 0, frame, 0, header.Length);
-            ReadExact(stream, frame, header.Length, frame.Length - header.Length);
-            return frame;
-        }
-
-#if false
-        private byte[] ReadResponseLegacy(NetworkStream stream)
-        {
-            MemoryStream buffer = new MemoryStream();
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
-            while (DateTime.UtcNow <= deadline)
-            {
-                int current = stream.ReadByte();
-                if (current < 0)
-                    continue;
-
-                buffer.WriteByte((byte)current);
-                byte[] bytes = buffer.ToArray();
-                int start = FindStart(bytes);
-                if (start < 0)
-                    continue;
-                if (bytes.Length < start + 12)
-                    continue;
-
-                int length = bytes[start + 9];
-                int frameLength = 12 + length;
-                if (bytes.Length < start + frameLength)
-                    continue;
-
-                byte[] frame = new byte[frameLength];
-                Array.Copy(bytes, start, frame, 0, frameLength);
-                return frame;
-            }
-
-            throw new TimeoutException("DLT645-2007读取超时。");
-        }
-
-#endif
         private async ValueTask<byte[]> ReadResponseAsync(
             NetworkStream stream,
             CancellationToken cancellationToken)
@@ -296,65 +249,6 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             return frame;
         }
 
-#if false
-        private async ValueTask<byte[]> ReadResponseAsyncLegacy(
-            NetworkStream stream,
-            CancellationToken cancellationToken)
-        {
-            MemoryStream buffer = new MemoryStream();
-            byte[] one = new byte[1];
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(_options.TimeoutMilliseconds <= 0 ? 3000 : _options.TimeoutMilliseconds);
-            while (DateTime.UtcNow <= deadline)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int read = await stream.ReadAsync(one, 0, 1, cancellationToken).ConfigureAwait(false);
-                if (read <= 0)
-                    continue;
-
-                buffer.WriteByte(one[0]);
-                byte[] bytes = buffer.ToArray();
-                int start = FindStart(bytes);
-                if (start < 0)
-                    continue;
-                if (bytes.Length < start + 12)
-                    continue;
-
-                int length = bytes[start + 9];
-                int frameLength = 12 + length;
-                if (bytes.Length < start + frameLength)
-                    continue;
-
-                byte[] frame = new byte[frameLength];
-                Array.Copy(bytes, start, frame, 0, frameLength);
-                return frame;
-            }
-
-            throw new TimeoutException("DLT645-2007 read timed out.");
-        }
-
-#endif
-        private static int FindStart(byte[] bytes)
-        {
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                if (bytes[i] == 0x68)
-                    return i;
-            }
-            return -1;
-        }
-
-        private static void ReadExact(NetworkStream stream, byte[] buffer, int offset, int count)
-        {
-            while (count > 0)
-            {
-                int read = stream.Read(buffer, offset, count);
-                if (read <= 0)
-                    throw new IOException("DLT645-2007 transparent TCP connection was closed.");
-                offset += read;
-                count -= read;
-            }
-        }
-
         private static async ValueTask ReadExactAsync(
             NetworkStream stream,
             byte[] buffer,
@@ -372,18 +266,10 @@ namespace IPC.Plc.Communication.Metering.Dlt645
             }
         }
 
-        private NetworkStream GetConnectedStream()
-        {
-            NetworkStream? stream = _stream;
-            if (!IsConnected || stream == null)
-                throw new InvalidOperationException("DLT645-2007 client is not connected.");
-            return stream;
-        }
-
         private void EnsureConnected()
         {
             if (!IsConnected)
-                throw new InvalidOperationException("DLT645-2007客户端未连接。");
+                throw new PlcCommunicationException("DL/T645 客户端未连接。");
         }
     }
 }

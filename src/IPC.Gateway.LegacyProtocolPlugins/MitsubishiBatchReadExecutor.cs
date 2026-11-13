@@ -23,6 +23,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
         public int MaxWordPoints { get; set; }
         public int MaxBitPoints { get; set; }
         public int MaxGapPoints { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
     }
 
     internal sealed class MitsubishiAsyncBatchReadContext<TAddress>
@@ -39,6 +40,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
         public int MaxWordPoints { get; set; }
         public int MaxBitPoints { get; set; }
         public int MaxGapPoints { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
     }
 
     internal static class MitsubishiBatchReadExecutor
@@ -52,6 +54,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 return output;
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
+            context.Recovery = PlcBatchReadRecovery.Start(context.ReadWords?.Target ?? context.ReadBits?.Target, "mitsubishi|" + typeof(TAddress).FullName + "|" + context.MaxGapPoints + "|" + context.MaxWordPoints + "|" + context.MaxBitPoints);
             List<BatchReadItem<TAddress>> items = BuildItems(requests, context, results);
             Dictionary<string, List<BatchReadItem<TAddress>>> groups = GroupItems(items);
 
@@ -65,13 +68,13 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
             {
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                output.Add(results[i] ?? PlcBatchReadResult.FromFailure(request, "Batch read did not produce a result.", true));
+                output.Add(results[i] ?? PlcBatchReadResult.FromDeferred(request, "Batch read was not attempted."));
             }
 
             return output;
@@ -87,6 +90,7 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 return output;
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
+            context.Recovery = PlcBatchReadRecovery.Start(context.ReadWordsAsync?.Target ?? context.ReadBitsAsync?.Target, "mitsubishi|" + typeof(TAddress).FullName + "|" + context.MaxGapPoints + "|" + context.MaxWordPoints + "|" + context.MaxBitPoints);
             List<BatchReadItem<TAddress>> items = BuildItems(requests, context, results);
             Dictionary<string, List<BatchReadItem<TAddress>>> groups = GroupItems(items);
 
@@ -101,13 +105,13 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
             {
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                output.Add(results[i] ?? PlcBatchReadResult.FromFailure(request, "Batch read did not produce a result.", true));
+                output.Add(results[i] ?? PlcBatchReadResult.FromDeferred(request, "Batch read was not attempted."));
             }
 
             return output;
@@ -211,8 +215,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 {
                     BatchReadItem<TAddress> next = items[index];
                     int mergedEnd = Math.Max(segmentEnd, next.EndNumber);
-                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
-                    bool withinLimit = mergedEnd - segmentStart + 1 <= maxPoints;
+                    bool contiguousOrOverlapping = next.StartNumber <= (long)segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
+                    bool withinLimit = (long)mergedEnd - segmentStart + 1 <= maxPoints;
                     if (!contiguousOrOverlapping || !withinLimit)
                         break;
 
@@ -244,8 +248,8 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 {
                     BatchReadItem<TAddress> next = items[index];
                     int mergedEnd = Math.Max(segmentEnd, next.EndNumber);
-                    bool contiguousOrOverlapping = next.StartNumber <= segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
-                    bool withinLimit = mergedEnd - segmentStart + 1 <= maxPoints;
+                    bool contiguousOrOverlapping = next.StartNumber <= (long)segmentEnd + 1 + Math.Max(0, context.MaxGapPoints);
+                    bool withinLimit = (long)mergedEnd - segmentStart + 1 <= maxPoints;
                     if (!contiguousOrOverlapping || !withinLimit)
                         break;
 
@@ -258,117 +262,55 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
         }
 
         private static void ExecuteSegment<TAddress>(
-            List<BatchReadItem<TAddress>> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            MitsubishiBatchReadContext<TAddress> context,
-            PlcBatchReadResult[] results)
+            List<BatchReadItem<TAddress>> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
+            MitsubishiBatchReadContext<TAddress> context, PlcBatchReadResult[] results)
         {
-            BatchReadItem<TAddress> first = items[startIndex];
-            int pointCount = segmentEnd - segmentStart + 1;
-            TAddress startAddress = context.AddDeviceOffset(first.Address, segmentStart - first.StartNumber);
-
-            try
-            {
-                if (first.ReadBits)
+            context.Recovery.ReadRange(items, startIndex, endIndex, item => item.Request, item => item.Index,
+                (left, right) =>
                 {
-                    bool[] values = context.ReadBits(startAddress, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeBitResult(items[i], values, segmentStart, context);
-                }
-                else
-                {
-                    byte[] data = context.ReadWords(startAddress, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeWordResult(items[i], data, segmentStart, context);
-                }
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                    throw;
-                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
-            }
-        }
-
-        private static void RetrySegmentBySplitting<TAddress>(
-            List<BatchReadItem<TAddress>> items,
-            int startIndex,
-            int endIndex,
-            MitsubishiBatchReadContext<TAddress> context,
-            PlcBatchReadResult[] results)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            ExecuteSegment(items, startIndex, middle, items[startIndex].StartNumber, GetSegmentEnd(items, startIndex, middle), context, results);
-            ExecuteSegment(items, middle, endIndex, items[middle].StartNumber, GetSegmentEnd(items, middle, endIndex), context, results);
+                    BatchReadItem<TAddress> first = items[left];
+                    int start = first.StartNumber;
+                    int count = GetSegmentEnd(items, left, right) - start + 1;
+                    TAddress address = first.Address;
+                    if (first.ReadBits)
+                    {
+                        bool[] values = context.ReadBits(address, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeBitResult(items[i], values, start, context);
+                    }
+                    else
+                    {
+                        byte[] data = context.ReadWords(address, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
+                    }
+                }, results, context.GetAreaKey(items[startIndex].Address) + "|" + items[startIndex].ReadBits);
         }
 
         private static async ValueTask ExecuteSegmentAsync<TAddress>(
-            List<BatchReadItem<TAddress>> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            MitsubishiAsyncBatchReadContext<TAddress> context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
+            List<BatchReadItem<TAddress>> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
+            MitsubishiAsyncBatchReadContext<TAddress> context, PlcBatchReadResult[] results, CancellationToken cancellationToken)
         {
-            BatchReadItem<TAddress> first = items[startIndex];
-            int pointCount = segmentEnd - segmentStart + 1;
-            TAddress startAddress = context.AddDeviceOffset(first.Address, segmentStart - first.StartNumber);
-
-            try
-            {
-                if (first.ReadBits)
+            await context.Recovery.ReadRangeAsync(items, startIndex, endIndex, item => item.Request, item => item.Index,
+                async (left, right) =>
                 {
-                    bool[] values = await context.ReadBitsAsync(startAddress, pointCount, cancellationToken).ConfigureAwait(false);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeBitResult(items[i], values, segmentStart, context);
-                }
-                else
-                {
-                    byte[] data = await context.ReadWordsAsync(startAddress, pointCount, cancellationToken).ConfigureAwait(false);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeWordResult(items[i], data, segmentStart, context);
-                }
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                    throw;
-                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
-            }
-        }
-
-        private static async ValueTask RetrySegmentBySplittingAsync<TAddress>(
-            List<BatchReadItem<TAddress>> items,
-            int startIndex,
-            int endIndex,
-            MitsubishiAsyncBatchReadContext<TAddress> context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            await ExecuteSegmentAsync(items, startIndex, middle, items[startIndex].StartNumber, GetSegmentEnd(items, startIndex, middle), context, results, cancellationToken).ConfigureAwait(false);
-            await ExecuteSegmentAsync(items, middle, endIndex, items[middle].StartNumber, GetSegmentEnd(items, middle, endIndex), context, results, cancellationToken).ConfigureAwait(false);
+                    BatchReadItem<TAddress> first = items[left];
+                    int start = first.StartNumber;
+                    int count = GetSegmentEnd(items, left, right) - start + 1;
+                    TAddress address = first.Address;
+                    if (first.ReadBits)
+                    {
+                        bool[] values = await context.ReadBitsAsync(address, count, cancellationToken).ConfigureAwait(false);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeBitResult(items[i], values, start, context);
+                    }
+                    else
+                    {
+                        byte[] data = await context.ReadWordsAsync(address, count, cancellationToken).ConfigureAwait(false);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
+                    }
+                }, results, context.GetAreaKey(items[startIndex].Address) + "|" + items[startIndex].ReadBits, cancellationToken).ConfigureAwait(false);
         }
 
         private static int GetSegmentEnd<TAddress>(List<BatchReadItem<TAddress>> items, int startIndex, int endIndex)
@@ -594,10 +536,12 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 Address = address;
                 ReadBits = readBits;
                 PointCount = pointCount;
-                StartNumber = context.GetDeviceNumber(address);
+                int deviceNumber = context.GetDeviceNumber(address);
+                int stride = context.IsBitDevice(address) && !readBits ? 16 : 1;
+                StartNumber = deviceNumber / stride;
                 BitOffset = context.GetBitOffset(address);
-                EndNumber = StartNumber + Math.Max(1, pointCount) - 1;
-                GroupKey = context.GetAreaKey(address) + "|" + (readBits ? "bit" : "word");
+                EndNumber = checked(StartNumber + (Math.Max(1, pointCount) - 1));
+                GroupKey = context.GetAreaKey(address) + "|" + (readBits ? "bit" : "word") + "|" + deviceNumber % stride;
             }
 
             public BatchReadItem(
@@ -613,10 +557,12 @@ namespace IPC.Gateway.LegacyProtocolPlugins.Mitsubishi
                 Address = address;
                 ReadBits = readBits;
                 PointCount = pointCount;
-                StartNumber = context.GetDeviceNumber(address);
+                int deviceNumber = context.GetDeviceNumber(address);
+                int stride = context.IsBitDevice(address) && !readBits ? 16 : 1;
+                StartNumber = deviceNumber / stride;
                 BitOffset = context.GetBitOffset(address);
-                EndNumber = StartNumber + Math.Max(1, pointCount) - 1;
-                GroupKey = context.GetAreaKey(address) + "|" + (readBits ? "bit" : "word");
+                EndNumber = checked(StartNumber + (Math.Max(1, pointCount) - 1));
+                GroupKey = context.GetAreaKey(address) + "|" + (readBits ? "bit" : "word") + "|" + deviceNumber % stride;
             }
 
             public int Index { get; private set; }

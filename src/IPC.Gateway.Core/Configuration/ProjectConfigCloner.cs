@@ -162,6 +162,7 @@ namespace IPC.Runtime.Configuration
             {
                 Id = source.Id,
                 NodeType = source.NodeType,
+                AlarmMessage = source.AlarmMessage,
                 Label = source.Label,
                 X = source.X,
                 Y = source.Y,
@@ -506,6 +507,7 @@ namespace IPC.Runtime.Configuration
                 ExecuteOnClear = source.ExecuteOnClear,
                 TopicTemplate = source.TopicTemplate,
                 Qos = source.Qos,
+                AlarmMessage = source.AlarmMessage,
                 ActiveMessage = source.ActiveMessage,
                 ClearMessage = source.ClearMessage,
                 EmailSmtpHost = source.EmailSmtpHost,

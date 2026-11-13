@@ -21,6 +21,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         public byte[] BuildRequest(ushort command, ushort subcommand, McAddress address, int points, byte[] data)
         {
+            address.EnsureTransferRange(points, subcommand == 1);
             string payloadData = BuildPayloadData(subcommand, points, data);
             string body = "0010" + command.ToString("X4") + subcommand.ToString("X4") +
                           FormatDeviceName(address.DeviceName) + FormatDeviceNumber(address) +
@@ -149,6 +150,8 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private static string FormatDeviceNumber(McAddress address)
         {
+            if (!address.UsesHexAddress && address.DeviceNumber > 999999)
+                throw new ArgumentOutOfRangeException(nameof(address), "MC ASCII 地址超过 6 位十进制范围。");
             return address.DeviceNumber.ToString(address.UsesHexAddress ? "X6" : "D6", CultureInfo.InvariantCulture);
         }
 

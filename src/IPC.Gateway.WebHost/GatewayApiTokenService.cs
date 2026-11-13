@@ -32,6 +32,9 @@ public sealed class GatewayApiTokenService
     }
 
     public bool TryValidate(HttpRequest request, out ClaimsPrincipal principal, out string tokenName, out string errorMessage)
+        => TryValidate(ReadToken(request), request.IsHttps, out principal, out tokenName, out errorMessage);
+
+    internal bool TryValidate(string token, bool isHttps, out ClaimsPrincipal principal, out string tokenName, out string errorMessage)
     {
         principal = new ClaimsPrincipal(new ClaimsIdentity());
         tokenName = string.Empty;
@@ -40,11 +43,10 @@ public sealed class GatewayApiTokenService
         if (!_options.Enabled)
             return false;
 
-        string token = ReadToken(request);
         if (string.IsNullOrWhiteSpace(token))
             return false;
 
-        if (_options.RequireHttps && !request.IsHttps)
+        if (_options.RequireHttps && !isHttps)
         {
             errorMessage = "API Token 要求通过 HTTPS/TLS 访问。";
             return false;
@@ -71,6 +73,9 @@ public sealed class GatewayApiTokenService
         identity.AddClaim(new Claim(ClaimTypes.Name, tokenName));
         identity.AddClaim(new Claim(ClaimTypes.Role, string.IsNullOrWhiteSpace(matched.Role) ? "ApiToken" : matched.Role.Trim()));
         identity.AddClaim(new Claim("apiToken", "true"));
+        if (matched.ExpiresUtc != DateTime.MinValue)
+            identity.AddClaim(new Claim("exp", new DateTimeOffset(DateTime.SpecifyKind(matched.ExpiresUtc, DateTimeKind.Utc))
+                .ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
         foreach (string permission in NormalizeTokenPermissions(matched.Permissions))
             identity.AddClaim(new Claim("permission", permission));
@@ -85,7 +90,7 @@ public sealed class GatewayApiTokenService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private string ReadToken(HttpRequest request)
+    internal string ReadToken(HttpRequest request)
     {
         string headerName = string.IsNullOrWhiteSpace(_options.HeaderName) ? "X-API-Token" : _options.HeaderName.Trim();
         string headerToken = request.Headers[headerName].ToString();

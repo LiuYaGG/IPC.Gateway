@@ -385,6 +385,7 @@ namespace IPC.EdgeGateway
                 ExecuteOnClear = isMqtt ? node.PublishToMqtt && node.PublishOnClear : node.ExecuteOnClear,
                 TopicTemplate = FirstText(node.TopicTemplate, "ipc/rule/{pointCode}/{ruleName}"),
                 Qos = node.PublishQos,
+                AlarmMessage = isMqtt && node.AlarmMessage,
                 ActiveMessage = node.ActiveMessage,
                 ClearMessage = node.ClearMessage,
                 EmailSmtpHost = node.EmailSmtpHost,

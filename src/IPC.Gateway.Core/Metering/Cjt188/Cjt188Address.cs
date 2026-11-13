@@ -57,13 +57,11 @@ namespace IPC.Plc.Communication.Metering.Cjt188
             return bytes;
         }
 
-        public byte[] GetDataIdentifierBytes()
+        public byte[] GetDataIdentifierBytes(bool lowByteFirst)
         {
-            return new[]
-            {
-                byte.Parse(DataIdentifier.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
-                byte.Parse(DataIdentifier.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture)
-            };
+            byte[] bytes = Convert.FromHexString(DataIdentifier);
+            if (lowByteFirst) Array.Reverse(bytes);
+            return bytes;
         }
 
         public static Cjt188Address Parse(string addressText)

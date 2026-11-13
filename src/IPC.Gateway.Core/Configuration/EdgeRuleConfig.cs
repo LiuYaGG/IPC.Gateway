@@ -312,6 +312,7 @@ namespace IPC.Runtime.Configuration
         public bool ExecuteOnClear { get; set; }
         public string TopicTemplate { get; set; }
         public int Qos { get; set; }
+        public bool AlarmMessage { get; set; }
         public string ActiveMessage { get; set; }
         public string ClearMessage { get; set; }
         public string EmailSmtpHost { get; set; }

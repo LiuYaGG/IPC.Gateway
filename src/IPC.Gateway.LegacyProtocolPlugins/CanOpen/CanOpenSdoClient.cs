@@ -36,11 +36,11 @@ namespace IPC.Plc.Communication.CanOpen
                 DownloadSegmented(address, data);
                 return;
             }
-            if (data.Length != 1 && data.Length != 2 && data.Length != 4)
-                throw new NotSupportedException("CANopen SDO download supports 1, 2, 4, or segmented payloads larger than 4 bytes.");
+            if (data.Length == 0)
+                throw new ArgumentException("An expedited SDO write requires 1 to 4 bytes.", nameof(data));
 
             byte[] request = new byte[8];
-            request[0] = data.Length == 1 ? (byte)0x2F : data.Length == 2 ? (byte)0x2B : (byte)0x23;
+            request[0] = (byte)(0x23 | ((4 - data.Length) << 2));
             WriteIndex(request, address.Index);
             request[3] = address.SubIndex;
             Buffer.BlockCopy(data, 0, request, 4, data.Length);

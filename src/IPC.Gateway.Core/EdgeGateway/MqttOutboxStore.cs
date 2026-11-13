@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -37,6 +38,7 @@ namespace IPC.EdgeGateway
     {
         private readonly object _syncRoot;
         private readonly string _directoryPath;
+        private readonly Dictionary<string, string> _telemetrySlots = new(StringComparer.Ordinal);
         private long _lastId;
 
         public MqttOutboxStore(string directoryPath)
@@ -65,6 +67,28 @@ namespace IPC.EdgeGateway
         public Task<MqttOutboxMessage> EnqueueAsync(string topic, string payload, int qos)
         {
             return EnqueueTextAsync(topic, payload, qos);
+        }
+
+        // An explicit latest-value slot belongs to one classic telemetry stream.
+        // Replacing its contents is atomic, and an ACK for an older revision
+        // must never remove the newer sample occupying that slot.
+        public void EnqueueLatestTelemetry(string pointKey, string topic, string payload, int qos)
+        {
+            var keyBytes = Encoding.UTF8.GetBytes(pointKey + "\0" + topic);
+            string key = Convert.ToHexString(SHA256.HashData(keyBytes));
+            lock (_syncRoot)
+            {
+                var message = new MqttOutboxMessage
+                {
+                    Id = NextId(), Topic = topic, Payload = payload, Qos = MqttGatewayOptions.ClampQos(qos)
+                };
+                if (!_telemetrySlots.TryGetValue(key, out var slot))
+                    slot = BuildPath(message.Id, "-t-" + key + ".msg");
+                string temporary = Path.ChangeExtension(slot, ".tmp");
+                File.WriteAllText(temporary, message.ToFileText(), Encoding.UTF8);
+                File.Move(temporary, slot, overwrite: true);
+                _telemetrySlots[key] = slot;
+            }
         }
 
         public MqttOutboxMessage Enqueue(string topic, byte[] payload, int qos)
@@ -205,8 +229,30 @@ namespace IPC.EdgeGateway
 
             lock (_syncRoot)
             {
-                if (File.Exists(entry.FilePath))
-                    File.Delete(entry.FilePath);
+                if (TelemetrySlotKey(entry.FilePath) != null && File.Exists(entry.FilePath) &&
+                    (!MqttOutboxMessage.TryParse(File.ReadAllText(entry.FilePath, Encoding.UTF8), out var current) ||
+                     current.Id != entry.Message.Id))
+                    return;
+                DeleteFile(entry.FilePath);
+            }
+        }
+
+        // Transfer a latest-value slot to this delivery attempt. A subsequent
+        // update obtains a new position in the FIFO queue and cannot be lost
+        // when the broker later acknowledges this payload. If sending fails
+        // the claimed payload remains as a normal durable FIFO message.
+        public MqttOutboxEntry? ClaimForSend(MqttOutboxEntry entry)
+        {
+            if (TelemetrySlotKey(entry.FilePath) == null) return entry;
+            lock (_syncRoot)
+            {
+                if (!File.Exists(entry.FilePath) ||
+                    !MqttOutboxMessage.TryParse(File.ReadAllText(entry.FilePath, Encoding.UTF8), out var message))
+                    return null;
+                string sendPath = Path.Combine(_directoryPath, Path.GetFileName(entry.FilePath).Substring(0, 17) + ".msg");
+                File.Move(entry.FilePath, sendPath);
+                ForgetTelemetrySlot(entry.FilePath);
+                return new MqttOutboxEntry(sendPath, message, GetFileLength(sendPath));
             }
         }
 
@@ -347,6 +393,11 @@ namespace IPC.EdgeGateway
                 long id;
                 if (long.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) && id > last)
                     last = id;
+                else if (TelemetrySlotKey(files[i]) is string key)
+                {
+                    _telemetrySlots[key] = files[i];
+                    if (long.TryParse(name.AsSpan(0, 17), out long order)) last = Math.Max(last, order);
+                }
             }
             return last;
         }
@@ -354,6 +405,12 @@ namespace IPC.EdgeGateway
         private string BuildPath(long id, string extension)
         {
             return Path.Combine(_directoryPath, id.ToString("00000000000000000", CultureInfo.InvariantCulture) + extension);
+        }
+
+        private static string? TelemetrySlotKey(string path)
+        {
+            string name = Path.GetFileNameWithoutExtension(path);
+            return name.Length == 84 && name.AsSpan(17, 3).SequenceEqual("-t-") ? name.Substring(20) : null;
         }
 
         private List<MqttOutboxEntry> LoadAllEntries()
@@ -428,6 +485,7 @@ namespace IPC.EdgeGateway
             try
             {
                 File.Move(path, targetPath);
+                ForgetTelemetrySlot(path);
                 File.SetLastWriteTimeUtc(targetPath, DateTime.UtcNow);
                 return true;
             }
@@ -522,10 +580,17 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private static void DeleteFile(string path)
+        private void DeleteFile(string path)
         {
             if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 File.Delete(path);
+            ForgetTelemetrySlot(path);
+        }
+
+        private void ForgetTelemetrySlot(string path)
+        {
+            if (TelemetrySlotKey(path) is string key && _telemetrySlots.TryGetValue(key, out var slot) && slot == path)
+                _telemetrySlots.Remove(key);
         }
 
         private static async Task WriteAllTextAsync(string path, string text)

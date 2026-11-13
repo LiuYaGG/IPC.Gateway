@@ -194,14 +194,14 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
   } else if (protocol === 'MqttClient') {
     setNetworkDefaults(connection, '127.0.0.1', 1883, 'Tcp', overwriteNetwork)
     const defaults =
-      '{"mqttClientId":"IPC-Gateway-Southbound","mqttSubscribeFilter":"#","mqttPayloadMode":"Text","mqttUseTls":false,"mqttAllowUntrustedCertificates":false,"mqttQos":0,"mqttMaxValueAgeSeconds":0}'
+      '{"mqttClientId":"","mqttSubscribeFilter":"#","mqttPayloadMode":"Text","mqttUseTls":false,"mqttAllowUntrustedCertificates":false,"mqttQos":0,"mqttMaxValueAgeSeconds":0}'
     connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
   } else if (protocol === 'Dnp3') {
     setNetworkDefaults(connection, '127.0.0.1', 20000, 'Tcp', overwriteNetwork)
     const defaults =
       '{"dnp3LocalAddress":1,"dnp3RemoteAddress":1024,"dnp3ScanGapLimit":32,"dnp3SelectBeforeOperate":true,"dnp3StartupIntegrity":true,"dnp3EnableUnsolicited":true,"dnp3EventScanIntervalSeconds":5,"dnp3IntegrityScanIntervalSeconds":900,"dnp3CacheMaxAgeMilliseconds":0,"dnp3TimeSyncMode":"None"}'
     connection.driverOptionsJson = overwriteNetwork ? defaults : connection.driverOptionsJson || defaults
-  } else if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E')
+  } else if (protocol === 'MitsubishiMc' || protocol === 'MitsubishiMc1E') {
     setNetworkDefaults(
       connection,
       '127.0.0.1',
@@ -209,7 +209,9 @@ function applyProtocolDefaultsToConnection(connection: PlcConnection, protocol: 
       'Tcp',
       overwriteNetwork
     )
-  else if (protocol === 'OmronFins') {
+    if (protocol === 'MitsubishiMc1E' && (overwriteNetwork || !connection.driverOptionsJson))
+      connection.driverOptionsJson = '{"controllerProfile":"A"}'
+  } else if (protocol === 'OmronFins') {
     setNetworkDefaults(connection, '127.0.0.1', 9600, 'Udp', overwriteNetwork)
     const dataFormat = connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD'
     const defaults =

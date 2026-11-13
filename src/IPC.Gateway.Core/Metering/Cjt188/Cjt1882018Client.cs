@@ -15,7 +15,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
 
         public Cjt1882018Client(PlcConnectionOptions options)
         {
-            _inner = new Cjt188Client(options ?? throw new ArgumentNullException(nameof(options)));
+            _inner = new Cjt188Client(options, lowByteFirst: true);
         }
 
         public bool IsConnected => _inner.IsConnected;
@@ -109,6 +109,7 @@ namespace IPC.Plc.Communication.Metering.Cjt188
                 PlcBatchReadResult result = results[i];
                 remapped.Add(result.Success
                     ? PlcBatchReadResult.FromSuccess(requests[i], ConvertResult(result.Result!))
+                    : result.IsDeferred ? PlcBatchReadResult.FromDeferred(requests[i], result.ErrorMessage)
                     : PlcBatchReadResult.FromFailure(requests[i], result.ErrorMessage, result.FailureScope));
             }
             return remapped;

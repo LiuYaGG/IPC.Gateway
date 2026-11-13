@@ -78,7 +78,7 @@ namespace IPC.Plc.Communication.Snmp
             IList<Variable> values = await ExecuteGetAsync(
                 new List<Variable> { new Variable(new ObjectIdentifier(oid)) },
                 cancellationToken).ConfigureAwait(false);
-            if (values.Count != 1)
+            if (values.Count != 1 || !values[0].Id.Equals(new ObjectIdentifier(oid)))
                 throw new SnmpTagException("SNMP 响应中缺少 OID " + oid + "。");
             return Decode(values[0], dataType);
         }
@@ -112,10 +112,20 @@ namespace IPC.Plc.Communication.Snmp
                 }
             }
 
-            for (int offset = 0; offset < validIndexes.Count; offset += _options.MaxOidsPerRequest)
+            var recovery = PlcBatchReadRecovery.Start(this, "SNMP-GET");
+            try
             {
-                int count = Math.Min(_options.MaxOidsPerRequest, validIndexes.Count - offset);
-                await ReadChunkAsync(requests, validIndexes, ordered, offset, count, cancellationToken).ConfigureAwait(false);
+                for (int offset = 0; offset < validIndexes.Count; offset += _options.MaxOidsPerRequest)
+                {
+                    int end = Math.Min(offset + _options.MaxOidsPerRequest, validIndexes.Count);
+                    await recovery.ReadRangeAsync(validIndexes, offset, end, i => requests[i], i => i,
+                        (start, stop) => ReadChunkAsync(requests, validIndexes, ordered, start, stop - start, cancellationToken),
+                        ordered, "GET", cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (PlcFailureClassifier.IsConnectionFailure(ex))
+            {
+                PlcBatchReadResult.DeferPending(requests, ordered, ex.Message);
             }
             return ordered;
         }
@@ -190,18 +200,9 @@ namespace IPC.Plc.Communication.Snmp
             {
                 values = await ExecuteGetAsync(variables, cancellationToken).ConfigureAwait(false);
             }
-            catch (ErrorException) when (count > 1)
+            catch (Exception ex) when (ex is ErrorException || ex is SnmpTagException)
             {
-                int left = count / 2;
-                await ReadChunkAsync(requests, validIndexes, ordered, offset, left, cancellationToken).ConfigureAwait(false);
-                await ReadChunkAsync(requests, validIndexes, ordered, offset + left, count - left, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (ErrorException ex)
-            {
-                int index = validIndexes[offset];
-                ordered[index] = PlcBatchReadResult.FromFailure(requests[index], ex.Message, PlcReadFailureScope.Tag);
-                return;
+                throw new PlcProtocolException(count == 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch, ex.Message, null, ex);
             }
 
             for (int i = 0; i < count; i++)
@@ -210,7 +211,7 @@ namespace IPC.Plc.Communication.Snmp
                 PlcBatchReadRequest request = requests[index];
                 try
                 {
-                    if (i >= values.Count)
+                    if (i >= values.Count || !variables[i].Id.Equals(values[i].Id))
                         throw new SnmpTagException("SNMP 批量响应缺少对应 OID。");
                     ordered[index] = PlcBatchReadResult.FromSuccess(request, Decode(values[i], request.DataType));
                 }
@@ -300,7 +301,9 @@ namespace IPC.Plc.Communication.Snmp
             {
                 case "V1": return VersionCode.V1;
                 case "V3": return VersionCode.V3;
-                default: return VersionCode.V2;
+                case "V2":
+                case "V2C": return VersionCode.V2;
+                default: throw new FormatException("无效的 SNMP 版本：" + _options.Version);
             }
         }
 
@@ -309,6 +312,8 @@ namespace IPC.Plc.Communication.Snmp
 
         private static void EnsureResponseSucceeded(ISnmpMessage response)
         {
+            if (response.TypeCode() != SnmpType.ResponsePdu)
+                throw new PlcProtocolException(PlcReadFailureScope.Session, "SNMPv3 未返回请求的 Response PDU。");
             int status = response.Pdu().ErrorStatus.ToInt32();
             if (status != 0)
                 throw new SnmpTagException("SNMP 响应错误：" + response.Pdu().ErrorStatus + "，索引 " + response.Pdu().ErrorIndex + "。");

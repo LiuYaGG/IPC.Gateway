@@ -27,14 +27,22 @@
           <strong>{{ formatDateTime(status?.lastPublishTime) }}</strong>
         </div>
         <div>
-          <span>{{ tx('待发送') }}</span>
+          <span>{{ tx('普通消息待发送') }}</span>
           <strong>{{ status?.outboxPendingCount ?? 0 }}</strong>
         </div>
         <div>
+          <span>{{ tx('待发报警') }}</span>
+          <strong>{{ status?.alarmPendingCount ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>{{ tx('最早报警等待时间') }}</span>
+          <strong>{{ formatDurationSeconds(status?.alarmOldestPendingAgeSeconds ?? 0) }}</strong>
+        </div>
+        <div v-if="isSparkplug">
           <span>Birth</span>
           <strong>{{ status?.sparkplugBirthCount ?? 0 }}</strong>
         </div>
-        <div>
+        <div v-if="isSparkplug">
           <span>Death</span>
           <strong>{{ status?.sparkplugDeathCount ?? 0 }}</strong>
         </div>
@@ -269,6 +277,10 @@
               <a-form-item :label="tx('仅变化时发布')">
                 <a-switch v-model:checked="mqtt.publishChangedOnly" />
               </a-form-item>
+              <a-form-item v-if="mqtt.publishMode !== 'SparkplugB'" :label="tx('合并积压点值')"
+                :extra="tx('同一点位的普通待发数据仅保留最新值。报警消息逐条保留。')">
+                <a-switch v-model:checked="mqtt.coalescePendingTelemetry" />
+              </a-form-item>
               <a-form-item :label="tx('发布 QoS')">
                 <gateway-number-input v-model="mqtt.publishQos" :min="0" :max="2" />
               </a-form-item>
@@ -342,7 +354,7 @@
                 <strong>{{ status?.outboxQuarantineDirectory || '-' }}</strong>
               </div>
               <div>
-                <span>{{ tx('最老积压') }}</span>
+                <span>{{ tx('最早普通消息等待时间') }}</span>
                 <strong>{{ formatDurationSeconds(status?.outboxOldestPendingAgeSeconds ?? 0) }}</strong>
               </div>
               <div>
@@ -358,8 +370,16 @@
                 <strong>{{ status?.outboxInvalidMessageCount ?? 0 }}</strong>
               </div>
               <div>
-                <span>{{ tx('待发送') }}</span>
+                <span>{{ tx('普通消息待发送') }}</span>
                 <strong>{{ status?.outboxPendingCount ?? 0 }}</strong>
+              </div>
+              <div>
+                <span>{{ tx('待发报警') }}</span>
+                <strong>{{ status?.alarmPendingCount ?? 0 }}</strong>
+              </div>
+              <div>
+                <span>{{ tx('最早报警等待时间') }}</span>
+                <strong>{{ formatDurationSeconds(status?.alarmOldestPendingAgeSeconds ?? 0) }}</strong>
               </div>
               <div>
                 <span>{{ tx('已入队') }}</span>

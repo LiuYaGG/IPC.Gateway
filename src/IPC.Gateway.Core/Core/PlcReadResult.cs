@@ -35,6 +35,9 @@ namespace IPC.Plc.Communication.Core
             Value = value;
         }
 
+        public bool IsUncertain { get; init; }
+        public System.DateTime? SourceTimestampUtc { get; init; }
+
         public ushort TypeCode { get; private set; }
         public string TypeName { get; private set; }
         public object Value { get; private set; }

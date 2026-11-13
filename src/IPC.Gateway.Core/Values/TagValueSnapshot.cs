@@ -96,6 +96,10 @@ namespace IPC.Runtime.Values
         public bool IsTagIsolated { get; set; }
         public bool IsStaticValidationError { get; set; }
         public int TagConsecutiveFailures { get; set; }
+        // Local cache commit order, independent of the PLC clock. A restored
+        // snapshot receives a new revision when installed in the current runtime.
+        [System.Text.Json.Serialization.JsonInclude]
+        public long RuntimeRevision { get; internal set; }
         public DateTime NextTagRecoveryProbeTime { get; set; }
 
         public TagValueSnapshot Clone()

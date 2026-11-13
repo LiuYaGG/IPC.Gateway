@@ -19,6 +19,8 @@ namespace IPC.Plc.Communication.Metering
 
         public bool IsConnected => _channel?.IsConnected == true;
         public NetworkStream Stream => GetChannel().Stream;
+        public void MarkTransportFailure() => _channel?.MarkTransportFailure();
+        public byte NextSequence() => GetChannel().NextSequence();
 
         public IDisposable Enter()
         {
@@ -75,8 +77,12 @@ namespace IPC.Plc.Communication.Metering
         public TcpClient Client { get; }
         public NetworkStream Stream { get; }
         public SemaphoreSlim OperationLock { get; } = new SemaphoreSlim(1, 1);
+        private int _sequence = -1;
+        public byte NextSequence() => unchecked((byte)Interlocked.Increment(ref _sequence));
         public int ReferenceCount { get; set; }
-        public bool IsConnected => Client.Connected;
+        private volatile bool _transportFailed;
+        public bool IsConnected => !_transportFailed && Client.Connected;
+        public void MarkTransportFailure() => _transportFailed = true;
 
         public static async ValueTask<SharedTransparentTcpChannel> ConnectAsync(
             string key,
@@ -115,7 +121,13 @@ namespace IPC.Plc.Communication.Metering
 
     internal static class SharedTransparentTcpChannelRegistry
     {
-        private static readonly SemaphoreSlim RegistryLock = new SemaphoreSlim(1, 1);
+        private static readonly object RegistryLock = new();
+        private sealed class EndpointGate
+        {
+            public readonly SemaphoreSlim Gate = new(1, 1);
+            public int Users;
+        }
+        private static readonly Dictionary<string, EndpointGate> Connecting = new(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, SharedTransparentTcpChannel> Channels =
             new Dictionary<string, SharedTransparentTcpChannel>(StringComparer.OrdinalIgnoreCase);
 
@@ -131,37 +143,58 @@ namespace IPC.Plc.Communication.Metering
             CancellationToken cancellationToken)
         {
             string key = BuildKey(options);
-            await RegistryLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            EndpointGate endpoint;
+            lock (RegistryLock)
+            {
+                if (TryAcquireExisting(key) is { } existing) return existing;
+                if (!Connecting.TryGetValue(key, out endpoint!))
+                    Connecting.Add(key, endpoint = new EndpointGate());
+                endpoint.Users++;
+            }
             try
             {
-                if (!Channels.TryGetValue(key, out SharedTransparentTcpChannel? channel))
+                await endpoint.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    channel = await SharedTransparentTcpChannel.ConnectAsync(key, options, cancellationToken).ConfigureAwait(false);
-                    Channels.Add(key, channel);
+                    lock (RegistryLock)
+                        if (TryAcquireExisting(key) is { } existing) return existing;
+                    var channel = await SharedTransparentTcpChannel.ConnectAsync(key, options, cancellationToken).ConfigureAwait(false);
+                    lock (RegistryLock)
+                    {
+                        channel.ReferenceCount = 1;
+                        Channels[key] = channel;
+                    }
+                    return new SharedTransparentTcpLease(channel);
                 }
-                channel.ReferenceCount++;
-                return new SharedTransparentTcpLease(channel);
+                finally { endpoint.Gate.Release(); }
             }
             finally
             {
-                RegistryLock.Release();
+                lock (RegistryLock)
+                    if (--endpoint.Users == 0)
+                    {
+                        Connecting.Remove(key);
+                        endpoint.Gate.Dispose();
+                    }
             }
+        }
+
+        private static SharedTransparentTcpLease? TryAcquireExisting(string key)
+        {
+            if (!Channels.TryGetValue(key, out var channel) || !channel.IsConnected) return null;
+            channel.ReferenceCount++;
+            return new SharedTransparentTcpLease(channel);
         }
 
         public static void Release(SharedTransparentTcpChannel channel)
         {
-            RegistryLock.Wait();
-            try
+            lock (RegistryLock)
             {
-                if (--channel.ReferenceCount > 0)
-                    return;
-                Channels.Remove(channel.Key);
-                channel.Dispose();
+                if (--channel.ReferenceCount > 0) return;
+                if (Channels.TryGetValue(channel.Key, out var active) && ReferenceEquals(active, channel))
+                    Channels.Remove(channel.Key);
             }
-            finally
-            {
-                RegistryLock.Release();
-            }
+            channel.Dispose();
         }
 
         private static string BuildKey(PlcConnectionOptions options)

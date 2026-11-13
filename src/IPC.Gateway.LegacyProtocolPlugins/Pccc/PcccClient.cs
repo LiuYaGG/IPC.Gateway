@@ -17,7 +17,7 @@ namespace IPC.Plc.Communication.Pccc
         private const int MaxPayloadBytes = 220;
 
         private readonly CipClient _transport;
-        private ushort _transaction;
+        private int _transaction;
 
         public PcccClient(PlcConnectionOptions options)
         {
@@ -37,8 +37,7 @@ namespace IPC.Plc.Communication.Pccc
         {
             PcccAddress parsed = PcccAddress.Parse(address).AddElementOffset(elementOffset);
             int byteCount = ValidateByteCount(parsed, dataType, elementCount);
-            byte[] response = _transport.SendExplicitMessage(BuildReadRequest(parsed, byteCount));
-            byte[] data = ParseResponse(response);
+            byte[] data = ReadRaw(parsed, byteCount);
             object value = PcccDataCodec.Decode(parsed, dataType, data, elementCount);
             return new PlcReadResult(parsed.FileTypeCode, parsed.FileTypeName, value);
         }
@@ -52,8 +51,7 @@ namespace IPC.Plc.Communication.Pccc
         {
             PcccAddress parsed = PcccAddress.Parse(address).AddElementOffset(elementOffset);
             int byteCount = ValidateByteCount(parsed, dataType, elementCount);
-            byte[] response = await _transport.SendExplicitMessageAsync(BuildReadRequest(parsed, byteCount), cancellationToken).ConfigureAwait(false);
-            byte[] data = ParseResponse(response);
+            byte[] data = await ReadRawAsync(parsed, byteCount, cancellationToken).ConfigureAwait(false);
             object value = PcccDataCodec.Decode(parsed, dataType, data, elementCount);
             return new PlcReadResult(parsed.FileTypeCode, parsed.FileTypeName, value);
         }
@@ -61,8 +59,7 @@ namespace IPC.Plc.Communication.Pccc
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
             PcccAddress parsed = PcccAddress.Parse(address).AddElementOffset(elementOffset);
-            byte[] data = BuildWriteData(parsed, dataType, valueText);
-            ParseResponse(_transport.SendExplicitMessage(BuildWriteRequest(parsed, data)));
+            Exchange(BuildTypedWrite(parsed, dataType, valueText));
         }
 
         public async ValueTask WriteAsync(
@@ -73,9 +70,7 @@ namespace IPC.Plc.Communication.Pccc
             CancellationToken cancellationToken)
         {
             PcccAddress parsed = PcccAddress.Parse(address).AddElementOffset(elementOffset);
-            byte[] data = await BuildWriteDataAsync(parsed, dataType, valueText, cancellationToken).ConfigureAwait(false);
-            byte[] response = await _transport.SendExplicitMessageAsync(BuildWriteRequest(parsed, data), cancellationToken).ConfigureAwait(false);
-            ParseResponse(response);
+            await ExchangeAsync(BuildTypedWrite(parsed, dataType, valueText), cancellationToken).ConfigureAwait(false);
         }
 
         public IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests)
@@ -92,33 +87,18 @@ namespace IPC.Plc.Communication.Pccc
 
         public void Dispose() => _transport.Dispose();
 
-        private byte[] BuildWriteData(PcccAddress address, PlcDataType dataType, string valueText)
+        private byte[] BuildTypedWrite(PcccAddress address, PlcDataType dataType, string valueText)
         {
             if (!address.BitNumber.HasValue)
-                return PcccDataCodec.Encode(address, dataType, valueText);
+                return BuildWriteRequest(address, PcccDataCodec.Encode(address, dataType, valueText));
+            if (dataType != PlcDataType.Bool)
+                throw new ArgumentException("PCCC 位地址必须使用 Bool。", nameof(dataType));
 
-            byte[] current = ParseResponse(_transport.SendExplicitMessage(BuildReadRequest(address, 2)));
-            if (current.Length < 2)
-                throw new InvalidOperationException("PCCC位写入前读取的数据长度不足。");
-            ushort word = (ushort)(current[0] | (current[1] << 8));
             ushort mask = (ushort)(1 << address.BitNumber.Value);
-            word = ParseBool(valueText) ? (ushort)(word | mask) : (ushort)(word & ~mask);
-            return BitConverter.GetBytes(word);
-        }
-
-        private async ValueTask<byte[]> BuildWriteDataAsync(PcccAddress address, PlcDataType dataType, string valueText, CancellationToken cancellationToken)
-        {
-            if (!address.BitNumber.HasValue)
-                return PcccDataCodec.Encode(address, dataType, valueText);
-
-            byte[] response = await _transport.SendExplicitMessageAsync(BuildReadRequest(address, 2), cancellationToken).ConfigureAwait(false);
-            byte[] current = ParseResponse(response);
-            if (current.Length < 2)
-                throw new InvalidOperationException("PCCC位写入前读取的数据长度不足。");
-            ushort word = (ushort)(current[0] | (current[1] << 8));
-            ushort mask = (ushort)(1 << address.BitNumber.Value);
-            word = ParseBool(valueText) ? (ushort)(word | mask) : (ushort)(word & ~mask);
-            return BitConverter.GetBytes(word);
+            using MemoryStream payload = new MemoryStream();
+            WriteUInt16(payload, mask);
+            WriteUInt16(payload, ParseBool(valueText) ? mask : (ushort)0);
+            return BuildExecuteRequest(0xAB, address, 2, payload.ToArray());
         }
 
         private byte[] BuildReadRequest(PcccAddress address, int byteCount)
@@ -128,7 +108,7 @@ namespace IPC.Plc.Communication.Pccc
 
         private byte[] ReadRaw(PcccAddress address, int byteCount)
         {
-            return ParseResponse(_transport.SendExplicitMessage(BuildReadRequest(address, byteCount)));
+            return Exchange(BuildReadRequest(address, byteCount));
         }
 
         private async ValueTask<byte[]> ReadRawAsync(
@@ -136,10 +116,7 @@ namespace IPC.Plc.Communication.Pccc
             int byteCount,
             CancellationToken cancellationToken)
         {
-            byte[] response = await _transport.SendExplicitMessageAsync(
-                BuildReadRequest(address, byteCount),
-                cancellationToken).ConfigureAwait(false);
-            return ParseResponse(response);
+            return await ExchangeAsync(BuildReadRequest(address, byteCount), cancellationToken).ConfigureAwait(false);
         }
 
         private byte[] BuildWriteRequest(PcccAddress address, byte[] data)
@@ -151,7 +128,8 @@ namespace IPC.Plc.Communication.Pccc
 
         private byte[] BuildExecuteRequest(byte function, PcccAddress address, int byteCount, byte[] data)
         {
-            ushort transaction = unchecked(++_transaction);
+            address.EnsureByteRange(byteCount);
+            ushort transaction = unchecked((ushort)Interlocked.Increment(ref _transaction));
             using MemoryStream stream = new MemoryStream();
             stream.WriteByte(ExecutePcccService);
             stream.WriteByte(0x02);
@@ -176,7 +154,24 @@ namespace IPC.Plc.Communication.Pccc
             return stream.ToArray();
         }
 
-        private static byte[] ParseResponse(byte[] response)
+        private byte[] Exchange(byte[] request)
+        {
+            return ParseResponse(_transport.SendExplicitMessage(request), RequestTransaction(request));
+        }
+
+        private async ValueTask<byte[]> ExchangeAsync(byte[] request, CancellationToken cancellationToken)
+        {
+            byte[] response = await _transport.SendExplicitMessageAsync(request, cancellationToken).ConfigureAwait(false);
+            return ParseResponse(response, RequestTransaction(request));
+        }
+
+        private static ushort RequestTransaction(byte[] request)
+        {
+            int requestor = 2 + request[1] * 2;
+            return BitConverter.ToUInt16(request, requestor + request[requestor] + 2);
+        }
+
+        private static byte[] ParseResponse(byte[] response, ushort transaction)
         {
             if (response == null || response.Length < 4)
                 throw new InvalidOperationException("PCCC的CIP响应过短。");
@@ -190,18 +185,20 @@ namespace IPC.Plc.Communication.Pccc
                     ClassifyCipStatus(response[2]),
                     "PCCC CIP错误: 0x" + response[2].ToString("X2"),
                     "CIP-0x" + response[2].ToString("X2"));
-            if (false)
-                throw new InvalidOperationException("PCCC CIP错误：0x" + response[2].ToString("X2"));
-            if (response.Length < offset + 4)
-                throw new InvalidOperationException("PCCC响应头不完整。");
+            if (response.Length < offset + 1 || response[offset] < 7 || response.Length < offset + response[offset] + 4)
+                throw new IOException("PCCC 回复的 Requestor ID 或响应头不完整。");
+            if (BitConverter.ToUInt16(response, offset + 1) != 0x1337 ||
+                BitConverter.ToUInt32(response, offset + 3) != 0x49504347)
+                throw new IOException("PCCC 回复的 Requestor ID 与请求不匹配。");
+            offset += response[offset];
+            if (response[offset] != 0x4F || BitConverter.ToUInt16(response, offset + 2) != transaction)
+                throw new IOException("PCCC 回复命令或事务号与请求不匹配。");
             byte pcccStatus = response[offset + 1];
             if (pcccStatus != 0)
                 throw new PlcProtocolException(
                     pcccStatus == 0x50 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Device,
                     "PCCC命令错误: 0x" + pcccStatus.ToString("X2"),
                     "PCCC-0x" + pcccStatus.ToString("X2"));
-            if (false)
-                throw new InvalidOperationException("PCCC命令错误：0x" + pcccStatus.ToString("X2"));
             int dataOffset = offset + 4;
             byte[] data = new byte[response.Length - dataOffset];
             Buffer.BlockCopy(response, dataOffset, data, 0, data.Length);
@@ -234,6 +231,8 @@ namespace IPC.Plc.Communication.Pccc
 
         private static void WriteLogicalAddress(Stream stream, int value)
         {
+            if (value < 0 || value > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(value));
             if (value < byte.MaxValue)
             {
                 stream.WriteByte((byte)value);

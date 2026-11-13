@@ -204,6 +204,21 @@ public sealed class GatewayRuntimeStateCache : IDisposable
         }
     }
 
+    internal void FillStatusSummary(GatewayRuntimeStatus status, HashSet<string> deviceKeys, HashSet<string> tagKeys)
+    {
+        lock (_syncRoot)
+        {
+            GatewayCoreService.FillRuntimeCounts(status,
+                _tags.Where(entry => tagKeys.Contains(entry.Key)).Select(entry => entry.Value),
+                _devices.Where(entry => deviceKeys.Contains(entry.Key)).Select(entry => entry.Value));
+            // The cache prunes resolved errors during capture. Only the bounded error
+            // list is copied for a summary, never point values, arrays or device DTOs.
+            status.RecentErrors = _errors.Values
+                .Where(error => string.IsNullOrWhiteSpace(error.DeviceId) || deviceKeys.Contains(GetDeviceKey(error.ChannelId, error.DeviceId)))
+                .OrderByDescending(error => error.Timestamp).Take(20).Select(error => error.Clone()).ToList();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -221,8 +236,8 @@ public sealed class GatewayRuntimeStateCache : IDisposable
 
         lock (_syncRoot)
         {
-            _tags[GetTagKey(args.Snapshot)] = args.Snapshot.Clone();
-            MarkDirtyNoLock();
+            if (MergeTagNoLock(args.Snapshot))
+                MarkDirtyNoLock();
         }
     }
 
@@ -303,8 +318,17 @@ public sealed class GatewayRuntimeStateCache : IDisposable
         {
             if (tag == null)
                 continue;
-            _tags[GetTagKey(tag)] = tag.Clone();
+            MergeTagNoLock(tag);
         }
+    }
+
+    private bool MergeTagNoLock(TagValueSnapshot tag)
+    {
+        string key = GetTagKey(tag);
+        if (_tags.TryGetValue(key, out var previous) && previous.RuntimeRevision > tag.RuntimeRevision)
+            return false;
+        _tags[key] = tag.Clone();
+        return true;
     }
 
     private void MergeErrorsNoLock(IList<RuntimeErrorDetail> errors)

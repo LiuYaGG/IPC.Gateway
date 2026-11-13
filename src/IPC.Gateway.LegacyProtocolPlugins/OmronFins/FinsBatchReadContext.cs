@@ -15,6 +15,7 @@ namespace IPC.Plc.Communication.OmronFins
         public int MaxBitCount { get; set; }
         public int MaxGapWords { get; set; }
         public int MaxSparseItems { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
         public FinsDriverOptions DriverOptions { get; set; }
     }
 
@@ -27,6 +28,7 @@ namespace IPC.Plc.Communication.OmronFins
         public int MaxBitCount { get; set; }
         public int MaxGapWords { get; set; }
         public int MaxSparseItems { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
         public FinsDriverOptions DriverOptions { get; set; }
     }
 }

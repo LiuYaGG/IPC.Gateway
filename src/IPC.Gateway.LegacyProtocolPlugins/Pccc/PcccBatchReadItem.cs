@@ -31,6 +31,7 @@ namespace IPC.Plc.Communication.Pccc
             if (byteCount <= 0 || byteCount > 220)
                 throw new ArgumentOutOfRangeException(nameof(request.ElementCount), "PCCC单个标签读取不能超过220字节。");
 
+            address.EnsureByteRange(byteCount);
             return new PcccBatchReadItem
             {
                 Index = index,

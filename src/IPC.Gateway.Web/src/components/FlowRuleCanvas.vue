@@ -463,7 +463,10 @@ function nodeFooter(node: FlowRuleNode) {
   if (node.nodeType === 'Logic') return flowOptionLabel('logic', node.logicalOperator, tx)
   if (node.nodeType === 'Duration') return `${node.durationSeconds || 0}s`
   if (node.nodeType === 'Sequence') return formatMessage('{0}s 窗口', [node.sequenceWindowSeconds || 60])
-  if (node.nodeType === 'MqttPublish') return node.publishToMqtt ? `QoS ${node.publishQos}` : tx('未发布')
+  if (node.nodeType === 'MqttPublish') {
+    const delivery = node.publishToMqtt ? `QoS ${node.alarmMessage ? Math.max(1, node.publishQos) : node.publishQos}` : tx('未发布')
+    return node.alarmMessage ? `${tx('报警消息')} · ${delivery}` : delivery
+  }
   if (node.nodeType === 'EmailNotify') return node.emailTo || tx('未配置收件人')
   if (node.nodeType === 'WebhookCall') return node.webhookUrl || node.webhookMethod || 'POST'
   return node.pointCode || node.tagName || `${operatorSymbol(node.operator)} ${node.compareValue}`

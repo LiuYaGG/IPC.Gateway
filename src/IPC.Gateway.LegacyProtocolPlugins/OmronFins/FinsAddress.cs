@@ -41,6 +41,7 @@ namespace IPC.Plc.Communication.OmronFins
 
         public FinsMemoryArea Area { get; private set; }
         public int WordAddress { get; private set; }
+        public int WireWordAddress => Area.Name == "CNT" || Area.Name == "CU" ? 0x8000 + WordAddress : WordAddress;
         public int BitIndex { get; private set; }
 
         public bool HasBitIndex

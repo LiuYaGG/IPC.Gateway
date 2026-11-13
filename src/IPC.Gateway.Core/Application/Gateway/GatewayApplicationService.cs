@@ -57,6 +57,10 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
 
     public GatewayRuntimeStatusDto GetStatus() => GatewayConfigurationContractMapper.ToDto(_gateway.GetStatus());
 
+    public GatewayRuntimeStatusDto GetRuntimeStreamSnapshot() => GatewayConfigurationContractMapper.ToDto(_gateway.GetRuntimeStreamSnapshot());
+
+    public GatewayRuntimeStatusDto GetStatusSummary() => GatewayConfigurationContractMapper.ToDto(_gateway.GetStatusSummary());
+
     public MqttRuntimeStatusDto GetMqttStatus() => GatewayConfigurationContractMapper.ToDto(_gateway.GetMqttStatus());
 
     public OpcUaServerRuntimeStatusDto GetOpcUaStatus() => GatewayConfigurationContractMapper.ToDto(_gateway.GetOpcUaStatus());
@@ -244,7 +248,7 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
         // RuntimeEngine owns the device-operation timeout. Do not return while the
         // serialized device write is still running, otherwise a reported timeout
         // can be followed by a late successful PLC write.
-        return await Task.Run(() => GatewayConfigurationContractMapper.ToDto(_gateway.Runtime.WriteTag(request)));
+        return GatewayConfigurationContractMapper.ToDto(await _gateway.Runtime.WriteTagAsync(request).ConfigureAwait(false));
     }
     public IList<EdgeRuleConfigurationDto> GetRules() => GatewayConfigurationSecretPolicy.SanitizeRules(_rules.GetRules().Select(GatewayConfigurationContractMapper.ToDto));
 

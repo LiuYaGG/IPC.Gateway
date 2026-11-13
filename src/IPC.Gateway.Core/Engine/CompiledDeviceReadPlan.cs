@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using IPC.Plc.Communication.Core;
 using IPC.Plc.Communication.Infrastructure;
@@ -13,13 +14,34 @@ namespace IPC.Runtime.Engine
     internal sealed class CompiledDeviceReadPlan
     {
         private readonly Dictionary<string, CompiledTagRead> _entries;
+        private readonly CompiledTagRead[] _readOrder;
 
         private CompiledDeviceReadPlan(Dictionary<string, CompiledTagRead> entries)
         {
             _entries = entries;
+            // Stable for drivers without an address layout. Sort before selecting a
+            // bounded turn, so a UI group boundary cannot fragment a physical run.
+            _readOrder = entries.Values.OrderBy(entry => entry.ReadArea == null)
+                .ThenBy(entry => entry.ReadArea, StringComparer.Ordinal)
+                .ThenBy(entry => entry.ReadPosition).ToArray();
+            var firstByRequest = new Dictionary<(string, PlcDataType, int, int), CompiledTagRead>();
+            for (int i = 0; i < _readOrder.Length; i++)
+            {
+                var entry = _readOrder[i];
+                entry.Ordinal = i;
+                if (entry.ReadArea == null) continue;
+                var request = entry.Request;
+                var key = (request.Address, request.DataType, request.ElementCount, request.ElementOffset);
+                if (firstByRequest.TryGetValue(key, out var first))
+                {
+                    entry.Request = first.Request;
+                    entry.SharesRequest = first.SharesRequest = true;
+                }
+                else firstByRequest.Add(key, entry);
+            }
         }
 
-        public static CompiledDeviceReadPlan Compile(DeviceConfig? device)
+        public static CompiledDeviceReadPlan Compile(DeviceConfig? device, CompiledDeviceReadPlan? previous = null)
         {
             Dictionary<string, CompiledTagRead> entries =
                 new Dictionary<string, CompiledTagRead>(StringComparer.OrdinalIgnoreCase);
@@ -28,6 +50,15 @@ namespace IPC.Runtime.Engine
             {
                 foreach (GroupConfig group in device.Groups)
                     AddTags(device, group, group?.Tags, entries);
+            }
+            if (previous != null)
+            {
+                foreach (KeyValuePair<string, CompiledTagRead> pair in entries)
+                {
+                    if (previous._entries.TryGetValue(pair.Key, out CompiledTagRead? oldEntry) &&
+                        pair.Value.HasSameReadDefinition(oldEntry))
+                        pair.Value.PreserveRuntime(oldEntry);
+                }
             }
             return new CompiledDeviceReadPlan(entries);
         }
@@ -41,21 +72,53 @@ namespace IPC.Runtime.Engine
             return CompiledTagRead.Invalid(tag, string.Empty, "标签不在已编译读取计划中。");
         }
 
-        public CompiledTagRead? FindRecoveryProbe(string preferredTagId)
-        {
-            if (!string.IsNullOrWhiteSpace(preferredTagId) &&
-                _entries.TryGetValue(preferredTagId, out CompiledTagRead? preferred) &&
-                preferred.IsStaticallyValid && preferred.Tag.Enabled && (preferred.Group == null || preferred.Group.Enabled))
-                return preferred;
+        public IReadOnlyList<CompiledTagRead> Entries => _readOrder;
 
+        public bool TryGet(string tagId, out CompiledTagRead? entry) => _entries.TryGetValue(tagId, out entry);
+
+        public CompiledTagRead? FindRecoveryProbe(string preferredTagId, string previousProbeTagId, DateTime nowUtc)
+        {
+            // A newly added/corrected point gets a first attempt before another
+            // retry of a point that may have caused device isolation.
+            CompiledTagRead? unattempted = null;
             foreach (CompiledTagRead entry in _entries.Values)
             {
-                if (entry.IsStaticallyValid && entry.Tag.Enabled &&
-                    (entry.Group == null || entry.Group.Enabled) &&
-                    entry.Tag.AccessMode != TagAccessMode.WriteOnly)
-                    return entry;
+                if (CanProbe(entry, nowUtc) && entry.Runtime.LastReadAttemptUtc == DateTime.MinValue)
+                {
+                    if (!entry.PreservesReadState)
+                        return entry;
+                    unattempted ??= entry;
+                }
             }
-            return null;
+            if (unattempted != null)
+                return unattempted;
+
+            if (string.IsNullOrWhiteSpace(previousProbeTagId) && !string.IsNullOrWhiteSpace(preferredTagId) &&
+                _entries.TryGetValue(preferredTagId, out CompiledTagRead? preferred) &&
+                CanProbe(preferred, nowUtc))
+                return preferred;
+
+            CompiledTagRead? first = null;
+            bool afterPrevious = string.IsNullOrWhiteSpace(previousProbeTagId);
+            foreach (CompiledTagRead entry in _entries.Values)
+            {
+                if (CanProbe(entry, nowUtc))
+                {
+                    first ??= entry;
+                    if (afterPrevious)
+                        return entry;
+                }
+                if (string.Equals(GetTagKey(entry.Tag), previousProbeTagId, StringComparison.OrdinalIgnoreCase))
+                    afterPrevious = true;
+            }
+            return first;
+        }
+
+        private static bool CanProbe(CompiledTagRead entry, DateTime nowUtc)
+        {
+            return entry.IsStaticallyValid && entry.Tag.Enabled && !entry.Tag.IsVirtual &&
+                   entry.Tag.AccessMode != TagAccessMode.WriteOnly &&
+                   (entry.Group == null || entry.Group.Enabled) && entry.Runtime.CanProbe(nowUtc);
         }
 
         private static void AddTags(
@@ -73,16 +136,22 @@ namespace IPC.Runtime.Engine
                     continue;
 
                 string address = ResolveAddress(device, tag);
-                string error = ValidateTagDefinition(device, tag, address);
-                entries[GetTagKey(tag)] = string.IsNullOrEmpty(error)
+                string error = ValidateTagDefinition(device, tag, address, out var validation);
+                var entry = string.IsNullOrEmpty(error)
                     ? CompiledTagRead.Valid(group, tag, address)
                     : CompiledTagRead.Invalid(tag, address, error, group);
+                entry.ReadArea = validation?.ReadArea;
+                entry.ReadPosition = validation?.ReadPosition ?? 0;
+                entries[GetTagKey(tag)] = entry;
             }
         }
 
-        internal static string ValidateTagDefinition(DeviceConfig? device, TagConfig tag, string? resolvedAddress = null)
+        internal static string ValidateTagDefinition(DeviceConfig? device, TagConfig tag, string? resolvedAddress = null) =>
+            ValidateTagDefinition(device, tag, resolvedAddress ?? ResolveAddress(device, tag), out _);
+
+        private static string ValidateTagDefinition(DeviceConfig? device, TagConfig tag, string address, out PlcTagValidationResult? validation)
         {
-            string address = resolvedAddress ?? ResolveAddress(device, tag);
+            validation = null;
             if (device?.Connection != null &&
                 PlcDriverPluginRegistry.TryValidateTag(
                     device.Connection,
@@ -92,7 +161,10 @@ namespace IPC.Runtime.Engine
                     tag.ElementCount,
                     tag.ElementOffset,
                     out PlcTagValidationResult driverValidation))
+            {
+                validation = driverValidation;
                 return driverValidation.IsValid ? string.Empty : driverValidation.ErrorMessage;
+            }
 
             if (string.IsNullOrWhiteSpace(address))
                 return "标签地址不能为空。";
@@ -287,8 +359,37 @@ namespace IPC.Runtime.Engine
         public string Address { get; }
         public bool IsStaticallyValid { get; }
         public string ValidationError { get; }
-        public PlcBatchReadRequest Request { get; }
-        public TagRuntimeState Runtime { get; }
+        public PlcBatchReadRequest Request { get; internal set; }
+        public string? ReadArea { get; internal set; }
+        public long ReadPosition { get; internal set; }
+        public bool SharesRequest { get; internal set; }
+        public int Ordinal { get; internal set; }
+        public TagRuntimeState Runtime { get; private set; }
+        public bool PreservesReadState { get; private set; }
+        public bool PreservesSchedule { get; private set; }
+
+        public bool HasSameReadDefinition(CompiledTagRead previous)
+        {
+            return IsStaticallyValid == previous.IsStaticallyValid &&
+                   string.Equals(ValidationError, previous.ValidationError, StringComparison.Ordinal) &&
+                   string.Equals(Address, previous.Address, StringComparison.Ordinal) &&
+                   Tag.DataType == previous.Tag.DataType &&
+                   Tag.ElementCount == previous.Tag.ElementCount && Tag.ElementOffset == previous.Tag.ElementOffset &&
+                   (Tag.AccessMode == TagAccessMode.WriteOnly) == (previous.Tag.AccessMode == TagAccessMode.WriteOnly) &&
+                   Tag.IsVirtual == previous.Tag.IsVirtual &&
+                   string.Equals(Group?.Id ?? string.Empty, previous.Group?.Id ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public void PreserveRuntime(CompiledTagRead previous)
+        {
+            // Share the state with an in-flight old-generation read rather than
+            // copy a partially updated failure count/recovery deadline.
+            Runtime = previous.Runtime;
+            PreservesReadState = true;
+            PreservesSchedule = Tag.ScanRateMs == previous.Tag.ScanRateMs &&
+                                Tag.FailureRetryDelayMs == previous.Tag.FailureRetryDelayMs &&
+                                (Group?.ScanRateMs ?? 0) == (previous.Group?.ScanRateMs ?? 0);
+        }
 
         public static CompiledTagRead Valid(GroupConfig? group, TagConfig tag, string address) =>
             new CompiledTagRead(group, tag, address, true, string.Empty);
@@ -305,6 +406,7 @@ namespace IPC.Runtime.Engine
             IsStaticIsolation = staticIsolation;
             LastError = error ?? string.Empty;
             NextRecoveryProbeUtc = staticIsolation ? DateTime.MaxValue : DateTime.MinValue;
+            FirstQueuedUtc = DateTime.UtcNow;
         }
 
         public bool IsIsolated { get; private set; }
@@ -313,31 +415,87 @@ namespace IPC.Runtime.Engine
         public DateTime NextRecoveryProbeUtc { get; private set; }
         public DateTime LastSuccessUtc { get; private set; }
         public DateTime LastFailureUtc { get; private set; }
+        public DateTime LastSourceTimestampUtc { get; set; }
+        public DateTime LastReadAttemptUtc { get; private set; }
+        public DateTime FirstQueuedUtc { get; }
+        // A timeout or an undecodable batch is not proof of an invalid tag.
+        // Keep it out of the healthy batch until an independent read succeeds.
+        public bool NeedsIndependentProbe { get; private set; }
+        public bool BatchVerificationPending { get; set; }
+        public bool HasRecoveryWork => IsIsolated || NeedsIndependentProbe;
+        public int RecoveryIntervalMs { get; set; } = 1000;
+        public int ConsecutiveDeferredReads { get; private set; }
+        public bool HasSuccessfulRead { get; private set; }
+        public DateTime HealthyReadBaselineUtc { get; set; }
         public string LastError { get; private set; }
 
-        public bool CanProbe(DateTime nowUtc) => !IsIsolated || (!IsStaticIsolation && nowUtc >= NextRecoveryProbeUtc);
+        public bool CanProbe(DateTime nowUtc) => !HasRecoveryWork || (!IsStaticIsolation && nowUtc >= NextRecoveryProbeUtc);
+
+        public void RecordReadAttempt() => LastReadAttemptUtc = DateTime.UtcNow;
 
         public void RecordSuccess()
         {
+            RecordReadAttempt();
             IsIsolated = false;
+            NeedsIndependentProbe = false;
+            BatchVerificationPending = false;
+            ConsecutiveDeferredReads = 0;
             ConsecutiveFailures = 0;
             NextRecoveryProbeUtc = DateTime.MinValue;
             LastSuccessUtc = DateTime.UtcNow;
+            HasSuccessfulRead = true;
+            HealthyReadBaselineUtc = LastSuccessUtc;
             LastError = string.Empty;
         }
 
         public void RecordFailure(string message)
         {
+            ResetHealthyBaseline();
+            ConsecutiveDeferredReads = 0;
+            RecordReadAttempt();
             ConsecutiveFailures++;
             LastFailureUtc = DateTime.UtcNow;
             LastError = message ?? string.Empty;
-            if (ConsecutiveFailures < 3)
-                return;
-
             IsIsolated = true;
-            int exponent = Math.Min(8, ConsecutiveFailures - 3);
-            int delaySeconds = Math.Min(300, 5 * (1 << exponent));
-            NextRecoveryProbeUtc = DateTime.UtcNow.AddSeconds(delaySeconds);
+            NeedsIndependentProbe = false;
+            BatchVerificationPending = false;
+            NextRecoveryProbeUtc = DateTime.UtcNow.AddMilliseconds(Math.Clamp(RecoveryIntervalMs, 100, 60000));
+        }
+
+        public void RecordUncertainFailure(string message, int recoveryIntervalMs = 1000)
+        {
+            ResetHealthyBaseline();
+            ConsecutiveDeferredReads = 0;
+            RecordReadAttempt();
+            LastFailureUtc = DateTime.UtcNow;
+            LastError = message ?? string.Empty;
+            NeedsIndependentProbe = true;
+            BatchVerificationPending = false;
+            if (!IsStaticIsolation)
+                NextRecoveryProbeUtc = DateTime.UtcNow.AddMilliseconds(Math.Clamp(recoveryIntervalMs, 100, 60000));
+        }
+
+        public void DeferProbe(DateTime nextProbeUtc)
+        {
+            if (HasRecoveryWork && !IsStaticIsolation && nextProbeUtc > NextRecoveryProbeUtc)
+                NextRecoveryProbeUtc = nextProbeUtc;
+        }
+
+        public void ResetHealthyBaseline() => HealthyReadBaselineUtc = DateTime.MinValue;
+
+        public void RecordDeferred(DateTime nextAttemptUtc)
+        {
+            ConsecutiveDeferredReads = Math.Min(3, ConsecutiveDeferredReads + 1);
+            if (ConsecutiveDeferredReads >= 3 && !IsStaticIsolation)
+            {
+                // A plugin that keeps returning no item result must not leave
+                // a point uninitialized forever. This is verification, not a
+                // tag failure or an actual read attempt.
+                NeedsIndependentProbe = true;
+                BatchVerificationPending = false;
+                NextRecoveryProbeUtc = nextAttemptUtc;
+            }
+            else DeferProbe(nextAttemptUtc);
         }
     }
 }

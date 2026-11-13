@@ -33,6 +33,7 @@ public sealed class GatewayUpdatePackageService
     private readonly IGatewayUpdateProcessLauncher _processLauncher;
     private readonly object _actionLock = new();
     private bool _completedTrustRestored;
+    private DateTime _nextMaintenanceCheckUtc;
     private readonly HashSet<string> _incomingFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly JsonSerializerOptions _jsonOptions;
 
@@ -53,15 +54,27 @@ public sealed class GatewayUpdatePackageService
         lock (_actionLock)
         {
             EnsureDirectories();
-            if (!_completedTrustRestored)
+            if (DateTime.UtcNow >= _nextMaintenanceCheckUtc)
             {
-                try { RestoreCompletedUpgradeTrust(); }
-                catch (Exception ex) { System.Diagnostics.Trace.TraceWarning("Upgrade driver trust restoration skipped: " + ex.Message); }
+                _nextMaintenanceCheckUtc = DateTime.UtcNow.AddMinutes(1);
+                if (!_completedTrustRestored)
+                {
+                    try { RestoreCompletedUpgradeTrust(); }
+                    catch (Exception ex) { System.Diagnostics.Trace.TraceWarning("Upgrade driver trust restoration skipped: " + ex.Message); }
+                }
+                if (_options.Enabled) ApplyRetentionPolicy();
             }
-            if (_options.Enabled) ApplyRetentionPolicy();
             return GetStatusCore();
         }
     }
+
+    // The worker runs in a different process. Its on-disk receipt remains available
+    // across service restarts, even while a separate request is validating a ZIP.
+    public GatewayUpdateProgress GetProgress() => new()
+    {
+        CurrentVersion = GatewayUpdateVersion.Current,
+        PendingAction = ReadJson<GatewayPendingUpdateAction>(GetPendingActionPath())
+    };
 
     // The previous host may predate upgrade-trust support. Reconstruct continuity
     // only from its completed upgrade, original ZIP and verified rollback copy.
@@ -750,15 +763,32 @@ public sealed class GatewayUpdatePackageService
                 [string]$PendingActionPath = '{{EscapePowerShellPath(pendingPath)}}',
                 [switch]$SkipServiceControl,
                 [switch]$Automatic,
+                [ValidateRange(1, 86400)][int]$ServiceTimeoutSeconds = {{Math.Clamp(_options.ServiceTransitionTimeoutSeconds, 1, 86400)}},
                 [string]$ExpectedActionId = ''
             )
 
             $ErrorActionPreference = "Stop"
+            function Save-ActionReceipt {
+                $temporary = $PendingActionPath + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+                try {
+                    [IO.File]::WriteAllText($temporary, ($action | ConvertTo-Json -Depth 20))
+                    for ($attempt = 0; ; $attempt++) {
+                        try {
+                            [IO.File]::Replace($temporary, $PendingActionPath, [System.Management.Automation.Language.NullString]::Value)
+                            return
+                        } catch [IO.IOException] {
+                            if ($attempt -ge 9) { throw }
+                            Start-Sleep -Milliseconds 50
+                        }
+                    }
+                } finally { [IO.File]::Delete($temporary) }
+            }
             # Give the HTTP response time to reach the browser before stopping its host.
             if ($Automatic) { Start-Sleep -Seconds 5 }
             $action = $null
             $transcribing = $false
             $executing = $false
+            $oldHostExited = $false
             $lock = $null
             try {
             $lock = [IO.File]::Open($PendingActionPath + '.lock', 'OpenOrCreate', 'ReadWrite', 'None')
@@ -769,6 +799,7 @@ public sealed class GatewayUpdatePackageService
             $action = Get-Content -LiteralPath $PendingActionPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($ExpectedActionId -and $action.ActionId -ne $ExpectedActionId) { throw 'Pending action changed.' }
             if ($action.Status -notin @('Pending', 'Scheduled')) { throw 'Action is already running or completed.' }
+            if (-not $PSCmdlet.ShouldProcess($action.TargetDirectory, "Apply $($action.ActionType)")) { return }
             $executing = $true
             $sourceRoot = [IO.Path]::GetFullPath($action.SourceDirectory).TrimEnd('\')
             $targetRoot = [IO.Path]::GetFullPath($action.TargetDirectory).TrimEnd('\')
@@ -780,27 +811,42 @@ public sealed class GatewayUpdatePackageService
                 throw "安装目录不存在：$($action.TargetDirectory)"
             }
             $action.Status = 'Applying'
-            $action | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $PendingActionPath -Encoding UTF8
+            Save-ActionReceipt
             $logPath = $action.ExecutionLogPath
             if (-not $logPath) { $logPath = Join-Path (Split-Path -Parent $PendingActionPath) 'offline-update.log' }
             Start-Transcript -LiteralPath $logPath -Append | Out-Null
             $transcribing = $true
 
             if (-not $SkipServiceControl) {
-                $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-                if ($service -and $service.Status -ne "Stopped") {
-                    if ($PSCmdlet.ShouldProcess($ServiceName, "Stop service")) {
-                        $oldProcess = $null
-                        $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
-                        if ($serviceInfo.ProcessId -gt 0) { try { $oldProcess = [Diagnostics.Process]::GetProcessById([int]$serviceInfo.ProcessId) } catch { } }
-                        Stop-Service -Name $ServiceName -Force
-                        $service.WaitForStatus("Stopped", "00:00:30")
-                        if ($oldProcess) {
-                            try { if (-not $oldProcess.WaitForExit(30000)) { throw 'The old host process has not exited.' } }
-                            finally { $oldProcess.Dispose() }
-                        }
-                    }
+                try { $service = Get-Service -Name $ServiceName -ErrorAction Stop }
+                catch {
+                    if ($Automatic -or $_.FullyQualifiedErrorId -notlike 'NoServiceFoundForGivenName,*') { throw }
+                    $SkipServiceControl = $true
                 }
+            }
+            if (-not $SkipServiceControl) {
+                $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+                $oldPid = [int]$serviceInfo.ProcessId
+                if ($Automatic) {
+                    # The web host which launched us may already be shutting down.
+                    if ($oldPid -gt 0 -and $oldPid -ne {{Environment.ProcessId}}) { throw 'The service process changed before update.' }
+                    $oldPid = {{Environment.ProcessId}}
+                }
+                $oldProcess = $null
+                try {
+                    if ($oldPid -gt 0) {
+                        try { $oldProcess = [Diagnostics.Process]::GetProcessById($oldPid); $null = $oldProcess.Handle }
+                        catch [ArgumentException] { $oldProcess = $null }
+                    } elseif ($service.Status -ne 'Stopped') { throw 'Cannot identify the running service process.' }
+                    Write-Host "Waiting for service $ServiceName to stop and process $oldPid to exit."
+                    $service.Refresh()
+                    if ($service.Status -notin @('Stopped', 'StopPending')) { $service.Stop() }
+                    $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds($ServiceTimeoutSeconds))
+                    if ($oldProcess -and -not $oldProcess.WaitForExit($ServiceTimeoutSeconds * 1000)) {
+                        throw "Process $oldPid is still running. No update files were copied."
+                    }
+                    $oldHostExited = $true
+                } finally { if ($oldProcess) { $oldProcess.Dispose() } }
             }
 
             $preserveNames = @({{preserveNames}})
@@ -824,29 +870,25 @@ public sealed class GatewayUpdatePackageService
             }
 
             if (-not $SkipServiceControl) {
-                $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-                if ($service) {
-                    if ($PSCmdlet.ShouldProcess($ServiceName, "Start service")) {
-                        Start-Service -Name $ServiceName
-                        $service.WaitForStatus('Running', '00:00:30')
-                    }
-                }
+                Write-Host "Waiting for service $ServiceName to start."
+                $service.Start()
+                $service.WaitForStatus('Running', [TimeSpan]::FromSeconds($ServiceTimeoutSeconds))
             }
             $action.Status = 'Applied'
             $action | Add-Member -MemberType NoteProperty -Name AppliedTime -Value ((Get-Date).ToUniversalTime().ToString('O')) -Force
             $action | Add-Member -MemberType NoteProperty -Name ErrorMessage -Value '' -Force
-            $action | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $PendingActionPath -Encoding UTF8
+            Save-ActionReceipt
             Write-Host "IPC Gateway 离线$($action.ActionType)已完成。"
             }
             catch {
                 if ($executing -and $action) {
                     $action.Status = 'Failed'
                     $action | Add-Member -MemberType NoteProperty -Name ErrorMessage -Value $_.Exception.Message -Force
-                    $action | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $PendingActionPath -Encoding UTF8
+                    Save-ActionReceipt
                 }
                 # Recover availability where possible; retain the failure and transcript for diagnosis.
-                if ($executing -and -not $SkipServiceControl) {
-                    try { Start-Service -Name $ServiceName -ErrorAction Stop } catch { Write-Warning $_.Exception.Message }
+                if ($executing -and $oldHostExited) {
+                    try { $service.Refresh(); if ($service.Status -eq 'Stopped') { $service.Start() } } catch { Write-Warning $_.Exception.Message }
                 }
                 throw
             }
@@ -893,8 +935,8 @@ public sealed class GatewayUpdatePackageService
     private IList<GatewayRollbackPoint> ReadRollbackPoints()
     {
         EnsureDirectories();
-        return Directory.EnumerateFiles(GetRollbacksDirectory(), "rollback.json", SearchOption.AllDirectories)
-            .Select(ReadJson<GatewayRollbackPoint>)
+        return Directory.EnumerateDirectories(GetRollbacksDirectory())
+            .Select(dir => ReadJson<GatewayRollbackPoint>(Path.Combine(dir, "rollback.json")))
             .Where(item => item != null)
             .Cast<GatewayRollbackPoint>()
             .OrderByDescending(item => item.CreatedTime)
@@ -1037,10 +1079,9 @@ public sealed class GatewayUpdatePackageService
     {
         try
         {
-            if (!File.Exists(path))
-                return default;
-            string json = File.ReadAllText(path, Encoding.UTF8);
-            return JsonSerializer.Deserialize<T>(json, _jsonOptions);
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(file, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return JsonSerializer.Deserialize<T>(reader.ReadToEnd(), _jsonOptions);
         }
         catch
         {
@@ -1051,8 +1092,17 @@ public sealed class GatewayUpdatePackageService
     private void WriteJson<T>(string path, T value)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string json = JsonSerializer.Serialize(value, _jsonOptions);
-        File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(file, value, _jsonOptions);
+                file.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { File.Delete(temporary); }
     }
 
     private static string ComputeSha256(string path)

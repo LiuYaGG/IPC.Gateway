@@ -22,9 +22,16 @@ namespace IPC.Plc.Communication.Core
         public bool IsValid { get; }
         public string NormalizedAddress { get; }
         public string ErrorMessage { get; }
+        // An optional ordering hint supplied by the driver that parsed the address.
+        // Drivers without physical addressing keep their configured read order.
+        public string? ReadArea { get; private init; }
+        public long ReadPosition { get; private init; }
 
         public static PlcTagValidationResult Valid(string normalizedAddress) =>
             new PlcTagValidationResult(true, normalizedAddress, string.Empty);
+
+        public static PlcTagValidationResult Valid(string normalizedAddress, string readArea, long readPosition) =>
+            new PlcTagValidationResult(true, normalizedAddress, string.Empty) { ReadArea = readArea, ReadPosition = readPosition };
 
         public static PlcTagValidationResult Invalid(string normalizedAddress, string errorMessage) =>
             new PlcTagValidationResult(false, normalizedAddress, errorMessage);

@@ -52,7 +52,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
         {
             if (dataType == PlcDataType.String)
                 return (GetStringByteCount(elementCount) + 1) / 2;
-            return (PlcDataTypeHelper.GetElementSize(dataType) * elementCount + 1) / 2;
+            return checked((int)(((long)PlcDataTypeHelper.GetElementSize(dataType) * elementCount + 1) / 2));
         }
 
         public static int GetDeviceOffset(PlcDataType dataType, int elementOffset)

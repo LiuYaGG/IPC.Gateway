@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
@@ -7,7 +8,7 @@ using TwinCAT.Ads;
 
 namespace IPC.Plc.Communication.Ads
 {
-    public sealed class BeckhoffAdsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public sealed class BeckhoffAdsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter, IPlcAddressCache
     {
         private readonly PlcConnectionOptions _connection;
         private readonly AdsDriverOptions _options;
@@ -38,6 +39,7 @@ namespace IPC.Plc.Communication.Ads
             if (string.IsNullOrWhiteSpace(_options.AmsNetId))
                 throw new InvalidOperationException("请配置目标 AMS NetId，例如 192.168.1.20.1.1。");
 
+            ReleaseHandles();
             DisposeClient();
             AdsClient client = new AdsClient { Timeout = Math.Max(100, _connection.TimeoutMilliseconds) };
             try
@@ -153,7 +155,7 @@ namespace IPC.Plc.Communication.Ads
             string instancePath = AdsAddress.WithElementOffset(address, elementOffset);
             uint handle = await GetHandleAsync(instancePath, cancellationToken).ConfigureAwait(false);
             object value = AdsDataCodec.ParseWriteValue(dataType, valueText);
-            int[] args = AdsDataCodec.GetMarshalArguments(dataType, 1, _options.StringLength);
+            int[] args = AdsDataCodec.GetMarshalArguments(dataType, value is Array array ? array.Length : 1, _options.StringLength);
             ResultWrite result = await _client.WriteAnyAsync(handle, value, args, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
                 throw AdsFailureClassifier.Create(result.ErrorCode, "写入 ADS 标签 " + instancePath);
@@ -197,6 +199,28 @@ namespace IPC.Plc.Communication.Ads
         private ValueTask<PlcReadResult> ReadRequestAsync(PlcBatchReadRequest request, CancellationToken cancellationToken)
         {
             return ReadAsync(request.Address, request.DataType, request.ElementCount, request.ElementOffset, cancellationToken);
+        }
+
+        public async ValueTask RetainConfiguredAddressesAsync(IEnumerable<PlcBatchReadRequest> configured, CancellationToken token)
+        {
+            var retained = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var request in configured)
+            {
+                try { retained.Add(AdsAddress.WithElementOffset(request.Address, request.ElementOffset)); }
+                catch (Exception ex) when (ex is FormatException or NotSupportedException or OverflowException) { }
+            }
+            await _handleLock.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                foreach (var path in _handles.Keys.Where(path => !retained.Contains(path)).ToArray())
+                {
+                    token.ThrowIfCancellationRequested();
+                    var deleted = await _client.DeleteVariableHandleAsync(_handles[path], token).ConfigureAwait(false);
+                    if (deleted.Succeeded || deleted.ErrorCode == AdsErrorCode.DeviceNotFound)
+                        _handles.Remove(path);
+                }
+            }
+            finally { _handleLock.Release(); }
         }
 
         private void ReleaseHandles()

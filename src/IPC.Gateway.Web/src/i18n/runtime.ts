@@ -1,6 +1,11 @@
 // Only presentation text is localized. Parameters such as topics, endpoints and
 // counts are copied verbatim; backend diagnostics and stored events are untouched.
 export const runtimeMessages: ReadonlyArray<readonly [string, string]> = [
+  ['数值已恢复至正常范围。', 'Value returned to the normal range.'],
+  ['数值高于报警上限。', 'Value is above high alarm limit.'],
+  ['数值低于报警下限。', 'Value is below low alarm limit.'],
+  ['数值达到高限预警范围。', 'Value reached high warning deviation.'],
+  ['数值达到低限预警范围。', 'Value reached low warning deviation.'],
   ['FINS 数据格式必须为 ABCD、BADC、CDAB 或 DCBA。', 'FINS data format must be ABCD, BADC, CDAB, or DCBA.'],
   ['连续无变化超时的数值处理节点需要数值输入。', 'Numeric processing before the unchanged timeout requires numeric input.'],
   ['连续无变化超时参数无效：超时和数据最大间隔必须大于 0，变化死区必须为非负有限数。', 'Invalid unchanged timeout settings: timeout and sample gap must be positive, and deadband must be finite and non-negative.'],

@@ -17,17 +17,18 @@ namespace IPC.Plc.Communication.Pccc
         {
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests?.Count ?? 0];
             Dictionary<string, List<PcccBatchReadItem>> groups = BuildGroups(requests, results);
+            var recovery = PlcBatchReadRecovery.Start(readRaw.Target, "pccc");
             try
             {
                 foreach (List<PcccBatchReadItem> group in groups.Values)
                 {
                     group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
-                    ExecuteGroup(group, readRaw, results);
+                    ExecuteGroup(group, readRaw, results, recovery);
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
             return Complete(requests, results);
         }
@@ -39,18 +40,19 @@ namespace IPC.Plc.Communication.Pccc
         {
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests?.Count ?? 0];
             Dictionary<string, List<PcccBatchReadItem>> groups = BuildGroups(requests, results);
+            var recovery = PlcBatchReadRecovery.Start(readRaw.Target, "pccc");
             try
             {
                 foreach (List<PcccBatchReadItem> group in groups.Values)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     group.Sort((left, right) => left.StartElement.CompareTo(right.StartElement));
-                    await ExecuteGroupAsync(group, readRaw, results, cancellationToken).ConfigureAwait(false);
+                    await ExecuteGroupAsync(group, readRaw, results, recovery, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
             return Complete(requests, results);
         }
@@ -89,7 +91,7 @@ namespace IPC.Plc.Communication.Pccc
         private static void ExecuteGroup(
             List<PcccBatchReadItem> group,
             Func<PcccAddress, int, byte[]> readRaw,
-            PlcBatchReadResult[] results)
+            PlcBatchReadResult[] results, PlcBatchReadRecovery recovery)
         {
             int index = 0;
             while (index < group.Count)
@@ -108,14 +110,19 @@ namespace IPC.Plc.Communication.Pccc
                     endBytes = Math.Max(endBytes, mergedBytes);
                     index++;
                 }
-                ExecuteSegment(group, start, index, startElement, endBytes, readRaw, results);
+                recovery.ReadRange(group, start, index, item => item.Request, item => item.Index,
+                    (left, right) =>
+                    {
+                        byte[] data = readRaw(group[left].Address, GetByteCount(group, left, right));
+                        DecodeSegment(group, left, right, group[left].StartElement, data, results);
+                    }, results, group[start].GroupKey);
             }
         }
 
         private static async ValueTask ExecuteGroupAsync(
             List<PcccBatchReadItem> group,
             Func<PcccAddress, int, CancellationToken, ValueTask<byte[]>> readRaw,
-            PlcBatchReadResult[] results,
+            PlcBatchReadResult[] results, PlcBatchReadRecovery recovery,
             CancellationToken cancellationToken)
         {
             int index = 0;
@@ -136,80 +143,13 @@ namespace IPC.Plc.Communication.Pccc
                     endBytes = Math.Max(endBytes, mergedBytes);
                     index++;
                 }
-                await ExecuteSegmentAsync(group, start, index, startElement, endBytes, readRaw, results, cancellationToken).ConfigureAwait(false);
+                await recovery.ReadRangeAsync(group, start, index, item => item.Request, item => item.Index,
+                    async (left, right) =>
+                    {
+                        byte[] data = await readRaw(group[left].Address, GetByteCount(group, left, right), cancellationToken).ConfigureAwait(false);
+                        DecodeSegment(group, left, right, group[left].StartElement, data, results);
+                    }, results, group[start].GroupKey, cancellationToken).ConfigureAwait(false);
             }
-        }
-
-        private static void ExecuteSegment(
-            List<PcccBatchReadItem> items,
-            int start,
-            int end,
-            int startElement,
-            int byteCount,
-            Func<PcccAddress, int, byte[]> readRaw,
-            PlcBatchReadResult[] results)
-        {
-            try
-            {
-                byte[] data = readRaw(items[start].Address, byteCount);
-                DecodeSegment(items, start, end, startElement, data, results);
-            }
-            catch (Exception ex)
-            {
-                HandleFailure(items, start, end, ex, results,
-                    (left, right) => ExecuteSegment(items, left, right, items[left].StartElement,
-                        GetByteCount(items, left, right), readRaw, results));
-            }
-        }
-
-        private static async ValueTask ExecuteSegmentAsync(
-            List<PcccBatchReadItem> items,
-            int start,
-            int end,
-            int startElement,
-            int byteCount,
-            Func<PcccAddress, int, CancellationToken, ValueTask<byte[]>> readRaw,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                byte[] data = await readRaw(items[start].Address, byteCount, cancellationToken).ConfigureAwait(false);
-                DecodeSegment(items, start, end, startElement, data, results);
-            }
-            catch (Exception ex) when (!(ex is OperationCanceledException))
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                if (scope != PlcReadFailureScope.Tag || end - start <= 1)
-                {
-                    SetFailures(items, start, end, ex.Message, scope, results);
-                    return;
-                }
-                int middle = start + (end - start) / 2;
-                await ExecuteSegmentAsync(items, start, middle, items[start].StartElement,
-                    GetByteCount(items, start, middle), readRaw, results, cancellationToken).ConfigureAwait(false);
-                await ExecuteSegmentAsync(items, middle, end, items[middle].StartElement,
-                    GetByteCount(items, middle, end), readRaw, results, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        private static void HandleFailure(
-            List<PcccBatchReadItem> items,
-            int start,
-            int end,
-            Exception exception,
-            PlcBatchReadResult[] results,
-            Action<int, int> split)
-        {
-            PlcReadFailureScope scope = PlcFailureClassifier.Classify(exception, PlcReadFailureScope.Tag);
-            if (scope == PlcReadFailureScope.Tag && end - start > 1)
-            {
-                int middle = start + (end - start) / 2;
-                split(start, middle);
-                split(middle, end);
-                return;
-            }
-            SetFailures(items, start, end, exception.Message, scope, results);
         }
 
         private static void DecodeSegment(
@@ -255,7 +195,7 @@ namespace IPC.Plc.Communication.Pccc
             for (int index = 0; index < results.Length; index++)
             {
                 PlcBatchReadRequest request = requests[index] ?? new PlcBatchReadRequest(string.Empty, PlcDataType.Int16, 1, 0);
-                output.Add(results[index] ?? PlcBatchReadResult.FromFailure(request, "PCCC批读未返回结果。", PlcReadFailureScope.Batch));
+                output.Add(results[index] ?? PlcBatchReadResult.FromDeferred(request, "PCCC batch read was not attempted."));
             }
             return output;
         }

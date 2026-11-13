@@ -36,7 +36,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
         public static object Decode(byte[] data, string dataIdentifier, PlcDataType dataType)
         {
             if (data == null || data.Length == 0)
-                return ConvertValue(0D, string.Empty, dataType);
+                throw new FormatException("DL/T645 回复缺少数值。");
 
             string digits = DecodeBcdLittleEndian(data);
             int decimalPlaces = InferDecimalPlaces(dataIdentifier);
@@ -52,7 +52,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
                 int high = (data[i] >> 4) & 0x0F;
                 int low = data[i] & 0x0F;
                 if (high > 9 || low > 9)
-                    return BitConverter.ToString(data).Replace("-", string.Empty);
+                    throw new FormatException("DL/T645 数值包含无效 BCD。");
                 builder.Append(high.ToString(CultureInfo.InvariantCulture));
                 builder.Append(low.ToString(CultureInfo.InvariantCulture));
             }
@@ -63,12 +63,7 @@ namespace IPC.Plc.Communication.Metering.Dlt645
 
         private static double ToNumber(string digits, int decimalPlaces)
         {
-            if (string.IsNullOrWhiteSpace(digits))
-                return 0D;
-
-            double raw;
-            if (!double.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out raw))
-                return 0D;
+            double raw = double.Parse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
             if (decimalPlaces <= 0)
                 return raw;

@@ -11,6 +11,11 @@ namespace IPC.Plc.Communication.Cip
     internal static class CipBatchReadExecutor
     {
         public static IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests, CipBatchReadContext context)
+            => CipArrayReadPlan.ExecuteAsync(requests, context?.MaxRequestBytes ?? 0,
+                batch => new ValueTask<IList<PlcBatchReadResult>>(ReadManyCore(batch, context)), CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+        private static IList<PlcBatchReadResult> ReadManyCore(IList<PlcBatchReadRequest> requests, CipBatchReadContext context)
         {
             List<PlcBatchReadResult> output = new List<PlcBatchReadResult>();
             if (requests == null || requests.Count == 0)
@@ -40,7 +45,12 @@ namespace IPC.Plc.Communication.Cip
             return output;
         }
 
-        public static async ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
+        public static ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
+            IList<PlcBatchReadRequest> requests, CipAsyncBatchReadContext context, CancellationToken cancellationToken)
+            => CipArrayReadPlan.ExecuteAsync(requests, context?.MaxRequestBytes ?? 0,
+                batch => ReadManyCoreAsync(batch, context, cancellationToken), cancellationToken);
+
+        private static async ValueTask<IList<PlcBatchReadResult>> ReadManyCoreAsync(
             IList<PlcBatchReadRequest> requests,
             CipAsyncBatchReadContext context,
             CancellationToken cancellationToken)
@@ -78,7 +88,8 @@ namespace IPC.Plc.Communication.Cip
                 : PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
             string message = error is OperationCanceledException ? "PLC batch operation timed out or was cancelled." : error.Message;
             foreach (var operation in operations)
-                if (!operation.Success && string.IsNullOrEmpty(operation.ErrorMessage)) operation.SetFailure(message, scope);
+                if (operation.WasDispatched && !operation.Success && string.IsNullOrEmpty(operation.ErrorMessage))
+                    operation.SetFailure(message, scope);
         }
 
         private static List<CipBatchReadItem> BuildItems(
@@ -197,6 +208,7 @@ namespace IPC.Plc.Communication.Cip
             try
             {
                 byte[] request = BuildMultipleServiceRequest(batch);
+                foreach (var operation in batch) operation.WasDispatched = true;
                 byte[] response = context.SendConnectedMessage(request);
                 byte[][] replies = ParseMultipleServiceResponse(response, batch.Count);
                 for (int i = 0; i < batch.Count; i++)
@@ -221,6 +233,7 @@ namespace IPC.Plc.Communication.Cip
         {
             try
             {
+                operation.WasDispatched = true;
                 byte[] response = context.SendConnectedMessage(operation.RequestBytes);
                 if (IsCapacityReply(response) && context.ReadTag != null &&
                     PlcDataTypeHelper.IsArray(operation.DataType) && operation.ElementCount > 1)
@@ -252,6 +265,7 @@ namespace IPC.Plc.Communication.Cip
             try
             {
                 byte[] request = BuildMultipleServiceRequest(batch);
+                foreach (var operation in batch) operation.WasDispatched = true;
                 byte[] response = await context.SendConnectedMessageAsync(request, cancellationToken).ConfigureAwait(false);
                 byte[][] replies = ParseMultipleServiceResponse(response, batch.Count);
                 for (int i = 0; i < batch.Count; i++)
@@ -279,6 +293,7 @@ namespace IPC.Plc.Communication.Cip
         {
             try
             {
+                operation.WasDispatched = true;
                 byte[] response = await context.SendConnectedMessageAsync(operation.RequestBytes, cancellationToken).ConfigureAwait(false);
                 if (IsCapacityReply(response) && context.ReadTagAsync != null &&
                     PlcDataTypeHelper.IsArray(operation.DataType) && operation.ElementCount > 1)
@@ -477,7 +492,7 @@ namespace IPC.Plc.Communication.Cip
             bool hasEmbeddedServiceError = expectedService == 0x8A && generalStatus == 0x1E;
             if (generalStatus != 0 && !hasEmbeddedServiceError)
                 throw new PlcProtocolException(
-                    CipStatusClassifier.Classify(generalStatus, true),
+                    CipStatusClassifier.Classify(generalStatus, expectedService),
                     "CIP Multiple Service错误: general status 0x" + generalStatus.ToString("X2"),
                     "0x" + generalStatus.ToString("X2"));
 

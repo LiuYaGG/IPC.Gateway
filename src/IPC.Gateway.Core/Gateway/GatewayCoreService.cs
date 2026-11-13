@@ -56,13 +56,19 @@ namespace IPC.Gateway.Core.Gateway
         private LocalHistoryService _history;
         private MqttGatewayOptions _mqttOptions;
         private MqttGatewayService _mqtt;
+        public GatewayAlarmJournal AlarmJournal { get; }
+        private readonly ThresholdAlarmConsumer _alarmConsumer;
         private OpcUaServerOptions _opcUaOptions;
         private OpcUaServerService _opcUa;
         private readonly IFlowRuleEngineFactory _flowRuleEngineFactory;
         private readonly IModelInferenceService _modelInference;
         private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private IFlowRuleEngineService _flowRuleEngine;
-        private ProjectConfig _project;
+        private ProjectConfig _project = null!;
+        // Replaced as a unit when a new project is installed. Readers keep a stable scope.
+        private ProjectRuntimeScope _runtimeScope = null!;
+        public string ProjectRevision => Volatile.Read(ref _runtimeScope).Revision;
+
         private ProjectConfigValidationResult _lastValidation;
         private DateTime _startedTime;
         private DateTime _lastReloadTime;
@@ -93,8 +99,16 @@ namespace IPC.Gateway.Core.Gateway
             _mqttOptions = _configurationStore.LoadOrCreateMqtt(mqttOptions);
             _opcUaOptions = _configurationStore.LoadOrCreateOpcUa(opcUaOptions);
             _historyOptions = _configurationStore.LoadOrCreateHistory(historyOptions);
+            // Use the installation's data root, independent of later edits to ordinary history.
+            string historyDirectory = string.IsNullOrWhiteSpace(historyOptions?.Directory)
+                ? Path.Combine("Data", "History") : historyOptions.Directory.Trim().Replace('\\', Path.DirectorySeparatorChar);
+            string dataRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(historyDirectory, AppContext.BaseDirectory))) ?? AppContext.BaseDirectory;
+            AlarmJournal = new GatewayAlarmJournal(Path.Combine(dataRoot, "Alarms", "alarms.sqlite"),
+                () => Volatile.Read(ref _historyOptions));
+            _alarmConsumer = new ThresholdAlarmConsumer((RuntimeEngine)Runtime, AlarmJournal, () => Volatile.Read(ref _mqttOptions));
             _storageHealthThresholds = _configurationStore.LoadOrCreateStorageHealth(storageHealthThresholds);
-            _project = new ProjectConfig();
+            SetCurrentProject(new ProjectConfig());
             _lastValidation = new ProjectConfigValidationResult();
             _history = new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History);
             _mqtt = CreateMqttService();
@@ -161,11 +175,12 @@ namespace IPC.Gateway.Core.Gateway
                 if (Runtime.IsRunning)
                     return;
 
-                _project = LoadProject();
+                SetCurrentProject(LoadProject());
                 _lastValidation = ProjectConfigValidator.Validate(_project);
                 if (!_lastValidation.IsValid)
                     throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
 
+                _alarmConsumer.Start();
                 Runtime.Start(_project);
                 _runtimeStateCache.Start(Runtime, _project);
                 _history.Start();
@@ -188,6 +203,7 @@ namespace IPC.Gateway.Core.Gateway
                 _mqtt.Stop();
                 _history.Stop();
                 Runtime.Stop();
+                _alarmConsumer.Stop();
             }
         }
 
@@ -238,7 +254,7 @@ namespace IPC.Gateway.Core.Gateway
 
                     MeasureReloadStep(reloadSteps, "CloneProject", () =>
                     {
-                        _project = ProjectConfigCloner.Clone(project);
+                        SetCurrentProject(ProjectConfigCloner.Clone(project));
                         _lastValidation = validation;
                     });
                     MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
@@ -341,7 +357,7 @@ namespace IPC.Gateway.Core.Gateway
 
                         MeasureReloadStep(reloadSteps, "CloneProject", () =>
                         {
-                            _project = ProjectConfigCloner.Clone(project);
+                            SetCurrentProject(ProjectConfigCloner.Clone(project));
                             _lastValidation = validation;
                         });
                         MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
@@ -467,7 +483,7 @@ namespace IPC.Gateway.Core.Gateway
 
                     MeasureReloadStep(reloadSteps, "CloneProject", () =>
                     {
-                        _project = ProjectConfigCloner.Clone(normalizedProject);
+                        SetCurrentProject(ProjectConfigCloner.Clone(normalizedProject));
                         _lastValidation = validation;
                     });
                     if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
@@ -572,7 +588,7 @@ namespace IPC.Gateway.Core.Gateway
 
                         MeasureReloadStep(reloadSteps, "CloneProject", () =>
                         {
-                            _project = ProjectConfigCloner.Clone(normalizedProject);
+                            SetCurrentProject(ProjectConfigCloner.Clone(normalizedProject));
                             _lastValidation = validation;
                         });
                         if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
@@ -689,7 +705,7 @@ namespace IPC.Gateway.Core.Gateway
             if (wasRunning)
                 _flowRuleEngine.Stop();
 
-            _project = ProjectConfigCloner.Clone(project);
+            SetCurrentProject(ProjectConfigCloner.Clone(project));
             _lastValidation = validation;
             ReplaceFlowRuleEngine();
 
@@ -1021,7 +1037,7 @@ namespace IPC.Gateway.Core.Gateway
                     Runtime.Stop();
                 }
 
-                _project = ProjectConfigCloner.Clone(project);
+                SetCurrentProject(ProjectConfigCloner.Clone(project));
                 _lastValidation = ProjectConfigValidator.Validate(_project);
                 ReplaceFlowRuleEngine();
                 if (wasRunning)
@@ -1090,7 +1106,7 @@ namespace IPC.Gateway.Core.Gateway
                         Runtime.Stop();
                     }
 
-                    _project = ProjectConfigCloner.Clone(project);
+                    SetCurrentProject(ProjectConfigCloner.Clone(project));
                     _lastValidation = ProjectConfigValidator.Validate(_project);
                     ReplaceFlowRuleEngine();
                     if (wasRunning)
@@ -1283,39 +1299,98 @@ namespace IPC.Gateway.Core.Gateway
             return GetStatus();
         }
 
-        public GatewayRuntimeStatus GetStatus()
+        private void SetCurrentProject(ProjectConfig project)
+        {
+            _project = project;
+            var scope = new ProjectRuntimeScope(project);
+            Volatile.Write(ref _runtimeScope, scope);
+            _alarmConsumer.SetConfiguredTags(scope.AlarmTags);
+        }
+
+        private sealed class ProjectRuntimeScope
+        {
+            public string Revision { get; } = Guid.NewGuid().ToString("N");
+            public HashSet<string> Devices { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> Tags { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> AlarmTags { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public int DeviceCount { get; }
+            public int EnabledDeviceCount { get; }
+            public int GroupCount { get; }
+            public int TagCount { get; }
+
+            public ProjectRuntimeScope(ProjectConfig project)
+            {
+                BuildActiveRuntimeScope(project, Devices, Tags, AlarmTags);
+                DeviceCount = CountProjectDevices(project);
+                EnabledDeviceCount = CountEnabledProjectDevices(project);
+                GroupCount = CountProjectGroups(project);
+                TagCount = CountProjectTags(project);
+            }
+        }
+
+        public bool ContainsRuntimeTag(string channelId, string deviceId, string groupId, string tagId) =>
+            Volatile.Read(ref _runtimeScope).Tags.Contains(TagPath.BuildIdentity(channelId, deviceId, groupId, tagId));
+
+        public GatewayRuntimeStatus GetStatus() => ReadStatus(summaryOnly: false, useLiveValues: false);
+
+        public GatewayRuntimeStatus GetRuntimeStreamSnapshot() => ReadStatus(summaryOnly: false, useLiveValues: true);
+
+        public GatewayRuntimeStatus GetStatusSummary() => ReadStatus(summaryOnly: true, useLiveValues: false);
+
+        private GatewayRuntimeStatus ReadStatus(bool summaryOnly, bool useLiveValues)
         {
             GatewayRuntimeStatus status;
-            ProjectConfig projectSnapshot;
+            ProjectRuntimeScope scope;
             lock (_syncRoot)
             {
-                GatewayRuntimeStateSnapshot runtimeState = _runtimeStateCache.GetSnapshot();
-                projectSnapshot = ProjectConfigCloner.Clone(_project);
+                scope = _runtimeScope;
                 status = new GatewayRuntimeStatus
                 {
                     IsRunning = Runtime.IsRunning,
-                    ProjectId = _project == null ? string.Empty : _project.ProjectId,
-                    ProjectName = _project == null ? string.Empty : _project.Name,
-                    ProjectPath = string.Empty,
+                    ProjectId = _project.ProjectId,
+                    ProjectName = _project.Name,
+                    ProjectRevision = scope.Revision,
+                    DeviceCount = scope.DeviceCount,
+                    EnabledDeviceCount = scope.EnabledDeviceCount,
+                    GroupCount = scope.GroupCount,
+                    TagCount = scope.TagCount,
                     ConfigurationStore = "SqlSugar:" + _runtimeOptions.Database.Provider + ":" + _runtimeOptions.Database.Database,
                     StartedTime = _startedTime,
                     LastReloadTime = _lastReloadTime,
                     ConfigValidation = _lastValidation,
-                    Devices = runtimeState.Devices,
-                    Tags = runtimeState.Tags,
-                    RecentErrors = runtimeState.RecentErrors.ToList(),
                     Mqtt = _mqtt.GetStatus(),
                     OpcUa = _opcUa.GetStatus(),
                     History = _history.GetStats(),
                     FlowRuleEngine = _flowRuleEngine.GetStatus(),
                     Scheduler = Runtime.GetSchedulerStatus()
                 };
+                if (summaryOnly)
+                    _runtimeStateCache.FillStatusSummary(status, scope.Devices, scope.Tags);
+                else if (useLiveValues && status.IsRunning)
+                {
+                    // The state cache samples periodically. A reconnect needs the values and
+                    // diagnostic flags that were already current at the subscription watermark.
+                    status.Devices = Runtime.GetDeviceStatuses();
+                    status.Tags = Runtime.GetSnapshots();
+                    status.RecentErrors = Runtime.GetRecentErrors(100);
+                }
+                else
+                {
+                    var state = _runtimeStateCache.GetSnapshot();
+                    status.Devices = state.Devices;
+                    status.Tags = state.Tags;
+                    status.RecentErrors = state.RecentErrors;
+                }
             }
 
             status.System = _systemResources.Capture();
-            FilterRuntimeStatusToProject(status, projectSnapshot);
-            FillProjectCounts(status, projectSnapshot);
-            FillRuntimeCounts(status, status.Tags);
+            if (!summaryOnly)
+            {
+                status.Devices = FilterRuntimeDevices(status.Devices, scope.Devices);
+                status.Tags = FilterRuntimeTags(status.Tags, scope.Tags);
+                status.RecentErrors = FilterRuntimeErrors(status.RecentErrors, scope.Devices, status.Devices, status.Tags);
+                FillRuntimeCounts(status, status.Tags, status.Devices);
+            }
             return status;
         }
 
@@ -1349,6 +1424,7 @@ namespace IPC.Gateway.Core.Gateway
             _mqtt.Dispose();
             _history.Dispose();
             Runtime.Dispose();
+            _alarmConsumer.Dispose();
             _configurationMutationSemaphore.Dispose();
         }
 
@@ -1361,7 +1437,7 @@ namespace IPC.Gateway.Core.Gateway
 
         private MqttGatewayService CreateMqttService()
         {
-            return new MqttGatewayService(Runtime, _mqttOptions, _history, QueueRemoteConfiguration, _runtimeOptions.Resilience.Mqtt);
+            return new MqttGatewayService(Runtime, _mqttOptions, _history, QueueRemoteConfiguration, _runtimeOptions.Resilience.Mqtt, AlarmJournal);
         }
 
         private OpcUaServerService CreateOpcUaService()
@@ -1371,7 +1447,7 @@ namespace IPC.Gateway.Core.Gateway
 
         private IFlowRuleEngineService CreateFlowRuleEngine()
         {
-            return _flowRuleEngineFactory.Create(Runtime, _project, QueueRuleEventPublish, _mqttOptions, _runtimeOptions.Resilience.RuleEngine, _modelInference);
+            return _flowRuleEngineFactory.Create(Runtime, _project, QueueRuleEventPublish, _mqttOptions, _runtimeOptions.Resilience.RuleEngine, _modelInference, RecordRuleAlarm);
         }
 
         private void ApplyRuntimeProject(ProjectConfig project)
@@ -1417,6 +1493,12 @@ namespace IPC.Gateway.Core.Gateway
         {
             MqttGatewayService mqtt = _mqtt;
             return mqtt != null && mqtt.QueueCustomPublish(topic, payload, qos);
+        }
+
+        private void RecordRuleAlarm(GatewayAlarmRecord alarm, bool publish)
+        {
+            MqttGatewayOptions options = Volatile.Read(ref _mqttOptions);
+            AlarmJournal.EnqueueRule(alarm, publish && options.Enabled && options.PublishEnabled);
         }
 
         private static LocalHistoryOptions NormalizeHistoryOptions(LocalHistoryOptions options)
@@ -2100,28 +2182,10 @@ namespace IPC.Gateway.Core.Gateway
             return (action ?? string.Empty).Replace("-", string.Empty).Replace("_", string.Empty).Trim().ToLowerInvariant();
         }
 
-        private static void FilterRuntimeStatusToProject(GatewayRuntimeStatus status, ProjectConfig? project)
-        {
-            if (status == null)
-                return;
-
-            HashSet<string> activeDeviceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> activeTagKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            BuildActiveRuntimeScope(project, activeDeviceKeys, activeTagKeys);
-
-            status.Devices = FilterRuntimeDevices(status.Devices, activeDeviceKeys);
-            status.Tags = FilterRuntimeTags(status.Tags, activeTagKeys);
-            status.RecentErrors = FilterRuntimeErrors(
-                status.RecentErrors,
-                activeDeviceKeys,
-                status.Devices,
-                status.Tags);
-        }
-
         private static void BuildActiveRuntimeScope(
             ProjectConfig? project,
             HashSet<string> deviceKeys,
-            HashSet<string> tagKeys)
+            HashSet<string> tagKeys, HashSet<string> alarmTags)
         {
             if (project == null || project.Devices == null)
                 return;
@@ -2133,13 +2197,13 @@ namespace IPC.Gateway.Core.Gateway
                     continue;
 
                 AddIfNotEmpty(deviceKeys, BuildDeviceIdentity(device.ChannelId, device.Id));
-                AddActiveTagScope(device, null, device.Tags, tagKeys);
+                AddActiveTagScope(device, null, device.Tags, tagKeys, alarmTags);
 
                 if (device.Groups == null)
                     continue;
 
                 for (int g = 0; g < device.Groups.Count; g++)
-                    AddActiveTagScope(device, device.Groups[g], device.Groups[g]?.Tags, tagKeys);
+                    AddActiveTagScope(device, device.Groups[g], device.Groups[g]?.Tags, tagKeys, alarmTags);
             }
         }
 
@@ -2147,7 +2211,7 @@ namespace IPC.Gateway.Core.Gateway
             DeviceConfig device,
             GroupConfig? group,
             IList<TagConfig>? tags,
-            HashSet<string> tagKeys)
+            HashSet<string> tagKeys, HashSet<string> alarmTags)
         {
             if (device == null || tags == null)
                 return;
@@ -2158,11 +2222,13 @@ namespace IPC.Gateway.Core.Gateway
                 if (tag == null)
                     continue;
 
-                AddIfNotEmpty(tagKeys, TagPath.BuildIdentity(
+                string key = TagPath.BuildIdentity(
                     device.ChannelId,
                     device.Id,
                     group == null ? string.Empty : group.Id,
-                    tag.Id));
+                    tag.Id);
+                AddIfNotEmpty(tagKeys, key);
+                if (tag.Alarm?.Enabled == true) alarmTags.Add(key);
             }
         }
 
@@ -2429,77 +2495,27 @@ namespace IPC.Gateway.Core.Gateway
             public long ElapsedMilliseconds { get; }
         }
 
-        private static void FillProjectCounts(GatewayRuntimeStatus status, ProjectConfig? project)
+        internal static void FillRuntimeCounts(GatewayRuntimeStatus status,
+            IEnumerable<TagValueSnapshot> snapshots, IEnumerable<DeviceRuntimeStatus> devices)
         {
-            if (project == null || project.Devices == null)
-                return;
-
-            status.DeviceCount = project.Devices.Count;
-            for (int d = 0; d < project.Devices.Count; d++)
+            bool hasDevices = false;
+            foreach (var device in devices)
             {
-                DeviceConfig device = project.Devices[d];
-                if (device == null)
-                    continue;
-                if (device.Enabled)
-                    status.EnabledDeviceCount++;
-                if (device.Tags != null)
-                    status.TagCount += device.Tags.Count;
-                if (device.Groups != null)
-                {
-                    status.GroupCount += device.Groups.Count;
-                    for (int g = 0; g < device.Groups.Count; g++)
-                    {
-                        GroupConfig group = device.Groups[g];
-                        if (group != null && group.Tags != null)
-                            status.TagCount += group.Tags.Count;
-                    }
-                }
+                hasDevices = true;
+                if (device.Enabled && device.IsConnected) status.OnlineDeviceCount++;
             }
-        }
-
-        private static void FillRuntimeCounts(GatewayRuntimeStatus status, IList<TagValueSnapshot>? snapshots)
-        {
-            if (snapshots == null)
-                return;
-
-            HashSet<string> onlineDevices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < snapshots.Count; i++)
+            HashSet<string>? onlineDevices = hasDevices ? null : new(StringComparer.OrdinalIgnoreCase);
+            foreach (var tag in snapshots)
             {
-                TagValueSnapshot snapshot = snapshots[i];
-                if (snapshot == null)
-                    continue;
-
-                if (snapshot.Quality == TagQuality.Good)
+                if (tag.Quality == TagQuality.Good)
                 {
                     status.GoodTagCount++;
-                    onlineDevices.Add(string.IsNullOrWhiteSpace(snapshot.DeviceId) ? snapshot.DeviceName : snapshot.DeviceId);
+                    onlineDevices?.Add(string.IsNullOrWhiteSpace(tag.DeviceId) ? tag.DeviceName : tag.DeviceId);
                 }
-                else if (snapshot.Quality == TagQuality.Unknown)
-                {
-                    status.NoDataTagCount++;
-                }
-                else
-                {
-                    status.BadTagCount++;
-                }
+                else if (tag.Quality == TagQuality.Unknown) status.NoDataTagCount++;
+                else status.BadTagCount++;
             }
-
-            if (status.Devices != null && status.Devices.Count > 0)
-            {
-                int onlineDeviceCount = 0;
-                for (int i = 0; i < status.Devices.Count; i++)
-                {
-                    DeviceRuntimeStatus device = status.Devices[i];
-                    if (device != null && device.Enabled && device.IsConnected)
-                        onlineDeviceCount++;
-                }
-
-                status.OnlineDeviceCount = onlineDeviceCount;
-            }
-            else
-            {
-                status.OnlineDeviceCount = onlineDevices.Count;
-            }
+            if (onlineDevices != null) status.OnlineDeviceCount = onlineDevices.Count;
         }
     }
 }

@@ -32,6 +32,7 @@ internal static class ProjectProtobufContracts
             .Add(10, nameof(global::IPC.EdgeGateway.LocalHistoryStorageOptions.AutoCleanupEnabled))
             .Add(11, nameof(global::IPC.EdgeGateway.LocalHistoryStorageOptions.CleanupIntervalHours))
             .Add(12, nameof(global::IPC.EdgeGateway.LocalHistoryStorageOptions.MaxStorageMegabytes))
+            .Add(13, nameof(global::IPC.EdgeGateway.LocalHistoryStorageOptions.ValueFileSegmentMegabytes))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.EdgeGateway.MqttGatewayOptions), false)
             .Add(1, nameof(global::IPC.EdgeGateway.MqttGatewayOptions.Enabled))
@@ -91,6 +92,7 @@ internal static class ProjectProtobufContracts
             .Add(55, nameof(global::IPC.EdgeGateway.MqttGatewayOptions.SparkplugBirthQos))
             .Add(56, nameof(global::IPC.EdgeGateway.MqttGatewayOptions.SparkplugEnableCommands))
             .Add(57, nameof(global::IPC.EdgeGateway.MqttGatewayOptions.SparkplugPrimaryHostId))
+            .Add(58, nameof(global::IPC.EdgeGateway.MqttGatewayOptions.CoalescePendingTelemetry))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.EdgeGateway.OpcUaServerOptions), false)
             .Add(1, nameof(global::IPC.EdgeGateway.OpcUaServerOptions.Enabled))
@@ -243,6 +245,7 @@ internal static class ProjectProtobufContracts
             .Add(25, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.WebhookTimeoutSeconds))
             .Add(26, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.WebhookRetryCount))
             .Add(27, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.DebugLabel))
+            .Add(28, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.AlarmMessage))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.EdgeRuleAlarmLevelConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.EdgeRuleAlarmLevelConfig.Id))
@@ -571,6 +574,7 @@ internal static class ProjectProtobufContracts
             .Add(141, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeTimeoutSeconds))
             .Add(142, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeDeadband))
             .Add(143, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeMaxAgeSeconds))
+            .Add(144, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.AlarmMessage))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.GroupConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.GroupConfig.Id))

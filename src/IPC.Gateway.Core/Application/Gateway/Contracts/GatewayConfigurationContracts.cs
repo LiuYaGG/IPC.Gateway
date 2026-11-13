@@ -30,6 +30,7 @@ public sealed class GatewaySyncDto
 public sealed class GatewayRuntimeStatusDto
 {
     public bool IsRunning { get; set; }
+    public string ProjectRevision { get; set; } = string.Empty;
     public string ProjectId { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string ProjectPath { get; set; } = string.Empty;
@@ -370,6 +371,7 @@ public class EdgeRuleConfigurationDto
 
 public sealed class EdgeRuleActionDto
 {
+    public bool AlarmMessage { get; set; }
     public string Id { get; set; } = string.Empty;
     public string ActionType { get; set; } = "MqttPublish";
     public bool Enabled { get; set; } = true;
@@ -443,6 +445,7 @@ public class FlowRuleDefinitionDto
 
 public sealed class FlowRuleNodeDto
 {
+    public bool AlarmMessage { get; set; }
     public string Id { get; set; } = string.Empty;
     public string NodeType { get; set; } = "Condition";
     public string Label { get; set; } = string.Empty;
@@ -632,6 +635,7 @@ public class MqttConfigurationDto
     public bool PublishEnabled { get; set; } = true;
     public bool PublishSelectedTagsOnly { get; set; }
     public bool PublishChangedOnly { get; set; } = true;
+    public bool CoalescePendingTelemetry { get; set; }
     public int PublishUnchangedHeartbeatSeconds { get; set; }
     public string PublishTopicTemplate { get; set; } = string.Empty;
     public int PublishQos { get; set; }
@@ -732,13 +736,14 @@ public class HistoryStorageConfigurationDto
     public string RetentionPolicy { get; set; } = "DeleteOnly";
     public int HotRetentionDays { get; set; } = 7;
     public int ColdRetentionDays { get; set; } = 90;
-    public bool CompressionEnabled { get; set; }
-    public bool CompressHotFiles { get; set; }
+    public bool CompressionEnabled { get; set; } = true;
+    public bool CompressHotFiles { get; set; } = true;
     public bool CompressColdFiles { get; set; } = true;
-    public int CompressAfterDays { get; set; } = 3;
+    public int CompressAfterDays { get; set; }
     public bool AutoCleanupEnabled { get; set; } = true;
     public int CleanupIntervalHours { get; set; } = 24;
     public int MaxStorageMegabytes { get; set; }
+    public int ValueFileSegmentMegabytes { get; set; } = IPC.EdgeGateway.LocalHistoryStorageOptions.DefaultValueFileSegmentMegabytes;
 }
 
 public class StorageHealthConfigurationDto
@@ -835,7 +840,30 @@ public sealed class RuntimeSchedulerStatusDto
     public long TotalRateLimited { get; set; }
     public RuntimePollingQueueStatusDto Queue { get; set; } = new RuntimePollingQueueStatusDto();
     public RuntimeTimeoutStatsDto Timeout { get; set; } = new RuntimeTimeoutStatsDto();
+    public RuntimeAcquisitionLatencyStatsDto AcquisitionLatency { get; set; } = new RuntimeAcquisitionLatencyStatsDto();
     public IList<RuntimePollingTaskStatusDto> Tasks { get; set; } = new List<RuntimePollingTaskStatusDto>();
+}
+
+public sealed class RuntimeAcquisitionLatencyStatsDto
+{
+    public int SampleCapacity { get; set; }
+    public DateTime SampleTimeUtc { get; set; }
+    public long RejectedSampleCount { get; set; }
+    public RuntimeLatencyDistributionDto InitialReadLatencyMs { get; set; } = new RuntimeLatencyDistributionDto();
+    public RuntimeLatencyDistributionDto HealthyRefreshGapMs { get; set; } = new RuntimeLatencyDistributionDto();
+    public RuntimeLatencyDistributionDto TagProbeQueueDelayMs { get; set; } = new RuntimeLatencyDistributionDto();
+    public RuntimeLatencyDistributionDto DeviceProbeQueueDelayMs { get; set; } = new RuntimeLatencyDistributionDto();
+}
+
+public sealed class RuntimeLatencyDistributionDto
+{
+    public long Count { get; set; }
+    public int WindowCount { get; set; }
+    public double LastMs { get; set; }
+    public double AverageMs { get; set; }
+    public double P95Ms { get; set; }
+    public double P99Ms { get; set; }
+    public double MaxMs { get; set; }
 }
 
 public sealed class RuntimePollingQueueStatusDto
@@ -952,6 +980,7 @@ public sealed class TagValueSnapshotDto
     public bool IsTagIsolated { get; set; }
     public bool IsStaticValidationError { get; set; }
     public int TagConsecutiveFailures { get; set; }
+    public long RuntimeRevision { get; set; }
     public DateTime NextTagRecoveryProbeTime { get; set; }
 }
 
@@ -1004,6 +1033,8 @@ public sealed class MqttRuntimeStatusDto
     public int SparkplugDeathCount { get; set; }
     public int SparkplugDataCount { get; set; }
     public int OutboxPendingCount { get; set; }
+    public long AlarmPendingCount { get; set; }
+    public long AlarmOldestPendingAgeSeconds { get; set; }
     public int OutboxEnqueuedCount { get; set; }
     public long OutboxBytes { get; set; }
     public int OutboxExpiredDeletedCount { get; set; }

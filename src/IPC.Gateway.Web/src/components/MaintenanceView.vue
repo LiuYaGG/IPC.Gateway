@@ -7,6 +7,7 @@
         <span>{{ tx("安装包、升级包、离线升级和版本回滚集中管理") }}</span>
       </div>
       <div class="hero-actions">
+        <a-button v-if="applying && !restartDialog" @click="restartDialog = true">{{ tx("查看升级进度") }}</a-button>
         <a-tag
           :class="[
             'maintenance-status-tag',
@@ -861,29 +862,43 @@
       :open="restartDialog"
       :title="tx('升级与服务重启')"
       centered
-      :closable="!applying"
+      :closable="!applying || restartDelayed || restartCheckWarning"
       :mask-closable="false"
-      :keyboard="!applying"
+      :keyboard="!applying || restartDelayed || restartCheckWarning"
       :footer="null"
-      @cancel="restartDialog = false"
+      @cancel="closeRestartDialog"
     >
-      <a-spin :spinning="applying">
-        <a-alert
-          :type="restartError ? 'error' : applying ? 'info' : 'success'"
-          :message="tx(restartMessage)"
-          show-icon
-        />
-      </a-spin>
-      <p class="update-dialog-tip">
-        {{ tx("服务重启期间采集和推送会短暂暂停，页面会自动检查恢复状态。") }}
+      <a-progress
+        :percent="Math.round(restartMilestones * 100 / 3)"
+        :status="restartOutcome === 'failed' ? 'exception' : applying ? 'active' : restartOutcome === 'completed' ? 'success' : 'normal'"
+        :show-info="false"
+        role="progressbar"
+        :aria-label="tx('升级与服务重启')"
+        :aria-valuemin="0"
+        :aria-valuemax="3"
+        :aria-valuenow="restartMilestones"
+        :aria-valuetext="formatMessage('已确认 {0}/3 个阶段', [restartMilestones])"
+      />
+      <p class="restart-stage-count">{{ formatMessage('已确认 {0}/3 个阶段', [restartMilestones]) }}</p>
+      <a-alert
+        :type="restartOutcome === 'failed' ? 'error' : restartOutcome === 'unconfirmed' || (applying && (restartDelayed || restartCheckWarning)) ? 'warning' : applying ? 'info' : 'success'"
+        :message="tx(restartMessage)"
+        aria-live="polite"
+        show-icon
+      />
+      <p v-if="applying && restartDelayed" class="update-dialog-tip">
+        {{ tx("服务恢复耗时较长，页面会继续检查。可暂时关闭此窗口。") }}
+      </p>
+      <p v-if="restartLogPath && (restartDelayed || restartOutcome === 'failed')" class="update-dialog-tip">
+        {{ tx("执行日志") }} · {{ restartLogPath }}
       </p>
       <a-button
-        v-if="!applying && !restartError"
+        v-if="restartOutcome === 'completed'"
         type="primary"
         @click="reloadApplication"
         >{{ tx("刷新进入新版本") }}</a-button
       >
-      <a-button v-if="!applying && restartError" @click="checkRestartAgain">{{
+      <a-button v-if="restartOutcome === 'failed'" @click="checkRestartAgain">{{
         tx("重新检查恢复状态")
       }}</a-button>
     </a-modal>
@@ -919,6 +934,10 @@ import {
   loadWatchdogConfig,
   loadWatchdogStatus,
   loadUpdateStatus,
+  loadUpdateProgress,
+  HttpRequestError,
+  NetworkRequestError,
+  SessionExpiredError,
   prepareUpdatePackage,
   prepareUpdateRollback,
   restoreProjectBackup,
@@ -926,6 +945,7 @@ import {
   uploadUpdatePackage,
   applyPendingUpdate,
   type GatewayCompatibilityMatrix,
+  type GatewayPendingUpdateAction,
   type GatewayProtocolDriverInfo,
   type GatewayUpdatePackageRecord,
   type GatewaySupportSnapshot,
@@ -942,6 +962,7 @@ import { beginUpgradeUpload, updateUpgradeUpload, markUpgradeTransferred, finish
 import { beginConfigurationSave, endConfigurationSave } from '../utils/configurationSaveState';
 
 const { hasPermission } = usePermissions();
+const props = defineProps<{ account?: string }>();
 const loading = ref(false);
 const uploading = ref(false);
 const snapshotLoading = ref(false);
@@ -965,18 +986,24 @@ function openDriverSigning(driver: GatewayProtocolDriverInfo) { signingDriver.va
 async function refreshSignedDrivers() { drivers.value = await loadProtocolDrivers(); }
 const restartDialog = ref(false);
 const applying = ref(false);
-const restartError = ref(false);
+const restartMilestones = ref(0);
+type RestartOutcome = "completed" | "failed" | "unconfirmed";
+const restartOutcome = ref<RestartOutcome>();
 const restartMessage = ref("正在安排升级，请稍候…");
 let restartTimer: ReturnType<typeof setTimeout> | undefined;
 let restartController: AbortController | undefined;
 let restartActionId = "";
-let restartDeadline = 0;
+const restartDelayed = ref(false);
+const restartCheckWarning = ref(false);
+const restartLogPath = ref("");
+let startedAt = 0;
 let restartRequestError = "";
 let disposed = false;
 onBeforeUnmount(() => {
   disposed = true;
   clearTimeout(restartTimer);
   restartController?.abort();
+  document.removeEventListener("visibilitychange", checkOnReturn);
 });
 
 function driverCapabilityText(driver: GatewayProtocolDriverInfo) {
@@ -1094,7 +1121,50 @@ function trustStatusDetail(row: GatewayUpdatePackageRecord) {
   return detail.join("；");
 }
 
-onMounted(() => refresh());
+function rememberRestart() {
+  try {
+    const key = "ipc.gateway.update." + (props.account || "");
+    if (applying.value) sessionStorage.setItem(key, JSON.stringify({
+      id: restartActionId, startedAt, milestones: restartMilestones.value, logPath: restartLogPath.value,
+    }));
+    else sessionStorage.removeItem(key);
+  } catch { /* Storage may be unavailable in a private session. */ }
+}
+
+function startTracking(id: string, since = Date.now(), milestones = 0, logPath = "") {
+  restartActionId = id;
+  startedAt = since;
+  restartMilestones.value = milestones;
+  restartDelayed.value = Date.now() - since >= 180000;
+  restartCheckWarning.value = false;
+  restartLogPath.value = logPath;
+  applying.value = true;
+  restartDialog.value = true;
+  restartOutcome.value = undefined;
+  restartRequestError = "";
+  restartMessage.value = "正在等待离线动作的执行结果。";
+  rememberRestart();
+}
+
+function checkOnReturn() {
+  if (document.hidden || !applying.value || restartController) return;
+  clearTimeout(restartTimer);
+  void pollRestart();
+}
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", checkOnReturn);
+  try {
+    const saved = JSON.parse(sessionStorage.getItem("ipc.gateway.update." + (props.account || "")) || "null");
+    if (saved && typeof saved.id === "string" && saved.id.length && Number.isFinite(saved.startedAt)) {
+      startTracking(saved.id, saved.startedAt, [1, 2].includes(saved.milestones) ? saved.milestones : 0,
+        typeof saved.logPath === "string" ? saved.logPath : "");
+      void pollRestart();
+      return;
+    }
+  } catch { /* Fall back to discovering an active action from the host. */ }
+  void refresh();
+});
 
 async function executeUpdate() {
   const action = status.value?.pendingAction;
@@ -1112,77 +1182,107 @@ async function executeUpdate() {
   } catch {
     return;
   }
-  restartActionId = action.actionId;
-  restartDialog.value = true;
-  applying.value = true;
-  restartError.value = false;
+  startTracking(action.actionId);
   restartMessage.value = "正在安排升级，请稍候…";
-  restartRequestError = "";
-  try {
-    await applyPendingUpdate(action.actionId);
-  } catch (error) {
-    restartRequestError = error instanceof Error ? error.message : "";
-  }
-  restartDeadline = Date.now() + 180000;
-  restartMessage.value = "正在替换程序并重启服务，请稍候…";
   restartTimer = setTimeout(pollRestart, 1500);
+  try {
+    const scheduled = await applyPendingUpdate(action.actionId);
+    if (disposed || !applying.value || restartActionId !== action.actionId) return;
+    updateRestartStage(scheduled);
+  } catch (error) {
+    if (disposed || !applying.value || restartActionId !== action.actionId || restartMilestones.value > 0) return;
+    // A dropped POST may already be running on the host. A 4xx rejection
+    // (other than a timeout) plus a still-Pending action confirms it was declined.
+    if (error instanceof SessionExpiredError || (error instanceof HttpRequestError &&
+        error.status >= 400 && error.status < 500 && error.status !== 408))
+      restartRequestError = error.message;
+    restartMessage.value = "正在确认服务是否已接收执行请求。";
+  }
+}
+function updateRestartStage(action: GatewayPendingUpdateAction) {
+  if (action.executionLogPath) restartLogPath.value = action.executionLogPath;
+  if (action.status === "Scheduled") {
+    restartMilestones.value = Math.max(1, restartMilestones.value);
+    if (restartMilestones.value === 1)
+      restartMessage.value = "服务已接收请求，正在等待离线脚本启动。";
+  } else if (action.status === "Applying") {
+    restartMilestones.value = 2;
+    restartMessage.value = "正在替换程序并重启服务，请稍候…";
+  }
+  rememberRestart();
 }
 async function pollRestart() {
-  if (disposed) return;
+  if (disposed || !applying.value || restartController) return;
   const controller = new AbortController();
   restartController = controller;
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const data = await loadUpdateStatus(controller.signal);
+    const data = await loadUpdateProgress(controller.signal);
     if (disposed) return;
-    status.value = data;
+    restartCheckWarning.value = false;
+    if (status.value) {
+      status.value.pendingAction = data.pendingAction;
+      status.value.currentVersion = data.currentVersion;
+    }
     const action = data.pendingAction;
-    if (action?.actionId !== restartActionId) {
-      finishRestart("待执行动作已变化，请刷新页面检查。", true);
+    if (!action) {
+      // The Windows helper can be updating the action file during this read.
+      restartMessage.value = "正在等待离线动作的执行结果。";
+    } else if (action.actionId !== restartActionId) {
+      finishRestart("待执行动作已变化，请刷新页面检查。", "unconfirmed");
       return;
-    }
-    if (action.status === "Applied") {
-      finishRestart("升级完成，服务已恢复。请刷新进入新版本。", false);
+    } else if (action.status === "Applied" || action.status === "Completed") {
+      restartMilestones.value = 3;
+      finishRestart("升级完成，服务已恢复。请刷新进入新版本。", "completed");
       return;
-    }
-    if (
+    } else if (
       action.status === "Failed" ||
       (action.status === "Pending" && action.errorMessage)
     ) {
-      finishRestart(action.errorMessage || "升级失败，请查看执行日志。", true);
+      if (action.executionLogPath) restartLogPath.value = action.executionLogPath;
+      finishRestart(action.errorMessage || "升级失败，请查看执行日志。", "failed");
       return;
-    }
-    if (action.status === "Pending") {
-      finishRestart(
-        restartRequestError || "升级尚未启动，请检查权限和待执行动作后重试。",
-        true,
-      );
+    } else if (action.status === "Pending" && restartRequestError) {
+      finishRestart(restartRequestError, "failed");
       return;
+    } else updateRestartStage(action);
+  } catch (error) {
+    if (!disposed) {
+      const unavailable = controller.signal.aborted || error instanceof NetworkRequestError ||
+        (error instanceof HttpRequestError && [408, 502, 503, 504].includes(error.status));
+      restartCheckWarning.value = !unavailable;
+      if (error instanceof SessionExpiredError)
+        restartMessage.value = "登录已过期，请重新登录。";
+      else if (error instanceof HttpRequestError && error.status === 403)
+        restartMessage.value = "无法查看升级状态，请重新登录有安装升级权限的账号。";
+      else if (!unavailable)
+        restartMessage.value = "查询执行结果时出错，页面将自动重试。";
+      else if (restartMilestones.value === 2)
+        restartMessage.value = "离线脚本已启动。网关重启期间进度查询会短暂中断，服务恢复后将自动确认执行结果。";
+      else
+        restartMessage.value = "暂时无法获取服务状态，正在重新连接。";
     }
-  } catch {
-    /* Temporarily unreachable while the service restarts. */
   } finally {
     clearTimeout(timeout);
+    restartController = undefined;
   }
-  if (disposed) return;
-  if (Date.now() >= restartDeadline) {
-    finishRestart(
-      "尚未确认服务恢复，请查看 Windows 服务状态和执行日志。",
-      true,
-    );
-    return;
-  }
-  restartTimer = setTimeout(pollRestart, 1500);
+  if (disposed || !applying.value) return;
+  restartDelayed.value = Date.now() - startedAt >= 180000;
+  restartTimer = setTimeout(pollRestart, restartDelayed.value ? 10000 : 1500);
 }
-function finishRestart(message: string, failed: boolean) {
+function finishRestart(message: string, outcome: RestartOutcome) {
   applying.value = false;
-  restartError.value = failed;
+  restartOutcome.value = outcome;
+  restartDialog.value = true;
   restartMessage.value = message;
+  rememberRestart();
+}
+function closeRestartDialog() {
+  restartDialog.value = false;
+  if (!status.value && !loading.value) void refresh();
 }
 function checkRestartAgain() {
-  applying.value = true;
-  restartError.value = false;
-  restartDeadline = Date.now() + 180000;
+  startTracking(restartActionId, Date.now(), restartMilestones.value, restartLogPath.value);
   void pollRestart();
 }
 function reloadApplication() {
@@ -1193,13 +1293,11 @@ async function refresh() {
   loading.value = true;
   try {
     const [
-      updateData,
       watchdogData,
       watchdogConfigData,
       compatibilityData,
       driverData,
     ] = await Promise.all([
-      loadUpdateStatus(),
       loadWatchdogStatus().catch((error) => {
         notify.warning(
           error instanceof Error ? error.message : "看门狗状态加载失败",
@@ -1224,22 +1322,19 @@ async function refresh() {
         );
         return [];
       }),
+      loadUpdateStatus().then(updateData => {
+        if (disposed) return;
+        status.value = updateData;
+        const action = updateData.pendingAction;
+        if (action && ["Scheduled", "Applying"].includes(action.status) && !applying.value &&
+            action.actionId !== restartActionId) {
+          startTracking(action.actionId);
+          updateRestartStage(action);
+          restartTimer = setTimeout(pollRestart, 1500);
+        }
+      }),
     ]);
-    status.value = updateData;
-    if (
-      ["Scheduled", "Applying"].includes(
-        updateData.pendingAction?.status || "",
-      ) &&
-      !applying.value
-    ) {
-      restartActionId = updateData.pendingAction!.actionId;
-      restartDialog.value = true;
-      applying.value = true;
-      restartError.value = false;
-      restartMessage.value = "正在替换程序并重启服务，请稍候…";
-      restartDeadline = Date.now() + 180000;
-      restartTimer = setTimeout(pollRestart, 1500);
-    }
+    if (disposed) return;
     watchdog.value = watchdogData;
     watchdogConfig.value = watchdogConfigData;
     compatibility.value = compatibilityData;
@@ -1503,7 +1598,14 @@ function watchdogStateType(state: string | null | undefined) {
 </script>
 
 <style scoped>
+.restart-stage-count {
+  margin: 2px 0 12px;
+  color: #52667b;
+  text-align: right;
+}
+
 .update-dialog-tip {
+  overflow-wrap: anywhere;
   margin-block: 18px;
   color: var(--gateway-muted);
 }

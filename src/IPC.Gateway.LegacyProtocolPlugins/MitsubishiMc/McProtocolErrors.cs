@@ -34,7 +34,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
         private static PlcReadFailureScope Classify(ushort code)
         {
-            if ((code >= 0xC051 && code <= 0xC05A) ||
+            if ((code >= 0xC051 && code <= 0xC05B) ||
                 (code >= 0xC05C && code <= 0xC05F))
                 return PlcReadFailureScope.Tag;
             if (code >= 0xC060 && code <= 0xC06F)

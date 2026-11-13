@@ -1,6 +1,7 @@
 #nullable enable
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -125,7 +126,6 @@ namespace IPC.Plc.Communication.CanOpen
         private readonly ConcurrentDictionary<int, CanOpenHeartbeatState> _heartbeats = new ConcurrentDictionary<int, CanOpenHeartbeatState>();
         private readonly ConcurrentDictionary<int, CanOpenEmergencyState> _emergencies = new ConcurrentDictionary<int, CanOpenEmergencyState>();
         private readonly ConcurrentDictionary<int, CanOpenPdoValue> _tpdos = new ConcurrentDictionary<int, CanOpenPdoValue>();
-        private readonly ConcurrentDictionary<int, byte[]> _rpdos = new ConcurrentDictionary<int, byte[]>();
         private Timer? _syncTimer;
         private int _syncIntervalMilliseconds;
 
@@ -169,32 +169,78 @@ namespace IPC.Plc.Communication.CanOpen
         public void WriteRpdo(int pdoNumber, int nodeId, int byteOffset, int? bitOffset, byte[] data, bool bitValue)
         {
             ValidatePdo(pdoNumber, nodeId);
-            int identifier = GetPdoIdentifier(false, pdoNumber, nodeId);
-            byte[] buffer = _rpdos.GetOrAdd(identifier, _ => new byte[8]);
-            lock (buffer)
-            {
-                if (bitOffset.HasValue)
-                {
-                    if (byteOffset >= buffer.Length)
-                        throw new ArgumentOutOfRangeException(nameof(byteOffset));
-                    byte mask = (byte)(1 << bitOffset.Value);
-                    buffer[byteOffset] = bitValue
-                        ? (byte)(buffer[byteOffset] | mask)
-                        : (byte)(buffer[byteOffset] & ~mask);
-                }
-                else
-                {
-                    data ??= Array.Empty<byte>();
-                    if (byteOffset < 0 || byteOffset > buffer.Length || buffer.Length - byteOffset < data.Length)
-                        throw new ArgumentOutOfRangeException(nameof(byteOffset), "RPDO 数据不能超过 8 字节。");
-                    Buffer.BlockCopy(data, 0, buffer, byteOffset, data.Length);
-                }
+            if (byteOffset < 0 || bitOffset is < 0 or > 7)
+                throw new ArgumentOutOfRangeException(nameof(byteOffset));
+            int start = checked(byteOffset * 8 + bitOffset.GetValueOrDefault());
+            int width = bitOffset.HasValue ? 1 : checked(data.Length * 8);
+            if (width <= 0 || start > 64 - width)
+                throw new ArgumentOutOfRangeException(nameof(byteOffset));
 
-                int length = bitOffset.HasValue ? byteOffset + 1 : byteOffset + (data?.Length ?? 0);
-                byte[] frameData = new byte[Math.Max(1, Math.Min(8, length))];
-                Buffer.BlockCopy(buffer, 0, frameData, 0, frameData.Length);
-                _adapter.SendFrame(new CanFrame(identifier, frameData));
+            Execute(sdo =>
+            {
+                // The mapping defines both DLC and the neighbouring process outputs.
+                // Read only neighbours that this write must preserve.
+                byte[] ReadEntry(ushort index, byte sub) => sdo.Upload(new CanOpenObjectAddress(nodeId, index, sub));
+                ushort comm = (ushort)(0x1400 + pdoNumber - 1);
+                uint cobId = ReadMappingWord(ReadEntry(comm, 1));
+                if ((cobId & 0xA0000000) != 0 || (cobId & 0x1FFFFFFF) > 0x7FF)
+                    throw new NotSupportedException("该 RPDO 未启用或使用了不支持的扩展 CAN ID。");
+                ushort map = (ushort)(0x1600 + pdoNumber - 1);
+                byte[] size = ReadEntry(map, 0);
+                if (size.Length == 0 || size[0] is 0 or > 64)
+                    throw new InvalidOperationException("RPDO 映射为空或无效。");
+                uint[] entries = new uint[size[0]];
+                for (int i = 0; i < entries.Length; i++)
+                    entries[i] = ReadMappingWord(ReadEntry(map, (byte)(i + 1)));
+                byte[] frame = ComposeRpdo(entries, start, width, bitOffset.HasValue ? new[] { (byte)(bitValue ? 1 : 0) } : data, ReadEntry);
+                _adapter.SendFrame(new CanFrame((int)(cobId & 0x7FF), frame));
+                return true;
+            });
+        }
+
+        private static uint ReadMappingWord(byte[] bytes)
+        {
+            if (bytes.Length != 4) throw new FormatException("CANopen PDO 映射项长度无效。");
+            return BinaryPrimitives.ReadUInt32LittleEndian(bytes);
+        }
+
+        internal static byte[] ComposeRpdo(uint[] entries, int start, int width, byte[] update,
+            Func<ushort, byte, byte[]> read)
+        {
+            int totalBits = 0;
+            foreach (uint entry in entries)
+            {
+                int length = (byte)entry;
+                if (length == 0 || length > 64 - totalBits)
+                    throw new FormatException("RPDO 映射长度超出经典 CAN 帧。");
+                totalBits += length;
             }
+            if (start < 0 || width <= 0 || start > totalBits - width)
+                throw new ArgumentOutOfRangeException(nameof(start), "写入范围超过设备 RPDO 映射。");
+
+            byte[] frame = new byte[(totalBits + 7) / 8];
+            int position = 0;
+            foreach (uint entry in entries)
+            {
+                int length = (byte)entry;
+                byte[] current = Array.Empty<byte>();
+                if (position < start || position + length > start + width)
+                {
+                    ushort index = (ushort)(entry >> 16);
+                    current = read(index, (byte)(entry >> 8));
+                    if (current.Length * 8 < length)
+                        throw new FormatException("无法读取完整的 RPDO 相邻映射值。");
+                }
+                for (int bit = 0; bit < length; bit++, position++)
+                {
+                    bool replacing = position >= start && position < start + width;
+                    int sourceBit = replacing ? position - start : bit;
+                    byte[] source = replacing ? update : current;
+                    if ((source[sourceBit / 8] & (1 << (sourceBit % 8))) != 0)
+                        frame[position / 8] |= (byte)(1 << (position % 8));
+                }
+            }
+            return frame;
         }
 
         public CanOpenHeartbeatState ReadHeartbeat(int nodeId, int timeoutMilliseconds)

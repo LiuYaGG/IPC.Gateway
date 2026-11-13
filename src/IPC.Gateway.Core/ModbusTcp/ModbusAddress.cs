@@ -34,6 +34,8 @@ namespace IPC.Plc.Communication.ModbusTcp
     {
         public ModbusAddress(ModbusArea area, int address, int bitIndex)
         {
+            if ((uint)address > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(address), "Modbus 地址超出 0 到 65535 的范围。");
             Area = area;
             Address = address;
             BitIndex = bitIndex;
@@ -61,15 +63,15 @@ namespace IPC.Plc.Communication.ModbusTcp
         public ModbusAddress OffsetBits(int bitOffset)
         {
             if (IsBitArea)
-                return new ModbusAddress(Area, Address + bitOffset, -1);
+                return new ModbusAddress(Area, checked(Address + bitOffset), -1);
 
-            int absoluteBit = (HasBitIndex ? BitIndex : 0) + bitOffset;
+            int absoluteBit = checked((HasBitIndex ? BitIndex : 0) + bitOffset);
             return new ModbusAddress(Area, Address + absoluteBit / 16, absoluteBit % 16);
         }
 
         public ModbusAddress OffsetRegisters(int registerOffset)
         {
-            return new ModbusAddress(Area, Address + registerOffset, BitIndex);
+            return new ModbusAddress(Area, checked(Address + registerOffset), BitIndex);
         }
 
         public static ModbusAddress Parse(string text, PlcDataType dataType)
@@ -91,12 +93,24 @@ namespace IPC.Plc.Communication.ModbusTcp
             ModbusArea area;
             string numberText;
             bool oneBased;
+            int address;
             if (TrySplitPrefixedAddress(value, out area, out numberText, out oneBased))
-                return new ModbusAddress(area, ParseNumber(numberText, oneBased), bitIndex);
+            {
+                address = checked(int.Parse(numberText, CultureInfo.InvariantCulture) - (oneBased ? 1 : 0));
+            }
+            else
+            {
+                bool classic = IsClassicReference(value);
+                area = classic ? GetClassicArea(value[0]) : GetDefaultArea(dataType);
+                address = int.Parse(value, CultureInfo.InvariantCulture);
+                if (classic)
+                    address = ParseClassicReference(value, address);
+            }
 
-            area = IsClassicReference(value) ? GetClassicArea(value[0]) : GetDefaultArea(dataType);
-            oneBased = false;
-            return new ModbusAddress(area, ParseNumber(value, oneBased), bitIndex);
+            if (bitIndex >= 0 && ((area != ModbusArea.HoldingRegister && area != ModbusArea.InputRegister) ||
+                                 (dataType != PlcDataType.Bool && dataType != PlcDataType.BoolArray)))
+                throw new FormatException("Modbus 的 .bit 后缀只适用于寄存器的 Bool 或 BoolArray 标签。");
+            return new ModbusAddress(area, address, bitIndex);
         }
 
         private static bool TrySplitPrefixedAddress(string value, out ModbusArea area, out string numberText, out bool oneBased)
@@ -154,27 +168,6 @@ namespace IPC.Plc.Communication.ModbusTcp
             }
 
             return false;
-        }
-
-        private static int ParseNumber(string text, bool oneBased)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                throw new FormatException("Modbus 地址缺少编号。");
-
-            int value = int.Parse(text, CultureInfo.InvariantCulture);
-            if (!oneBased)
-            {
-                if (IsClassicReference(text))
-                    return ParseClassicReference(text, value);
-                if (value < 0)
-                    throw new FormatException("Modbus 地址不能小于 0。");
-                return value;
-            }
-
-            int zeroBased = value - 1;
-            if (zeroBased < 0)
-                throw new FormatException("Modbus 1 基地址必须大于等于 1。");
-            return zeroBased;
         }
 
         private static bool IsClassicReference(string text)

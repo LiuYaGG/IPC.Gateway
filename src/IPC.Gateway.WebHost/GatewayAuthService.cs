@@ -47,6 +47,8 @@ public sealed class GatewayAuthService
             return GatewayLoginResult.Fail(authentication.ErrorMessage, authentication.Locked, authentication.LockoutEndTime);
 
         GatewayUserInfo user = authentication.User;
+        if (_roles.FindByName(user.Role)?.Enabled != true)
+            return GatewayLoginResult.Fail("账号所属角色不存在或已停用。");
         string token = CreateToken(user);
         return GatewayLoginResult.Ok(user, token, DateTimeOffset.UtcNow.Add(_tokenLifetime));
     }
@@ -58,109 +60,82 @@ public sealed class GatewayAuthService
             return GatewayLoginResult.Fail(authentication.ErrorMessage, authentication.Locked, authentication.LockoutEndTime);
 
         GatewayUserInfo user = authentication.User;
+        if ((await _roles.FindByNameAsync(user.Role))?.Enabled != true)
+            return GatewayLoginResult.Fail("账号所属角色不存在或已停用。");
         string token = CreateToken(user);
         return GatewayLoginResult.Ok(user, token, DateTimeOffset.UtcNow.Add(_tokenLifetime));
+    }
+
+    private readonly object _accessLock = new();
+    private Action<string>? _runtimeAccessChanged;
+
+    internal event Action<string> RuntimeAccessChanged
+    {
+        add { lock (_accessLock) _runtimeAccessChanged += value; }
+        remove { lock (_accessLock) _runtimeAccessChanged -= value; }
+    }
+
+    internal void InvalidateRuntimeAccess(string target)
+    {
+        int separator = target.IndexOf(':');
+        if (separator < 0) return;
+        string normalized = target[..(separator + 1)] + target[(separator + 1)..].Trim();
+        lock (_accessLock) _runtimeAccessChanged?.Invoke(normalized);
     }
 
     public bool TryValidateToken(string token, out ClaimsPrincipal principal)
     {
         principal = new ClaimsPrincipal(new ClaimsIdentity());
-        if (string.IsNullOrWhiteSpace(token))
-            return false;
+        if (!TryReadClaims(token, out var fields)) return false;
+        var user = _users.FindByUsername(fields[0]);
+        if (user?.Enabled != true) return false;
+        var role = _roles.FindByName(user.Role);
+        if (role?.Enabled != true) return false;
 
-        string[] parts = token.Split('.');
-        if (parts.Length != 2)
-            return false;
-
-        string payloadText;
-        try
-        {
-            payloadText = Encoding.UTF8.GetString(Base64UrlDecode(parts[0]));
-        }
-        catch
-        {
-            return false;
-        }
-
-        string expectedSignature = Sign(parts[0]);
-        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedSignature), Encoding.UTF8.GetBytes(parts[1])))
-            return false;
-
-        string[] fields = payloadText.Split('|');
-        if (fields.Length < 4)
-            return false;
-
-        if (!long.TryParse(fields[2], out long exp))
-            return false;
-        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
-            return false;
-
-        GatewayUserInfo? user = _users.FindByUsername(fields[0]);
-        if (user == null || !user.Enabled)
-            return false;
-
-        ClaimsIdentity identity = new ClaimsIdentity("GatewayCookie");
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.Username));
-        identity.AddClaim(new Claim(ClaimTypes.Role, user.Role));
-        identity.AddClaim(new Claim("displayName", user.DisplayName));
-        foreach (string permission in ResolvePermissions(user.Role))
-        {
-            identity.AddClaim(new Claim("permission", permission));
-        }
-
-        principal = new ClaimsPrincipal(identity);
+        principal = CreatePrincipal(user, role, fields);
         return true;
     }
 
     public async Task<GatewayTokenValidationResult> ValidateTokenAsync(string token)
     {
-        ClaimsPrincipal empty = new ClaimsPrincipal(new ClaimsIdentity());
-        if (string.IsNullOrWhiteSpace(token))
-            return GatewayTokenValidationResult.Fail(empty);
+        var empty = new ClaimsPrincipal(new ClaimsIdentity());
+        if (!TryReadClaims(token, out var fields)) return GatewayTokenValidationResult.Fail(empty);
+        var user = await _users.FindByUsernameAsync(fields[0]);
+        if (user?.Enabled != true) return GatewayTokenValidationResult.Fail(empty);
+        var role = await _roles.FindByNameAsync(user.Role);
+        if (role?.Enabled != true) return GatewayTokenValidationResult.Fail(empty);
 
+        return GatewayTokenValidationResult.Ok(CreatePrincipal(user, role, fields));
+    }
+
+    private bool TryReadClaims(string token, out string[] fields)
+    {
+        fields = Array.Empty<string>();
+        if (string.IsNullOrWhiteSpace(token)) return false;
         string[] parts = token.Split('.');
-        if (parts.Length != 2)
-            return GatewayTokenValidationResult.Fail(empty);
-
-        string payloadText;
+        if (parts.Length != 2 || !CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(Sign(parts[0])), Encoding.UTF8.GetBytes(parts[1]))) return false;
         try
         {
-            payloadText = Encoding.UTF8.GetString(Base64UrlDecode(parts[0]));
+            fields = Encoding.UTF8.GetString(Base64UrlDecode(parts[0])).Split('|');
         }
-        catch
-        {
-            return GatewayTokenValidationResult.Fail(empty);
-        }
+        catch (FormatException) { return false; }
+        return fields.Length == 4 && long.TryParse(fields[2], out long expiry) &&
+               DateTimeOffset.UtcNow.ToUnixTimeSeconds() < expiry;
+    }
 
-        string expectedSignature = Sign(parts[0]);
-        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedSignature), Encoding.UTF8.GetBytes(parts[1])))
-            return GatewayTokenValidationResult.Fail(empty);
-
-        string[] fields = payloadText.Split('|');
-        if (fields.Length < 4)
-            return GatewayTokenValidationResult.Fail(empty);
-
-        if (!long.TryParse(fields[2], out long exp))
-            return GatewayTokenValidationResult.Fail(empty);
-        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
-            return GatewayTokenValidationResult.Fail(empty);
-
-        GatewayUserInfo? user = await _users.FindByUsernameAsync(fields[0]);
-        if (user == null || !user.Enabled)
-            return GatewayTokenValidationResult.Fail(empty);
-
+    private static ClaimsPrincipal CreatePrincipal(GatewayUserInfo user, GatewayRoleInfo role, string[] fields)
+    {
         ClaimsIdentity identity = new ClaimsIdentity("GatewayCookie");
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id));
         identity.AddClaim(new Claim(ClaimTypes.Name, user.Username));
-        identity.AddClaim(new Claim(ClaimTypes.Role, user.Role));
+        identity.AddClaim(new Claim(ClaimTypes.Role, role.Name));
         identity.AddClaim(new Claim("displayName", user.DisplayName));
-        foreach (string permission in await ResolvePermissionsAsync(user.Role))
-        {
+        identity.AddClaim(new Claim("exp", fields[2]));
+        identity.AddClaim(new Claim("jti", fields[3]));
+        foreach (string permission in GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions))
             identity.AddClaim(new Claim("permission", permission));
-        }
-
-        return GatewayTokenValidationResult.Ok(new ClaimsPrincipal(identity));
+        return new ClaimsPrincipal(identity);
     }
 
     public GatewayUserInfo? GetCurrentUser(ClaimsPrincipal principal)
@@ -183,22 +158,6 @@ public sealed class GatewayAuthService
         user.PasswordHash = string.Empty;
         user.PasswordSalt = string.Empty;
         return user;
-    }
-
-    private IReadOnlyList<string> ResolvePermissions(string roleName)
-    {
-        GatewayRoleInfo? role = _roles.FindByName(roleName);
-        if (role == null || !role.Enabled)
-            return GatewayPermissions.GetDefaultPermissionsForRole(roleName);
-        return GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions);
-    }
-
-    private async Task<IReadOnlyList<string>> ResolvePermissionsAsync(string roleName)
-    {
-        GatewayRoleInfo? role = await _roles.FindByNameAsync(roleName);
-        if (role == null || !role.Enabled)
-            return GatewayPermissions.GetDefaultPermissionsForRole(roleName);
-        return GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions);
     }
 
     private string CreateToken(GatewayUserInfo user)

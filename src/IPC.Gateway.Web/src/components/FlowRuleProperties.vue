@@ -481,10 +481,13 @@
         </template>
         <template v-if="node.nodeType === 'MqttPublish'">
           <a-form-item :label="tx('发布到 MQTT')"><a-switch v-model:checked="node.publishToMqtt" /></a-form-item>
+          <a-form-item :label="tx('报警消息')" :extra="tx('触发和恢复会写入报警历史，启用发布时使用报警队列。')">
+            <a-switch v-model:checked="alarmMessage" />
+          </a-form-item>
           <a-form-item :label="tx('Topic 模板')"><gateway-input v-model="node.topicTemplate" /></a-form-item>
           <a-form-item label="QoS">
             <gateway-select v-model="node.publishQos">
-              <a-select-option label="0" :value="0">{{ '0' }}</a-select-option>
+              <a-select-option v-if="!node.alarmMessage" label="0" :value="0">{{ '0' }}</a-select-option>
               <a-select-option label="1" :value="1">{{ '1' }}</a-select-option>
               <a-select-option label="2" :value="2">{{ '2' }}</a-select-option>
             </gateway-select>
@@ -580,6 +583,15 @@ const nodeLabel = computed({
   },
   set: (value: string) => {
     if (props.node) props.node.label = value
+  }
+})
+
+const alarmMessage = computed({
+  get: () => props.node?.alarmMessage === true,
+  set: (enabled: boolean) => {
+    if (!props.node) return
+    props.node.alarmMessage = enabled
+    if (enabled && props.node.publishQos < 1) props.node.publishQos = 1
   }
 })
 

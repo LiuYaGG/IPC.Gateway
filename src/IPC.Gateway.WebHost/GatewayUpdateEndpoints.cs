@@ -57,6 +57,14 @@ public static class GatewayUpdateEndpoints
             return Ok(updates.GetStatus());
         });
 
+        group.MapGet("/updates/progress", (HttpContext context, ClaimsPrincipal user, GatewayUpdatePackageService updates) =>
+        {
+            if (!GatewayAuthEndpoints.CanViewMaintenance(user))
+                return Forbidden("当前用户没有查看安装升级的权限。");
+            context.Response.Headers.CacheControl = "no-store";
+            return Ok(updates.GetProgress());
+        });
+
         group.MapPost("/updates/packages", async (HttpContext context, ClaimsPrincipal user, GatewayUpdatePackageService updates, GatewayUpdateMaintenanceOptions updateOptions, IGatewayAuditLogStore auditStore, CancellationToken cancellationToken) =>
         {
             if (!GatewayAuthEndpoints.CanUploadUpdatePackage(user))

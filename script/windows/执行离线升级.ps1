@@ -3,13 +3,36 @@ param(
     [string]$ServiceName = "IPCGateway",
     [Parameter(Mandatory = $true)]
     [string]$PendingActionPath,
-    [switch]$SkipServiceControl
+    [switch]$SkipServiceControl,
+    [ValidateRange(1, 86400)][int]$ServiceTimeoutSeconds = 300
 )
 
 $ErrorActionPreference = "Stop"
 
 $resolvedPendingActionPath = (Resolve-Path -LiteralPath $PendingActionPath).Path
+$lock = [IO.File]::Open($resolvedPendingActionPath + '.lock', 'OpenOrCreate', 'ReadWrite', 'None')
+$executing = $false
+$oldHostExited = $false
+function Save-ActionReceipt {
+    $temporary = $resolvedPendingActionPath + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        [IO.File]::WriteAllText($temporary, ($action | ConvertTo-Json -Depth 20))
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                [IO.File]::Replace($temporary, $resolvedPendingActionPath, [System.Management.Automation.Language.NullString]::Value)
+                return
+            } catch [IO.IOException] {
+                if ($attempt -ge 9) { throw }
+                Start-Sleep -Milliseconds 50
+            }
+        }
+    } finally { [IO.File]::Delete($temporary) }
+}
+try {
 $action = Get-Content -LiteralPath $resolvedPendingActionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($action.Status -ne 'Pending') { throw 'Only a pending action can be started manually.' }
+if (-not $PSCmdlet.ShouldProcess($action.TargetDirectory, "Apply $($action.ActionType)")) { return }
+$executing = $true
 $sourceRoot = [IO.Path]::GetFullPath($action.SourceDirectory).TrimEnd('\')
 $targetRoot = [IO.Path]::GetFullPath($action.TargetDirectory).TrimEnd('\')
 if ($sourceRoot -eq $targetRoot -or $targetRoot -eq [IO.Path]::GetPathRoot($targetRoot).TrimEnd('\')) {
@@ -23,21 +46,29 @@ if ([string]::IsNullOrWhiteSpace($action.TargetDirectory) -or -not (Test-Path -L
     throw "TargetDirectory does not exist: $($action.TargetDirectory)"
 }
 
+$action.Status = 'Applying'
+Save-ActionReceipt
 if (-not $SkipServiceControl) {
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($service -and $service.Status -ne "Stopped") {
-        if ($PSCmdlet.ShouldProcess($ServiceName, "Stop service")) {
-            $oldProcess = $null
-            $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
-            if ($serviceInfo.ProcessId -gt 0) { try { $oldProcess = [Diagnostics.Process]::GetProcessById([int]$serviceInfo.ProcessId) } catch { } }
-            Stop-Service -Name $ServiceName -Force
-            $service.WaitForStatus("Stopped", "00:00:30")
-            if ($oldProcess) {
-                try { if (-not $oldProcess.WaitForExit(30000)) { throw 'The old host process has not exited.' } }
-                finally { $oldProcess.Dispose() }
-            }
-        }
+    try { $service = Get-Service -Name $ServiceName -ErrorAction Stop }
+    catch {
+        if ($_.FullyQualifiedErrorId -notlike 'NoServiceFoundForGivenName,*') { throw }
+        $SkipServiceControl = $true
     }
+}
+if (-not $SkipServiceControl) {
+    $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+    $oldProcess = $null
+    try {
+        if ($serviceInfo.ProcessId -gt 0) {
+            try { $oldProcess = [Diagnostics.Process]::GetProcessById([int]$serviceInfo.ProcessId); $null = $oldProcess.Handle }
+            catch [ArgumentException] { $oldProcess = $null }
+        } elseif ($service.Status -ne 'Stopped') { throw 'Cannot identify the running service process.' }
+        $service.Refresh()
+        if ($service.Status -notin @('Stopped', 'StopPending')) { $service.Stop() }
+        $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds($ServiceTimeoutSeconds))
+        if ($oldProcess -and -not $oldProcess.WaitForExit($ServiceTimeoutSeconds * 1000)) { throw 'The old host process has not exited. No files were copied.' }
+        $oldHostExited = $true
+    } finally { if ($oldProcess) { $oldProcess.Dispose() } }
 }
 
 $robocopyArgs = @(
@@ -58,17 +89,23 @@ if ($process.ExitCode -ge 8) {
     throw "Robocopy failed. Exit code: $($process.ExitCode)"
 }
 
+if (-not $SkipServiceControl) {
+    $service.Start()
+    $service.WaitForStatus('Running', [TimeSpan]::FromSeconds($ServiceTimeoutSeconds))
+}
 $action.Status = "Applied"
 $action | Add-Member -MemberType NoteProperty -Name AppliedTime -Value ((Get-Date).ToUniversalTime().ToString("O")) -Force
-$action | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $resolvedPendingActionPath -Encoding UTF8
-
-if (-not $SkipServiceControl) {
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($service) {
-        if ($PSCmdlet.ShouldProcess($ServiceName, "Start service")) {
-            Start-Service -Name $ServiceName
-        }
-    }
-}
-
+$action | Add-Member -MemberType NoteProperty -Name ErrorMessage -Value '' -Force
+Save-ActionReceipt
 Write-Host "IPC Gateway offline $($action.ActionType) completed."
+} catch {
+    if ($executing) {
+        $action.Status = 'Failed'
+        $action | Add-Member -MemberType NoteProperty -Name ErrorMessage -Value $_.Exception.Message -Force
+        Save-ActionReceipt
+    }
+    if ($oldHostExited) {
+        try { $service.Refresh(); if ($service.Status -eq 'Stopped') { $service.Start() } } catch { Write-Warning $_.Exception.Message }
+    }
+    throw
+} finally { $lock.Dispose() }

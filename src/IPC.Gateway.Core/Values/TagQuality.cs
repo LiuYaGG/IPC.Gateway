@@ -29,6 +29,7 @@ namespace IPC.Runtime.Values
         AccessDenied = 7,
         OutOfRange = 8,
         Filtered = 9,
-        Spike = 10
+        Spike = 10,
+        Uncertain = 11
     }
 }

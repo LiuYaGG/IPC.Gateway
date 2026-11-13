@@ -17,7 +17,10 @@ namespace IPC.Plc.Communication.Mqtt
         private readonly MqttSouthboundOptions _options;
         private readonly ConcurrentDictionary<string, CachedValue> _values = new ConcurrentDictionary<string, CachedValue>(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _aliases = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
-        private readonly ConcurrentQueue<PendingWrite> _writes = new ConcurrentQueue<PendingWrite>();
+        private readonly LinkedList<PendingWrite> _writes = new();
+        private readonly HashSet<string> _offlineScopes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, ulong> _birthSequence = new(StringComparer.Ordinal);
+        private readonly object _cacheLock = new();
         private readonly ManualResetEvent _stop = new ManualResetEvent(false);
         private readonly ManualResetEventSlim _connectedSignal = new ManualResetEventSlim(false);
         private SimpleMqttClient _client;
@@ -46,7 +49,8 @@ namespace IPC.Plc.Communication.Mqtt
             _client.Connected += OnConnected;
             _client.Disconnected += OnDisconnected;
             _client.MessageReceived += OnMessageReceived;
-            _thread = new Thread(ReadLoop) { IsBackground = true, Name = "MQTT-Southbound-" + _connection.Host };
+            var client = _client;
+            _thread = new Thread(() => ReadLoop(client)) { IsBackground = true, Name = "MQTT-Southbound-" + _connection.Host };
             _thread.Start();
 
             int timeout = Math.Max(100, _connection.TimeoutMilliseconds);
@@ -84,8 +88,19 @@ namespace IPC.Plc.Communication.Mqtt
             }
             _client = null;
             _thread = null;
-            while (_writes.TryDequeue(out PendingWrite pending))
-                pending.Complete(MqttPublishResult.Fail("MQTT 客户端已断开。"));
+            lock (_writes)
+            {
+                foreach (var pending in _writes)
+                    pending.Completion.TrySetResult(MqttPublishResult.Fail("MQTT 客户端已断开。"));
+                _writes.Clear();
+            }
+            lock (_cacheLock)
+            {
+                _values.Clear();
+                _aliases.Clear();
+                _offlineScopes.Clear();
+                _birthSequence.Clear();
+            }
         }
 
         public ValueTask DisconnectAsync(CancellationToken cancellationToken)
@@ -124,8 +139,9 @@ namespace IPC.Plc.Communication.Mqtt
             List<PlcBatchReadResult> results = new List<PlcBatchReadResult>();
             if (requests == null)
                 return results;
-            foreach (PlcBatchReadRequest request in requests)
+            for (int i = 0; i < requests.Count; i++)
             {
+                PlcBatchReadRequest request = requests[i];
                 try
                 {
                     results.Add(PlcBatchReadResult.FromSuccess(request, Read(request.Address, request.DataType, request.ElementCount, request.ElementOffset)));
@@ -133,6 +149,13 @@ namespace IPC.Plc.Communication.Mqtt
                 catch (Exception ex) when (IsTagError(ex))
                 {
                     results.Add(PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Tag));
+                }
+                catch (PlcCommunicationException ex)
+                {
+                    results.Add(PlcBatchReadResult.FromFailure(request, ex.Message, PlcReadFailureScope.Transport));
+                    for (int next = i + 1; next < requests.Count; next++)
+                        results.Add(PlcBatchReadResult.FromDeferred(requests[next], ex.Message));
+                    break;
                 }
             }
             return results;
@@ -142,7 +165,11 @@ namespace IPC.Plc.Communication.Mqtt
             => ValueTask.FromResult(ReadMany(requests));
 
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
+            => WriteAsync(address, dataType, valueText, elementOffset, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+        public async ValueTask WriteAsync(string address, PlcDataType dataType, string valueText, int elementOffset, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             EnsureConnected();
             if (elementOffset != 0)
                 throw new NotSupportedException("MQTT 写入不使用元素偏移，请直接设置目标主题。");
@@ -161,19 +188,31 @@ namespace IPC.Plc.Communication.Mqtt
                 payload = System.Text.Encoding.UTF8.GetBytes(valueText ?? string.Empty);
             }
 
-            PendingWrite pending = new PendingWrite(parsed.Topic, payload);
-            _writes.Enqueue(pending);
             int timeout = Math.Max(1500, _connection.TimeoutMilliseconds);
-            if (!pending.Wait(timeout))
-                throw new System.TimeoutException("MQTT 写入等待 I/O 线程超时。");
-            MqttPublishResult result = pending.Result;
-            pending.Dispose();
-            if (!result.Success)
-                throw new PlcCommunicationException(result.ErrorMessage);
+            var pending = new PendingWrite(parsed.Topic, payload, Environment.TickCount64 + timeout, cancellationToken);
+            LinkedListNode<PendingWrite> entry;
+            lock (_writes)
+            {
+                EnsureConnected();
+                entry = _writes.AddLast(pending);
+            }
+            MqttPublishResult result;
+            try
+            {
+                result = await pending.Completion.Task.WaitAsync(TimeSpan.FromMilliseconds(timeout), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+            {
+                lock (_writes)
+                {
+                    if (entry.List != null) _writes.Remove(entry);
+                    if (pending.Started)
+                        throw new PlcCommunicationException("MQTT 发布已经开始，确认未收到，交付状态未知。", ex);
+                }
+                throw;
+            }
+            if (!result.Success) throw new PlcCommunicationException(result.ErrorMessage);
         }
-
-        public ValueTask WriteAsync(string address, PlcDataType dataType, string valueText, int elementOffset, CancellationToken cancellationToken)
-            => new ValueTask(Task.Run(() => Write(address, dataType, valueText, elementOffset), cancellationToken));
 
         public void Dispose()
         {
@@ -182,14 +221,15 @@ namespace IPC.Plc.Communication.Mqtt
             _connectedSignal.Dispose();
         }
 
-        private void ReadLoop()
+        private void ReadLoop(SimpleMqttClient client)
         {
             try
             {
-                _client.ConnectAndReadLoop(_options.SubscribeFilter, _stop, DrainWrites);
+                client.ConnectAndReadLoop(new[] { _options.SubscribeFilter }, _stop, DrainWrites, null, true);
             }
             catch (Exception ex)
             {
+                if (!ReferenceEquals(client, _client)) return;
                 _loopError = ex;
                 _connected = false;
                 _connectedSignal.Set();
@@ -198,8 +238,21 @@ namespace IPC.Plc.Communication.Mqtt
 
         private void DrainWrites(SimpleMqttClient client)
         {
-            while (_writes.TryDequeue(out PendingWrite pending))
+            while (ReferenceEquals(client, _client) && !_stop.WaitOne(0))
             {
+                PendingWrite pending;
+                lock (_writes)
+                {
+                    if (_writes.First == null) return;
+                    pending = _writes.First.Value;
+                    _writes.RemoveFirst();
+                    if (pending.Token.IsCancellationRequested || Environment.TickCount64 >= pending.Deadline)
+                    {
+                        pending.Completion.TrySetException(new TimeoutException("MQTT 写请求在发送前已取消或过期。"));
+                        continue;
+                    }
+                    pending.Started = true;
+                }
                 try
                 {
                     MqttPublishResult result = client.Publish(
@@ -207,27 +260,38 @@ namespace IPC.Plc.Communication.Mqtt
                         pending.Payload,
                         _options.Qos,
                         Math.Max(100, _connection.TimeoutMilliseconds));
-                    pending.Complete(result);
+                    pending.Completion.TrySetResult(result);
                 }
                 catch (Exception ex)
                 {
-                    pending.Complete(MqttPublishResult.Fail(ex.Message));
+                    pending.Completion.TrySetResult(MqttPublishResult.Fail(ex.Message));
                 }
             }
         }
 
         private void OnConnected(object sender, EventArgs args)
         {
+            if (!ReferenceEquals(sender, _client)) return;
             _connected = true;
             _connectedSignal.Set();
         }
 
         private void OnDisconnected(object sender, EventArgs args)
         {
+            if (!ReferenceEquals(sender, _client)) return;
             _connected = false;
         }
 
         private void OnMessageReceived(object sender, MqttMessageEventArgs args)
+        {
+            lock (_cacheLock)
+            {
+                if (!ReferenceEquals(sender, _client) || _stop.WaitOne(0)) return;
+                ApplyMessage(args);
+            }
+        }
+
+        private void ApplyMessage(MqttMessageEventArgs args)
         {
             DateTime now = DateTime.UtcNow;
             if (!IsSparkplugMode())
@@ -240,6 +304,38 @@ namespace IPC.Plc.Communication.Mqtt
             {
                 SparkplugPayload payload = SparkplugPayloadDecoder.Decode(args.PayloadBytes);
                 string scope = GetSparkplugAliasScope(args.Topic);
+                string[] parts = args.Topic.Split('/');
+                if (parts.Length is not (4 or 5)) return;
+                string kind = parts[2];
+                string node = parts[0] + "/" + parts[1] + "/" + parts[3] + "/";
+                bool nodeEvent = kind is "NBIRTH" or "NDEATH";
+                if (kind is "NDEATH" or "DDEATH" or "NBIRTH" or "DBIRTH")
+                {
+                    ulong? sequence = null;
+                    if (nodeEvent)
+                        foreach (var item in payload.Metrics)
+                            if (item.Name == "bdSeq" && ulong.TryParse(Convert.ToString(item.Value, CultureInfo.InvariantCulture), out ulong number))
+                                sequence = number;
+                    if (kind == "NDEATH" && sequence.HasValue && _birthSequence.TryGetValue(node, out var live) && sequence != live)
+                        return;
+                    bool Matches(string candidate) => nodeEvent ? candidate.StartsWith(node, StringComparison.Ordinal) : candidate == scope;
+                    foreach (string key in _values.Keys)
+                        if (Matches(GetSparkplugAliasScope(key.Split('|', 2)[0]))) _values.TryRemove(key, out _);
+                    foreach (string key in _aliases.Keys)
+                        if (Matches(key.Split('|', 2)[0])) _aliases.TryRemove(key, out _);
+                    if (kind is "NDEATH" or "DDEATH")
+                    {
+                        _offlineScopes.Add(scope);
+                        return;
+                    }
+                    _offlineScopes.Remove(scope);
+                    if (kind == "NBIRTH")
+                    {
+                        _birthSequence.Remove(node);
+                        if (sequence.HasValue) _birthSequence[node] = sequence.Value;
+                    }
+                }
+                if (_offlineScopes.Contains(node) || _offlineScopes.Contains(scope)) return;
                 foreach (SparkplugMetric metric in payload.Metrics)
                 {
                     string name = metric.Name;
@@ -247,8 +343,10 @@ namespace IPC.Plc.Communication.Mqtt
                         _aliases[scope + "|" + metric.Alias.Value] = name;
                     if (string.IsNullOrWhiteSpace(name) && metric.Alias.HasValue)
                         _aliases.TryGetValue(scope + "|" + metric.Alias.Value, out name);
-                    if (!string.IsNullOrWhiteSpace(name))
-                        _values[args.Topic + "|" + name] = new CachedValue(metric.Value, now);
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    string key = args.Topic + "|" + name;
+                    if (metric.IsNull) _values.TryRemove(key, out _);
+                    else _values[key] = new CachedValue(metric.Value, now);
                 }
             }
             catch (FormatException)
@@ -284,16 +382,10 @@ namespace IPC.Plc.Communication.Mqtt
             public DateTime TimestampUtc { get; }
         }
 
-        private sealed class PendingWrite : IDisposable
+        private sealed record PendingWrite(string Topic, byte[] Payload, long Deadline, CancellationToken Token)
         {
-            private readonly ManualResetEventSlim _completed = new ManualResetEventSlim(false);
-            public PendingWrite(string topic, byte[] payload) { Topic = topic; Payload = payload; Result = MqttPublishResult.Fail("尚未发送。"); }
-            public string Topic { get; }
-            public byte[] Payload { get; }
-            public MqttPublishResult Result { get; private set; }
-            public void Complete(MqttPublishResult result) { Result = result; _completed.Set(); }
-            public bool Wait(int milliseconds) => _completed.Wait(milliseconds);
-            public void Dispose() => _completed.Dispose();
+            public TaskCompletionSource<MqttPublishResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public bool Started { get; set; }
         }
     }
 }

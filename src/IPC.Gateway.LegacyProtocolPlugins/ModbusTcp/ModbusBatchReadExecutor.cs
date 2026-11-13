@@ -17,6 +17,7 @@ namespace IPC.Plc.Communication.ModbusTcp
         public int MaxReadBits { get; set; }
         public int MaxReadRegisters { get; set; }
         public int MaxGapPoints { get; set; }
+        public PlcBatchReadRecovery Recovery { get; set; }
         public ModbusDataFormat DataFormat { get; set; }
     }
 
@@ -29,6 +30,8 @@ namespace IPC.Plc.Communication.ModbusTcp
                 return output;
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
+            context.Recovery = PlcBatchReadRecovery.Start(context.ReadRegisters?.Target ?? context.ReadBits?.Target,
+                "modbus|" + context.DataFormat + "|" + context.MaxGapPoints + "|" + context.MaxReadRegisters + "|" + context.MaxReadBits);
             List<BatchReadItem> items = BuildItems(requests, results);
             Dictionary<string, List<BatchReadItem>> groups = GroupItems(items);
 
@@ -38,18 +41,17 @@ namespace IPC.Plc.Communication.ModbusTcp
                 {
                     group.Sort(CompareItems);
                     ExecuteSegments(group, context, results);
-                    if (Array.Exists(results, result => result != null && PlcBatchReadResult.IsConnectionFailureScope(result.FailureScope))) break;
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
             {
                 PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                output.Add(results[i] ?? PlcBatchReadResult.FromFailure(request, "Batch read did not produce a result.", true));
+                output.Add(results[i] ?? PlcBatchReadResult.FromDeferred(request, "Batch read was not attempted."));
             }
 
             return output;
@@ -127,62 +129,28 @@ namespace IPC.Plc.Communication.ModbusTcp
         }
 
         private static void ExecuteSegment(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            ModbusBatchReadContext context,
-            PlcBatchReadResult[] results)
+            List<BatchReadItem> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
+            ModbusBatchReadContext context, PlcBatchReadResult[] results)
         {
-            BatchReadItem first = items[startIndex];
-            int pointCount = segmentEnd - segmentStart + 1;
-
-            try
-            {
-                if (first.Kind == ReadKind.Bit)
+            context.Recovery.ReadRange(items, startIndex, endIndex, item => item.Request, item => item.Index,
+                (left, right) =>
                 {
-                    bool[] values = context.ReadBits(first.Area, segmentStart, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeBitResult(items[i], values, segmentStart, context);
-                }
-                else
-                {
-                    byte[] data = context.ReadRegisters(first.Area, segmentStart, pointCount);
-                    for (int i = startIndex; i < endIndex; i++)
-                        results[items[i].Index] = DecodeRegisterResult(items[i], data, segmentStart, context);
-                }
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope failureScope = PlcFailureClassifier.Classify(
-                    ex,
-                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(failureScope))
-                    throw;
-                if (failureScope == PlcReadFailureScope.Device)
-                    throw new PlcProtocolException(failureScope, ex.Message, innerException: ex);
-                if (failureScope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, failureScope);
-            }
-        }
-
-        private static void RetrySegmentBySplitting(
-            List<BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            ModbusBatchReadContext context,
-            PlcBatchReadResult[] results)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            ExecuteSegment(items, startIndex, middle, items[startIndex].StartAddress, GetSegmentEnd(items, startIndex, middle), context, results);
-            ExecuteSegment(items, middle, endIndex, items[middle].StartAddress, GetSegmentEnd(items, middle, endIndex), context, results);
+                    BatchReadItem first = items[left];
+                    int start = first.StartAddress;
+                    int count = GetSegmentEnd(items, left, right) - start + 1;
+                    if (first.Kind == ReadKind.Bit)
+                    {
+                        bool[] values = context.ReadBits(first.Area, start, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeBitResult(items[i], values, start, context);
+                    }
+                    else
+                    {
+                        byte[] data = context.ReadRegisters(first.Area, start, count);
+                        for (int i = left; i < right; i++)
+                            results[items[i].Index] = DecodeRegisterResult(items[i], data, start, context);
+                    }
+                }, results, items[startIndex].Area + "|" + items[startIndex].Kind);
         }
 
         private static int GetSegmentEnd(List<BatchReadItem> items, int startIndex, int endIndex)

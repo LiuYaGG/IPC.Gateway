@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System;
+using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -178,14 +179,7 @@ namespace IPC.Plc.Communication.OpcDa
                         Marshal.ThrowExceptionForHR(error);
 
                     OpcDaItemState state = (OpcDaItemState)Marshal.PtrToStructure(valuesPointer, typeof(OpcDaItemState));
-                    if ((state.Quality & OpcQualityGood) != OpcQualityGood)
-                        throw new PlcProtocolException(
-                            PlcReadFailureScope.Tag,
-                            "OPC DA标签质量不是Good。ItemID: " + item.ItemId,
-                            "QUALITY-0x" + state.Quality.ToString("X4", CultureInfo.InvariantCulture));
-
-                    object value = ConvertForRead(state.Value, dataType, elementCount, elementOffset);
-                    return new PlcReadResult((ushort)item.CanonicalDataType, VarTypeName(item.CanonicalDataType), value);
+                    return DecodeItemValue(item, state, dataType, elementCount, elementOffset);
                 }
                 finally
                 {
@@ -197,49 +191,87 @@ namespace IPC.Plc.Communication.OpcDa
 
         public IList<PlcBatchReadResult> ReadMany(IList<PlcBatchReadRequest> requests)
         {
-            List<PlcBatchReadResult> output = new List<PlcBatchReadResult>();
-            if (requests == null || requests.Count == 0)
-                return output;
-
+            if (requests == null || requests.Count == 0) return Array.Empty<PlcBatchReadResult>();
             lock (_syncRoot)
             {
                 EnsureConnected();
-                PlcBatchReadResult[] ordered = new PlcBatchReadResult[requests.Count];
-                List<PendingRead> pending = new List<PendingRead>();
-                PreloadItems(requests);
-
-                for (int i = 0; i < requests.Count; i++)
+                var ordered = new PlcBatchReadResult[requests.Count];
+                var indexes = Enumerable.Range(0, requests.Count).ToArray();
+                try
                 {
-                    PlcBatchReadRequest request = EnsureRequest(requests[i]);
-                    try
-                    {
-                        OpcDaItemHandle item = GetOrAddItem(request.Address);
-                        pending.Add(new PendingRead(i, request, item));
-                    }
+                    PlcBatchReadRecovery.Start(this, "OPC DA").ReadRange(indexes, 0, indexes.Length,
+                        i => EnsureRequest(requests[i]), i => i, ReadRange, ordered, "SyncIO");
+                }
+                catch (Exception ex) { PlcBatchReadResult.DeferPending(requests, ordered, ex.Message); }
+                return ordered;
+
+                void ReadRange(int start, int end)
+                {
+                    var range = new List<PlcBatchReadRequest>(end - start);
+                    for (int i = start; i < end; i++) range.Add(EnsureRequest(requests[i]));
+                    var errors = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    try { PreloadItems(range, errors); }
                     catch (Exception ex)
                     {
-                        ordered[i] = PlcBatchReadResult.FromFailure(request, ex.Message, false);
+                        var scope = IsCommunicationException(ex) ? PlcReadFailureScope.Transport
+                            : range.Count == 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch;
+                        if (scope == PlcReadFailureScope.Transport)
+                            for (int i = start; i < end; i++)
+                                if (_itemsByAddress.ContainsKey((range[i - start].Address ?? string.Empty).Trim()))
+                                    ordered[i] = PlcBatchReadResult.FromDeferred(range[i - start], ex.Message);
+                        throw new PlcProtocolException(scope, ex.Message);
                     }
+                    var pending = new List<PendingRead>(range.Count);
+                    for (int i = start; i < end; i++)
+                    {
+                        var request = range[i - start];
+                        string id = (request.Address ?? string.Empty).Trim();
+                        if (_itemsByAddress.TryGetValue(id, out var item))
+                            pending.Add(new PendingRead(i, request, item));
+                        else
+                        {
+                            string message = errors.TryGetValue(id, out int hr)
+                                ? Marshal.GetExceptionForHR(hr)?.Message ?? $"OPC DA AddItems returned 0x{hr:X8}"
+                                : "OPC DA ItemID is empty or missing: " + id;
+                            ordered[i] = PlcBatchReadResult.FromFailure(request, message, PlcReadFailureScope.Tag);
+                        }
+                    }
+                    if (pending.Count > 0) ReadPendingItems(pending, ordered);
                 }
-
-                if (pending.Count > 0)
-                    ReadPendingItems(pending, ordered);
-
-                for (int i = 0; i < requests.Count; i++)
-                    output.Add(ordered[i] ?? PlcBatchReadResult.FromFailure(EnsureRequest(requests[i]), "Batch read did not produce a result.", true));
             }
-
-            return output;
         }
 
         public void Write(string address, PlcDataType dataType, string valueText, int elementOffset)
         {
             lock (_syncRoot)
             {
+                if (elementOffset != 0)
+                    throw new NotSupportedException("OPC DA SyncIO cannot write an element range. Configure an individually addressable ItemID.");
                 EnsureConnected();
                 OpcDaItemHandle item = GetOrAddItem(address);
                 int[] handles = new[] { item.ServerHandle };
-                object[] values = new[] { ParseValue(dataType, valueText) };
+                object parsed = ParseValue(dataType, valueText);
+                bool arrayItem = (item.CanonicalDataType & (int)VarEnum.VT_ARRAY) != 0;
+                if (arrayItem && parsed is not Array)
+                    throw new NotSupportedException("OPC DA cannot replace an array Item with a scalar.");
+                bool dynamicType = item.CanonicalDataType == (int)VarEnum.VT_EMPTY || item.CanonicalDataType == (int)VarEnum.VT_VARIANT;
+                if (parsed is Array || dynamicType)
+                {
+                    // SyncIO writes the complete Item. Never shrink an array
+                    // when the tag represents only its first few elements.
+                    IntPtr states, errors;
+                    _syncIO.Read(OpcDaDataSource.Device, 1, handles, out states, out errors);
+                    try
+                    {
+                        Marshal.ThrowExceptionForHR(ReadError(errors, 0));
+                        var current = Marshal.PtrToStructure<OpcDaItemState>(states);
+                        if (parsed is Array replacement ? current.Value is not Array existing || existing.Rank != 1 ||
+                            existing.Length != replacement.Length : current.Value is Array)
+                            throw new NotSupportedException("OPC DA array writes require the complete array at offset zero.");
+                    }
+                    finally { DestroyItemStates(states, 1); FreeCoTaskMemory(errors); }
+                }
+                object[] values = new[] { parsed };
                 IntPtr errorsPointer;
                 _syncIO.Write(1, handles, values, out errorsPointer);
 
@@ -457,7 +489,7 @@ namespace IPC.Plc.Communication.OpcDa
             }
         }
 
-        private void PreloadItems(IList<PlcBatchReadRequest> requests)
+        private void PreloadItems(IList<PlcBatchReadRequest> requests, Dictionary<string, int> errors)
         {
             List<string> missing = new List<string>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -494,8 +526,12 @@ namespace IPC.Plc.Communication.OpcDa
                 int resultSize = Marshal.SizeOf(typeof(OpcDaItemResult));
                 for (int index = 0; index < definitions.Length; index++)
                 {
-                    if (ReadError(errorsPointer, index) != 0)
+                    int hr = ReadError(errorsPointer, index);
+                    if (hr < 0)
+                    {
+                        errors[missing[index]] = hr;
                         continue;
+                    }
                     IntPtr resultPointer = IntPtr.Add(resultsPointer, index * resultSize);
                     OpcDaItemResult result = (OpcDaItemResult)Marshal.PtrToStructure(resultPointer, typeof(OpcDaItemResult));
                     _itemsByAddress[missing[index]] = new OpcDaItemHandle(
@@ -545,16 +581,9 @@ namespace IPC.Plc.Communication.OpcDa
             }
             catch (Exception ex)
             {
-                bool communicationError = IsCommunicationException(ex);
-                if (communicationError)
-                    throw;
-                if (!communicationError && pending.Count > 1)
-                {
-                    RetryPendingItemsBySplitting(pending, ordered);
-                    return;
-                }
-
-                MarkPendingItemsFailure(pending, ordered, ex.Message, communicationError);
+                var scope = IsCommunicationException(ex) ? PlcReadFailureScope.Transport
+                    : pending.Count == 1 ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch;
+                throw new PlcProtocolException(scope, ex.Message);
             }
             finally
             {
@@ -563,42 +592,30 @@ namespace IPC.Plc.Communication.OpcDa
             }
         }
 
-        private void RetryPendingItemsBySplitting(List<PendingRead> pending, PlcBatchReadResult[] ordered)
-        {
-            int middle = pending.Count / 2;
-            ReadPendingItems(pending.GetRange(0, middle), ordered);
-            ReadPendingItems(pending.GetRange(middle, pending.Count - middle), ordered);
-        }
-
-        private static void MarkPendingItemsFailure(
-            List<PendingRead> pending,
-            PlcBatchReadResult[] ordered,
-            string errorMessage,
-            bool communicationError)
-        {
-            for (int i = 0; i < pending.Count; i++)
-            {
-                PendingRead read = pending[i];
-                if (ordered[read.Index] == null)
-                    ordered[read.Index] = PlcBatchReadResult.FromFailure(read.Request, errorMessage, communicationError);
-            }
-        }
-
         private static PlcBatchReadResult BuildReadResult(PendingRead read, OpcDaItemState state)
         {
-            if ((state.Quality & OpcQualityGood) != OpcQualityGood)
-                throw new PlcProtocolException(
-                    PlcReadFailureScope.Tag,
-                    "OPC DA标签质量不是Good。ItemID: " + read.Item.ItemId,
-                    "QUALITY-0x" + state.Quality.ToString("X4", CultureInfo.InvariantCulture));
+            return PlcBatchReadResult.FromSuccess(read.Request, DecodeItemValue(read.Item, state,
+                read.Request.DataType, read.Request.ElementCount, read.Request.ElementOffset));
+        }
 
-            object value = ConvertForRead(
-                state.Value,
-                read.Request.DataType,
-                read.Request.ElementCount,
-                read.Request.ElementOffset);
-            PlcReadResult result = new PlcReadResult((ushort)read.Item.CanonicalDataType, VarTypeName(read.Item.CanonicalDataType), value);
-            return PlcBatchReadResult.FromSuccess(read.Request, result);
+        private static PlcReadResult DecodeItemValue(OpcDaItemHandle item, OpcDaItemState state, PlcDataType type, int count, int offset)
+        {
+            int quality = state.Quality & 0xC0;
+            if (quality != OpcQualityGood && quality != 0x40)
+                throw new PlcProtocolException(PlcReadFailureScope.Tag, "OPC DA Item has bad quality: " + item.ItemId,
+                    "QUALITY-0x" + state.Quality.ToString("X4", CultureInfo.InvariantCulture));
+            long fileTime = ((long)state.Timestamp.dwHighDateTime << 32) | (uint)state.Timestamp.dwLowDateTime;
+            DateTime? source = null;
+            if (fileTime > 0)
+            {
+                try { source = DateTime.FromFileTimeUtc(fileTime); }
+                catch (ArgumentOutOfRangeException) { }
+            }
+            return new PlcReadResult((ushort)item.CanonicalDataType, VarTypeName(item.CanonicalDataType), ConvertForRead(state.Value, type, count, offset))
+            {
+                SourceTimestampUtc = source,
+                IsUncertain = quality == 0x40
+            };
         }
 
         private static bool IsCommunicationException(Exception exception)
@@ -665,21 +682,20 @@ namespace IPC.Plc.Communication.OpcDa
 
         private static object ConvertForRead(object value, PlcDataType dataType, int elementCount, int elementOffset)
         {
-            if (PlcDataTypeHelper.IsArray(dataType))
-                return ConvertToArray(value, dataType, Math.Max(1, elementCount), Math.Max(0, elementOffset));
-            return ConvertScalar(value, dataType);
-        }
-
-        private static Array ConvertToArray(object value, PlcDataType dataType, int count, int offset)
-        {
-            Array result = PlcDataTypeHelper.CreateArray(dataType, count);
-            IList list = value as IList;
-            for (int i = 0; i < count; i++)
+            bool isArray = PlcDataTypeHelper.IsArray(dataType);
+            if (value is not Array source)
             {
-                int sourceIndex = offset + i;
-                object item = list != null && sourceIndex < list.Count ? list[sourceIndex] : value;
-                result.SetValue(ConvertScalar(item, ArrayElementType(dataType)), i);
+                if (isArray || elementOffset != 0) throw new PlcTagException("OPC DA Item does not expose an array.");
+                return ConvertScalar(value, dataType);
             }
+            int count = isArray ? elementCount : 1;
+            if (source.Rank != 1 || elementOffset < 0 || count < 1 || elementOffset > source.Length - count)
+                throw new PlcTagException("OPC DA array range is outside the available elements.");
+            int first = checked(source.GetLowerBound(0) + elementOffset);
+            if (!isArray) return ConvertScalar(source.GetValue(first), dataType);
+            Array result = PlcDataTypeHelper.CreateArray(dataType, count);
+            for (int i = 0; i < count; i++)
+                result.SetValue(ConvertScalar(source.GetValue(first + i), ArrayElementType(dataType)), i);
             return result;
         }
 
@@ -706,6 +722,12 @@ namespace IPC.Plc.Communication.OpcDa
             {
                 case PlcDataType.BoolArray:
                     return PlcDataType.Bool;
+                case PlcDataType.Int8Array:
+                    return PlcDataType.Int8;
+                case PlcDataType.ByteArray:
+                    return PlcDataType.Byte;
+                case PlcDataType.UInt8Array:
+                    return PlcDataType.UInt8;
                 case PlcDataType.Int16Array:
                     return PlcDataType.Int16;
                 case PlcDataType.UInt16Array:
@@ -742,6 +764,11 @@ namespace IPC.Plc.Communication.OpcDa
                 case PlcDataType.Coil:
                 case PlcDataType.DiscreteInput:
                     return ParseBool(value);
+                case PlcDataType.Int8:
+                    return Convert.ToSByte(value, CultureInfo.InvariantCulture);
+                case PlcDataType.Byte:
+                case PlcDataType.UInt8:
+                    return Convert.ToByte(value, CultureInfo.InvariantCulture);
                 case PlcDataType.Int16:
                     return Convert.ToInt16(value, CultureInfo.InvariantCulture);
                 case PlcDataType.UInt16:

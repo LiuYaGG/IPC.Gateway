@@ -1,6 +1,8 @@
 using IPC.Gateway.Core.Application.Gateway.Contracts;
 using IPC.Gateway.Core.Gateway;
 using IPC.Runtime.Engine;
+using IPC.Runtime.Indexing;
+using IPC.Runtime.Values;
 
 namespace IPC.Gateway.WebHost;
 
@@ -8,15 +10,16 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
 {
     private const int MaxTagBatchSize = 500;
     private const int MaxPendingTags = 5000;
-    private static readonly TimeSpan TagFlushInterval = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan DeviceSampleInterval = TimeSpan.FromSeconds(2);
+    private readonly record struct TagIdentity(string ChannelId, string DeviceId, string GroupId, string TagId);
+    private static readonly TimeSpan TagFlushInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan DeviceSampleInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan StatusPatchInterval = TimeSpan.FromSeconds(10);
 
     private readonly object _syncRoot = new();
     private readonly GatewayCoreService _gateway;
     private readonly GatewayRuntimeEventHub _events;
     private readonly ILogger<GatewayRuntimePushHostedService> _logger;
-    private readonly Dictionary<string, TagValueSnapshotDto> _pendingTags = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TagIdentity> _pendingTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _deviceFingerprints = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _lastDeviceSampleUtc = DateTime.MinValue;
     private DateTime _lastStatusPatchUtc = DateTime.MinValue;
@@ -36,25 +39,58 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
     {
         _gateway.Runtime.TagValueChanged -= OnTagValueChanged;
         _gateway.Runtime.TagValueChanged += OnTagValueChanged;
+        _gateway.Runtime.TagDiagnosticsChanged -= OnTagValueChanged;
+        _gateway.Runtime.TagDiagnosticsChanged += OnTagValueChanged;
         return base.StartAsync(cancellationToken);
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         _gateway.Runtime.TagValueChanged -= OnTagValueChanged;
+        _gateway.Runtime.TagDiagnosticsChanged -= OnTagValueChanged;
         return base.StopAsync(cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        string revision = _gateway.ProjectRevision;
+        bool running = _gateway.Runtime.IsRunning;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await Task.Delay(TagFlushInterval, stoppingToken);
-                FlushPendingTags();
-                PublishDeviceChangesIfDue();
-                PublishStatusPatchIfDue();
+                string currentRevision = _gateway.ProjectRevision;
+                bool isRunning = _gateway.Runtime.IsRunning;
+                if (revision != currentRevision || running != isRunning)
+                {
+                    bool lifecycleChanged = running != isRunning;
+                    revision = currentRevision;
+                    running = isRunning;
+                    _deviceFingerprints.Clear();
+                    // A stop may not replace the project. Force a fresh capture even
+                    // for a browser already showing that configuration revision.
+                    _events.Publish("resync", new { projectRevision = lifecycleChanged ? null : revision });
+                }
+                if (_events.HasDeviceSubscribers)
+                {
+                    FlushPendingTags();
+                    PublishDeviceChangesIfDue();
+                }
+                else
+                {
+                    // A later subscriber receives a fresh snapshot.
+                    lock (_syncRoot)
+                    {
+                        if (!_events.HasDeviceSubscribers)
+                        {
+                            _pendingTags.Clear();
+                            _snapshotRequired = false;
+                        }
+                    }
+                    _deviceFingerprints.Clear();
+                }
+                if (_events.SubscriberCount != 0) PublishStatusPatchIfDue();
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -69,13 +105,11 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
 
     private void OnTagValueChanged(object? sender, TagValueChangedEventArgs e)
     {
-        if (e?.Snapshot == null)
+        if (!_events.HasDeviceSubscribers || e?.Snapshot == null)
             return;
 
-        TagValueSnapshotDto tag = GatewayConfigurationContractMapper.ToDto(e.Snapshot);
-        string key = BuildTagKey(tag);
-        if (string.IsNullOrWhiteSpace(key))
-            return;
+        TagValueSnapshot tag = e.Snapshot;
+        string key = TagPath.BuildIdentity(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId);
 
         lock (_syncRoot)
         {
@@ -85,41 +119,51 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
                 return;
             }
 
-            if (!_pendingTags.TryGetValue(key, out var previous) || tag.Timestamp >= previous.Timestamp)
-                _pendingTags[key] = tag;
+            _pendingTags[key] = new TagIdentity(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId);
         }
     }
 
     private void FlushPendingTags()
     {
-        List<TagValueSnapshotDto> pending;
+        List<TagIdentity> changed;
         bool snapshotRequired;
         lock (_syncRoot)
         {
             snapshotRequired = _snapshotRequired;
             _snapshotRequired = false;
-            pending = _pendingTags.Values.ToList();
+            if (!snapshotRequired && _pendingTags.Count == 0)
+                return;
+            changed = _pendingTags.Values.ToList();
             _pendingTags.Clear();
         }
 
-        if (snapshotRequired)
+        List<TagValueSnapshotDto> pending;
+        try
         {
-            try
+            if (snapshotRequired)
             {
-                // Read from the acquisition cache, not the event stream that overflowed.
-                var latest = _gateway.Runtime.GetSnapshots()
-                    .Select(GatewayConfigurationContractMapper.ToDto)
-                    .ToDictionary(BuildTagKey, StringComparer.OrdinalIgnoreCase);
-                foreach (var tag in pending)
-                    if (latest.TryGetValue(BuildTagKey(tag), out var current) && tag.Timestamp > current.Timestamp)
-                        latest[BuildTagKey(tag)] = tag;
-                pending = latest.Values.ToList();
+                pending = _gateway.Runtime.GetSnapshots()
+                    .Where(tag => _gateway.ContainsRuntimeTag(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId))
+                    .Select(GatewayConfigurationContractMapper.ToDto).ToList();
             }
-            catch
+            else
             {
-                lock (_syncRoot) _snapshotRequired = true;
-                throw;
+                pending = new List<TagValueSnapshotDto>(changed.Count);
+                foreach (var notified in changed)
+                {
+                    // A historical value or an equal-source-time failure may arrive after a
+                    // diagnostic update. Publish what the engine currently holds for this identity.
+                    if (_gateway.ContainsRuntimeTag(notified.ChannelId, notified.DeviceId, notified.GroupId, notified.TagId) &&
+                        _gateway.Runtime.TryGetSnapshotById(notified.ChannelId, notified.DeviceId,
+                        notified.GroupId, notified.TagId, out var latest) && latest != null)
+                        pending.Add(GatewayConfigurationContractMapper.ToDto(latest));
+                }
             }
+        }
+        catch
+        {
+            lock (_syncRoot) _snapshotRequired = true;
+            throw;
         }
 
         // Drain the complete captured set every tick, keeping each SSE event
@@ -183,19 +227,8 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
             return;
 
         _lastStatusPatchUtc = nowUtc;
-        GatewayRuntimeStatusDto status = GatewayConfigurationContractMapper.ToDto(_gateway.GetStatus());
-        status.Tags = new List<TagValueSnapshotDto>();
-        status.Devices = new List<DeviceRuntimeStatusDto>();
+        GatewayRuntimeStatusDto status = GatewayConfigurationContractMapper.ToDto(_gateway.GetStatusSummary());
         _events.Publish("status", new GatewayRuntimeStatusPatchEvent { Status = status });
-    }
-
-    private static string BuildTagKey(TagValueSnapshotDto tag)
-    {
-        return "id:" + string.Join("/",
-            tag.ChannelId ?? string.Empty,
-            tag.DeviceId ?? string.Empty,
-            tag.GroupId ?? string.Empty,
-            tag.TagId ?? string.Empty).Trim().ToLowerInvariant();
     }
 
     private static string BuildDeviceKey(DeviceRuntimeStatusDto device)

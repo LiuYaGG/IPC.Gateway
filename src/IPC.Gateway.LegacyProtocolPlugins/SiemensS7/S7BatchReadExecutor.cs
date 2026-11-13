@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using IPC.Plc.Communication.Core;
@@ -21,18 +19,19 @@ namespace IPC.Plc.Communication.SiemensS7
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<S7BatchReadItem> items = BuildItems(requests, context, results);
             Dictionary<string, List<S7BatchReadItem>> groups = GroupItems(items);
+            var recovery = PlcBatchReadRecovery.Start(context.BuildAddress.Target, "S7:" + context.MaxReadBytes);
 
             try
             {
                 foreach (List<S7BatchReadItem> group in groups.Values)
                 {
                     group.Sort(CompareItems);
-                    ExecuteSegments(group, context, results);
+                    ExecuteSegments(group, context, results, recovery);
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -58,6 +57,7 @@ namespace IPC.Plc.Communication.SiemensS7
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<S7BatchReadItem> items = BuildItems(requests, context, results);
             Dictionary<string, List<S7BatchReadItem>> groups = GroupItems(items);
+            var recovery = PlcBatchReadRecovery.Start(context.BuildAddress.Target, "S7:" + context.MaxReadBytes);
 
             try
             {
@@ -65,12 +65,12 @@ namespace IPC.Plc.Communication.SiemensS7
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     group.Sort(CompareItems);
-                    await ExecuteSegmentsAsync(group, context, results, cancellationToken).ConfigureAwait(false);
+                    await ExecuteSegmentsAsync(group, context, results, recovery, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                PlcBatchReadResult.FailPending(requests, results, ex);
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
             }
 
             for (int i = 0; i < requests.Count; i++)
@@ -151,7 +151,7 @@ namespace IPC.Plc.Communication.SiemensS7
             return groups;
         }
 
-        private static void ExecuteSegments(List<S7BatchReadItem> items, S7BatchReadContext context, PlcBatchReadResult[] results)
+        private static void ExecuteSegments(List<S7BatchReadItem> items, S7BatchReadContext context, PlcBatchReadResult[] results, PlcBatchReadRecovery recovery)
         {
             int index = 0;
             while (index < items.Count)
@@ -175,7 +175,14 @@ namespace IPC.Plc.Communication.SiemensS7
                     index++;
                 }
 
-                ExecuteSegment(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results);
+                recovery.ReadRange(items, segmentStartIndex, index, item => item.Request, item => item.Index, (start, end) =>
+                {
+                    var first = items[start];
+                    int length = GetSegmentEnd(items, start, end) - first.StartByte + 1;
+                    byte[] data = context.ReadBytes(first.Address, length);
+                    for (int i = start; i < end; i++)
+                        results[items[i].Index] = DecodeResult(items[i], data, first.StartByte, context);
+                }, results, items[segmentStartIndex].GroupKey);
             }
         }
 
@@ -183,6 +190,7 @@ namespace IPC.Plc.Communication.SiemensS7
             List<S7BatchReadItem> items,
             S7AsyncBatchReadContext context,
             PlcBatchReadResult[] results,
+            PlcBatchReadRecovery recovery,
             CancellationToken cancellationToken)
         {
             int index = 0;
@@ -208,104 +216,15 @@ namespace IPC.Plc.Communication.SiemensS7
                     index++;
                 }
 
-                await ExecuteSegmentAsync(items, segmentStartIndex, index, segmentStart, segmentEnd, context, results, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        private static void ExecuteSegment(
-            List<S7BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            S7BatchReadContext context,
-            PlcBatchReadResult[] results)
-        {
-            S7BatchReadItem first = items[startIndex];
-            int byteCount = segmentEnd - segmentStart + 1;
-            S7Address segmentAddress = first.Address.AddByteOffset(segmentStart - first.StartByte);
-
-            try
-            {
-                byte[] data = context.ReadBytes(segmentAddress, byteCount);
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = DecodeResult(items[i], data, segmentStart, context);
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                    throw;
-                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
+                await recovery.ReadRangeAsync(items, segmentStartIndex, index, item => item.Request, item => item.Index, async (start, end) =>
                 {
-                    RetrySegmentBySplitting(items, startIndex, endIndex, context, results);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
+                    var first = items[start];
+                    int length = GetSegmentEnd(items, start, end) - first.StartByte + 1;
+                    byte[] data = await context.ReadBytesAsync(first.Address, length, cancellationToken).ConfigureAwait(false);
+                    for (int i = start; i < end; i++)
+                        results[items[i].Index] = DecodeResult(items[i], data, first.StartByte, context);
+                }, results, items[segmentStartIndex].GroupKey, cancellationToken).ConfigureAwait(false);
             }
-        }
-
-        private static void RetrySegmentBySplitting(
-            List<S7BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            S7BatchReadContext context,
-            PlcBatchReadResult[] results)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            ExecuteSegment(items, startIndex, middle, items[startIndex].StartByte, GetSegmentEnd(items, startIndex, middle), context, results);
-            ExecuteSegment(items, middle, endIndex, items[middle].StartByte, GetSegmentEnd(items, middle, endIndex), context, results);
-        }
-
-        private static async ValueTask ExecuteSegmentAsync(
-            List<S7BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            int segmentStart,
-            int segmentEnd,
-            S7AsyncBatchReadContext context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
-        {
-            S7BatchReadItem first = items[startIndex];
-            int byteCount = segmentEnd - segmentStart + 1;
-            S7Address segmentAddress = first.Address.AddByteOffset(segmentStart - first.StartByte);
-
-            try
-            {
-                byte[] data = await context.ReadBytesAsync(segmentAddress, byteCount, cancellationToken).ConfigureAwait(false);
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = DecodeResult(items[i], data, segmentStart, context);
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                    throw;
-                if (scope == PlcReadFailureScope.Tag && endIndex - startIndex > 1)
-                {
-                    await RetrySegmentBySplittingAsync(items, startIndex, endIndex, context, results, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                for (int i = startIndex; i < endIndex; i++)
-                    results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
-            }
-        }
-
-        private static async ValueTask RetrySegmentBySplittingAsync(
-            List<S7BatchReadItem> items,
-            int startIndex,
-            int endIndex,
-            S7AsyncBatchReadContext context,
-            PlcBatchReadResult[] results,
-            CancellationToken cancellationToken)
-        {
-            int middle = startIndex + (endIndex - startIndex) / 2;
-            await ExecuteSegmentAsync(items, startIndex, middle, items[startIndex].StartByte, GetSegmentEnd(items, startIndex, middle), context, results, cancellationToken).ConfigureAwait(false);
-            await ExecuteSegmentAsync(items, middle, endIndex, items[middle].StartByte, GetSegmentEnd(items, middle, endIndex), context, results, cancellationToken).ConfigureAwait(false);
         }
 
         private static int GetSegmentEnd(List<S7BatchReadItem> items, int startIndex, int endIndex)
@@ -346,33 +265,6 @@ namespace IPC.Plc.Communication.SiemensS7
             {
                 return PlcBatchReadResult.FromFailure(item.Request, ex.Message, false);
             }
-        }
-
-        private static bool IsCommunicationException(Exception exception)
-        {
-            Exception current = exception;
-            while (current != null)
-            {
-                if (current is PlcCommunicationException ||
-                    current is TimeoutException ||
-                    current is IOException ||
-                    current is SocketException ||
-                    current is ObjectDisposedException)
-                    return true;
-
-                string text = (current.Message ?? string.Empty).ToLowerInvariant();
-                if (text.IndexOf("timeout", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("timed out", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("socket", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("closed", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("not connected", StringComparison.Ordinal) >= 0 ||
-                    text.IndexOf("unreachable", StringComparison.Ordinal) >= 0)
-                    return true;
-
-                current = current.InnerException;
-            }
-
-            return false;
         }
 
         private static int CompareItems(S7BatchReadItem left, S7BatchReadItem right)

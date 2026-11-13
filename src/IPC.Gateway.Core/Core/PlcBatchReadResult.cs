@@ -20,6 +20,7 @@ namespace IPC.Plc.Communication.Core
             Request = request ?? throw new ArgumentNullException("request");
             ErrorMessage = string.Empty;
             FailureScope = PlcReadFailureScope.None;
+            WasAttempted = true;
         }
 
         public PlcBatchReadRequest Request { get; private set; }
@@ -27,6 +28,8 @@ namespace IPC.Plc.Communication.Core
         public string ErrorMessage { get; private set; }
         public bool IsCommunicationError { get; private set; }
         public PlcReadFailureScope FailureScope { get; private set; }
+        public bool WasAttempted { get; private set; }
+        public bool IsDeferred { get { return !WasAttempted; } }
 
         public bool Success
         {
@@ -61,6 +64,22 @@ namespace IPC.Plc.Communication.Core
             return failureScope == PlcReadFailureScope.Device ||
                    failureScope == PlcReadFailureScope.Session ||
                    failureScope == PlcReadFailureScope.Transport;
+        }
+
+        public static PlcBatchReadResult FromDeferred(PlcBatchReadRequest request, string message)
+        {
+            return new PlcBatchReadResult(request)
+            {
+                WasAttempted = false,
+                FailureScope = PlcReadFailureScope.Batch,
+                ErrorMessage = message ?? string.Empty
+            };
+        }
+
+        public static void DeferPending(IList<PlcBatchReadRequest> requests, PlcBatchReadResult[] results, string message)
+        {
+            for (int i = 0; i < results.Length; i++)
+                results[i] ??= FromDeferred(requests[i], message);
         }
 
         // Preserve completed reads when a later wire request fails or times out.

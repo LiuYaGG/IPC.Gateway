@@ -216,6 +216,7 @@ namespace IPC.Runtime.Configuration
         public string LogicalOperator { get; set; }
         public int DurationSeconds { get; set; }
         public bool PublishToMqtt { get; set; }
+        public bool AlarmMessage { get; set; }
         public bool PublishOnClear { get; set; }
         public string TopicTemplate { get; set; }
         public int PublishQos { get; set; }

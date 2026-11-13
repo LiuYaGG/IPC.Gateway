@@ -1,4 +1,5 @@
 using IPC.Plc.Communication.Core;
+using System.Collections.Generic;
 
 namespace IPC.Plc.Communication.SiemensS7
 {
@@ -8,6 +9,7 @@ namespace IPC.Plc.Communication.SiemensS7
         public PlcBatchReadRequest Request { get; set; }
         public S7Address Address { get; set; }
         public int ByteCount { get; set; }
+        public List<S7MultiReadItem> Members { get; set; }
         public byte[] Data { get; set; }
         public string ErrorMessage { get; set; }
         public PlcReadFailureScope FailureScope { get; set; } = PlcReadFailureScope.Tag;

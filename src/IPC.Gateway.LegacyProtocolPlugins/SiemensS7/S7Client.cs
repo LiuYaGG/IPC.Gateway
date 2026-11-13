@@ -321,12 +321,7 @@ namespace IPC.Plc.Communication.SiemensS7
 
         private S7Address BuildAddress(string address, PlcDataType dataType, int elementOffset)
         {
-            S7Address parsed = S7Address.Parse(address, dataType);
-            if (S7DataCodec.IsBoolType(dataType))
-                return parsed.AddBitOffset(elementOffset);
-            if (PlcDataTypeHelper.IsArray(dataType))
-                return parsed.AddByteOffset(elementOffset * PlcDataTypeHelper.GetElementSize(dataType));
-            return parsed;
+            return S7Address.Parse(address, dataType, elementOffset);
         }
 
         private byte[] ReadBytes(S7Address address, int byteCount)
@@ -337,6 +332,7 @@ namespace IPC.Plc.Communication.SiemensS7
             if (byteCount <= 0)
                 throw new ArgumentOutOfRangeException("byteCount");
 
+            address.AddByteOffset(byteCount - 1);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < byteCount)
@@ -363,6 +359,7 @@ namespace IPC.Plc.Communication.SiemensS7
             if (byteCount <= 0)
                 throw new ArgumentOutOfRangeException("byteCount");
 
+            address.AddByteOffset(byteCount - 1);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < byteCount)
@@ -387,6 +384,7 @@ namespace IPC.Plc.Communication.SiemensS7
             if (data == null || data.Length == 0)
                 throw new ArgumentException("写入数据不能为空。", "data");
 
+            address.AddByteOffset(data.Length - 1);
             int offset = 0;
             while (offset < data.Length)
             {
@@ -410,6 +408,7 @@ namespace IPC.Plc.Communication.SiemensS7
             if (data == null || data.Length == 0)
                 throw new ArgumentException("Write data cannot be empty.", "data");
 
+            address.AddByteOffset(data.Length - 1);
             int offset = 0;
             while (offset < data.Length)
             {
@@ -427,31 +426,42 @@ namespace IPC.Plc.Communication.SiemensS7
         {
             if (!IsConnected)
                 Connect();
-            for (int offset = 0; offset < bitCount;)
-            {
-                int count = Math.Min(GetMaxWriteDataBytesPerPacket() * 8, bitCount - offset);
-                byte[] response = SendS7(BuildBitWriteRequest(address.AddBitOffset(offset), Slice(values, offset, count), count));
-                ParseWriteResponse(response);
-                offset += count;
-            }
+            foreach (byte[] request in BuildBitWriteRequests(address, values, bitCount))
+                ParseWriteResponse(SendS7(request));
         }
 
         private async ValueTask WriteBitsAsync(
-            S7Address address,
-            byte[] values,
-            int bitCount,
-            CancellationToken cancellationToken)
+            S7Address address, byte[] values, int bitCount, CancellationToken cancellationToken)
         {
             if (!IsConnected)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
-            for (int offset = 0; offset < bitCount;)
+            foreach (byte[] request in BuildBitWriteRequests(address, values, bitCount))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int count = Math.Min(GetMaxWriteDataBytesPerPacket() * 8, bitCount - offset);
-                byte[] request = BuildBitWriteRequest(address.AddBitOffset(offset), Slice(values, offset, count), count);
-                byte[] response = await SendS7Async(request, cancellationToken).ConfigureAwait(false);
-                ParseWriteResponse(response);
-                offset += count;
+                ParseWriteResponse(await SendS7Async(request, cancellationToken).ConfigureAwait(false));
+            }
+        }
+
+        private IEnumerable<byte[]> BuildBitWriteRequests(S7Address address, byte[] values, int bitCount)
+        {
+            address.AddBitOffset(bitCount - 1);
+            for (int offset = 0; offset < bitCount;)
+            {
+                S7Address current = address.AddBitOffset(offset);
+                int wholeBytes = Math.Min((bitCount - offset) / 8, GetMaxWriteDataBytesPerPacket());
+                if (current.BitOffset != 0 || wholeBytes == 0)
+                {
+                    yield return BuildBitWriteRequest(current, values[offset] != 0);
+                    offset++;
+                    continue;
+                }
+
+                byte[] packed = new byte[wholeBytes];
+                for (int bit = 0; bit < wholeBytes * 8; bit++)
+                    if (values[offset + bit] != 0)
+                        packed[bit / 8] |= (byte)(1 << (bit % 8));
+                yield return BuildWriteRequest(current, packed);
+                offset += wholeBytes * 8;
             }
         }
 
@@ -587,31 +597,18 @@ namespace IPC.Plc.Communication.SiemensS7
             return stream.ToArray();
         }
 
-        private byte[] BuildBitWriteRequest(S7Address address, byte[] values, int bitCount)
+        private byte[] BuildBitWriteRequest(S7Address address, bool value)
         {
-            if (values == null || bitCount <= 0 || values.Length < bitCount)
-                throw new ArgumentException("S7 bit write values are invalid.", nameof(values));
-
-            int packedLength = (bitCount + 7) / 8;
-            byte[] packed = new byte[packedLength];
-            for (int i = 0; i < bitCount; i++)
-            {
-                if (values[i] != 0)
-                    packed[i / 8] |= (byte)(1 << (i % 8));
-            }
-
-            int dataLength = 4 + packed.Length + (packed.Length % 2);
-            MemoryStream stream = new MemoryStream();
-            WriteS7JobHeader(stream, 14, dataLength);
+            using MemoryStream stream = new MemoryStream();
+            WriteS7JobHeader(stream, 14, 6);
             stream.WriteByte(0x05);
             stream.WriteByte(0x01);
-            WriteAddressItem(stream, address, bitCount, true);
+            WriteAddressItem(stream, address, 1, true);
             stream.WriteByte(0x00);
-            stream.WriteByte(0x03); // BIT transport size
-            WriteUInt16(stream, (ushort)bitCount);
-            stream.Write(packed, 0, packed.Length);
-            if ((packed.Length % 2) != 0)
-                stream.WriteByte(0x00);
+            stream.WriteByte(0x03);
+            WriteUInt16(stream, 1);
+            stream.WriteByte(value ? (byte)1 : (byte)0);
+            stream.WriteByte(0);
             return stream.ToArray();
         }
 

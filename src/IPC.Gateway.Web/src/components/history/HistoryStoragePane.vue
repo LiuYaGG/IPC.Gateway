@@ -72,8 +72,11 @@
             :disabled="disabled || !config.storage.compressionEnabled"
           />
         </a-form-item>
-        <a-form-item :label="tx('容量上限 MB')">
-          <gateway-number-input v-model="config.storage.maxStorageMegabytes" :min="0" :max="1048576" :step="1024" />
+        <a-form-item :label="tx('点位历史单文件分卷大小（MiB）')" :extra="tx('文件达到该大小后，下次写入会新建一卷。已封卷文件按压缩设置处理。')">
+          <gateway-number-input v-model="config.storage.valueFileSegmentMegabytes" :min="1" :max="1048576" integer />
+        </a-form-item>
+        <a-form-item :label="tx('历史文件总容量上限（MiB）')" :extra="tx('热目录和冷目录合计超过上限时，自动清理会优先删除最旧的历史文件。填 0 表示不限容量。')">
+          <gateway-number-input v-model="config.storage.maxStorageMegabytes" :min="0" :max="1048576" integer />
         </a-form-item>
       </div>
     </a-form>

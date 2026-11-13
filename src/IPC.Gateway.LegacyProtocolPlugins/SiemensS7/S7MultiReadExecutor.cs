@@ -19,9 +19,10 @@ namespace IPC.Plc.Communication.SiemensS7
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<S7MultiReadItem> items = BuildItems(requests, client, results);
-            List<List<S7MultiReadItem>> batches = BuildBatches(items, client);
+            var batches = new Queue<List<S7MultiReadItem>>(BuildBatches(MergeRanges(items, client), client));
+            int remainingDiagnosticBatches = 4;
 
-            foreach (List<S7MultiReadItem> batch in batches)
+            while (batches.TryDequeue(out var batch))
             {
                 try
                 {
@@ -37,7 +38,7 @@ namespace IPC.Plc.Communication.SiemensS7
                         continue;
                     }
                     client.ReadItemBatch(batch);
-                    DecodeBatch(batch, client, results);
+                    DecodeBatch(batch, client, results, batches, ref remainingDiagnosticBatches);
                 }
                 catch (Exception ex)
                 {
@@ -45,7 +46,7 @@ namespace IPC.Plc.Communication.SiemensS7
                     FailBatch(batch, results, ex.Message, scope);
                     if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     {
-                        FailRemaining(items, results, ex.Message, scope);
+                        DeferRemaining(items, results, ex.Message);
                         break;
                     }
                 }
@@ -119,6 +120,44 @@ namespace IPC.Plc.Communication.SiemensS7
             return batches;
         }
 
+        private static List<S7MultiReadItem> MergeRanges(List<S7MultiReadItem> items, S7Client client)
+        {
+            items.Sort((left, right) =>
+            {
+                int order = left.Address.Area.CompareTo(right.Address.Area);
+                if (order == 0) order = left.Address.DbNumber.CompareTo(right.Address.DbNumber);
+                if (order == 0) order = left.Address.ByteOffset.CompareTo(right.Address.ByteOffset);
+                return order;
+            });
+            var ranges = new List<S7MultiReadItem>();
+            S7MultiReadItem last = null;
+            foreach (var item in items)
+            {
+                long end = (long)item.Address.ByteOffset + item.ByteCount;
+                if (last != null && last.Address.Area == item.Address.Area &&
+                    last.Address.DbNumber == item.Address.DbNumber &&
+                    item.Address.ByteOffset <= (long)last.Address.ByteOffset + last.ByteCount)
+                {
+                    long length = Math.Max(last.ByteCount, end - last.Address.ByteOffset);
+                    // 14 byte response header, 4 byte item header, even alignment.
+                    if (18L + length + length % 2 <= client.NegotiatedPduSize)
+                    {
+                        if (last.Members == null)
+                        {
+                            last = new S7MultiReadItem { Address = last.Address, Members = new List<S7MultiReadItem> { last } };
+                            ranges[ranges.Count - 1] = last;
+                        }
+                        last.Members.Add(item);
+                        last.ByteCount = (int)length;
+                        continue;
+                    }
+                }
+                last = item;
+                ranges.Add(item);
+            }
+            return ranges;
+        }
+
         public static async ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(
             IList<PlcBatchReadRequest> requests,
             S7Client client,
@@ -129,13 +168,18 @@ namespace IPC.Plc.Communication.SiemensS7
 
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
             List<S7MultiReadItem> items = BuildItems(requests, client, results);
-            List<List<S7MultiReadItem>> batches = BuildBatches(items, client);
+            var batches = new Queue<List<S7MultiReadItem>>(BuildBatches(MergeRanges(items, client), client));
+            int remainingDiagnosticBatches = 4;
 
-            foreach (List<S7MultiReadItem> batch in batches)
+            while (batches.TryDequeue(out var batch))
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    DeferRemaining(items, results, "S7 read cancelled before dispatch.");
+                    break;
+                }
                 try
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
                     if (RequiresSegmentedRead(batch, client))
                     {
                         S7MultiReadItem item = batch[0];
@@ -149,7 +193,7 @@ namespace IPC.Plc.Communication.SiemensS7
                         continue;
                     }
                     await client.ReadItemBatchAsync(batch, cancellationToken).ConfigureAwait(false);
-                    DecodeBatch(batch, client, results);
+                    DecodeBatch(batch, client, results, batches, ref remainingDiagnosticBatches);
                 }
                 catch (Exception ex)
                 {
@@ -157,7 +201,7 @@ namespace IPC.Plc.Communication.SiemensS7
                     FailBatch(batch, results, ex.Message, scope);
                     if (PlcBatchReadResult.IsConnectionFailureScope(scope))
                     {
-                        FailRemaining(items, results, ex.Message, scope);
+                        DeferRemaining(items, results, ex.Message);
                         break;
                     }
                 }
@@ -169,10 +213,29 @@ namespace IPC.Plc.Communication.SiemensS7
         private static void DecodeBatch(
             List<S7MultiReadItem> batch,
             S7Client client,
-            PlcBatchReadResult[] results)
+            PlcBatchReadResult[] results,
+            Queue<List<S7MultiReadItem>> batches, ref int remainingDiagnosticBatches)
         {
+            List<S7MultiReadItem> retry = null;
             foreach (S7MultiReadItem item in batch)
             {
+                if (item.Members != null)
+                {
+                    if (!string.IsNullOrEmpty(item.ErrorMessage))
+                    {
+                        // A range crossing the end of a DB can contain both readable and invalid tags.
+                        if (item.FailureScope == PlcReadFailureScope.Tag)
+                            (retry ??= new List<S7MultiReadItem>()).AddRange(item.Members);
+                        else FailBatch(item.Members, results, item.ErrorMessage, item.FailureScope);
+                        continue;
+                    }
+                    foreach (var member in item.Members)
+                    {
+                        int offset = member.Address.ByteOffset - item.Address.ByteOffset;
+                        DecodeItem(member, item.Data.AsSpan(offset, member.ByteCount).ToArray(), client, results);
+                    }
+                    continue;
+                }
                 if (!string.IsNullOrEmpty(item.ErrorMessage))
                 {
                     results[item.Index] = PlcBatchReadResult.FromFailure(
@@ -182,23 +245,31 @@ namespace IPC.Plc.Communication.SiemensS7
                     continue;
                 }
 
-                try
+                DecodeItem(item, item.Data, client, results);
+            }
+            if (retry != null)
+                foreach (var separate in BuildBatches(retry, client))
                 {
-                    object value = S7DataCodec.Decode(
-                        item.Request.DataType,
-                        item.Data,
-                        item.Address.BitOffset,
-                        item.Request.ElementCount);
-                    PlcReadResult readResult = new PlcReadResult(
-                        0,
-                        client.GetBatchTypeName(item.Request.DataType),
-                        value);
-                    results[item.Index] = PlcBatchReadResult.FromSuccess(item.Request, readResult);
+                    if (remainingDiagnosticBatches > 0)
+                    {
+                        remainingDiagnosticBatches--;
+                        batches.Enqueue(separate);
+                    }
+                    else DeferRemaining(separate, results, "S7 range awaits independent verification.");
                 }
-                catch (Exception ex)
-                {
-                    results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, ex.Message, PlcReadFailureScope.Tag);
-                }
+        }
+
+        private static void DecodeItem(S7MultiReadItem item, byte[] data, S7Client client, PlcBatchReadResult[] results)
+        {
+            try
+            {
+                object value = S7DataCodec.Decode(item.Request.DataType, data, item.Address.BitOffset, item.Request.ElementCount);
+                results[item.Index] = PlcBatchReadResult.FromSuccess(item.Request,
+                    new PlcReadResult(0, client.GetBatchTypeName(item.Request.DataType), value));
+            }
+            catch (Exception ex)
+            {
+                results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, ex.Message, PlcReadFailureScope.Tag);
             }
         }
 
@@ -209,19 +280,21 @@ namespace IPC.Plc.Communication.SiemensS7
             PlcReadFailureScope scope)
         {
             foreach (S7MultiReadItem item in batch)
-                results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, message, scope);
+            {
+                if (item.Members != null) FailBatch(item.Members, results, message, scope);
+                else results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, message, scope);
+            }
         }
 
-        private static void FailRemaining(
+        private static void DeferRemaining(
             IEnumerable<S7MultiReadItem> items,
             PlcBatchReadResult[] results,
-            string message,
-            PlcReadFailureScope scope)
+            string message)
         {
             foreach (S7MultiReadItem item in items)
             {
                 if (results[item.Index] == null)
-                    results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, message, scope);
+                    results[item.Index] = PlcBatchReadResult.FromDeferred(item.Request, message);
             }
         }
 

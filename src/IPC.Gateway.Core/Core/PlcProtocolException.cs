@@ -9,7 +9,7 @@ namespace IPC.Plc.Communication.Core
     /// Carries the protocol error code and the smallest runtime scope affected by it.
     /// Drivers should prefer this exception to message based error classification.
     /// </summary>
-    public sealed class PlcProtocolException : Exception
+    public class PlcProtocolException : Exception
     {
         public PlcProtocolException(
             PlcReadFailureScope failureScope,

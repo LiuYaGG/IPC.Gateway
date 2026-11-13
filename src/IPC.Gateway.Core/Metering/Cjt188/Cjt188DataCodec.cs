@@ -17,7 +17,6 @@
 //----------------------------------------------------------------*/
 using System;
 using System.Globalization;
-using System.Text;
 using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.Metering.Cjt188
@@ -33,42 +32,34 @@ namespace IPC.Plc.Communication.Metering.Cjt188
     
     internal static class Cjt188DataCodec
     {
-        public static object Decode(byte[] data, string dataIdentifier, PlcDataType dataType)
+        public static object Decode(byte[] data, Cjt188Address address, PlcDataType dataType)
         {
-            if (data == null || data.Length == 0)
-                return ConvertValue(0D, string.Empty, dataType);
-
-            string digits = DecodeBcdLittleEndian(data);
-            int decimalPlaces = InferDecimalPlaces(dataIdentifier);
-            double numeric = ToNumber(digits, decimalPlaces);
-            return ConvertValue(numeric, FormatNumber(numeric, decimalPlaces), dataType);
-        }
-
-        private static string DecodeBcdLittleEndian(byte[] data)
-        {
-            StringBuilder builder = new StringBuilder(data.Length * 2);
-            for (int i = data.Length - 1; i >= 0; i--)
+            if (data.Length == 0) throw new FormatException("CJ/T188 回复缺少数值。");
+            string di = address.DataIdentifier;
+            int decimals = InferDecimalPlaces(di);
+            ReadOnlySpan<byte> field = data;
+            bool data1 = di is "901F" or "1F90";
+            bool data2 = di is "911F" or "1F91";
+            if (data1 || data2)
             {
-                int high = (data[i] >> 4) & 0x0F;
-                int low = data[i] & 0x0F;
-                if (high > 9 || low > 9)
-                    return BitConverter.ToString(data).Replace("-", string.Empty);
-                builder.Append(high.ToString(CultureInfo.InvariantCulture));
-                builder.Append(low.ToString(CultureInfo.InvariantCulture));
+                // Current cumulative flow (water/gas), or current heat following
+                // the settlement heat/cold fields. The next byte is a unit code.
+                bool heat = address.MeterType is >= 0x20 and <= 0x29;
+                int offset = heat ? (data1 ? 5 : 10) : 0;
+                if (data.Length < offset + 5 || data[offset + 4] is 0xFF or 0xEE)
+                    throw new FormatException("CJ/T188 回复缺少有效的当前计量值或单位。");
+                field = data.AsSpan(offset, 4);
+                decimals = 2;
             }
-
-            string text = builder.ToString().TrimStart('0');
-            return text.Length == 0 ? "0" : text;
-        }
-
-        private static double ToNumber(string digits, int decimalPlaces)
-        {
-            double raw;
-            if (!double.TryParse(string.IsNullOrWhiteSpace(digits) ? "0" : digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out raw))
-                return 0D;
-            if (decimalPlaces <= 0)
-                return raw;
-            return raw / Math.Pow(10D, decimalPlaces);
+            double raw = 0;
+            for (int i = field.Length - 1; i >= 0; i--)
+            {
+                int high = field[i] >> 4, low = field[i] & 15;
+                if (high > 9 || low > 9) throw new FormatException("CJ/T188 数值包含无效 BCD。");
+                raw = raw * 100 + high * 10 + low;
+            }
+            double numeric = raw / Math.Pow(10, decimals);
+            return ConvertValue(numeric, FormatNumber(numeric, decimals), dataType);
         }
 
         private static object ConvertValue(double numeric, string text, PlcDataType dataType)

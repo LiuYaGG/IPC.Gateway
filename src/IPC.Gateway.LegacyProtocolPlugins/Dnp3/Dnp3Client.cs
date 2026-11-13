@@ -105,7 +105,7 @@ namespace IPC.Plc.Communication.Dnp3
             PlcBatchReadRequest request = new PlcBatchReadRequest(address, dataType, elementCount, elementOffset);
             PlcBatchReadResult result = ReadMany(new List<PlcBatchReadRequest> { request })[0];
             if (!result.Success)
-                throw new Dnp3TagException(result.ErrorMessage);
+                throw new PlcProtocolException(result.FailureScope, result.ErrorMessage);
             return result.Result;
         }
 
@@ -135,35 +135,58 @@ namespace IPC.Plc.Communication.Dnp3
             }
 
             DateTime scanStartedUtc = DateTime.UtcNow;
-            HashSet<string> scannedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            IEnumerable<ReadItem> refreshItems = items.Where(item => item.Address != null && NeedsRefresh(item.Address, scanStartedUtc));
-            foreach (IGrouping<Dnp3PointType, ReadItem> group in refreshItems.GroupBy(item => item.Address.PointType))
-            {
-                foreach (ReadItem item in group)
-                    scannedKeys.Add(item.Address.ToString());
-                foreach ((ushort start, ushort stop) in BuildRanges(group.Select(item => item.Address.Index)))
-                    ExecuteScan(group.Key, start, stop);
-            }
-
             PlcBatchReadResult[] results = new PlcBatchReadResult[requests.Count];
-            foreach (ReadItem item in items)
+            List<ReadItem> needsScan = new();
+            foreach (var item in items)
             {
                 if (item.Address == null)
-                {
                     results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, item.Error, PlcReadFailureScope.Tag);
-                    continue;
+                else if (NeedsRefresh(item.Address, scanStartedUtc))
+                    needsScan.Add(item);
+                else
+                    StoreResult(item, DateTime.MinValue);
+            }
+            foreach (var group in needsScan.GroupBy(item => item.Address.PointType))
+            {
+                var sorted = group.OrderBy(item => item.Address.Index).ToArray();
+                int next = 0;
+                foreach (var (start, stop) in BuildRanges(sorted.Select(item => item.Address.Index)))
+                {
+                    int first = next;
+                    while (next < sorted.Length && sorted[next].Address.Index <= stop)
+                        next++;
+                    try
+                    {
+                        DateTime started = DateTime.UtcNow;
+                        ExecuteScan(group.Key, start, stop);
+                        for (int i = first; i < next; i++)
+                            StoreResult(sorted[i], started);
+                    }
+                    catch (Exception ex)
+                    {
+                        var scope = PlcFailureClassifier.Classify(ex, PlcReadFailureScope.Device);
+                        for (int i = first; i < next; i++)
+                            results[sorted[i].Index] = PlcBatchReadResult.FromFailure(sorted[i].Request, ex.Message, scope);
+                        PlcBatchReadResult.DeferPending(requests, results, ex.Message);
+                        return results;
+                    }
                 }
+            }
+            return results;
+
+            void StoreResult(ReadItem item, DateTime since)
+            {
                 if (!_handler.TryGet(item.Address, out Dnp3CachedValue cached) ||
-                    (scannedKeys.Contains(item.Address.ToString()) && cached.TimestampUtc < scanStartedUtc))
+                    cached.TimestampUtc < since)
                 {
                     results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, "DNP3 响应中不存在点位 " + item.Address + "。", PlcReadFailureScope.Tag);
-                    continue;
+                    return;
                 }
                 if (!cached.Online)
                 {
                     string quality = cached.Quality.ToString("X2", CultureInfo.InvariantCulture);
                     results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, "DNP3 点位质量无效，Flags=0x" + quality + "。", PlcReadFailureScope.Tag);
-                    continue;
+                    return;
                 }
                 try
                 {
@@ -175,7 +198,6 @@ namespace IPC.Plc.Communication.Dnp3
                     results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, ex.Message, PlcReadFailureScope.Tag);
                 }
             }
-            return results;
         }
 
         public ValueTask<IList<PlcBatchReadResult>> ReadManyAsync(IList<PlcBatchReadRequest> requests, CancellationToken cancellationToken)

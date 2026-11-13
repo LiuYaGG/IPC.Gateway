@@ -55,7 +55,7 @@ public static class GatewayHealthEndpoints
         try
         {
             response = CreateReadyResponse(
-                gateway.GetStatus(),
+                gateway.GetStatusSummary(),
                 GatewayConfigurationContractMapper.ToConfig(gateway.GetStorageHealthOptions()),
                 resourceHealthOptions);
         }

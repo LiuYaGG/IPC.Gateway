@@ -31,10 +31,11 @@ namespace IPC.Plc.Communication.MitsubishiMc
     
     
     
-    internal sealed class McAddress
+    internal sealed class McAddress : IMitsubishiDeviceAddress<McAddress>
     {
         public string DeviceName { get; private set; }
         public byte DeviceCode { get; private set; }
+        public int MaximumDeviceNumber { get; private set; }
         public int DeviceNumber { get; private set; }
         public int BitOffset { get; private set; }
         public bool HasBitOffset { get; private set; }
@@ -45,9 +46,10 @@ namespace IPC.Plc.Communication.MitsubishiMc
         {
             return new McAddress
             {
+                MaximumDeviceNumber = MaximumDeviceNumber,
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + offset,
+                DeviceNumber = checked(DeviceNumber + offset),
                 BitOffset = BitOffset,
                 HasBitOffset = HasBitOffset,
                 IsBitDevice = IsBitDevice,
@@ -60,12 +62,13 @@ namespace IPC.Plc.Communication.MitsubishiMc
             if (IsBitDevice)
                 return AddDeviceOffset(offset);
 
-            int totalBits = BitOffset + offset;
+            int totalBits = checked(BitOffset + offset);
             return new McAddress
             {
+                MaximumDeviceNumber = MaximumDeviceNumber,
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + totalBits / 16,
+                DeviceNumber = checked(DeviceNumber + totalBits / 16),
                 BitOffset = totalBits % 16,
                 HasBitOffset = true,
                 IsBitDevice = false,
@@ -73,13 +76,13 @@ namespace IPC.Plc.Communication.MitsubishiMc
             };
         }
 
-        public static McAddress Parse(string text)
+        public static McAddress Parse(string text, bool ascii = false)
         {
             if (string.IsNullOrWhiteSpace(text))
                 throw new ArgumentException("MC 地址不能为空。", "text");
 
             string address = text.Trim().ToUpperInvariant();
-            Match match = Regex.Match(address, @"^(ZR|[A-Z]+)([0-9A-FX]+)(?:\.(\d+))?$");
+            Match match = Regex.Match(address, @"^(SM|SB|DX|DY|SD|SW|TC|TS|TN|CC|CS|CN|ZR|M|L|F|V|S|X|Y|B|D|W|Z|R)([0-9A-FX]+)(?:\.(\d+))?$");
             if (!match.Success)
                 throw new FormatException("不支持的 MC 地址格式: " + text);
 
@@ -96,6 +99,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
 
             return new McAddress
             {
+                MaximumDeviceNumber = ascii && !device.HexNumber ? 999999 : 0xFFFFFF,
                 DeviceName = device.Name,
                 DeviceCode = device.Code,
                 DeviceNumber = number,

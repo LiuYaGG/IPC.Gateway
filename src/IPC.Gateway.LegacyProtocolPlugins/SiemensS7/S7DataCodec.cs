@@ -183,10 +183,10 @@ namespace IPC.Plc.Communication.SiemensS7
         public static int GetReadByteCount(PlcDataType dataType, int bitOffset, int elementCount)
         {
             if (dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray)
-                return (bitOffset + elementCount + 7) / 8;
+                return checked((int)(((long)bitOffset + elementCount + 7) / 8));
             if (dataType == PlcDataType.String)
                 return GetStringByteCount(elementCount) + 2;
-            return PlcDataTypeHelper.GetElementSize(dataType) * elementCount;
+            return checked(PlcDataTypeHelper.GetElementSize(dataType) * elementCount);
         }
 
         public static void SetBits(byte[] target, int bitOffset, byte[] boolValues, int count)

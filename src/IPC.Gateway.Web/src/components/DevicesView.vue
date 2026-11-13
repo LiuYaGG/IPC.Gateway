@@ -853,7 +853,9 @@ const props = defineProps<{
   stateScope: string
   project: ProjectConfig | null
   runtimeDevices: DeviceRuntimeStatus[]
-  runtimeTags: TagValueSnapshot[]
+  runtimeTags: ReadonlyMap<string, TagValueSnapshot>
+  enabledTagKeys: ReadonlyMap<string, boolean>
+  goodTagsByDevice: ReadonlyMap<string, number>
 }>()
 
 const emit = defineEmits<{
@@ -1078,17 +1080,10 @@ const runtimeMap = computed(() => {
   return map
 })
 
-const runtimeTagMap = computed(() => {
-  const map = new Map<string, TagValueSnapshot>()
-  for (const item of props.runtimeTags ?? []) {
-    map.set(tagIdentityKey(item.channelId, item.deviceId, item.groupId, item.tagId), item)
-  }
-  return map
-})
 const valueDetailsSnapshot = computed(() => {
   const target = valueTarget.value
   return target
-    ? runtimeTagMap.value.get(tagIdentityKey(target.channelId, target.deviceId, target.groupId, target.tag.id))
+    ? runtimeSnapshot(tagIdentityKey(target.channelId, target.deviceId, target.groupId, target.tag.id))
     : undefined
 })
 
@@ -1170,6 +1165,15 @@ const channelColumns = [
   { title: '状态', key: 'status', width: 130 },
   { title: '操作', key: 'actions', width: 90 }
 ]
+const readableTagsByDevice = computed(() => {
+  const totals = new Map<string, number>()
+  for (const device of devices.value) {
+    let total = 0
+    forEachReadableDeviceTag(device, () => { total++ })
+    totals.set(deviceIdentityKey(device.channelId, device.id), total)
+  }
+  return totals
+})
 const workspaceMetrics = computed(() => {
   let readable = 0
   let good = 0
@@ -1767,21 +1771,20 @@ function tagSnapshot(tag: TagConfig) {
   return findTagSnapshot(selectedDevice.value, selectedGroup.value, tag)
 }
 
+function runtimeSnapshot(key: string) {
+  return props.enabledTagKeys.has(key) ? props.runtimeTags.get(key) : undefined
+}
+
 function findTagSnapshot(device: DeviceConfig | undefined, group: GroupConfig | null | undefined, tag: TagConfig) {
-  return runtimeTagMap.value.get(tagIdentityKey(device?.channelId, device?.id, group?.id, tag.id))
+  return runtimeSnapshot(tagIdentityKey(device?.channelId, device?.id, group?.id, tag.id))
 }
 
 function deviceTagHealth(device?: DeviceConfig) {
   if (!device || !device.enabled) return { good: 0, total: 0, rate: 0, type: 'info' as const, label: '-' }
 
-  let good = 0
-  let total = 0
-  forEachReadableDeviceTag(device, (tag, group) => {
-    total += 1
-    const snapshot = findTagSnapshot(device, group, tag)
-    if (normalizeKey(snapshot?.quality) === 'good') good += 1
-  })
-
+  const key = deviceIdentityKey(device.channelId, device.id)
+  const total = readableTagsByDevice.value.get(key) ?? 0
+  const good = props.goodTagsByDevice.get(key) ?? 0
   const rate = total <= 0 ? 0 : Number(((good / total) * 100).toFixed(1))
   return {
     good,
@@ -1843,7 +1846,7 @@ function tagQualityType(tag: TagConfig) {
   if (quality === 'good') return 'success'
   if (quality === 'unknown' || !quality) return 'info'
   if (quality === 'filtered') return 'info'
-  if (quality === 'outofrange' || quality === 'spike') return 'warning'
+  if (quality === 'uncertain' || quality === 'outofrange' || quality === 'spike') return 'warning'
   if (quality.includes('connect')) return 'warning'
   return 'danger'
 }

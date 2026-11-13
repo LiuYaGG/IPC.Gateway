@@ -82,7 +82,8 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
         WriteTagResponse response;
         try
         {
-            response = await Task.Run(() => _gateway.Runtime.WriteTag(new WriteTagRequest
+            cancellationToken.ThrowIfCancellationRequested();
+            response = await _gateway.Runtime.WriteTagAsync(new WriteTagRequest
             {
                 ChannelId = runtimeSnapshot.ChannelId,
                 DeviceId = runtimeSnapshot.DeviceId,
@@ -91,7 +92,7 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
                 DataType = configuredDataType,
                 Value = value ?? string.Empty,
                 ValueText = value?.ToString() ?? string.Empty
-            }), cancellationToken).ConfigureAwait(false);
+            }).ConfigureAwait(false);
         }
         catch
         {

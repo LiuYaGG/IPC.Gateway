@@ -116,6 +116,8 @@ namespace IPC.EdgeGateway
         public int SparkplugDeathCount { get; set; }
         public int SparkplugDataCount { get; set; }
         public int OutboxPendingCount { get; set; }
+        public long AlarmPendingCount { get; set; }
+        public long AlarmOldestPendingAgeSeconds { get; set; }
         public int OutboxEnqueuedCount { get; set; }
         public long OutboxBytes { get; set; }
         public int OutboxExpiredDeletedCount { get; set; }

@@ -146,8 +146,17 @@ namespace IPC.Plc.Communication.Bacnet
                 _driverOptions.MaxBatchObjects,
                 _driverOptions.MaxPayload);
 
-            for (int i = 0; i < chunks.Count; i++)
-                ExecuteBatchChunk(chunks[i], results);
+            var recovery = PlcBatchReadRecovery.Start(this, "BACnet-RPM");
+            try
+            {
+                foreach (var chunk in chunks)
+                    recovery.ReadRange(chunk, 0, chunk.Count, item => item.Request, item => item.Index,
+                        (start, end) => ExecuteBatchChunk(chunk.GetRange(start, end - start), results), results, "RPM");
+            }
+            catch (Exception ex) when (PlcFailureClassifier.IsConnectionFailure(ex))
+            {
+                PlcBatchReadResult.DeferPending(requests, results, ex.Message);
+            }
 
             for (int i = 0; i < requests.Count; i++)
             {
@@ -165,13 +174,24 @@ namespace IPC.Plc.Communication.Bacnet
             BacnetValue value = CreateWriteValue(tagAddress, dataType, valueText);
             bool success;
             lock (_channelLease.SyncRoot)
-                success = _client.WritePropertyRequest(
-                    _address,
-                    tagAddress.ObjectId,
-                    tagAddress.PropertyId,
-                    new[] { value },
-                    0,
-                    (byte)_driverOptions.WritePriority);
+            {
+                if (tagAddress.HasArrayIndex)
+                {
+                    // This library exposes indexed writes through WritePropertyMultiple.
+                    var property = new BacnetPropertyValue
+                    {
+                        property = new BacnetPropertyReference((uint)tagAddress.PropertyId, tagAddress.ArrayIndex),
+                        value = new[] { value },
+                        priority = (byte)_driverOptions.WritePriority
+                    };
+                    success = _client.WritePropertyMultipleRequest(_address, tagAddress.ObjectId, new[] { property });
+                }
+                else
+                {
+                    success = _client.WritePropertyRequest(_address, tagAddress.ObjectId, tagAddress.PropertyId,
+                        new[] { value }, 0, (byte)_driverOptions.WritePriority);
+                }
+            }
             if (!success)
                 throw new TimeoutException("BACnet write property request timed out.");
         }
@@ -259,43 +279,28 @@ namespace IPC.Plc.Communication.Bacnet
 
         private void ExecuteBatchChunk(List<BacnetBatchItem> items, PlcBatchReadResult[] results)
         {
-            if (items == null || items.Count == 0)
+            if (items.Count == 1)
+            {
+                var item = items[0];
+                var request = item.Request;
+                try
+                {
+                    results[item.Index] = PlcBatchReadResult.FromSuccess(request,
+                        Read(request.Address, request.DataType, request.ElementCount, request.ElementOffset));
+                }
+                catch (Exception ex) when (!PlcFailureClassifier.IsConnectionFailure(ex))
+                {
+                    throw new PlcProtocolException(PlcReadFailureScope.Tag, ex.Message, null, ex);
+                }
                 return;
+            }
 
-            try
-            {
-                IList<BacnetReadAccessSpecification> specifications = BuildReadAccessSpecifications(items);
-                IList<BacnetReadAccessResult> response;
-                bool success;
-                lock (_channelLease.SyncRoot)
-                    success = _client.ReadPropertyMultipleRequest(_address, specifications, out response);
-                if (!success)
+            var specifications = BuildReadAccessSpecifications(items);
+            IList<BacnetReadAccessResult> response;
+            lock (_channelLease.SyncRoot)
+                if (!_client.ReadPropertyMultipleRequest(_address, specifications, out response))
                     throw new TimeoutException("BACnet read property multiple request timed out.");
-                ApplyBatchResponse(items, response, results);
-            }
-            catch (Exception ex)
-            {
-                PlcReadFailureScope scope = PlcFailureClassifier.Classify(
-                    ex,
-                    IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
-                if (PlcBatchReadResult.IsConnectionFailureScope(scope))
-                {
-                    for (int i = 0; i < items.Count; i++)
-                        results[items[i].Index] = PlcBatchReadResult.FromFailure(items[i].Request, ex.Message, scope);
-                    return;
-                }
-
-                if (items.Count > 1)
-                {
-                    int middle = items.Count / 2;
-                    ExecuteBatchChunk(items.GetRange(0, middle), results);
-                    ExecuteBatchChunk(items.GetRange(middle, items.Count - middle), results);
-                }
-                else
-                {
-                    RetryBatchItemsIndividually(items, results);
-                }
-            }
+            ApplyBatchResponse(items, response, results);
         }
 
         private static IList<BacnetReadAccessSpecification> BuildReadAccessSpecifications(List<BacnetBatchItem> items)
@@ -372,26 +377,6 @@ namespace IPC.Plc.Communication.Bacnet
                 catch (Exception ex)
                 {
                     results[item.Index] = PlcBatchReadResult.FromFailure(item.Request, ex.Message, PlcReadFailureScope.Tag);
-                }
-            }
-        }
-
-        private void RetryBatchItemsIndividually(List<BacnetBatchItem> items, PlcBatchReadResult[] results)
-        {
-            for (int i = 0; i < items.Count; i++)
-            {
-                BacnetBatchItem item = items[i];
-                try
-                {
-                    PlcReadResult result = Read(item.Request.Address, item.Request.DataType, item.Request.ElementCount, item.Request.ElementOffset);
-                    results[item.Index] = PlcBatchReadResult.FromSuccess(item.Request, result);
-                }
-                catch (Exception ex)
-                {
-                    results[item.Index] = PlcBatchReadResult.FromFailure(
-                        item.Request,
-                        ex.Message,
-                        IsCommunicationException(ex) ? PlcReadFailureScope.Transport : PlcReadFailureScope.Tag);
                 }
             }
         }

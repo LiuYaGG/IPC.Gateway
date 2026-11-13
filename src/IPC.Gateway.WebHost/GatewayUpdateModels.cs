@@ -27,6 +27,7 @@ public sealed class GatewayUpdateMaintenanceOptions
     public string InstallDirectory { get; set; } = string.Empty;
     public int MaxPackageMegabytes { get; set; } = 1024;
     public int KeepRollbackCount { get; set; } = 1;
+    public int ServiceTransitionTimeoutSeconds { get; set; } = 300;
     public bool RequirePackageFileDigests { get; set; } = true;
     public bool RequirePackageSignature { get; set; }
     public string TrustedPackagePublicKeyPath { get; set; } = string.Empty;
@@ -51,6 +52,7 @@ public sealed class GatewayUpdateMaintenanceOptions
             InstallDirectory = section["InstallDirectory"] ?? string.Empty,
             MaxPackageMegabytes = GetInt(section, "MaxPackageMegabytes", defaults.MaxPackageMegabytes),
             KeepRollbackCount = GetInt(section, "KeepRollbackCount", defaults.KeepRollbackCount),
+            ServiceTransitionTimeoutSeconds = Math.Clamp(GetInt(section, "ServiceTransitionTimeoutSeconds", defaults.ServiceTransitionTimeoutSeconds), 1, 86400),
             RequirePackageFileDigests = GetBool(section, "RequirePackageFileDigests", defaults.RequirePackageFileDigests),
             RequirePackageSignature = GetBool(section, "RequirePackageSignature", defaults.RequirePackageSignature),
             TrustedPackagePublicKeyPath = section["TrustedPackagePublicKeyPath"] ?? defaults.TrustedPackagePublicKeyPath,
@@ -157,6 +159,12 @@ public sealed class GatewayPendingUpdateAction
 public sealed class GatewayApplyUpdateRequest
 {
     public string ActionId { get; set; } = string.Empty;
+}
+
+public sealed class GatewayUpdateProgress
+{
+    public string CurrentVersion { get; init; } = string.Empty;
+    public GatewayPendingUpdateAction? PendingAction { get; init; }
 }
 
 public sealed class GatewayUpdateStatus

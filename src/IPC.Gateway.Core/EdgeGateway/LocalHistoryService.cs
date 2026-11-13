@@ -21,6 +21,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using IPC.Gateway.DataProcessing;
@@ -44,6 +45,15 @@ namespace IPC.EdgeGateway
     public sealed class LocalHistoryService : IDisposable
     {
         private readonly object _syncRoot;
+        private static readonly System.Text.Json.JsonSerializerOptions ValueLineJson = new()
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        private CancellationTokenSource _maintenanceCancellation = new();
+        private Task _maintenanceTask = Task.CompletedTask;
+        private bool _maintenanceActive;
+        private bool _maintenanceRequested;
         private readonly IRuntimeService _runtime;
         private readonly LocalHistoryOptions _options;
         private readonly CircuitBreaker _circuitBreaker;
@@ -101,6 +111,11 @@ namespace IPC.EdgeGateway
             {
                 if (_running)
                     return;
+                if (_maintenanceCancellation.IsCancellationRequested)
+                {
+                    _maintenanceCancellation.Dispose();
+                    _maintenanceCancellation = new();
+                }
                 _running = true;
             }
 
@@ -116,11 +131,17 @@ namespace IPC.EdgeGateway
             if (_runtime != null)
                 _runtime.TagValueChanged -= OnTagValueChanged;
 
+            Task maintenance;
             lock (_syncRoot)
+            {
                 _running = false;
+                if (!_maintenanceCancellation.IsCancellationRequested) _maintenanceCancellation.Cancel();
+                maintenance = _maintenanceTask;
+            }
 
             _tagValueWorker.Stop(TimeSpan.FromSeconds(3));
             StopWriter();
+            maintenance.GetAwaiter().GetResult();
         }
 
         public void Dispose()
@@ -129,6 +150,7 @@ namespace IPC.EdgeGateway
                 return;
             _disposed = true;
             Stop();
+            _maintenanceCancellation.Dispose();
         }
 
         public LocalHistoryStats GetStats()
@@ -174,38 +196,55 @@ namespace IPC.EdgeGateway
 
         public IList<LocalHistoryEntry> ReadRecent(string category, int maxRecords)
         {
-            lock (_syncRoot)
+            List<LocalHistoryEntry> entries = new();
+            if (!_circuitBreaker.CanExecute())
+                return entries;
+
+            string prefix = NormalizeCategory(category) + "-";
+            string hot = ResolveDirectory();
+            string cold = ResolveColdDirectory();
+            int limit = LocalHistoryOptions.ClampMaxViewRecords(maxRecords);
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                List<LocalHistoryEntry> entries = new List<LocalHistoryEntry>();
-                if (!_circuitBreaker.CanExecute())
-                    return entries;
-
-                string directory = ResolveDirectory();
-                if (!System.IO.Directory.Exists(directory))
-                    return entries;
-
-                string prefix = NormalizeCategory(category) + "-";
-                List<string> files = new List<string>();
+                entries.Clear();
                 try
                 {
-                    AddHistoryFiles(directory, prefix, files);
-                    string coldDirectory = ResolveColdDirectory();
-                    if (!PathEquals(directory, coldDirectory))
-                        AddHistoryFiles(coldDirectory, prefix, files);
+                    List<string> files = new();
+                    lock (_syncRoot)
+                    {
+                        AddHistoryFiles(hot, prefix, files);
+                        if (!PathEquals(hot, cold))
+                            AddHistoryFiles(cold, prefix, files);
+                    }
                     files.Sort(CompareHistoryFilesDescending);
+                    foreach (string path in files)
+                    {
+                        if (entries.Count >= limit)
+                            break;
+                        try
+                        {
+                            ReadFileRecent(path, entries, limit);
+                            lock (_syncRoot) RecordHistorySuccess();
+                        }
+                        catch (Exception ex) when (ex is not (FileNotFoundException or DirectoryNotFoundException))
+                        {
+                            lock (_syncRoot) RecordHistoryFailure(ex);
+                        }
+                    }
+                    break;
+                }
+                catch (IOException ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    // Rotation, retention and hot-to-cold moves can change the listing.
+                    continue;
                 }
                 catch (Exception ex)
                 {
-                    RecordHistoryFailure(ex);
-                    return entries;
+                    lock (_syncRoot) RecordHistoryFailure(ex);
+                    break;
                 }
-
-                int limit = LocalHistoryOptions.ClampMaxViewRecords(maxRecords);
-                for (int i = 0; i < files.Count && entries.Count < limit; i++)
-                    ReadFileRecent(files[i], entries, limit);
-
-                return entries;
             }
+            return entries;
         }
 
         public void RecordPublish(string source, string topic, int qos, string payload)
@@ -272,40 +311,56 @@ namespace IPC.EdgeGateway
         private static string BuildValueLine(TagValueSnapshot snapshot, EdgeProcessedDataPoint? processed)
         {
             DateTime timestamp = processed == null ? snapshot.Timestamp : processed.Point.Timestamp;
-            string valueText = processed == null ? snapshot.ValueText : processed.Point.ValueText;
-            string rawValueText = processed == null ? snapshot.RawValueText : processed.Point.RawValueText;
+            string valueText = (processed == null ? snapshot.ValueText : processed.Point.ValueText) ?? string.Empty;
+            string rawValueText = (processed == null ? snapshot.RawValueText : processed.Point.RawValueText) ?? string.Empty;
             string quality = processed == null ? snapshot.Quality.ToString() : processed.Point.Quality;
             string unit = processed == null ? snapshot.Unit : processed.Point.Unit;
             string processingType = processed == null ? "raw" : processed.ProcessingType;
             string processingReason = processed == null ? string.Empty : processed.Reason;
-            string originalTimestamp = processed == null || processed.OriginalTimestamp == DateTime.MinValue
-                ? snapshot.Timestamp.ToString("o")
-                : processed.OriginalTimestamp.ToString("o");
+            DateTime originalTimestamp = processed == null || processed.OriginalTimestamp == DateTime.MinValue
+                ? snapshot.Timestamp : processed.OriginalTimestamp;
             string aggregateMethod = processed == null ? string.Empty : processed.AggregateMethod;
             string windowStart = processed == null || processed.WindowStart == DateTime.MinValue ? string.Empty : processed.WindowStart.ToString("o");
             string windowEnd = processed == null || processed.WindowEnd == DateTime.MinValue ? string.Empty : processed.WindowEnd.ToString("o");
             int sampleCount = processed == null ? 0 : processed.SampleCount;
 
-            return "{" +
-                   "\"timestamp\":\"" + JsonEscape(timestamp.ToString("o")) + "\"," +
-                   "\"type\":\"value\"," +
-                   "\"valueText\":\"" + JsonEscape(valueText) + "\"," +
-                   "\"rawValueText\":\"" + JsonEscape(rawValueText) + "\"," +
-                   "\"quality\":\"" + JsonEscape(quality) + "\"," +
-                   "\"edgeProcessingType\":\"" + JsonEscape(processingType) + "\"," +
-                   "\"edgeProcessingReason\":\"" + JsonEscape(processingReason) + "\"," +
-                   "\"edgeOriginalTimestamp\":\"" + JsonEscape(originalTimestamp) + "\"," +
-                   "\"edgeAggregateMethod\":\"" + JsonEscape(aggregateMethod) + "\"," +
-                   "\"edgeSampleCount\":" + sampleCount.ToString(CultureInfo.InvariantCulture) + "," +
-                   "\"edgeWindowStart\":\"" + JsonEscape(windowStart) + "\"," +
-                   "\"edgeWindowEnd\":\"" + JsonEscape(windowEnd) + "\"," +
-                   "\"cleaningApplied\":" + (snapshot.CleaningApplied ? "true" : "false") + "," +
-                   "\"cleaningAction\":\"" + JsonEscape(snapshot.CleaningAction) + "\"," +
-                   "\"cleaningMessage\":\"" + JsonEscape(snapshot.CleaningMessage) + "\"," +
-                   "\"errorMessage\":\"" + JsonEscape(snapshot.ErrorMessage) + "\"," +
-                   BuildSnapshotFields(snapshot, unit) +
-                   "}";
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                timestamp = timestamp.ToString("o"),
+                type = "value",
+                valueText,
+                rawValueText = rawValueText == valueText ? null : rawValueText,
+                quality,
+                channelId = snapshot.ChannelId,
+                channel = snapshot.ChannelName,
+                deviceId = snapshot.DeviceId,
+                device = snapshot.DeviceName,
+                groupId = EmptyToNull(snapshot.GroupId),
+                group = EmptyToNull(snapshot.GroupName),
+                tagId = snapshot.TagId,
+                tag = snapshot.TagName,
+                pointCode = GetPointCode(snapshot),
+                dataType = snapshot.DataType,
+                unit = EmptyToNull(unit),
+                assetPath = EmptyToNull(snapshot.AssetPath),
+                businessType = EmptyToNull(snapshot.BusinessType),
+                source = EmptyToNull(snapshot.Source),
+                errorMessage = EmptyToNull(snapshot.ErrorMessage),
+                cleaningApplied = snapshot.CleaningApplied ? (bool?)true : null,
+                cleaningAction = EmptyToNull(snapshot.CleaningAction),
+                cleaningMessage = EmptyToNull(snapshot.CleaningMessage),
+                edgeProcessingType = processingType == "raw" ? null : processingType,
+                edgeProcessingReason = EmptyToNull(processingReason),
+                edgeOriginalTimestamp = originalTimestamp == timestamp && originalTimestamp.Kind == timestamp.Kind
+                    ? null : originalTimestamp.ToString("o"),
+                edgeAggregateMethod = EmptyToNull(aggregateMethod),
+                edgeSampleCount = sampleCount == 0 ? (int?)null : sampleCount,
+                edgeWindowStart = EmptyToNull(windowStart),
+                edgeWindowEnd = EmptyToNull(windowEnd)
+            }, ValueLineJson);
         }
+
+        private static string? EmptyToNull(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
         private static EdgeDataPoint ToEdgeDataPoint(TagValueSnapshot snapshot)
         {
@@ -352,11 +407,10 @@ namespace IPC.EdgeGateway
             {
                 try
                 {
-                    CleanupCore();
+                    ScheduleMaintenance();
                     string directory = ResolveDirectory();
                     System.IO.Directory.CreateDirectory(directory);
-                    string path = Path.Combine(directory, NormalizeCategory(category) + "-" + DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".jsonl");
-                    AppendTextAsync(path, line + Environment.NewLine).GetAwaiter().GetResult();
+                    AppendCategory(directory, NormalizeCategory(category), line + Environment.NewLine);
                     RecordHistorySuccess();
                 }
                 catch (Exception ex)
@@ -495,7 +549,7 @@ namespace IPC.EdgeGateway
             {
                 try
                 {
-                    CleanupCore();
+                    ScheduleMaintenance();
                     string directory = ResolveDirectory();
                     System.IO.Directory.CreateDirectory(directory);
                     Dictionary<string, StringBuilder> linesByCategory = new Dictionary<string, StringBuilder>(StringComparer.OrdinalIgnoreCase);
@@ -515,8 +569,7 @@ namespace IPC.EdgeGateway
 
                     foreach (KeyValuePair<string, StringBuilder> pair in linesByCategory)
                     {
-                        string path = Path.Combine(directory, pair.Key + "-" + DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".jsonl");
-                        AppendTextAsync(path, pair.Value.ToString()).GetAwaiter().GetResult();
+                        AppendCategory(directory, pair.Key, pair.Value.ToString());
                     }
 
                     RecordHistorySuccess();
@@ -532,21 +585,64 @@ namespace IPC.EdgeGateway
         private void Cleanup()
         {
             lock (_syncRoot)
-                CleanupCore();
+                ScheduleMaintenance();
         }
 
-        private void CleanupCore()
+        private void AppendCategory(string directory, string category, string lines)
         {
-            LocalHistoryStorageOptions storage = LocalHistoryStorageOptions.Normalize(_options.Storage, _options.RetentionDays);
-            if (!storage.AutoCleanupEnabled)
-                return;
-
             DateTime now = DateTime.Now;
-            if (_lastCleanupTime != DateTime.MinValue &&
-                now - _lastCleanupTime < TimeSpan.FromHours(Math.Max(1, storage.CleanupIntervalHours)))
-                return;
+            string name = category + "-" + now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+            string path = Path.Combine(directory, name + ".jsonl");
+            long segmentBytes = _options.Storage.ValueFileSegmentMegabytes * 1024L * 1024L;
+            if (category == "values" && File.Exists(path) && new FileInfo(path).Length >= segmentBytes)
+            {
+                string suffix = now.ToString("HHmmssfffffff", CultureInfo.InvariantCulture);
+                string stem = Path.Combine(directory, name + "-" + suffix);
+                string segment = stem + ".jsonl";
+                for (int i = 1; File.Exists(segment) || File.Exists(segment + ".gz"); i++)
+                    segment = stem + "-" + i.ToString("D4", CultureInfo.InvariantCulture) + ".jsonl";
+                File.Move(path, segment);
+                ScheduleMaintenance(sealedSegment: true);
+            }
+            AppendTextAsync(path, lines).GetAwaiter().GetResult();
+        }
 
-            _lastCleanupTime = now;
+        // Called under _syncRoot. Maintenance never holds this lock while compressing.
+        private void ScheduleMaintenance(bool sealedSegment = false)
+        {
+            LocalHistoryStorageOptions storage = _options.Storage;
+            if (!storage.AutoCleanupEnabled || _maintenanceCancellation.IsCancellationRequested ||
+                (!sealedSegment && DateTime.Now - _lastCleanupTime < TimeSpan.FromHours(storage.CleanupIntervalHours)))
+                return;
+            _lastCleanupTime = DateTime.Now;
+            _maintenanceRequested = true;
+            if (_maintenanceActive) return;
+            _maintenanceActive = true;
+            var token = _maintenanceCancellation.Token;
+            _maintenanceTask = Task.Run(() => RunMaintenance(storage, token));
+        }
+
+        private void RunMaintenance(LocalHistoryStorageOptions storage, CancellationToken token)
+        {
+            while (true)
+            {
+                lock (_syncRoot)
+                {
+                    if (!_maintenanceRequested || token.IsCancellationRequested)
+                    {
+                        _maintenanceActive = false;
+                        return;
+                    }
+                    _maintenanceRequested = false;
+                }
+                try { CleanupCore(storage, token); }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+                catch (Exception ex) { lock (_syncRoot) RecordHistoryDegraded(ex.Message); }
+            }
+        }
+
+        private void CleanupCore(LocalHistoryStorageOptions storage, CancellationToken token)
+        {
             string hotDirectory = ResolveDirectory();
             string coldDirectory = ResolveColdDirectory();
             DateTime today = DateTime.Today;
@@ -554,109 +650,164 @@ namespace IPC.EdgeGateway
             DateTime coldThreshold = today.AddDays(-storage.ColdRetentionDays);
             DateTime compressionThreshold = today.AddDays(-storage.CompressAfterDays);
 
-            CleanupHotDirectory(hotDirectory, coldDirectory, storage, hotThreshold, compressionThreshold);
+            CleanupHotDirectory(hotDirectory, coldDirectory, storage, hotThreshold, compressionThreshold, token);
             if (!PathEquals(hotDirectory, coldDirectory))
-                CleanupColdDirectory(coldDirectory, storage, coldThreshold, compressionThreshold);
+                CleanupColdDirectory(coldDirectory, storage, coldThreshold, compressionThreshold, token);
+            token.ThrowIfCancellationRequested();
             EnforceStorageLimit(hotDirectory, coldDirectory, storage);
         }
 
-        private void CleanupHotDirectory(string hotDirectory, string coldDirectory, LocalHistoryStorageOptions storage, DateTime hotThreshold, DateTime compressionThreshold)
+        private void CleanupHotDirectory(string hotDirectory, string coldDirectory, LocalHistoryStorageOptions storage, DateTime hotThreshold, DateTime compressionThreshold, CancellationToken token)
         {
             List<string> files = GetHistoryFiles(hotDirectory);
             for (int i = 0; i < files.Count; i++)
             {
                 string path = files[i];
+                token.ThrowIfCancellationRequested();
                 try
                 {
+                    if (IsActiveDailyFile(path)) continue;
                     DateTime fileDate = GetHistoryFileDate(path);
                     if (storage.TieringEnabled &&
                         string.Equals(storage.RetentionPolicy, "MoveToColdThenDelete", StringComparison.OrdinalIgnoreCase) &&
                         fileDate < hotThreshold)
                     {
-                        MoveToCold(path, coldDirectory);
+                        MoveToCold(path, coldDirectory, token);
                         continue;
                     }
 
                     if (string.Equals(storage.RetentionPolicy, "DeleteOnly", StringComparison.OrdinalIgnoreCase) &&
                         fileDate < hotThreshold)
                     {
-                        File.Delete(path);
+                        lock (_syncRoot) File.Delete(path);
                         continue;
                     }
 
-                    if (storage.CompressionEnabled && storage.CompressHotFiles && fileDate < compressionThreshold)
-                        CompressFile(path);
+                    if (storage.CompressionEnabled && storage.CompressHotFiles && fileDate <= compressionThreshold)
+                        CompressFile(path, token);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!token.IsCancellationRequested)
                 {
-                    RecordHistoryFailure(ex);
+                    lock (_syncRoot) RecordHistoryDegraded(ex.Message);
                 }
             }
         }
 
-        private void CleanupColdDirectory(string coldDirectory, LocalHistoryStorageOptions storage, DateTime coldThreshold, DateTime compressionThreshold)
+        private void CleanupColdDirectory(string coldDirectory, LocalHistoryStorageOptions storage, DateTime coldThreshold, DateTime compressionThreshold, CancellationToken token)
         {
             List<string> files = GetHistoryFiles(coldDirectory);
             for (int i = 0; i < files.Count; i++)
             {
                 string path = files[i];
+                token.ThrowIfCancellationRequested();
                 try
                 {
                     DateTime fileDate = GetHistoryFileDate(path);
                     if (fileDate < coldThreshold)
                     {
-                        File.Delete(path);
+                        lock (_syncRoot) File.Delete(path);
                         continue;
                     }
 
-                    if (storage.CompressionEnabled && storage.CompressColdFiles && fileDate < compressionThreshold)
-                        CompressFile(path);
+                    if (storage.CompressionEnabled && storage.CompressColdFiles && fileDate <= compressionThreshold)
+                        CompressFile(path, token);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!token.IsCancellationRequested)
                 {
-                    RecordHistoryFailure(ex);
+                    lock (_syncRoot) RecordHistoryDegraded(ex.Message);
                 }
             }
         }
 
-        private void MoveToCold(string path, string coldDirectory)
+        private static bool IsActiveDailyFile(string path)
         {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                return;
-
-            System.IO.Directory.CreateDirectory(coldDirectory);
-            string target = Path.Combine(coldDirectory, Path.GetFileName(path));
-            if (PathEquals(path, target))
-                return;
-            if (File.Exists(target))
-            {
-                File.Delete(path);
-                return;
-            }
-
-            File.Move(path, target);
+            string name = Path.GetFileName(path);
+            string day = DateTime.Today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+            return name == "values-" + day + ".jsonl" || name == "publishes-" + day + ".jsonl" ||
+                name == "alarms-" + day + ".jsonl";
         }
 
-        private void CompressFile(string path)
+        private void MoveToCold(string path, string coldDirectory, CancellationToken token)
         {
-            if (string.IsNullOrWhiteSpace(path) ||
-                !File.Exists(path) ||
-                path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-                return;
+            Directory.CreateDirectory(coldDirectory);
+            string target = Path.Combine(coldDirectory, Path.GetFileName(path));
+            if (PathEquals(path, target)) return;
+            if (RemoveArchivedDuplicate(path, target, compressed: false, token)) return;
 
-            string target = path + ".gz";
-            if (File.Exists(target))
+            if (string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(target), StringComparison.OrdinalIgnoreCase))
             {
-                File.Delete(path);
-                return;
+                lock (_syncRoot) File.Move(path, target);
             }
+            else
+                ArchiveFile(path, target, compress: false, token);
+        }
 
+        private void CompressFile(string path, CancellationToken token)
+        {
+            if (path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)) return;
+            ArchiveFile(path, path + ".gz", compress: true, token);
+        }
+
+        private void ArchiveFile(string path, string target, bool compress, CancellationToken token)
+        {
+            // Never discard the original just because a same-name archive already exists.
+            if (RemoveArchivedDuplicate(path, target, compress, token)) return;
+            string temporary = target + ".inprogress";
             using (FileStream source = File.OpenRead(path))
-            using (FileStream destination = File.Create(target))
-            using (GZipStream gzip = new GZipStream(destination, CompressionLevel.Optimal))
-                source.CopyTo(gzip);
+            {
+                using FileStream destination = new(temporary, FileMode.Create, FileAccess.Write, FileShare.None);
+                try
+                {
+                    if (compress)
+                    {
+                        using (var gzip = new GZipStream(destination, CompressionLevel.Fastest, leaveOpen: true))
+                            source.CopyToAsync(gzip, 81920, token).GetAwaiter().GetResult();
+                    }
+                    else
+                        source.CopyToAsync(destination, 81920, token).GetAwaiter().GetResult();
+                    destination.Flush(flushToDisk: true);
+                }
+                catch
+                {
+                    destination.Dispose();
+                    File.Delete(temporary);
+                    throw;
+                }
+            }
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                lock (_syncRoot)
+                {
+                    File.Move(temporary, target);
+                    File.Delete(path);
+                }
+            }
+            finally { File.Delete(temporary); }
+        }
 
-            File.Delete(path);
+        private bool RemoveArchivedDuplicate(string path, string target, bool compressed, CancellationToken token)
+        {
+            if (!File.Exists(target)) return false;
+            // A process may have stopped after publishing the archive and before unlinking the source.
+            // Old installations may instead have left a truncated archive under the final name.
+            using (Stream source = File.OpenRead(path))
+            using (Stream archivedFile = File.OpenRead(target))
+            using (Stream archived = compressed ? new GZipStream(archivedFile, CompressionMode.Decompress) : archivedFile)
+            {
+                byte[] expected = new byte[81920], actual = new byte[expected.Length];
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    int count = source.Read(expected);
+                    if (count == 0 && archived.ReadByte() == -1) break;
+                    if (count == 0 || archived.ReadAtLeast(actual.AsSpan(0, count), count, throwOnEndOfStream: false) != count ||
+                        !expected.AsSpan(0, count).SequenceEqual(actual.AsSpan(0, count)))
+                        throw new IOException("历史归档内容不一致，已保留两个文件：" + target);
+                }
+            }
+            lock (_syncRoot) File.Delete(path);
+            return true;
         }
 
         private void EnforceStorageLimit(string hotDirectory, string coldDirectory, LocalHistoryStorageOptions storage)
@@ -679,61 +830,74 @@ namespace IPC.EdgeGateway
             files.Sort(CompareHistoryFilesAscending);
             for (int i = 0; i < files.Count && totalBytes > limitBytes; i++)
             {
+                if (IsActiveDailyFile(files[i]) && PathEquals(Path.GetDirectoryName(files[i])!, hotDirectory))
+                    continue;
                 try
                 {
                     long size = GetFileSize(files[i]);
-                    File.Delete(files[i]);
+                    lock (_syncRoot) File.Delete(files[i]);
                     totalBytes -= size;
                 }
                 catch (Exception ex)
                 {
-                    RecordHistoryFailure(ex);
+                    lock (_syncRoot) RecordHistoryDegraded(ex.Message);
                 }
             }
         }
 
-        private void ReadFileRecent(string path, List<LocalHistoryEntry> entries, int limit)
+        private static void ReadFileRecent(string path, List<LocalHistoryEntry> entries, int limit)
         {
-            string[] lines;
-            try
+            int remaining = limit - entries.Count;
+            using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            bool compressed = path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+            if (!compressed) SeekToRecentRecords(file, remaining);
+            using GZipStream? gzip = compressed ? new(file, CompressionMode.Decompress, leaveOpen: true) : null;
+            using StreamReader reader = new((Stream?)gzip ?? file, Encoding.UTF8);
+            Queue<string> tail = new();
+            while (reader.ReadLine() is string line)
             {
-                lines = ReadAllHistoryLines(path);
-                RecordHistorySuccess();
+                if (!line.AsSpan().TrimEnd().EndsWith("}", StringComparison.Ordinal))
+                    continue;
+                if (tail.Count == remaining) tail.Dequeue();
+                tail.Enqueue(line);
+                if (!compressed && tail.Count == remaining) break;
             }
-            catch (Exception ex)
-            {
-                RecordHistoryFailure(ex);
-                return;
-            }
-
-            for (int i = lines.Length - 1; i >= 0 && entries.Count < limit; i--)
-            {
-                if (!string.IsNullOrWhiteSpace(lines[i]))
-                    entries.Add(ParseEntry(lines[i]));
-            }
+            string[] lines = tail.ToArray();
+            for (int i = lines.Length - 1; i >= 0; i--)
+                entries.Add(ParseEntry(lines[i]));
         }
 
         private static LocalHistoryEntry ParseEntry(string json)
         {
-            string type = ExtractJsonValue(json, "type");
+            JsonDocument? parsed;
+            try { parsed = JsonDocument.Parse(json); }
+            catch (JsonException) { parsed = null; } // Legacy writers could leave unescaped control characters.
+            using var document = parsed;
+            string Field(string key)
+            {
+                if (document == null) return ExtractJsonValue(json, key);
+                return document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty(key, out var field) ? field.ToString() : string.Empty;
+            }
+            string type = Field("type");
             DateTime timestamp;
-            if (!DateTime.TryParse(ExtractJsonValue(json, "timestamp"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out timestamp))
+            if (!DateTime.TryParse(Field("timestamp"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out timestamp))
                 timestamp = DateTime.MinValue;
 
-            string source = ExtractJsonValue(json, "source");
-            string topic = ExtractJsonValue(json, "topic");
-            string pointCode = ExtractJsonValue(json, "pointCode");
-            string channelId = ExtractJsonValue(json, "channelId");
-            string channel = ExtractJsonValue(json, "channel");
-            string deviceId = ExtractJsonValue(json, "deviceId");
-            string device = ExtractJsonValue(json, "device");
-            string groupId = ExtractJsonValue(json, "groupId");
-            string group = ExtractJsonValue(json, "group");
-            string tagId = ExtractJsonValue(json, "tagId");
-            string tag = ExtractJsonValue(json, "tag");
-            string valueText = ExtractJsonValue(json, "valueText");
-            string message = ExtractJsonValue(json, "message");
-            string quality = ExtractJsonValue(json, "quality");
+            string source = Field("source");
+            string topic = Field("topic");
+            string pointCode = Field("pointCode");
+            string channelId = Field("channelId");
+            string channel = Field("channel");
+            string deviceId = Field("deviceId");
+            string device = Field("device");
+            string groupId = Field("groupId");
+            string group = Field("group");
+            string tagId = Field("tagId");
+            string tag = Field("tag");
+            string valueText = Field("valueText");
+            string message = Field("message");
+            string quality = Field("quality");
 
             string summary;
             if (type == "publish")
@@ -807,21 +971,36 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private static string[] ReadAllHistoryLines(string path)
+        private static void SeekToRecentRecords(FileStream file, int count)
         {
-            if (!path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-                return File.ReadAllLines(path, Encoding.UTF8);
-
-            using (FileStream file = File.OpenRead(path))
-            using (GZipStream gzip = new GZipStream(file, CompressionMode.Decompress))
-            using (StreamReader reader = new StreamReader(gzip, Encoding.UTF8))
+            // Newlines and the closing JSON brace are single bytes in UTF-8. Seek to a
+            // whole line before decoding so that multibyte characters survive block boundaries.
+            byte[] block = new byte[32 * 1024];
+            long offset = file.Length;
+            byte lastNonWhitespace = 0;
+            while (offset > 0)
             {
-                List<string> lines = new List<string>();
-                string? line;
-                while ((line = reader.ReadLine()) != null)
-                    lines.Add(line);
-                return lines.ToArray();
+                int length = (int)Math.Min(offset, block.Length);
+                offset -= length;
+                file.Position = offset;
+                file.ReadExactly(block.AsSpan(0, length));
+                for (int i = length - 1; i >= 0; i--)
+                {
+                    byte b = block[i];
+                    if (b == '\n')
+                    {
+                        if (lastNonWhitespace == '}' && --count == 0)
+                        {
+                            file.Position = offset + i + 1;
+                            return;
+                        }
+                        lastNonWhitespace = 0;
+                    }
+                    else if (lastNonWhitespace == 0 && b != '\r' && b != '\t' && b != ' ')
+                        lastNonWhitespace = b;
+                }
             }
+            file.Position = 0;
         }
 
         private static async Task AppendTextAsync(string path, string text)
@@ -844,52 +1023,75 @@ namespace IPC.EdgeGateway
             if (string.IsNullOrWhiteSpace(directory) || !System.IO.Directory.Exists(directory))
                 return;
 
-            string normalizedPrefix = prefix ?? string.Empty;
-            string[] jsonl = System.IO.Directory.GetFiles(directory, normalizedPrefix + "*.jsonl", SearchOption.TopDirectoryOnly);
-            string[] gzip = System.IO.Directory.GetFiles(directory, normalizedPrefix + "*.jsonl.gz", SearchOption.TopDirectoryOnly);
-            for (int i = 0; i < jsonl.Length; i++)
-                files.Add(jsonl[i]);
-            for (int i = 0; i < gzip.Length; i++)
-                files.Add(gzip[i]);
+            foreach (string path in Directory.EnumerateFiles(directory, prefix + "*.jsonl*", SearchOption.TopDirectoryOnly))
+            {
+                if (TryGetHistoryFileDate(path, out _))
+                    files.Add(path);
+            }
         }
 
         private static int CompareHistoryFilesDescending(string left, string right)
         {
-            int dateCompare = GetHistoryFileDate(right).CompareTo(GetHistoryFileDate(left));
-            return dateCompare != 0 ? dateCompare : string.Compare(right, left, StringComparison.OrdinalIgnoreCase);
+            return CompareHistoryFilesAscending(right, left);
         }
 
         private static int CompareHistoryFilesAscending(string left, string right)
         {
             int dateCompare = GetHistoryFileDate(left).CompareTo(GetHistoryFileDate(right));
-            return dateCompare != 0 ? dateCompare : string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+            if (dateCompare != 0)
+                return dateCompare;
+            var a = HistorySegmentSuffix(left);
+            var b = HistorySegmentSuffix(right);
+            if (a.IsEmpty != b.IsEmpty)
+                return a.IsEmpty ? 1 : -1; // The active file follows every sealed segment of the day.
+            return a.CompareTo(b, StringComparison.Ordinal);
+        }
+
+        private static ReadOnlySpan<char> HistorySegmentSuffix(string path)
+        {
+            var name = Path.GetFileName(path.AsSpan());
+            int secondDash = name.IndexOf('-') + 9;
+            int extension = name.IndexOf('.');
+            return extension > secondDash && name[secondDash] == '-'
+                ? name[(secondDash + 1)..extension] : ReadOnlySpan<char>.Empty;
         }
 
         private static DateTime GetHistoryFileDate(string path)
         {
-            string name = Path.GetFileName(path) ?? string.Empty;
-            if (name.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 3);
-            if (name.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 6);
+            TryGetHistoryFileDate(path, out DateTime timestamp);
+            return timestamp.Date;
+        }
 
-            int dash = name.LastIndexOf('-');
-            if (dash >= 0 && dash + 1 < name.Length)
-            {
-                string dateText = name.Substring(dash + 1);
-                DateTime parsed;
-                if (DateTime.TryParseExact(dateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
-                    return parsed.Date;
-            }
+        // Hot and cold directories can contain user files. Manage only names produced by AppendCategory.
+        private static bool TryGetHistoryFileDate(string path, out DateTime timestamp)
+        {
+            timestamp = default;
+            ReadOnlySpan<char> name = Path.GetFileName(path.AsSpan());
+            if (name.EndsWith(".gz", StringComparison.Ordinal))
+                name = name[..^3];
+            if (!name.EndsWith(".jsonl", StringComparison.Ordinal))
+                return false;
+            name = name[..^6];
+            int dash = name.IndexOf('-');
+            if (dash < 0 || name[..dash] is not ("values" or "alarms" or "publishes"))
+                return false;
 
-            try
+            var stamp = name[(dash + 1)..];
+            if (stamp.Length == 8)
+                return DateTime.TryParseExact(stamp, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out timestamp);
+            const int segmentStampLength = 22; // yyyyMMdd-HHmmssfffffff
+            if (name[..dash] is not "values" || stamp.Length < segmentStampLength)
+                return false;
+            if (stamp.Length > segmentStampLength)
             {
-                return File.GetLastWriteTime(path).Date;
+                if (stamp[segmentStampLength] != '-') return false;
+                var sequence = stamp[(segmentStampLength + 1)..];
+                if (sequence.Length < 4 || (sequence.Length > 4 && sequence[0] == '0') ||
+                    !int.TryParse(sequence, NumberStyles.None, CultureInfo.InvariantCulture, out int number) || number <= 0)
+                    return false;
+                stamp = stamp[..segmentStampLength];
             }
-            catch
-            {
-                return DateTime.MinValue;
-            }
+            return DateTime.TryParseExact(stamp, "yyyyMMdd-HHmmssfffffff", CultureInfo.InvariantCulture, DateTimeStyles.None, out timestamp);
         }
 
         private static long GetFileSize(string path)

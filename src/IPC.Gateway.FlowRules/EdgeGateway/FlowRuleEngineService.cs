@@ -30,6 +30,7 @@ namespace IPC.EdgeGateway
         private readonly IRuntimeService _runtime;
         private readonly ProjectConfig _projectConfig;
         private readonly Func<string, string, int, bool> _mqttPublisher;
+        private readonly Action<GatewayAlarmRecord, bool>? _recordAlarm;
         private readonly MqttGatewayOptions _gatewayOptions;
         private readonly CircuitBreakerOptions _circuitBreakerOptions;
         private readonly IModelInferenceService _modelInference;
@@ -55,11 +56,13 @@ namespace IPC.EdgeGateway
             MqttGatewayOptions gatewayOptions,
             CircuitBreakerOptions circuitBreakerOptions,
             IModelInferenceService? modelInference = null,
-            IValueTransformScriptRuntime? valueTransformScripts = null)
+            IValueTransformScriptRuntime? valueTransformScripts = null,
+            Action<GatewayAlarmRecord, bool>? recordAlarm = null)
         {
             _runtime = runtime;
             _projectConfig = projectConfig;
             _mqttPublisher = mqttPublisher;
+            _recordAlarm = recordAlarm;
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
             _circuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
@@ -170,7 +173,8 @@ namespace IPC.EdgeGateway
                 _gatewayOptions,
                 _circuitBreakerOptions,
                 _modelInference,
-                _valueTransformScripts);
+                _valueTransformScripts,
+                _recordAlarm);
         }
 
         private void ReplaceInnerEngine()

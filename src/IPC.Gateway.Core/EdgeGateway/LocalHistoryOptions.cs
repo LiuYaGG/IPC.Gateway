@@ -103,6 +103,8 @@ namespace IPC.EdgeGateway
 
     public sealed class LocalHistoryStorageOptions
     {
+        public const int DefaultValueFileSegmentMegabytes = 64;
+
         public LocalHistoryStorageOptions()
         {
             TieringEnabled = false;
@@ -110,10 +112,10 @@ namespace IPC.EdgeGateway
             RetentionPolicy = "DeleteOnly";
             HotRetentionDays = 0;
             ColdRetentionDays = 90;
-            CompressionEnabled = false;
-            CompressHotFiles = false;
+            CompressionEnabled = true;
+            CompressHotFiles = true;
             CompressColdFiles = true;
-            CompressAfterDays = 3;
+            CompressAfterDays = 0;
             AutoCleanupEnabled = true;
             CleanupIntervalHours = 24;
             MaxStorageMegabytes = 0;
@@ -131,6 +133,7 @@ namespace IPC.EdgeGateway
         public bool AutoCleanupEnabled { get; set; }
         public int CleanupIntervalHours { get; set; }
         public int MaxStorageMegabytes { get; set; }
+        public int ValueFileSegmentMegabytes { get; set; } = DefaultValueFileSegmentMegabytes;
 
         public static LocalHistoryStorageOptions Normalize(LocalHistoryStorageOptions? options, int retentionDays)
         {
@@ -154,7 +157,10 @@ namespace IPC.EdgeGateway
                 CompressAfterDays = Clamp(source.CompressAfterDays, 0, 3650),
                 AutoCleanupEnabled = source.AutoCleanupEnabled,
                 CleanupIntervalHours = Clamp(source.CleanupIntervalHours, 1, 720),
-                MaxStorageMegabytes = Clamp(source.MaxStorageMegabytes, 0, 1048576)
+                MaxStorageMegabytes = Clamp(source.MaxStorageMegabytes, 0, 1048576),
+                // Older Protobuf backups omit this field and deserialize it as zero.
+                ValueFileSegmentMegabytes = source.ValueFileSegmentMegabytes <= 0
+                    ? DefaultValueFileSegmentMegabytes : Math.Min(source.ValueFileSegmentMegabytes, 1048576)
             };
         }
 

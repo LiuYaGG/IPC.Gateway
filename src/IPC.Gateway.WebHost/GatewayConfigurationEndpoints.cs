@@ -35,7 +35,9 @@ public static class GatewayConfigurationEndpoints
         RouteGroupBuilder group = app.MapGroup("/api/config");
 
         group.MapGet("/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
-            ExecuteReadAuthorized(user, CanViewRuntimeStatus, "当前用户没有查看运行状态权限。", () => gateway.GetStatus()));
+            ExecuteReadAuthorized(user, CanViewRuntimeStatus, "当前用户没有查看运行状态权限。", () =>
+                GatewayConfigurationSecurity.FilterStatus(GatewayConfigurationSecurity.CanViewRuntimeOverview(user)
+                    ? gateway.GetStatus() : gateway.GetStatusSummary(), user)));
 
         group.MapGet("/status/events", StreamRuntimeEvents);
 
@@ -208,7 +210,7 @@ public static class GatewayConfigurationEndpoints
                 GatewayConfigurationSecurity.SanitizeFlowRules(gateway.GetFlowRules())));
 
         group.MapGet("/flow-rules/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
-            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看规则引擎状态权限。", () => gateway.GetStatus().FlowRuleEngine));
+            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewFlowRules, "当前用户没有查看规则引擎状态权限。", () => gateway.GetStatusSummary().FlowRuleEngine));
 
         group.MapPost("/flow-rules", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, SaveFlowRuleDefinitionCommand command) =>
             await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanCreateFlowRule, "当前用户没有新增规则引擎权限。", () => gateway.AddFlowRuleAsync(command)));
@@ -244,6 +246,22 @@ public static class GatewayConfigurationEndpoints
         group.MapGet("/history/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
             ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewHistory, "当前用户没有查看历史库状态权限。", () => gateway.GetHistoryStatus()));
 
+        group.MapGet("/history/alarms", (ClaimsPrincipal user, GatewayCoreService gateway, int? page, int? pageSize) =>
+            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewHistory, "当前用户没有查看报警记录权限。", () =>
+            {
+                var records = gateway.AlarmJournal.ReadPage(Math.Max(page ?? 1, 1), Math.Clamp(pageSize ?? 20, 1, 500));
+                return new
+                {
+                    records.Total,
+                    Items = records.Items.Select(record => new
+                    {
+                        record.EventId, record.Timestamp, record.ChannelName, record.DeviceName, record.GroupName,
+                        record.TagName, record.TagId, record.Source, record.RuleName, record.EventType, record.PreviousState, record.State, record.Value,
+                        record.Threshold, record.Message, record.DeliveryStatus
+                    })
+                };
+            }));
+
         group.MapPut("/history", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, SaveHistoryConfigurationCommand command) =>
             await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditHistory, "当前用户没有保存历史库配置权限。", () => gateway.UpdateHistoryOptionsAsync(command)));
 
@@ -262,9 +280,13 @@ public static class GatewayConfigurationEndpoints
         ClaimsPrincipal user,
         HttpContext context,
         IGatewayApplicationService gateway,
-        GatewayRuntimeEventHub events)
+        GatewayRuntimeEventHub events,
+        GatewayAuthService auth,
+        GatewayApiTokenService apiTokens,
+        ILogger<GatewayRuntimeStreamAccess> logger)
     {
-        if (!CanViewRuntimeStatus(user))
+        await using var access = new GatewayRuntimeStreamAccess(context, auth, apiTokens, logger);
+        if (!CanViewRuntimeStatus(user) || !await access.StartAsync())
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(ApiResult.Fail("Forbidden."));
@@ -275,13 +297,13 @@ public static class GatewayConfigurationEndpoints
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
         context.Response.Headers["X-Accel-Buffering"] = "no";
-        await context.Response.StartAsync(context.RequestAborted);
 
         long lastEventId = ReadLastEventId(context.Request);
-        long snapshotSequence = events.CurrentSequence;
-        using GatewayRuntimeEventSubscription subscription = events.SubscribeLatest(snapshotSequence);
+        using GatewayRuntimeEventSubscription subscription = events.SubscribeLatest(out long snapshotSequence,
+            GatewayConfigurationSecurity.CanViewRuntimeOverview(user));
         try
         {
+            await context.Response.StartAsync(access.Token);
             await WriteRuntimeEvent(
                 context.Response,
                 events.Create("hello", new
@@ -290,29 +312,32 @@ public static class GatewayConfigurationEndpoints
                     lastEventId,
                     snapshotSequence
                 }, snapshotSequence),
-                context.RequestAborted);
-            await WriteRuntimeSnapshotEvents(context.Response, events, gateway, snapshotSequence, context.RequestAborted);
+                access.Token);
+            await WriteRuntimeSnapshotEvents(context.Response, events, gateway, user, snapshotSequence, access.Token);
 
-            Task<bool>? waitForEvent = null;
-            while (!context.RequestAborted.IsCancellationRequested)
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+            Task<bool>? waitForEvent = null, heartbeat = null;
+            while (!access.Token.IsCancellationRequested)
             {
-                waitForEvent ??= subscription.Reader.WaitToReadAsync(context.RequestAborted).AsTask();
-                Task heartbeat = Task.Delay(TimeSpan.FromSeconds(15), context.RequestAborted);
-                Task completed = await Task.WhenAny(waitForEvent, heartbeat);
-
-                if (completed == heartbeat)
+                waitForEvent ??= subscription.Reader.WaitToReadAsync(access.Token).AsTask();
+                heartbeat ??= timer.WaitForNextTickAsync(access.Token).AsTask();
+                if (await Task.WhenAny(waitForEvent, heartbeat) == heartbeat)
                 {
-                    await WriteRuntimeEvent(context.Response, events.Create("heartbeat", new { subscribers = events.SubscriberCount }), context.RequestAborted);
+                    if (!await heartbeat) break;
+                    heartbeat = null;
+                    await WriteRuntimeEvent(context.Response, events.Create("heartbeat", null, events.CurrentSequence), access.Token);
                     continue;
                 }
 
-                if (!await waitForEvent)
-                    break;
+                if (!await waitForEvent) break;
                 waitForEvent = null;
-
                 while (subscription.Reader.TryRead(out _))
                     foreach (var envelope in subscription.DrainPendingEvents())
-                        await WriteRuntimeEvent(context.Response, envelope, context.RequestAborted);
+                    {
+                        var permitted = GatewayConfigurationSecurity.FilterRuntimeEvent(envelope, user);
+                        if (permitted != null)
+                            await WriteRuntimeEvent(context.Response, permitted, access.Token);
+                    }
             }
         }
         catch (OperationCanceledException)
@@ -325,41 +350,40 @@ public static class GatewayConfigurationEndpoints
         HttpResponse response,
         GatewayRuntimeEventHub events,
         IGatewayApplicationService gateway,
+        ClaimsPrincipal user,
         long snapshotSequence,
         CancellationToken cancellationToken)
     {
-        GatewayRuntimeStatusDto status = gateway.GetStatus();
-        if (status.Devices.Count > 0)
+        GatewayRuntimeStatusDto status = GatewayConfigurationSecurity.FilterStatus(
+            GatewayConfigurationSecurity.CanViewRuntimeOverview(user)
+                ? gateway.GetRuntimeStreamSnapshot() : gateway.GetStatusSummary(), user);
+        var tags = status.Tags;
+        var devices = status.Devices;
+        await WriteRuntimeEvent(response, events.Create("snapshot-start", new { status.ProjectRevision }, snapshotSequence), cancellationToken);
+        // This DTO belongs to this request. The summary and detail pages all
+        // describe the same capture and share a watermark, including empty captures.
+        status.Tags = [];
+        status.Devices = [];
+        await WriteRuntimeEvent(response, events.Create("status", new GatewayRuntimeStatusPatchEvent { Status = status }, snapshotSequence), cancellationToken);
+        if (devices.Count > 0)
         {
-            await WriteRuntimeEvent(
-                response,
-                events.Create("devices", new GatewayRuntimeDevicesChangedEvent
-                {
-                    Devices = status.Devices,
-                    RemovedDeviceKeys = new List<string>()
-                }, snapshotSequence),
-                cancellationToken);
+            await WriteRuntimeEvent(response, events.Create("devices", new GatewayRuntimeDevicesChangedEvent
+            {
+                Devices = devices
+            }, snapshotSequence), cancellationToken);
         }
-
-        if (status.Tags.Count == 0)
-            return;
-
-        for (int offset = 0; offset < status.Tags.Count; offset += RuntimeSnapshotTagBatchSize)
+        for (int offset = 0; offset < tags.Count; offset += RuntimeSnapshotTagBatchSize)
         {
-            List<TagValueSnapshotDto> tags = new List<TagValueSnapshotDto>();
-            int count = Math.Min(RuntimeSnapshotTagBatchSize, status.Tags.Count - offset);
-            for (int i = 0; i < count; i++)
-                tags.Add(status.Tags[offset + i]);
-
-            await WriteRuntimeEvent(
-                response,
-                events.Create("tags", new GatewayRuntimeTagsChangedEvent
-                {
-                    Tags = tags,
-                    PendingCount = Math.Max(0, status.Tags.Count - offset - count)
-                }, snapshotSequence),
-                cancellationToken);
+            int count = Math.Min(RuntimeSnapshotTagBatchSize, tags.Count - offset);
+            var page = new List<TagValueSnapshotDto>(count);
+            for (int i = 0; i < count; i++) page.Add(tags[offset + i]);
+            await WriteRuntimeEvent(response, events.Create("tags", new GatewayRuntimeTagsChangedEvent
+            {
+                Tags = page,
+                PendingCount = tags.Count - offset - count
+            }, snapshotSequence), cancellationToken);
         }
+        await WriteRuntimeEvent(response, events.Create("snapshot-end", new { status.ProjectRevision }, snapshotSequence), cancellationToken);
     }
 
     private static long ReadLastEventId(HttpRequest request)
@@ -395,6 +419,7 @@ public static class GatewayConfigurationEndpoints
     {
         JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
         options.Converters.Add(new JsonStringEnumConverter());
+        GatewayTagJson.Configure(options);
         return options;
     }
 

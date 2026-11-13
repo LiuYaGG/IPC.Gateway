@@ -17,6 +17,7 @@
 //----------------------------------------------------------------*/
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using IPC.Runtime.Api;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Values;
@@ -36,6 +37,8 @@ namespace IPC.Runtime.Engine
     public interface IRuntimeService : IDisposable
     {
         event EventHandler<TagValueChangedEventArgs>? TagValueChanged;
+        // Diagnostics-only changes do not represent process value or quality transitions.
+        event EventHandler<TagValueChangedEventArgs>? TagDiagnosticsChanged { add { } remove { } }
 
         bool IsRunning { get; }
         int MaxConcurrentDevicePolls { get; }
@@ -60,5 +63,6 @@ namespace IPC.Runtime.Engine
         ReadTagsResponse ReadTagByDeviceCached(string channelId, string deviceId, string tagId);
         ReadTagsResponse ReadGroupCached(string channelId, string deviceId, string groupId);
         WriteTagResponse WriteTag(WriteTagRequest request);
+        Task<WriteTagResponse> WriteTagAsync(WriteTagRequest request) => Task.FromResult(WriteTag(request));
     }
 }

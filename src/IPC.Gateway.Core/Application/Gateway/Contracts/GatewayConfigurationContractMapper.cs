@@ -48,6 +48,7 @@ public static class GatewayConfigurationContractMapper
         {
             IsRunning = status.IsRunning,
             ProjectId = status.ProjectId,
+            ProjectRevision = status.ProjectRevision,
             ProjectName = status.ProjectName,
             ProjectPath = status.ProjectPath,
             ConfigurationStore = status.ConfigurationStore,
@@ -453,6 +454,7 @@ public static class GatewayConfigurationContractMapper
             ExecuteOnClear = action.ExecuteOnClear,
             TopicTemplate = action.TopicTemplate,
             Qos = action.Qos,
+            AlarmMessage = action.AlarmMessage,
             ActiveMessage = action.ActiveMessage,
             ClearMessage = action.ClearMessage,
             EmailSmtpHost = action.EmailSmtpHost,
@@ -559,6 +561,7 @@ public static class GatewayConfigurationContractMapper
             LogicalOperator = node.LogicalOperator,
             DurationSeconds = node.DurationSeconds,
             PublishToMqtt = node.PublishToMqtt,
+            AlarmMessage = node.AlarmMessage,
             PublishOnClear = node.PublishOnClear,
             TopicTemplate = node.TopicTemplate,
             PublishQos = node.PublishQos,
@@ -738,6 +741,7 @@ public static class GatewayConfigurationContractMapper
             PublishEnabled = options.PublishEnabled,
             PublishSelectedTagsOnly = options.PublishSelectedTagsOnly,
             PublishChangedOnly = options.PublishChangedOnly,
+            CoalescePendingTelemetry = options.CoalescePendingTelemetry,
             PublishUnchangedHeartbeatSeconds = options.PublishUnchangedHeartbeatSeconds,
             PublishTopicTemplate = options.PublishTopicTemplate,
             PublishQos = options.PublishQos,
@@ -859,7 +863,8 @@ public static class GatewayConfigurationContractMapper
             CompressAfterDays = normalized.CompressAfterDays,
             AutoCleanupEnabled = normalized.AutoCleanupEnabled,
             CleanupIntervalHours = normalized.CleanupIntervalHours,
-            MaxStorageMegabytes = normalized.MaxStorageMegabytes
+            MaxStorageMegabytes = normalized.MaxStorageMegabytes,
+            ValueFileSegmentMegabytes = normalized.ValueFileSegmentMegabytes
         };
     }
 
@@ -975,7 +980,38 @@ public static class GatewayConfigurationContractMapper
             TotalRateLimited = status.TotalRateLimited,
             Queue = ToDto(status.Queue),
             Timeout = ToDto(status.Timeout),
+            AcquisitionLatency = ToDto(status.AcquisitionLatency),
             Tasks = status.Tasks.Select(ToDto).ToList()
+        };
+    }
+
+    public static RuntimeAcquisitionLatencyStatsDto ToDto(RuntimeAcquisitionLatencyStats status)
+    {
+        if (status == null) return new RuntimeAcquisitionLatencyStatsDto();
+        return new RuntimeAcquisitionLatencyStatsDto
+        {
+            SampleCapacity = status.SampleCapacity,
+            SampleTimeUtc = status.SampleTimeUtc,
+            RejectedSampleCount = status.RejectedSampleCount,
+            InitialReadLatencyMs = ToDto(status.InitialReadLatencyMs),
+            HealthyRefreshGapMs = ToDto(status.HealthyRefreshGapMs),
+            TagProbeQueueDelayMs = ToDto(status.TagProbeQueueDelayMs),
+            DeviceProbeQueueDelayMs = ToDto(status.DeviceProbeQueueDelayMs)
+        };
+    }
+
+    public static RuntimeLatencyDistributionDto ToDto(RuntimeLatencyDistribution status)
+    {
+        if (status == null) return new RuntimeLatencyDistributionDto();
+        return new RuntimeLatencyDistributionDto
+        {
+            Count = status.Count,
+            WindowCount = status.WindowCount,
+            LastMs = status.LastMs,
+            AverageMs = status.AverageMs,
+            P95Ms = status.P95Ms,
+            P99Ms = status.P99Ms,
+            MaxMs = status.MaxMs
         };
     }
 
@@ -1125,6 +1161,7 @@ public static class GatewayConfigurationContractMapper
             IsTagIsolated = snapshot.IsTagIsolated,
             IsStaticValidationError = snapshot.IsStaticValidationError,
             TagConsecutiveFailures = snapshot.TagConsecutiveFailures,
+            RuntimeRevision = snapshot.RuntimeRevision,
             NextTagRecoveryProbeTime = snapshot.NextTagRecoveryProbeTime
         };
     }
@@ -1179,6 +1216,8 @@ public static class GatewayConfigurationContractMapper
             SparkplugDeathCount = status.SparkplugDeathCount,
             SparkplugDataCount = status.SparkplugDataCount,
             OutboxPendingCount = status.OutboxPendingCount,
+            AlarmPendingCount = status.AlarmPendingCount,
+            AlarmOldestPendingAgeSeconds = status.AlarmOldestPendingAgeSeconds,
             OutboxEnqueuedCount = status.OutboxEnqueuedCount,
             OutboxBytes = status.OutboxBytes,
             OutboxExpiredDeletedCount = status.OutboxExpiredDeletedCount,
@@ -1778,6 +1817,7 @@ public static class GatewayConfigurationContractMapper
             ExecuteOnClear = dto.ExecuteOnClear,
             TopicTemplate = dto.TopicTemplate,
             Qos = dto.Qos,
+            AlarmMessage = dto.AlarmMessage,
             ActiveMessage = dto.ActiveMessage,
             ClearMessage = dto.ClearMessage,
             EmailSmtpHost = dto.EmailSmtpHost,
@@ -1855,6 +1895,7 @@ public static class GatewayConfigurationContractMapper
         {
             Id = EmptyToNewId(dto.Id),
             NodeType = dto.NodeType,
+            AlarmMessage = dto.AlarmMessage,
             Label = dto.Label,
             X = dto.X,
             Y = dto.Y,
@@ -2051,6 +2092,7 @@ public static class GatewayConfigurationContractMapper
             PublishEnabled = dto.PublishEnabled,
             PublishSelectedTagsOnly = dto.PublishSelectedTagsOnly,
             PublishChangedOnly = dto.PublishChangedOnly,
+            CoalescePendingTelemetry = dto.CoalescePendingTelemetry,
             PublishUnchangedHeartbeatSeconds = dto.PublishUnchangedHeartbeatSeconds,
             PublishTopicTemplate = dto.PublishTopicTemplate,
             PublishQos = dto.PublishQos,
@@ -2174,7 +2216,8 @@ public static class GatewayConfigurationContractMapper
             CompressAfterDays = dto.CompressAfterDays,
             AutoCleanupEnabled = dto.AutoCleanupEnabled,
             CleanupIntervalHours = dto.CleanupIntervalHours,
-            MaxStorageMegabytes = dto.MaxStorageMegabytes
+            MaxStorageMegabytes = dto.MaxStorageMegabytes,
+            ValueFileSegmentMegabytes = dto.ValueFileSegmentMegabytes
         }, LocalHistoryOptions.ClampRetentionDays(retentionDays));
     }
 

@@ -209,7 +209,13 @@ export const helpEnglish: Record<string, string> = {
     'Administrators have all permissions and are not restricted by runtime permission checks.',
   '慢设备和外部连接异常达到阈值后触发降级或恢复建议。':
     'Slow devices and connection errors trigger degradation or recovery recommendations at the configured thresholds.',
-  '容量上限必须在 0 到 1048576 MB 之间': 'Capacity limit must be between 0 and 1048576 MB.',
+  '启用文件压缩': 'Enable file compression',
+  '点位历史单文件分卷大小（MiB）': 'Tag history file size before rotation (MiB)',
+  '历史文件总容量上限（MiB）': 'Total history storage limit (MiB)',
+  '文件达到该大小后，下次写入会新建一卷。已封卷文件按压缩设置处理。': 'Once a file reaches this size, the next write starts a new file. Compression settings apply to closed files.',
+  '热目录和冷目录合计超过上限时，自动清理会优先删除最旧的历史文件。填 0 表示不限容量。': 'When the hot and cold directories exceed this total, automatic cleanup removes the oldest history files first. Set to 0 for unlimited space.',
+  '点位历史单文件分卷大小必须是 1 到 1048576 之间的整数（MiB）': 'Tag history file size must be a whole number from 1 to 1048576 MiB.',
+  '历史文件总容量上限必须是 0 到 1048576 之间的整数（MiB）': 'Total history storage limit must be a whole number from 0 to 1048576 MiB.',
   '宿主重启保护窗口必须在 1 到 1440 分钟之间': 'Host restart protection window must be between 1 and 1440 minutes.',
   '宿主重启窗口内最大次数必须在 0 到 100 之间': 'Maximum host restarts per window must be between 0 and 100.',
   '写入已确认，但当前值回读失败，请稍后刷新确认当前值':

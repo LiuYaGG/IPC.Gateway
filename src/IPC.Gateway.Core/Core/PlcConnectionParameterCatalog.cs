@@ -127,7 +127,7 @@ namespace IPC.Plc.Communication.Core
                     {
                         InGroup(Text("username", "用户名", string.Empty, string.Empty), "Broker 认证"),
                         InGroup(Password("password", "密码"), "Broker 认证"),
-                        InGroup(Text("driverOptions.mqttClientId", "Client ID", "IPC-Gateway-Southbound", "IPC-Gateway-Southbound"), "MQTT 订阅"),
+                        InGroup(Text("driverOptions.mqttClientId", "Client ID", "", ""), "MQTT 订阅"),
                         InGroup(Text("driverOptions.mqttSubscribeFilter", "订阅过滤器", "#", "例如 factory/+/data/#"), "MQTT 订阅"),
                         InGroup(Select("driverOptions.mqttPayloadMode", "Payload 模式", "Text", new[] { "Text", "Json", "SparkplugB" }, false), "Payload"),
                         InGroup(Switch("driverOptions.mqttUseTls", "启用 TLS", "false"), "Broker 安全"),
@@ -164,7 +164,7 @@ namespace IPC.Plc.Communication.Core
                 case PlcProtocol.MitsubishiMc1E:
                     return Network("127.0.0.1", "5001", true, new[]
                     {
-                        InGroup(Select("driverOptions.controllerProfile", "PLC系列", "A/FX3", new[] { "A/FX3", "Q兼容1E", "FX5兼容1E" }, false), "三菱控制器"),
+                        InGroup(Select("driverOptions.controllerProfile", "PLC系列", "A/FX3", new[] { "A/FX3", "A", "FX3", "Q兼容1E", "FX5兼容1E" }, false), "三菱控制器"),
                         InGroup(Number("driverOptions.mcMaxBatchGapPoints", "批读允许间隔", "2", 0, 64, "点"), "批读优化")
                     });
                 case PlcProtocol.OmronFins:

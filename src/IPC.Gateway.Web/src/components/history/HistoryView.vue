@@ -7,6 +7,7 @@
         <span>{{ dirty ? tx('有未保存修改') : tx('配置已同步') }}</span>
       </div>
       <div class="history-toolbar__actions">
+        <a-button @click="showAlarms = true">{{ tx('报警记录') }}</a-button>
         <a-button :disabled="saving || !dirty" @click="resetDraft">{{ tx('重置') }}</a-button>
         <a-button type="primary" :loading="saving" :disabled="!canSave" @click="submit">{{ tx('保存配置') }}</a-button>
       </div>
@@ -14,6 +15,7 @@
     <HistoryBaseForm :config="draft" :disabled="!canSave" />
     <HistoryProcessingTabs :config="draft" :disabled="!canSave" />
     <HistoryStoragePane :config="draft" :disabled="!canSave" />
+    <AlarmHistoryDialog v-if="showAlarms" @close="showAlarms = false" />
   </section>
 </template>
 
@@ -24,6 +26,7 @@ import { nextTick, reactive, ref, watch } from 'vue'
 
 import type { HistoryConfig, HistoryRuntimeStatus } from '../../api'
 import HistoryBaseForm from './HistoryBaseForm.vue'
+import AlarmHistoryDialog from './AlarmHistoryDialog.vue'
 import HistoryProcessingTabs from './HistoryProcessingTabs.vue'
 import HistoryStoragePane from './HistoryStoragePane.vue'
 import HistoryStatusBar from './HistoryStatusBar.vue'
@@ -53,6 +56,7 @@ const emit = defineEmits<{
 
 const draft = reactive(createDefaultHistoryConfig())
 const dirty = ref(false)
+const showAlarms = ref(false)
 let syncing = false
 
 watch(
@@ -122,8 +126,11 @@ function validateDraft() {
     (draft.storage.cleanupIntervalHours < 1 || draft.storage.cleanupIntervalHours > 720)
   )
     return '自动清理间隔必须在 1 到 720 小时之间'
-  if (draft.storage.maxStorageMegabytes < 0 || draft.storage.maxStorageMegabytes > 1048576)
-    return '容量上限必须在 0 到 1048576 MB 之间'
+  const { valueFileSegmentMegabytes, maxStorageMegabytes } = draft.storage
+  if (!Number.isInteger(valueFileSegmentMegabytes) || valueFileSegmentMegabytes < 1 || valueFileSegmentMegabytes > 1048576)
+    return '点位历史单文件分卷大小必须是 1 到 1048576 之间的整数（MiB）'
+  if (!Number.isInteger(maxStorageMegabytes) || maxStorageMegabytes < 0 || maxStorageMegabytes > 1048576)
+    return '历史文件总容量上限必须是 0 到 1048576 之间的整数（MiB）'
 
   const processing = draft.dataProcessing
   if (!processing.enabled) return ''

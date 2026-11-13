@@ -51,6 +51,7 @@ const statusLabels: Record<string, string> = {
   writeerror: "写入失败",
   outofrange: "越界",
   spike: "毛刺",
+  uncertain: "不确定",
   filtered: "已过滤",
   stale: "数据过期",
   nodata: "无数据",
@@ -111,7 +112,7 @@ export function statusText(value: unknown, fallback = "未知") {
 }
 
 export const tagQualityValues = [
-  "Good", "OutOfRange", "Filtered", "Spike", "Bad", "ReadError",
+  "Good", "Uncertain", "OutOfRange", "Filtered", "Spike", "Bad", "ReadError",
   "NotConnected", "Unknown", "Disabled", "NotFound", "AccessDenied",
 ] as const;
 
@@ -125,6 +126,7 @@ const qualityLabels: Record<string, string> = {
   outofrange: "越界",
   filtered: "已过滤",
   spike: "毛刺",
+  uncertain: "不确定",
   notfound: "未找到",
   accessdenied: "拒绝访问",
 };

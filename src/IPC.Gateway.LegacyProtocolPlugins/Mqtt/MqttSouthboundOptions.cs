@@ -7,7 +7,7 @@ namespace IPC.Plc.Communication.Mqtt
 {
     internal sealed class MqttSouthboundOptions
     {
-        public string ClientId { get; private set; } = "IPC-Gateway-Southbound";
+        public string ClientId { get; private set; } = string.Empty;
         public string SubscribeFilter { get; private set; } = "#";
         public string PayloadMode { get; private set; } = "Text";
         public bool UseTls { get; private set; }
@@ -32,8 +32,9 @@ namespace IPC.Plc.Communication.Mqtt
                 options.Qos = GetInt32(root, "mqttQos", options.Qos, 0, 2);
                 options.MaxValueAgeSeconds = GetInt32(root, "mqttMaxValueAgeSeconds", options.MaxValueAgeSeconds, 0, 86400);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                throw new FormatException("MQTT 驱动选项不是有效的 JSON。", ex);
             }
             return options;
         }
@@ -44,7 +45,7 @@ namespace IPC.Plc.Communication.Mqtt
             {
                 Host = connection.Host,
                 Port = connection.Port > 0 ? connection.Port : (UseTls ? 8883 : 1883),
-                ClientId = ClientId,
+                ClientId = ClientId == "IPC-Gateway-Southbound" ? string.Empty : ClientId,
                 Username = connection.Username ?? string.Empty,
                 Password = connection.Password ?? string.Empty,
                 UseTls = UseTls,

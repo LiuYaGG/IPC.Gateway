@@ -29,6 +29,7 @@ namespace IPC.Plc.Communication.Cip
         public byte[] RequestBytes { get; private set; }
         public PlcReadResult Result { get; private set; }
         public string ErrorMessage { get; private set; }
+        public bool WasDispatched { get; set; }
         public bool IsCommunicationError { get; private set; }
         public PlcReadFailureScope FailureScope { get; private set; }
 

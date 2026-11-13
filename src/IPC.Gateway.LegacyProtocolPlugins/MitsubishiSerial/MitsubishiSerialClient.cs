@@ -40,7 +40,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
         private const byte Ack = 0x06;
         private const byte Nak = 0x15;
         private const int MaxWordPoints = 64;
-        private const int MaxBitPoints = 256;
+        private const int MaxBitPoints = 255;
 
         private readonly PlcConnectionOptions _options;
         private IPC.Gateway.LegacyProtocolPlugins.SharedSerialPortLease _channelLease;
@@ -166,10 +166,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         private MitsubishiSerialAddress BuildAddress(string address, PlcDataType dataType, int elementOffset)
         {
-            MitsubishiSerialAddress parsed = MitsubishiSerialAddress.Parse(address);
-            if (dataType == PlcDataType.Bool || dataType == PlcDataType.BoolArray)
-                return parsed.AddBitOffset(elementOffset);
-            return parsed.AddDeviceOffset(McDataCodec.GetDeviceOffset(dataType, elementOffset));
+            return MitsubishiSerialAddress.Parse(address).ResolveOffset(dataType, elementOffset);
         }
 
         private PlcReadResult ReadBool(MitsubishiSerialAddress address)
@@ -252,12 +249,13 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         private byte[] ReadWordsSegmented(MitsubishiSerialAddress address, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             MemoryStream result = new MemoryStream();
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
-                byte[] data = ReadWords(address.AddDeviceOffset(offset), chunk);
+                byte[] data = ReadWords(address.AddWordOffset(offset), chunk);
                 result.Write(data, 0, data.Length);
                 offset += chunk;
             }
@@ -266,19 +264,21 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         private void WriteWordsSegmented(MitsubishiSerialAddress address, byte[] data, int wordCount)
         {
+            address.EnsureTransferRange(wordCount, bitAccess: false);
             int offset = 0;
             while (offset < wordCount)
             {
                 int chunk = Math.Min(MaxWordPoints, wordCount - offset);
                 byte[] chunkData = new byte[chunk * 2];
                 Buffer.BlockCopy(data, offset * 2, chunkData, 0, chunkData.Length);
-                WriteWords(address.AddDeviceOffset(offset), chunkData, chunk);
+                WriteWords(address.AddWordOffset(offset), chunkData, chunk);
                 offset += chunk;
             }
         }
 
         private bool[] ReadBitsSegmented(MitsubishiSerialAddress address, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             bool[] result = new bool[count];
             int offset = 0;
             while (offset < count)
@@ -293,6 +293,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
 
         private void WriteBitsSegmented(MitsubishiSerialAddress address, bool[] values, int count)
         {
+            address.EnsureTransferRange(count, bitAccess: true);
             int offset = 0;
             while (offset < count)
             {

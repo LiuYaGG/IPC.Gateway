@@ -51,6 +51,7 @@ namespace IPC.Plc.Communication.Cip
         public const ushort Dword = 0x00D3;
         public const ushort ShortString = 0x00DA;
         public const ushort AbbreviatedStructure = 0x02A0;
+        public const ushort LogixStringHandle = 0x0FCE;
 
         public static ushort FromPlcDataType(PlcDataType dataType)
         {

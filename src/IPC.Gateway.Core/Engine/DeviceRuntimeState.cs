@@ -84,6 +84,7 @@ namespace IPC.Runtime.Engine
         public bool IsPolling { get; set; }
         public bool IsQueued { get; set; }
         public int ConsecutiveFailures { get; set; }
+        public DateTime CadenceOriginUtc { get; set; }
         public DateTime NextPollUtc { get; set; }
         public DateTime NextReconnectUtc { get; set; }
         public int LastReconnectDelayMs { get; set; }
@@ -120,6 +121,13 @@ namespace IPC.Runtime.Engine
         public DateTime IsolatedSinceUtc { get; set; }
         public DateTime NextRecoveryProbeUtc { get; set; }
         public string LastKnownGoodTagId { get; set; } = string.Empty;
+        public string LastRecoveryProbeTagId { get; set; } = string.Empty;
+        public string LastHealthyReadTagId { get; set; } = string.Empty;
+        public string LastInitialReadTagId { get; set; } = string.Empty;
+        public string LastTagRecoveryProbeId { get; set; } = string.Empty;
+        public int ReadDispatchTurn { get; set; }
+        public bool CurrentPollIsRecovery { get; set; }
+        public bool CurrentRecoveryMetricsRecorded { get; set; }
 
         public DeviceRuntimeConfigTransition ReuseConfig(DeviceConfig config)
         {
@@ -129,7 +137,7 @@ namespace IPC.Runtime.Engine
             bool wasEnabled = Config != null && Config.Enabled;
             bool isEnabled = config.Enabled;
             Config = config;
-            ReadPlan = CompiledDeviceReadPlan.Compile(config);
+            ReadPlan = CompiledDeviceReadPlan.Compile(config, ReadPlan);
             IsQueued = false;
             if (!IsPolling && string.Equals(LastTaskStatus, "Queued", StringComparison.OrdinalIgnoreCase))
                 LastTaskStatus = "Idle";
@@ -160,7 +168,9 @@ namespace IPC.Runtime.Engine
             LastConnectionError = string.Empty;
             LastConnectionErrorTime = DateTime.MinValue;
             UnavailableTagsMarked = false;
-            DisposeSubscription();
+            // ReuseConfig runs under the global configuration lock. Driver I/O
+            // and subscription disposal are deferred to the device actor.
+            foreach (CompiledTagRead entry in ReadPlan.Entries) entry.Runtime.ResetHealthyBaseline();
             SubscriptionFingerprint = string.Empty;
             SubscriptionUnavailable = false;
             LastSubscriptionError = string.Empty;
@@ -175,6 +185,7 @@ namespace IPC.Runtime.Engine
             IsolatedSinceUtc = DateTime.MinValue;
             NextRecoveryProbeUtc = DateTime.MinValue;
             LastKnownGoodTagId = string.Empty;
+            LastRecoveryProbeTagId = string.Empty;
             ForceStatus(status, nowUtc);
         }
 

@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using System;
+using IPC.Plc.Communication.MitsubishiMc;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -30,11 +31,13 @@ namespace IPC.Plc.Communication.MitsubishiSerial
     
     
     
-    internal sealed class MitsubishiSerialAddress
+    internal sealed class MitsubishiSerialAddress : IMitsubishiDeviceAddress<MitsubishiSerialAddress>
     {
         public string DeviceName { get; private set; }
         public char DeviceCode { get; private set; }
+        public int MaximumDeviceNumber => ushort.MaxValue;
         public int DeviceNumber { get; private set; }
+        public bool HasBitOffset { get; private set; }
         public int BitOffset { get; private set; }
         public bool IsBitDevice { get; private set; }
 
@@ -44,7 +47,8 @@ namespace IPC.Plc.Communication.MitsubishiSerial
             {
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + offset,
+                DeviceNumber = checked(DeviceNumber + offset),
+                HasBitOffset = HasBitOffset,
                 BitOffset = BitOffset,
                 IsBitDevice = IsBitDevice
             };
@@ -55,12 +59,13 @@ namespace IPC.Plc.Communication.MitsubishiSerial
             if (IsBitDevice)
                 return AddDeviceOffset(offset);
 
-            int totalBits = BitOffset + offset;
+            int totalBits = checked(BitOffset + offset);
             return new MitsubishiSerialAddress
             {
                 DeviceName = DeviceName,
                 DeviceCode = DeviceCode,
-                DeviceNumber = DeviceNumber + totalBits / 16,
+                DeviceNumber = checked(DeviceNumber + totalBits / 16),
+                HasBitOffset = true,
                 BitOffset = totalBits % 16,
                 IsBitDevice = false
             };
@@ -72,7 +77,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
                 throw new ArgumentException("Mitsubishi 串口地址不能为空。", "text");
 
             string address = text.Trim().ToUpperInvariant();
-            Match match = Regex.Match(address, @"^([A-Z]+)([0-9A-FX]+)(?:\.(\d+))?$");
+            Match match = Regex.Match(address, @"^(TN|CN|X|Y|M|S|D|R|T|C)([0-9A-FX]+)(?:\.(\d+))?$");
             if (!match.Success)
                 throw new FormatException("不支持的 Mitsubishi 串口地址格式: " + text);
 
@@ -91,6 +96,7 @@ namespace IPC.Plc.Communication.MitsubishiSerial
                 DeviceName = device.Name,
                 DeviceCode = device.Code,
                 DeviceNumber = number,
+                HasBitOffset = match.Groups[3].Success,
                 BitOffset = bit,
                 IsBitDevice = device.IsBitDevice
             };

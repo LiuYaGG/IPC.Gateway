@@ -44,7 +44,8 @@ public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
         Func<string, string, int, bool> mqttPublisher,
         MqttGatewayOptions gatewayOptions,
         CircuitBreakerOptions circuitBreakerOptions,
-        IModelInferenceService modelInference)
+        IModelInferenceService modelInference,
+        Action<GatewayAlarmRecord, bool>? recordAlarm = null)
     {
         return new IPC.EdgeGateway.FlowRuleEngineService(
             runtime,
@@ -53,6 +54,7 @@ public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
             gatewayOptions,
             circuitBreakerOptions,
             modelInference,
-            _valueTransformScripts);
+            _valueTransformScripts,
+            recordAlarm);
     }
 }

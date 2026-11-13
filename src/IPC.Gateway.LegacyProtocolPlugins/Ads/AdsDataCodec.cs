@@ -52,6 +52,17 @@ namespace IPC.Plc.Communication.Ads
         public static object ParseWriteValue(PlcDataType dataType, string valueText)
         {
             string text = valueText ?? string.Empty;
+            if (PlcDataTypeHelper.IsArray(dataType))
+            {
+                string[] parts = text.Split(new[] { ',', ';', '\r', '\n', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0) throw new FormatException("ADS 数组至少需要一个元素。");
+                Array values = PlcDataTypeHelper.CreateArray(dataType, parts.Length);
+                Type elementType = GetManagedType(dataType).GetElementType();
+                for (int i = 0; i < parts.Length; i++)
+                    values.SetValue(elementType == typeof(bool) ? ParseBoolean(parts[i])
+                        : Convert.ChangeType(parts[i], elementType, CultureInfo.InvariantCulture), i);
+                return values;
+            }
             switch (dataType)
             {
                 case PlcDataType.Bool: return ParseBoolean(text);
@@ -68,7 +79,7 @@ namespace IPC.Plc.Communication.Ads
                 case PlcDataType.Double: return double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
                 case PlcDataType.String: return text;
                 default:
-                    throw new NotSupportedException("ADS 写入暂不接受数组文本，请写入单个数组元素地址。");
+                    throw new NotSupportedException("ADS 不支持写入该数据类型。");
             }
         }
 
