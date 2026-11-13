@@ -3354,7 +3354,7 @@ namespace IPC.Runtime.Engine
 
             DateTime next = GetNextDeviceReadableTagDueUtc(deviceState.Config);
             if (next == DateTime.MinValue)
-                next = now.AddMilliseconds(GetDeviceScanRateMs(deviceState.Config));
+                next = now.AddMilliseconds(GetEffectiveScanRateMs(deviceState.Config, null));
 
             if (deviceState.NextReconnectUtc != DateTime.MinValue && deviceState.NextReconnectUtc > next)
                 next = deviceState.NextReconnectUtc;
@@ -3465,9 +3465,10 @@ namespace IPC.Runtime.Engine
                 if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
                     continue;
 
-                int tagScanRate = GetEffectiveScanRateMs(device, group, tag);
-                if (scanRate <= 0 || tagScanRate < scanRate)
-                    scanRate = tagScanRate;
+                int period = GetEffectiveScanRateMs(device, group);
+                if (scanRate <= 0 || period < scanRate)
+                    scanRate = period;
+                return;
             }
         }
 
@@ -3524,36 +3525,27 @@ namespace IPC.Runtime.Engine
         private void SchedulePeriodicReadNoLock(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime completedUtc)
         {
             _nextReadUtcByTagId[tag.Id] = GetNextPeriodicReadUtc(state.CadenceOriginUtc,
-                GetEffectiveScanRateMs(state.Config, group, tag), completedUtc);
+                GetEffectiveScanRateMs(state.Config, group), completedUtc);
         }
 
         private void ScheduleNextSubscriptionFallback(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now)
         {
-            int interval = GetSubscriptionFallbackIntervalMs(device, group, tag);
+            int interval = GetSubscriptionFallbackIntervalMs(device, group);
             _nextReadUtcByTagId[tag.Id] = now.AddMilliseconds(interval);
         }
 
-        private static int GetSubscriptionFallbackIntervalMs(DeviceConfig device, GroupConfig? group, TagConfig tag)
+        private static int GetSubscriptionFallbackIntervalMs(DeviceConfig device, GroupConfig? group)
         {
-            int scanRate = GetEffectiveScanRateMs(device, group, tag);
+            int scanRate = GetEffectiveScanRateMs(device, group);
             long interval = Math.Max(scanRate * 10L, 30000L);
             if (interval > 300000L)
                 interval = 300000L;
             return (int)interval;
         }
 
-        private static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group, TagConfig tag)
+        private static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group)
         {
-            int groupScanRate = group == null ? 0 : group.ScanRateMs;
-            int scanRate = tag != null && tag.ScanRateMs > 0 ? tag.ScanRateMs : groupScanRate;
-            if (scanRate <= 0)
-                scanRate = GetDeviceScanRateMs(device);
-            return ClampInterval(scanRate, 100, 86400000);
-        }
-
-        private static int GetDeviceScanRateMs(DeviceConfig device)
-        {
-            int scanRate = device == null ? 0 : device.DefaultScanRateMs;
+            int scanRate = group is { ScanRateMs: > 0 } ? group.ScanRateMs : device.DefaultScanRateMs;
             if (scanRate <= 0)
                 scanRate = 1000;
             return ClampInterval(scanRate, 100, 86400000);

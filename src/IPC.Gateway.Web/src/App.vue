@@ -89,7 +89,7 @@
             </div>
             <span class="refresh-time">{{ tx('最近刷新：') }}{{ tx(lastRefreshLabel) }}</span>
             <a-tooltip :title="tx('刷新数据')">
-              <a-button type="text" :loading="loading" :aria-label="tx('刷新数据')" @click="refresh({ silent: false })">
+              <a-button type="text" :loading="loading" :aria-label="tx('刷新数据')" @click="refresh({ silent: false, resetView: activeView })">
                 <template #icon>
                   <span class="ui-icon"><Refresh /></span>
                 </template>
@@ -107,6 +107,7 @@
           </div>
           <div
             :key="sessionScopeRevision"
+            ref="pageBody"
             class="page-body"
             :class="{
               'page-body--fill': activeView === 'devices' || activeView === 'audit',
@@ -116,82 +117,88 @@
               )
             }"
           >
-            <BigScreenView
-              v-if="activeView === 'bigScreen'"
-              :status="status"
-              :health="health"
-              :trend="trend"
-              @select-error="openError"
-            />
-            <DeviceTopologyView
-              v-else-if="activeView === 'topology'"
-              :project="project"
-              :status="status"
-              :failed-tags-by-device="failedTagsByDevice"
-              :runtime-tags="runtimeTags"
-              @select-error="openError"
-            />
-            <DashboardView
-              v-else-if="activeView === 'dashboard'"
-              :status="status"
-              :health="health"
-              :storage-health="storageHealth"
-              :saving-storage-health="loading"
-              :can-persist-storage-health="hasPermission(PERMISSIONS.dashboardStorageHealthEdit)"
-              :trend="trend"
-              @persist-storage-health="persistStorageHealth"
-              @select-error="openError"
-            />
-            <DevicesView
-              v-else-if="activeView === 'devices'"
-              :state-scope="deviceViewScope(currentUserIdentity, project?.projectId ?? '')"
-              :project="project"
-              :runtime-devices="visibleDevices"
-              :runtime-tags="runtimeTags"
-              :enabled-tag-keys="projectScope.tagKeys"
-              :good-tags-by-device="goodTagsByDevice"
-              @changed="handleDevicesChanged"
-              @editing-state="deviceEditing = $event"
-            />
-            <FlowRulesView
-              v-else-if="activeView === 'flowRules'"
-              :project="project"
-              :status="status?.flowRuleEngine"
-              @changed="handleRulesChanged"
-              @editing-state="flowRulesEditing = $event"
-            />
-            <MqttView
-              v-else-if="activeView === 'mqtt'"
-              :mqtt="mqtt"
-              :status="status?.mqtt"
-              @persist-mqtt="persistMqtt"
-            />
-            <OpcUaView
-              v-else-if="activeView === 'opcUa'"
-              :opc-ua="opcUa"
-              :status="status?.opcUa"
-              @persist-opcua="persistOpcUa"
-            />
-            <HistoryView
-              v-else-if="activeView === 'history'"
-              :history="history"
-              :status="status?.history"
-              :saving="loading"
-              :can-save="hasPermission(PERMISSIONS.historyEdit)"
-              @persist-history="persistHistory"
-            />
-            <ScriptingView v-else-if="activeView === 'scripts'" :project="project" />
-            <ModelCenterView
-              v-else-if="activeView === 'models'"
-              :project="project"
-              :runtime-tags="status?.tags ?? []"
-            />
-            <AuditView v-else-if="activeView === 'audit'" />
-            <SecurityView v-else-if="activeView === 'security'" />
-            <MaintenanceView v-else-if="activeView === 'maintenance'" :account="currentUserIdentity" />
-            <UsersView v-else-if="activeView === 'users'" />
-            <RolesView v-else-if="activeView === 'roles'" />
-            <PermissionsView v-else-if="activeView === 'permissions'" />
+            <KeepAlive v-if="canAccessView(activeView)">
+              <BigScreenView
+                v-if="activeView === 'bigScreen'"
+                :status="status"
+                :health="health"
+                :trend="trend"
+                @select-error="openError"
+              />
+              <DeviceTopologyView
+                v-else-if="activeView === 'topology'"
+                :project="project"
+                :status="status"
+                :failed-tags-by-device="failedTagsByDevice"
+                :runtime-tags="runtimeTags"
+                @select-error="openError"
+              />
+              <DashboardView
+                v-else-if="activeView === 'dashboard'"
+                :status="status"
+                :health="health"
+                :storage-health="storageHealth"
+                :saving-storage-health="loading"
+                :can-persist-storage-health="hasPermission(PERMISSIONS.dashboardStorageHealthEdit)"
+                :trend="trend"
+                @persist-storage-health="persistStorageHealth"
+                @select-error="openError"
+              />
+              <DevicesView
+                v-else-if="activeView === 'devices'"
+                :state-scope="deviceViewScope(currentUserIdentity, project?.projectId ?? '')"
+                :project="project"
+                :runtime-devices="visibleDevices"
+                :runtime-tags="runtimeTags"
+                :enabled-tag-keys="projectScope.tagKeys"
+                :good-tags-by-device="goodTagsByDevice"
+                @changed="handleDevicesChanged"
+                @editing-state="deviceEditing = $event"
+              />
+              <FlowRulesView
+                v-else-if="activeView === 'flowRules'"
+                :project="project"
+                :status="status?.flowRuleEngine"
+                @changed="handleRulesChanged"
+                @editing-state="flowRulesEditing = $event"
+              />
+              <MqttView
+                v-else-if="activeView === 'mqtt'"
+                :mqtt="mqtt"
+                :status="status?.mqtt"
+                :saving="loading"
+                :reset-revision="mqttResetRevision"
+                @persist-mqtt="persistMqtt"
+              />
+              <OpcUaView
+                v-else-if="activeView === 'opcUa'"
+                :opc-ua="opcUa"
+                :status="status?.opcUa"
+                :saving="loading"
+                :reset-revision="opcUaResetRevision"
+                @persist-opcua="persistOpcUa"
+              />
+              <HistoryView
+                v-else-if="activeView === 'history'"
+                :history="history"
+                :status="status?.history"
+                :saving="loading"
+                :can-save="hasPermission(PERMISSIONS.historyEdit)"
+                @persist-history="persistHistory"
+              />
+              <ScriptingView v-else-if="activeView === 'scripts'" :project="project" />
+              <ModelCenterView
+                v-else-if="activeView === 'models'"
+                :project="project"
+                :runtime-tags="status?.tags ?? []"
+              />
+              <AuditView v-else-if="activeView === 'audit'" />
+              <SecurityView v-else-if="activeView === 'security'" />
+              <MaintenanceView v-else-if="activeView === 'maintenance'" :account="currentUserIdentity" />
+              <UsersView v-else-if="activeView === 'users'" />
+              <RolesView v-else-if="activeView === 'roles'" />
+              <PermissionsView v-else-if="activeView === 'permissions'" />
+            </KeepAlive>
           </div>
         </a-layout-content>
       </a-layout>
@@ -306,6 +313,10 @@ const currentUserIdentity = ref('')
 const currentUserName = ref('')
 const currentLoginName = ref('')
 const activeView = ref(defaultStartupView)
+const pageBody = ref<HTMLElement>()
+const pageScroll = new Map<string, { top: number; left: number }>()
+const mqttResetRevision = ref(0)
+const opcUaResetRevision = ref(0)
 const sidebarCollapsed = ref(localStorage.getItem('ipc.gateway.sidebarCollapsed') === 'true')
 const loading = ref(false)
 const autoRefresh = ref(true)
@@ -474,6 +485,15 @@ watch(authenticated, async (value) => {
   }
 })
 watch(currentPermissions, ensureActiveViewAllowed)
+watch([activeView, sessionScopeRevision], async ([view, scope], [previous, previousScope]) => {
+  const body = pageBody.value
+  if (!body || scope !== previousScope) return
+  pageScroll.set(previous, { top: body.scrollTop, left: body.scrollLeft })
+  await nextTick()
+  if (view !== activeView.value || body !== pageBody.value) return
+  const position = pageScroll.get(view)
+  body.scrollTo(position?.left ?? 0, position?.top ?? 0)
+})
 
 function handleLoginEnter(event: KeyboardEvent) {
   if (authenticated.value || event.key !== 'Enter' || event.isComposing) return
@@ -510,7 +530,7 @@ async function handleLogout() {
   authenticated.value = false
 }
 
-async function refresh(options: { silent: boolean; reconnectOnly?: boolean }) {
+async function refresh(options: { silent: boolean; reconnectOnly?: boolean; resetView?: string }) {
   if (startupState.value !== 'ready') return
   stopRuntimeEvents()
   refreshController?.abort()
@@ -547,6 +567,8 @@ async function refresh(options: { silent: boolean; reconnectOnly?: boolean }) {
     ])
     if (controller.signal.aborted || !authenticated.value) return
     applySync(data, options, healthData)
+    if (options.resetView === 'mqtt') mqttResetRevision.value++
+    if (options.resetView === 'opcUa') opcUaResetRevision.value++
     completed = true
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) return
@@ -581,6 +603,7 @@ watch([deviceEditing, flowRulesEditing], ([device, rules]) => {
 
 function clearSessionData() {
   deferredProject = undefined
+  pageScroll.clear()
   sessionScopeRevision.value++
   sync.value = null
   project.value = null
@@ -621,14 +644,8 @@ function isAbortError(error: unknown) {
 }
 
 function applySync(data: SyncPayload, options: { silent: boolean }, healthData: GatewayHealthResponse | null) {
-  const preserveProjectConfig =
-    shouldPreserveActiveConfigDraft('project', options) ||
-    (options.silent &&
-      ((activeView.value === 'devices' && deviceEditing.value) ||
-        (activeView.value === 'flowRules' && flowRulesEditing.value)))
-  const preserveMqttConfig = shouldPreserveActiveConfigDraft('mqtt', options)
-  const preserveOpcUaConfig = shouldPreserveActiveConfigDraft('opcUa', options)
-  const preserveHistoryConfig = shouldPreserveActiveConfigDraft('history', options)
+  if (sync.value && sync.value.project.projectId !== data.project.projectId) clearSessionData()
+  const preserveProjectConfig = options.silent && (deviceEditing.value || flowRulesEditing.value)
   httpProjectRevision = data.status.projectRevision
   sync.value = { ...data, status: { ...data.status, tags: [], devices: [] } }
   replaceTags(new Map((data.status.tags ?? []).map(tag => [tagKey(tag), tag])))
@@ -641,15 +658,9 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
   } else {
     deferredProject = data.project
   }
-  if (!preserveMqttConfig || !mqtt.value) {
-    mqtt.value = structuredClone(data.mqtt)
-  }
-  if (!preserveOpcUaConfig || !opcUa.value) {
-    opcUa.value = structuredClone(data.opcUa)
-  }
-  if (!preserveHistoryConfig || !history.value) {
-    history.value = structuredClone(data.history)
-  }
+  mqtt.value = structuredClone(data.mqtt)
+  opcUa.value = structuredClone(data.opcUa)
+  history.value = structuredClone(data.history)
   storageHealth.value = structuredClone(data.storageHealth)
   pushTrend()
 }
@@ -759,11 +770,6 @@ function onVisibilityChanged() {
   } else if (authenticated.value && autoRefresh.value && !refreshController) {
     void refresh({ silent: true, reconnectOnly: true })
   }
-}
-
-function shouldPreserveActiveConfigDraft(view: string, options: { silent: boolean }) {
-  // Silent refresh updates runtime status, but must not replace the active editor draft while the user is typing.
-  return options.silent && activeView.value === view
 }
 
 function pushTrend() {
@@ -910,15 +916,18 @@ async function handleRulesChanged() {
   await refresh({ silent: true })
 }
 
-async function persistMqtt() {
+async function persistMqtt(config: SyncPayload['mqtt'], acceptSaved: (config: SyncPayload['mqtt']) => void) {
   if (!hasPermission(PERMISSIONS.mqttEdit)) {
     notify.warning('当前用户没有保存 MQTT 配置权限')
     return
   }
-  if (!mqtt.value) return
+  const scope = sessionScopeRevision.value
   loading.value = true
   try {
-    mqtt.value = await saveMqtt(mqtt.value)
+    const saved = await saveMqtt(config)
+    if (scope !== sessionScopeRevision.value) return
+    mqtt.value = saved
+    acceptSaved(saved)
     notify.success('已保存')
     await refresh({ silent: true })
   } catch (error) {
@@ -928,15 +937,18 @@ async function persistMqtt() {
   }
 }
 
-async function persistOpcUa() {
+async function persistOpcUa(config: OpcUaServerConfig, acceptSaved: (config: OpcUaServerConfig) => void) {
   if (!hasPermission(PERMISSIONS.opcUaEdit)) {
     notify.warning('当前用户没有保存 OPC UA Server 配置权限')
     return
   }
-  if (!opcUa.value) return
+  const scope = sessionScopeRevision.value
   loading.value = true
   try {
-    opcUa.value = await saveOpcUa(opcUa.value)
+    const saved = await saveOpcUa(config)
+    if (scope !== sessionScopeRevision.value) return
+    opcUa.value = saved
+    acceptSaved(saved)
     notify.success('已保存')
     await refresh({ silent: true })
   } catch (error) {

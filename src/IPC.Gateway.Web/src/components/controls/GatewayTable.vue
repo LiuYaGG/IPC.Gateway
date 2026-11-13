@@ -72,8 +72,10 @@ onMounted(async () => {
   fillHeight.value = !!shell.value?.closest('.page-body--tables-fill, .auto-height-table')
   if (!fillHeight.value) return
   await nextTick()
-  const element = shell.value!
+  const element = shell.value
+  if (!element) return
   const update = () => {
+    if (!element.isConnected) return
     tableWidth.value = element.clientWidth
     const header = element.querySelector('.ant-table-thead')
     const pagination = element.querySelector('.table-pager')

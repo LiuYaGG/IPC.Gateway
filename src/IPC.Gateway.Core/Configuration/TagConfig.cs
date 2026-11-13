@@ -47,7 +47,6 @@ namespace IPC.Runtime.Configuration
             Enabled = true;
             MqttPublishEnabled = false;
             AccessMode = TagAccessMode.ReadWrite;
-            ScanRateMs = 0;
             FailureRetryDelayMs = 0;
             Unit = string.Empty;
             PointCode = string.Empty;
@@ -76,7 +75,6 @@ namespace IPC.Runtime.Configuration
         public bool Enabled { get; set; }
         public bool MqttPublishEnabled { get; set; }
         public TagAccessMode AccessMode { get; set; }
-        public int ScanRateMs { get; set; }
         public int FailureRetryDelayMs { get; set; }
         public string Unit { get; set; }
         public string PointCode { get; set; }

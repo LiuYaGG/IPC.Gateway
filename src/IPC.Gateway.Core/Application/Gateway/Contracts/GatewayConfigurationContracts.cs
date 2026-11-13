@@ -120,7 +120,6 @@ public class TagConfigurationDto
     public bool Enabled { get; set; } = true;
     public bool MqttPublishEnabled { get; set; }
     public string AccessMode { get; set; } = "ReadWrite";
-    public int ScanRateMs { get; set; }
     public int FailureRetryDelayMs { get; set; }
     public string Unit { get; set; } = string.Empty;
     public string PointCode { get; set; } = string.Empty;

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using IPC.Gateway.Core.Application.Gateway;
 using IPC.Gateway.Core.Application.Gateway.Contracts;
@@ -10,7 +9,7 @@ public sealed class GatewayTagBulkService
     private static readonly string[] Headers =
     {
         "channelId", "channelName", "deviceId", "deviceName", "groupId", "groupName", "tagId", "tagName",
-        "address", "dataType", "scanRateMs",
+        "address", "dataType",
         "enabled", "mqttPublishEnabled", "unit", "pointCode", "accessMode", "description"
     };
 
@@ -88,7 +87,6 @@ public sealed class GatewayTagBulkService
                 tag.Name,
                 tag.Address,
                 tag.DataType,
-                tag.ScanRateMs.ToString(CultureInfo.InvariantCulture),
                 tag.Enabled ? "true" : "false",
                 tag.MqttPublishEnabled ? "true" : "false",
                 tag.Unit,
@@ -181,8 +179,7 @@ public sealed class GatewayTagBulkService
             Protocol = device.Protocol,
             DataType = "Int16",
             AccessMode = "Read",
-            Enabled = true,
-            ScanRateMs = device.DefaultScanRateMs
+            Enabled = true
         };
 
         ApplyTag(tag, row, headerMap);
@@ -198,7 +195,6 @@ public sealed class GatewayTagBulkService
         tag.PointCode = ReadOrDefault(row, headerMap, "pointCode", tag.PointCode);
         tag.AccessMode = ReadOrDefault(row, headerMap, "accessMode", tag.AccessMode);
         tag.Description = ReadOrDefault(row, headerMap, "description", tag.Description);
-        tag.ScanRateMs = ReadInt(row, headerMap, "scanRateMs", tag.ScanRateMs);
         tag.Enabled = ReadBool(row, headerMap, "enabled", tag.Enabled);
         tag.MqttPublishEnabled = ReadBool(row, headerMap, "mqttPublishEnabled", tag.MqttPublishEnabled);
     }
@@ -297,14 +293,6 @@ public sealed class GatewayTagBulkService
     {
         string value = Read(row, headerMap, name);
         return string.IsNullOrWhiteSpace(value) ? current : value;
-    }
-
-    private static int ReadInt(string[] row, Dictionary<string, int> headerMap, string name, int current)
-    {
-        string value = Read(row, headerMap, name);
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) && parsed > 0
-            ? parsed
-            : current;
     }
 
     private static bool ReadBool(string[] row, Dictionary<string, int> headerMap, string name, bool current)

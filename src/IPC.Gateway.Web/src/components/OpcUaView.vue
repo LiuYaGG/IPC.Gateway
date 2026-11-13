@@ -30,7 +30,7 @@
         </div>
       </div>
       <div class="mqtt-status-actions">
-        <a-button v-if="canEditOpcUa" type="success" @click="emit('persist-opcua')">
+        <a-button v-if="canEditOpcUa" type="success" :loading="saving" @click="save">
           <template #icon>
             <span class="ui-icon"><component :is="Check" /></span>
           </template>
@@ -191,6 +191,7 @@
 
 <script setup lang="ts">
 import { tx } from '../i18n'
+import { useCommunicationConfigDraft } from '../utils/communicationConfigDraft'
 import { tagColor } from '../utils/ui'
 import { computed, ref } from 'vue'
 import { CheckOutlined as Check, ApartmentOutlined as Connection } from '@ant-design/icons-vue'
@@ -200,13 +201,19 @@ import { PERMISSIONS, usePermissions } from '../utils/permissions'
 
 const props = defineProps<{
   opcUa: OpcUaServerConfig | null
+  resetRevision?: number
+  saving?: boolean
   status?: OpcUaServerRuntimeStatus
 }>()
 
 const emit = defineEmits<{
-  'persist-opcua': []
+  'persist-opcua': [config: OpcUaServerConfig, acceptSaved: (saved: OpcUaServerConfig) => void]
 }>()
 
+const { draft: opcUa, save } = useCommunicationConfigDraft(
+  () => props.opcUa, () => props.resetRevision,
+  (config, acceptSaved) => emit('persist-opcua', config, acceptSaved)
+)
 const { hasPermission } = usePermissions()
 const activeTab = ref('connection')
 const canEditOpcUa = computed(() => hasPermission(PERMISSIONS.opcUaEdit))
@@ -225,11 +232,11 @@ const securityModeOptions = [
 ]
 const securityModeValue = computed({
   get(): string {
-    return props.opcUa?.securityMode || (securityPolicyValue.value === 'None' ? 'None' : 'SignAndEncrypt')
+    return opcUa.value?.securityMode || (securityPolicyValue.value === 'None' ? 'None' : 'SignAndEncrypt')
   },
   set(value: string) {
-    if (!props.opcUa) return
-    props.opcUa.securityMode = value as OpcUaServerConfig['securityMode']
+    if (!opcUa.value) return
+    opcUa.value.securityMode = value as OpcUaServerConfig['securityMode']
     setSecurityPolicy(value === 'None' ? 'None' : securityPolicyValue.value === 'None' ? 'Basic256Sha256' : securityPolicyValue.value)
   }
 })
@@ -238,13 +245,13 @@ const securityPolicyOptions = computed(() => allSecurityPolicies.filter(policy =
 ))
 
 const passwordPlaceholder = computed(() => {
-  return props.opcUa?.passwordConfigured ? '已配置，留空不修改' : '请输入密码'
+  return opcUa.value?.passwordConfigured ? '已配置，留空不修改' : '请输入密码'
 })
 
 const securityPolicyValue = computed({
   get() {
-    if (!props.opcUa) return 'None'
-    return normalizeSecurityPolicy(props.opcUa.securityPolicy) || deriveSecurityPolicy()
+    if (!opcUa.value) return 'None'
+    return normalizeSecurityPolicy(opcUa.value.securityPolicy) || deriveSecurityPolicy()
   },
   set(value: string) {
     setSecurityPolicy(value)
@@ -252,34 +259,34 @@ const securityPolicyValue = computed({
 })
 
 const endpointPreview = computed(() => {
-  if (!props.opcUa) return '-'
-  if (props.opcUa.endpointUrl) return props.opcUa.endpointUrl
-  const host = !props.opcUa.host || props.opcUa.host === '0.0.0.0' ? 'localhost' : props.opcUa.host
-  const path = (props.opcUa.endpointPath || 'IPC.Gateway').replace(/^\/+|\/+$/g, '')
-  return `opc.tcp://${host}:${props.opcUa.port || 4840}/${path}`
+  if (!opcUa.value) return '-'
+  if (opcUa.value.endpointUrl) return opcUa.value.endpointUrl
+  const host = !opcUa.value.host || opcUa.value.host === '0.0.0.0' ? 'localhost' : opcUa.value.host
+  const path = (opcUa.value.endpointPath || 'IPC.Gateway').replace(/^\/+|\/+$/g, '')
+  return `opc.tcp://${host}:${opcUa.value.port || 4840}/${path}`
 })
 
 function handleAnonymousChange(value: string | number | boolean) {
-  if (!props.opcUa) return
-  if (!Boolean(value) && !props.opcUa.usernamePasswordEnabled) {
-    props.opcUa.allowAnonymous = true
+  if (!opcUa.value) return
+  if (!Boolean(value) && !opcUa.value.usernamePasswordEnabled) {
+    opcUa.value.allowAnonymous = true
   }
 }
 
 function handleUsernamePasswordChange(value: string | number | boolean) {
-  if (!props.opcUa) return
-  if (!Boolean(value) && !props.opcUa.allowAnonymous) {
-    props.opcUa.allowAnonymous = true
+  if (!opcUa.value) return
+  if (!Boolean(value) && !opcUa.value.allowAnonymous) {
+    opcUa.value.allowAnonymous = true
   }
 }
 
 function setSecurityPolicy(value: string) {
-  if (!props.opcUa) return
+  if (!opcUa.value) return
   const policy = normalizeSecurityPolicy(value) || 'None'
-  props.opcUa.securityPolicy = policy
-  props.opcUa.allowSecurityPolicyNone = policy === 'None'
-  props.opcUa.enableBasic256SignAndEncrypt = securityModeValue.value === 'SignAndEncrypt' && policy === 'Basic256'
-  props.opcUa.enableBasic256Sha256SignAndEncrypt = securityModeValue.value === 'SignAndEncrypt' && policy === 'Basic256Sha256'
+  opcUa.value.securityPolicy = policy
+  opcUa.value.allowSecurityPolicyNone = policy === 'None'
+  opcUa.value.enableBasic256SignAndEncrypt = securityModeValue.value === 'SignAndEncrypt' && policy === 'Basic256'
+  opcUa.value.enableBasic256Sha256SignAndEncrypt = securityModeValue.value === 'SignAndEncrypt' && policy === 'Basic256Sha256'
 }
 
 function normalizeSecurityPolicy(value: string | undefined) {
@@ -287,12 +294,12 @@ function normalizeSecurityPolicy(value: string | undefined) {
 }
 
 function deriveSecurityPolicy() {
-  if (!props.opcUa) return 'None'
-  if (props.opcUa.usernamePasswordEnabled && props.opcUa.enableBasic256SignAndEncrypt) return 'Basic256'
-  if (props.opcUa.usernamePasswordEnabled && props.opcUa.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
-  if (props.opcUa.allowSecurityPolicyNone) return 'None'
-  if (props.opcUa.enableBasic256SignAndEncrypt) return 'Basic256'
-  if (props.opcUa.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
+  if (!opcUa.value) return 'None'
+  if (opcUa.value.usernamePasswordEnabled && opcUa.value.enableBasic256SignAndEncrypt) return 'Basic256'
+  if (opcUa.value.usernamePasswordEnabled && opcUa.value.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
+  if (opcUa.value.allowSecurityPolicyNone) return 'None'
+  if (opcUa.value.enableBasic256SignAndEncrypt) return 'Basic256'
+  if (opcUa.value.enableBasic256Sha256SignAndEncrypt) return 'Basic256Sha256'
   return 'None'
 }
 </script>

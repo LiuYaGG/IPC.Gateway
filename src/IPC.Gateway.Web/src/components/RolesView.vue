@@ -156,7 +156,8 @@ import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
 import { tagColor, confirmAction } from '../utils/ui'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { useAccountDirectory } from '../utils/accountDirectory'
 
 import {
   DeleteOutlined as Delete,
@@ -201,7 +202,7 @@ const canEditRole = computed(() => hasPermission(PERMISSIONS.rolesEdit))
 const canDeleteRole = computed(() => hasPermission(PERMISSIONS.rolesDelete))
 const canSaveCurrentRole = computed(() => (editingName.value ? canEditRole.value : canCreateRole.value))
 
-onMounted(() => load())
+const directoryChanged = useAccountDirectory(load)
 
 async function load() {
   loading.value = true
@@ -260,13 +261,14 @@ async function save() {
     displayName: form.value.displayName.trim(),
     description: form.value.description.trim(),
     enabled: form.value.enabled,
-    permissions: [...form.value.permissions]
+    permissions: [...(editingRole.value?.permissions ?? form.value.permissions)]
   }
 
   saving.value = true
   try {
     if (editingName.value) await updateRole(editingName.value, payload)
     else await createRole(payload)
+    directoryChanged()
     notify.success('角色已保存')
     drawerVisible.value = false
     await load()
@@ -298,6 +300,7 @@ async function remove(role: GatewayRoleInfo) {
 
   try {
     await deleteRole(role.name)
+    directoryChanged()
     notify.success('角色已删除')
     await load()
   } catch (error) {

@@ -10,7 +10,7 @@
             }}</small>
           </div>
           <div class="card-actions">
-            <a-button :loading="loading" @click="load">
+            <a-button :loading="loading" @click="load()">
               <template #icon>
                 <span class="ui-icon"><component :is="Refresh" /></span>
               </template>
@@ -234,7 +234,8 @@ import { notify } from "../utils/ui";
 import { tx, localizeColumns } from "../i18n";
 import { permissionLabel, permissionPageLabel } from "../utils/display";
 import { tagColor } from "../utils/ui";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import { useAccountDirectory } from "../utils/accountDirectory";
 
 import {
   CheckOutlined as Check,
@@ -401,11 +402,9 @@ const permissionTreeData = computed<PermissionTreeNode[]>(() => {
     .sort((left, right) => left.label.localeCompare(right.label, "zh-Hans-CN"));
 });
 
-watch(selectedRole, () => syncDraftFromRole(), { immediate: true });
+const directoryChanged = useAccountDirectory(() => load(true));
 
-onMounted(() => load());
-
-async function load() {
+async function load(preserveDraft = false) {
   loading.value = true;
   usersLoadError.value = "";
   try {
@@ -414,6 +413,8 @@ async function load() {
       loadRolePermissions(),
       loadCurrentUser(),
     ]);
+    const previousRole = selectedRoleName.value;
+    const keepEdits = preserveDraft && dirty.value;
     currentAccount.value = session.user;
     roles.value = roleItems;
     permissions.value = permissionItems;
@@ -431,7 +432,7 @@ async function load() {
     }
     if (!selectedUsername.value)
       selectedUsername.value = session.user?.username ?? "";
-    syncDraftFromRole();
+    if (!keepEdits || selectedRoleName.value !== previousRole) syncDraftFromRole();
     await loadRoleUsers();
   } catch (error) {
     notify.error(error instanceof Error ? error.message : "权限数据加载失败");
@@ -441,7 +442,6 @@ async function load() {
 }
 
 async function loadRoleUsers() {
-  users.value = [];
   usersLoadError.value = "";
   if (!canViewUsers.value) {
     users.value = currentAccount.value ? [currentAccount.value] : [];
@@ -536,6 +536,7 @@ async function save() {
     );
     const index = roles.value.findIndex((role) => role.name === saved.name);
     if (index >= 0) roles.value.splice(index, 1, saved);
+    directoryChanged();
     syncDraftFromRole();
     notify.success("角色权限已保存");
   } catch (error) {

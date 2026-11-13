@@ -9,6 +9,7 @@ import type {
   TagConfig,
   TagValueSnapshot
 } from '../../api'
+import { effectiveScanRateMs } from '../../utils/tagDefaults'
 import { nodeCategory, nodeSize } from './topologyLayout'
 import { buildTopologyLanePlan, tagRowSpacing } from './topologyLanePlan'
 import {
@@ -301,7 +302,7 @@ function addDeviceGroups(args: AddDeviceGroupArgs) {
           { label: '标签数', value: tags.length },
           {
             label: '采集周期',
-            value: row.group ? `${row.group.scanRateMs || 0} ms` : `${args.device.defaultScanRateMs || 0} ms`
+            value: `${effectiveScanRateMs(args.device, row.group)} ms`
           },
           { label: '状态', value: toneLabel(tone as TopologyTone) }
         ],

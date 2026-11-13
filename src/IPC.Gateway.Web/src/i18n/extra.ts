@@ -22,6 +22,7 @@ export const extraEnglish: Record<string, string> = {
   '标签总数': 'Total tags',
   '异常点位数': 'Tags with errors',
   '采集周期(ms)': 'Scan interval (ms)',
+  '继承设备周期（{0} ms）': 'Device interval ({0} ms)',
   '消息发布': 'Message publishing',
   'Broker 已连接': 'Broker connected',
   'Broker 未连接': 'Broker disconnected',

@@ -253,8 +253,6 @@ namespace IPC.Runtime.Configuration
 
             if (tag.ElementCount <= 0)
                 result.AddWarning(prefix + "元素数量小于等于0，将按1处理。");
-            if (tag.ScanRateMs < 0)
-                result.AddWarning(prefix + "采集周期小于0，将继承分组或设备周期。");
             if (tag.FailureRetryDelayMs < 0)
                 result.AddWarning(prefix + "失败重试间隔小于0，将继承设备重试间隔。");
 

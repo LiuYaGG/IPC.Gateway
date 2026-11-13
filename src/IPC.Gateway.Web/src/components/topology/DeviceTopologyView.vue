@@ -7,41 +7,43 @@
       <span>{{ formatMessage('{0} 个通道 · {1} 台设备 · {2} 个点位', [model.channels.length, model.deviceCount, model.tagCount]) }}</span>
     </header>
 
-    <div class="network-stage">
-      <section class="network-side south">
-        <h3>{{ tx('南向通道') }} <small>{{ channels.length }}</small></h3>
-        <div v-if="channels.length" ref="channelList" class="channel-scroll">
-          <div class="south-stack">
-            <div v-for="column in channelColumns" :key="column[0].id" class="channel-column">
-              <a-button v-for="item in column" :key="item.id" class="channel-node" :data-channel="item.id"
-                :aria-pressed="channel?.id === item.id" @click="selectChannel(item)">
-                <ApartmentOutlined class="node-icon" />
-                <span class="node-copy">
-                  <strong :title="item.name">{{ item.name }}</strong>
-                  <small :title="channelHealth(item)"><i :class="['light', channelTone(item)]" />{{ channelHealth(item) }}</small>
-                </span>
-                <span class="node-count">{{ formatMessage('{0} 台', [item.devices.length]) }} <RightOutlined /></span>
-              </a-button>
+    <TopologyViewport>
+      <div class="network-stage">
+        <section class="network-side south">
+          <h3>{{ tx('南向通道') }} <small>{{ channels.length }}</small></h3>
+          <div v-if="channels.length" ref="channelList" class="channel-scroll">
+            <div class="south-stack">
+              <div v-for="column in channelColumns" :key="column[0].id" class="channel-column">
+                <a-button v-for="item in column" :key="item.id" class="channel-node" :data-channel="item.id"
+                  :aria-pressed="channel?.id === item.id" @click="selectChannel(item)">
+                  <ApartmentOutlined class="node-icon" />
+                  <span class="node-copy">
+                    <strong :title="item.name">{{ item.name }}</strong>
+                    <small :title="channelHealth(item)"><i :class="['light', channelTone(item)]" />{{ channelHealth(item) }}</small>
+                  </span>
+                  <span class="node-count">{{ formatMessage('{0} 台', [item.devices.length]) }} <RightOutlined /></span>
+                </a-button>
+              </div>
             </div>
           </div>
-        </div>
-        <div v-else class="empty-node">{{ tx(query ? '无匹配项' : '暂无通道') }}</div>
-      </section>
+          <div v-else class="empty-node">{{ tx(query ? '无匹配项' : '暂无通道') }}</div>
+        </section>
 
-      <button type="button" class="gateway-node" data-gateway :aria-pressed="focus === 'gateway'" @click="focus = 'gateway'">
-        <img :src="gatewayImage" alt="" />
-        <strong :title="gatewayName">{{ gatewayName }}</strong>
-        <small><i :class="['light', !status ? 'unknown' : status.isRunning ? 'online' : 'disabled']" />
-          {{ tx(!status ? '未知' : status.isRunning ? '运行中' : '未运行') }}</small>
-      </button>
+        <button type="button" class="gateway-node" data-gateway :aria-pressed="focus === 'gateway'" @click="focus = 'gateway'">
+          <img :src="gatewayImage" alt="" />
+          <strong :title="gatewayName">{{ gatewayName }}</strong>
+          <small><i :class="['light', !status ? 'unknown' : status.isRunning ? 'online' : 'disabled']" />
+            {{ tx(!status ? '未知' : status.isRunning ? '运行中' : '未运行') }}</small>
+        </button>
 
-      <section class="network-side north">
-        <h3>{{ tx('北向服务') }} <small>{{ services.length }}</small></h3>
-        <div class="node-stack north-stack">
-          <TopologyNorthbound :services="services" :selected-id="focus === 'service' ? serviceId : null" @select="selectService" />
-        </div>
-      </section>
-    </div>
+        <section class="network-side north">
+          <h3>{{ tx('北向服务') }} <small>{{ services.length }}</small></h3>
+          <div class="node-stack north-stack">
+            <TopologyNorthbound :services="services" :selected-id="focus === 'service' ? serviceId : null" @select="selectService" />
+          </div>
+        </section>
+      </div>
+    </TopologyViewport>
 
     <section v-if="channel" class="channel-devices">
       <header>
@@ -92,6 +94,7 @@ import { buildChannelTopology, type TopologyChannel, type TopologyDevice } from 
 import { buildNorthboundServices, type NorthboundService } from './northboundTopology'
 import { normalizeKey } from './topologyStatus'
 import TopologyNorthbound from './TopologyNorthbound.vue'
+import TopologyViewport from './TopologyViewport.vue'
 import TopologyDeviceTags from './TopologyDeviceTags.vue'
 
 const props = defineProps<{

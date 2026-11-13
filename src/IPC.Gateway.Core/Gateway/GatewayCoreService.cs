@@ -2123,7 +2123,6 @@ namespace IPC.Gateway.Core.Gateway
             target.Enabled = input.Enabled;
             target.MqttPublishEnabled = input.MqttPublishEnabled;
             target.AccessMode = input.AccessMode;
-            target.ScanRateMs = input.ScanRateMs;
             target.Unit = input.Unit;
             target.PointCode = input.PointCode;
             target.AssetPath = input.AssetPath;

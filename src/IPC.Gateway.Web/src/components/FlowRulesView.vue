@@ -270,7 +270,7 @@ import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
 import { statusText } from '../utils/display'
 import { tagColor, confirmAction } from '../utils/ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 
 import {
   CopyOutlined as CopyDocument,
@@ -423,7 +423,15 @@ watch(
   { immediate: true }
 )
 
-watch([drawerVisible, saving], () => emit('editing-state', drawerVisible.value || saving.value), { immediate: true })
+const pageActive = ref(true)
+onActivated(() => { pageActive.value = true })
+onDeactivated(() => { pageActive.value = false })
+watch([pageActive, drawerVisible, saving], ([active, open, busy], _, onCleanup) => {
+  emit('editing-state', active && (open || busy))
+  if (!active || !open) return
+  window.addEventListener('keydown', handleEditorShortcut)
+  onCleanup(() => window.removeEventListener('keydown', handleEditorShortcut))
+}, { immediate: true })
 
 onMounted(async () => {
   try {
@@ -432,11 +440,9 @@ onMounted(async () => {
     valueScripts.value = []
   }
   load()
-  window.addEventListener('keydown', handleEditorShortcut)
 })
 onBeforeUnmount(() => {
   emit('editing-state', false)
-  window.removeEventListener('keydown', handleEditorShortcut)
 })
 
 async function load() {

@@ -157,7 +157,7 @@ public sealed partial class RuntimeEngine
                     if (processingChanged) _valueProcessingResetTagIds[tag.Id] = 0;
                     bool groupReenabled = (group?.Enabled ?? true) && !(oldGroup?.Enabled ?? true);
                     bool tagReenabled = tag.Enabled && !oldTag.Enabled;
-                    bool scheduleChanged = GetEffectiveScanRateMs(previousDevice, oldGroup, oldTag) != GetEffectiveScanRateMs(currentDevice, group, tag) ||
+                    bool scheduleChanged = GetEffectiveScanRateMs(previousDevice, oldGroup) != GetEffectiveScanRateMs(currentDevice, group) ||
                         GetFailureRetryDelayMs(previousDevice, oldTag) != GetFailureRetryDelayMs(currentDevice, tag);
                     if (!device.Enabled || !channelEnabled || !(group?.Enabled ?? true) || !tag.Enabled || !CanDeviceRead(tag) ||
                         !(parentReenabled || groupReenabled || tagReenabled || scheduleChanged || processingChanged)) continue;

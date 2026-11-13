@@ -416,7 +416,7 @@
                   {{ row.tag.meterDataIdentifier || '-' }}
                 </span>
                 <span class="tag-col-extra">{{ row.tag.meterType || '-' }}</span>
-                <span class="tag-col-extra">{{ row.tag.scanRateMs || selectedDevice?.defaultScanRateMs || 1000 }}</span>
+                <span class="tag-col-extra">{{ workspaceScanRate }}</span>
                 <span class="device-tag-table__actions table-actions">
                   <a-button
                     v-if="hasTagWritePermission"
@@ -618,7 +618,7 @@
       :title="tx(editingGroupId ? tx('编辑分组') : tx('新增分组'))"
       width="480px"
     >
-      <DeviceGroupForm v-if="groupForm" :model="groupForm" />
+      <DeviceGroupForm v-if="groupForm" :model="groupForm" :device-scan-rate-ms="effectiveScanRateMs(groupTargetDevice)" />
       <template #footer>
         <div class="drawer-footer">
           <a-button @click="groupDrawerVisible = false">{{ tx('取消') }}</a-button>
@@ -730,7 +730,7 @@ import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
 import { qualityText, statusText } from '../utils/display'
 import { showBusy, confirmAction, type FileSelection } from '../utils/ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 
 import {
   CaretDownOutlined,
@@ -811,6 +811,7 @@ import {
   cloneTag,
   createGroupDraft,
   createTagDraft,
+  effectiveScanRateMs,
   normalizeGroup,
   normalizeTag,
   dataTypeDisplayName
@@ -872,9 +873,12 @@ const tagOverscan = 10
 const treeScroller = ref<HTMLElement | null>(null)
 const treeViewportHeight = ref(treeRowHeight * 16)
 const treeScrollTop = ref(0)
+let treeScrollLeft = 0
 const tagScroller = ref<HTMLElement | null>(null)
 const tagViewportHeight = ref(tagHeaderHeight + tagRowHeight * 12)
 const tagScrollTop = ref(0)
+let tagScrollLeft = 0
+const pageActive = ref(true)
 const expandedTreeKeys = ref(new Set<string>(['root']))
 const deviceFilterInput = ref('')
 const deviceNameFilter = ref('')
@@ -1189,7 +1193,7 @@ const workspaceMetrics = computed(() => {
   }
 })
 const workspaceScanRate = computed(() => {
-  if (selectedDevice.value) return selectedDevice.value.defaultScanRateMs
+  if (selectedDevice.value) return effectiveScanRateMs(selectedDevice.value, selectedGroup.value)
   const rates = devices.value.filter((device) => device.enabled).map((device) => device.defaultScanRateMs)
   if (!rates.length) return '—'
   const min = Math.min(...rates),
@@ -1294,6 +1298,7 @@ watch(
 )
 watch(selectedNodeKey, (key) => {
   if (restoringView) return
+  pendingScroll = undefined
   tagPage.value = 1
   selectionAncestors = (findNodePath(treeData.value[0], key) ?? []).map((node) => node.key)
   tagScrollTop.value = 0
@@ -1314,6 +1319,7 @@ watch(
 onMounted(() => {
   window.addEventListener('pagehide', persistViewState)
   viewportObserver = new ResizeObserver((entries) => {
+    if (!pageActive.value) return
     for (const entry of entries) {
       if (entry.target === treeScroller.value) treeViewportHeight.value = entry.target.clientHeight
       if (entry.target === tagScroller.value) tagViewportHeight.value = entry.target.clientHeight
@@ -1323,6 +1329,15 @@ onMounted(() => {
   if (treeScroller.value) viewportObserver.observe(treeScroller.value)
   if (tagScroller.value) viewportObserver.observe(tagScroller.value)
   void ensureProtocolCatalogLoaded()
+})
+
+onDeactivated(() => {
+  pageActive.value = false
+  pendingScroll = pendingScroll ?? persistViewState()
+})
+onActivated(() => {
+  pageActive.value = true
+  restoreScrollPositions()
 })
 
 onBeforeUnmount(() => {
@@ -1378,31 +1393,37 @@ function restoreScrollPositions() {
   const saved = pendingScroll
   treeScroller.value.scrollTo({ top: saved.treeTop, left: saved.treeLeft })
   treeScrollTop.value = treeScroller.value.scrollTop
+  treeScrollLeft = treeScroller.value.scrollLeft
   if (selectedTags.value.length) {
     if (!tagScroller.value?.clientHeight) return
     tagScroller.value.scrollTo({ top: saved.tagTop, left: saved.tagLeft })
     tagScrollTop.value = tagScroller.value.scrollTop
+    tagScrollLeft = tagScroller.value.scrollLeft
   }
   pendingScroll = undefined
 }
 
 function persistViewState() {
   if (!activeStateScope || restoringView || !props.project) return
-  saveDeviceViewState(activeStateScope, {
+  const tree = treeScroller.value
+  const table = tagScroller.value
+  const state = {
     selected: selectedNodeKey.value,
     ancestors: selectionAncestors,
     expanded: [...expandedTreeKeys.value],
     filter: deviceFilterInput.value,
     page: devicePage.value,
     pageSize: devicePageSize.value,
-    treeTop: treeScroller.value?.scrollTop ?? treeScrollTop.value,
-    treeLeft: treeScroller.value?.scrollLeft ?? 0,
-    tagTop: tagScroller.value?.scrollTop ?? tagScrollTop.value,
-    tagLeft: tagScroller.value?.scrollLeft ?? 0,
+    treeTop: tree?.isConnected ? tree.scrollTop : treeScrollTop.value,
+    treeLeft: tree?.isConnected ? tree.scrollLeft : treeScrollLeft,
+    tagTop: table?.isConnected ? table.scrollTop : tagScrollTop.value,
+    tagLeft: table?.isConnected ? table.scrollLeft : tagScrollLeft,
     allColumns: showAllColumns.value,
     tagPage: tagPageRange.value.current,
     tagPageSize: tagPageSize.value
-  })
+  }
+  saveDeviceViewState(activeStateScope, state)
+  return state
 }
 
 function openValueDetails(tag: TagConfig, kind: 'raw' | 'current') {
@@ -1609,11 +1630,15 @@ function pushTreeNode(rows: Array<Omit<DeviceTreeRow, 'top'>>, node: DeviceTreeN
 }
 
 function onTreeScroll() {
-  treeScrollTop.value = treeScroller.value?.scrollTop ?? 0
+  if (!treeScroller.value?.isConnected) return
+  treeScrollTop.value = treeScroller.value.scrollTop
+  treeScrollLeft = treeScroller.value.scrollLeft
 }
 
 function onTagScroll() {
-  tagScrollTop.value = tagScroller.value?.scrollTop ?? 0
+  if (!tagScroller.value?.isConnected) return
+  tagScrollTop.value = tagScroller.value.scrollTop
+  tagScrollLeft = tagScroller.value.scrollLeft
 }
 
 function toggleTreeNode(node: DeviceTreeNode) {
@@ -1772,7 +1797,7 @@ function tagSnapshot(tag: TagConfig) {
 }
 
 function runtimeSnapshot(key: string) {
-  return props.enabledTagKeys.has(key) ? props.runtimeTags.get(key) : undefined
+  return pageActive.value && props.enabledTagKeys.has(key) ? props.runtimeTags.get(key) : undefined
 }
 
 function findTagSnapshot(device: DeviceConfig | undefined, group: GroupConfig | null | undefined, tag: TagConfig) {
@@ -1784,7 +1809,7 @@ function deviceTagHealth(device?: DeviceConfig) {
 
   const key = deviceIdentityKey(device.channelId, device.id)
   const total = readableTagsByDevice.value.get(key) ?? 0
-  const good = props.goodTagsByDevice.get(key) ?? 0
+  const good = pageActive.value ? props.goodTagsByDevice.get(key) ?? 0 : 0
   const rate = total <= 0 ? 0 : Number(((good / total) * 100).toFixed(1))
   return {
     good,

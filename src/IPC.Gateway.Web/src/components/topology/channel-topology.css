@@ -33,13 +33,9 @@ h3 small { margin-inline-start: .5em; font-size: .82em; font-weight: normal; }
   display: grid;
   grid-template-columns: minmax(0, 2.1fr) minmax(155px, .85fr) minmax(0, 1fr);
   align-items: center;
-  flex: 1 0 380px;
   grid-template-rows: minmax(0, 1fr);
-  min-height: 380px;
-  padding: 42px clamp(15px, 3%, 55px) 26px;
-  border: 1px solid var(--edge);
-  border-radius: 7px;
-  background: radial-gradient(#d4e0eb .7px, transparent .8px) 0 0 / 14px 14px, #f4f8fb;
+  min-width: 0;
+  padding: 32px clamp(15px, 3%, 55px) 16px;
 }
 .network-side { min-width: 0; position: relative; }
 .south { --channel-height: 58px; }
@@ -49,6 +45,7 @@ h3 small { margin-inline-start: .5em; font-size: .82em; font-weight: normal; }
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
+  touch-action: pan-x;
   margin-right:8px;
 }
 .south-stack {
@@ -154,7 +151,7 @@ h3 small { margin-inline-start: .5em; font-size: .82em; font-weight: normal; }
   .node-icon { display:none; }
 }
 @container (max-width: 620px) {
-  .network-stage { grid-template-columns: 1fr; grid-template-rows:auto; flex-basis:auto; gap: 12px; padding: 14px 10px; }
+  .network-stage { grid-template-columns: 1fr; grid-template-rows:auto; gap: 12px; padding: 14px 10px; }
   .network-side h3 { position:static; }
   .node-stack::after,.north-stack :deep(.topology-north-node)::before,.south:has(.channel-scroll)::after,
   .south:has(.channel-scroll)::before,.channel-column::before,.channel-column::after,.channel-node::after { display:none; }

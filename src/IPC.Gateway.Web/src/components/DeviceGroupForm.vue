@@ -11,16 +11,24 @@
     </a-form-item>
     <a-form-item :label="tx('启用')"><a-switch v-model:checked="model.enabled" /></a-form-item>
     <a-form-item :label="tx('采集周期(ms)')">
-      <gateway-number-input v-model="model.scanRateMs" :min="100" :max="3600000" />
+      <gateway-number-input
+        :model-value="model.scanRateMs || null"
+        :placeholder="formatMessage('继承设备周期（{0} ms）', [deviceScanRateMs])"
+        :min="100"
+        :max="3600000"
+        integer
+        @update:model-value="model.scanRateMs = $event ?? 0"
+      />
     </a-form-item>
   </a-form>
 </template>
 
 <script setup lang="ts">
-import { tx } from '../i18n'
+import { formatMessage, tx } from '../i18n'
 import type { GroupConfig } from '../api'
 
 defineProps<{
   model: GroupConfig
+  deviceScanRateMs: number
 }>()
 </script>

@@ -647,7 +647,7 @@ namespace IPC.Runtime.Engine
                     tag.DataType,
                     GetReadCount(tag),
                     Math.Max(0, tag.ElementOffset),
-                    GetEffectiveScanRateMs(device, group, tag)));
+                    GetEffectiveScanRateMs(device, group)));
             }
         }
 

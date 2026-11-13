@@ -973,7 +973,6 @@ export interface TagConfig {
   enabled: boolean;
   mqttPublishEnabled: boolean;
   accessMode: string;
-  scanRateMs: number;
   failureRetryDelayMs: number;
   unit: string;
   pointCode: string;

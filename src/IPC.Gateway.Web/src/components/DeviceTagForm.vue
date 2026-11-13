@@ -52,9 +52,6 @@
               <a-form-item v-if="!model.isVirtual" class="tag-span-two" :label="tx('地址')" :name="['address']" :required="!isMeter">
                 <gateway-input v-model="model.address" :placeholder="tx(addressPlaceholder)" />
               </a-form-item>
-              <a-form-item :label="tx('采集周期(ms)')" :name="['scanRateMs']">
-                <gateway-number-input v-model="model.scanRateMs" :min="100" :max="3600000" />
-              </a-form-item>
               <a-form-item :label="tx('失败重试(ms)')" :name="['failureRetryDelayMs']">
                 <gateway-number-input v-model="model.failureRetryDelayMs" :min="100" :max="3600000" />
               </a-form-item>
@@ -536,7 +533,6 @@ const rules: FormRules<TagConfig> = {
   address: [{ required: false, validator: validateAddress, trigger: 'blur' }],
   meterAddress: [{ required: false, validator: validateMeterAddress, trigger: 'blur' }],
   meterDataIdentifier: [{ required: false, validator: validateMeterDataIdentifier, trigger: 'blur' }],
-  scanRateMs: [{ validator: validateMin100, trigger: 'change' }],
   failureRetryDelayMs: [{ validator: validateMin100, trigger: 'change' }],
   elementCount: [{ validator: validateElementCount, trigger: 'change' }],
   'scaling.multiplier': [{ validator: validateScalingMultiplier, trigger: 'change' }],

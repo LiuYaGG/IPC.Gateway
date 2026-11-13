@@ -392,9 +392,9 @@ namespace IPC.Runtime.Engine
             // copy a partially updated failure count/recovery deadline.
             Runtime = previous.Runtime;
             PreservesReadState = true;
-            PreservesSchedule = Tag.ScanRateMs == previous.Tag.ScanRateMs &&
-                                Tag.FailureRetryDelayMs == previous.Tag.FailureRetryDelayMs &&
-                                (Group?.ScanRateMs ?? 0) == (previous.Group?.ScanRateMs ?? 0);
+            // Parent interval changes are applied after restoring deadlines, when
+            // both the previous and current device/group settings are available.
+            PreservesSchedule = Tag.FailureRetryDelayMs == previous.Tag.FailureRetryDelayMs;
         }
 
         public static CompiledTagRead Valid(GroupConfig? group, TagConfig tag, string address) =>

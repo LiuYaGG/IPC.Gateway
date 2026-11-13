@@ -29,6 +29,7 @@ onMounted(() => {
   const element = container.value
   if (!element) return
   const update = () => {
+    if (!element.isConnected) return
     const header = element.querySelector('.ant-table-header') ?? element.querySelector('.ant-table-thead')
     bodyHeight.value = Math.max(
       80,

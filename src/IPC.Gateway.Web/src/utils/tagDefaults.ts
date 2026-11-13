@@ -206,6 +206,11 @@ export function dataTypeOptionGroups(protocol: string, driverOptionsJson = ''): 
 
 export const accessModeOptions = ['ReadOnly', 'ReadWrite', 'WriteOnly']
 
+export function effectiveScanRateMs(device?: DeviceConfig | null, group?: GroupConfig | null): number {
+  const rate = group && group.scanRateMs > 0 ? group.scanRateMs : device?.defaultScanRateMs
+  return rate && rate > 0 ? Math.min(86400000, Math.max(100, rate)) : 1000
+}
+
 export const meterProtocolOptions = [
   { label: 'DL/T 645-2007', value: 'Dlt6452007' },
   { label: 'CJ/T 188-2004', value: 'Cjt1882004' },
@@ -238,7 +243,7 @@ export function normalizeGroup(group: GroupConfig): GroupConfig {
   group.deviceId = group.deviceId || ''
   group.name = group.name || ''
   group.enabled = group.enabled ?? true
-  group.scanRateMs = group.scanRateMs || 1000
+  group.scanRateMs = group.scanRateMs ?? 0
   group.tags = group.tags ?? []
   return group
 }
@@ -260,7 +265,6 @@ export function createTagDraft(device: DeviceConfig, group?: GroupConfig): TagCo
     enabled: true,
     mqttPublishEnabled: false,
     accessMode: 'ReadWrite',
-    scanRateMs: group?.scanRateMs || device.defaultScanRateMs || 1000,
     failureRetryDelayMs: device.failureRetryDelayMs || 1000,
     unit: '',
     pointCode: '',
@@ -303,7 +307,8 @@ export function normalizeTag(tag: TagConfig): TagConfig {
   tag.enabled = tag.enabled ?? true
   tag.mqttPublishEnabled = tag.mqttPublishEnabled ?? false
   tag.accessMode = tag.accessMode || 'ReadWrite'
-  tag.scanRateMs = tag.scanRateMs || 1000
+  // Older servers can still include a per-tag interval. Drop it from outgoing edits.
+  if ('scanRateMs' in tag) delete tag.scanRateMs
   tag.failureRetryDelayMs = tag.failureRetryDelayMs || 1000
   tag.unit = tag.unit || ''
   tag.pointCode = tag.pointCode || ''

@@ -49,7 +49,7 @@
       </div>
       <div class="mqtt-status-actions">
         <span class="error-text" :title="tx(status?.lastError || status?.lastPublishResult || '')">{{ tx(status?.lastError || status?.lastPublishResult || '') }}</span>
-        <a-button v-if="canEditMqtt" type="success" @click="emit('persist-mqtt')">
+        <a-button v-if="canEditMqtt" type="success" :loading="saving" @click="save">
           <template #icon>
             <span class="ui-icon"><component :is="Check" /></span>
           </template>
@@ -412,6 +412,7 @@
 
 <script setup lang="ts">
 import { tx } from '../i18n'
+import { useCommunicationConfigDraft } from '../utils/communicationConfigDraft'
 import { tagColor } from '../utils/ui'
 import { computed, ref } from 'vue'
 import { CheckOutlined as Check } from '@ant-design/icons-vue'
@@ -421,13 +422,19 @@ import { PERMISSIONS, usePermissions } from '../utils/permissions'
 
 const props = defineProps<{
   mqtt: Record<string, any> | null
+  resetRevision?: number
+  saving?: boolean
   status: MqttRuntimeStatus | null | undefined
 }>()
 
 const emit = defineEmits<{
-  'persist-mqtt': []
+  'persist-mqtt': [config: Record<string, any>, acceptSaved: (saved: Record<string, any>) => void]
 }>()
 
+const { draft: mqtt, save } = useCommunicationConfigDraft(
+  () => props.mqtt, () => props.resetRevision,
+  (config, acceptSaved) => emit('persist-mqtt', config, acceptSaved)
+)
 const { hasPermission } = usePermissions()
 const activeTab = ref('connection')
 const canEditMqtt = computed(() => hasPermission(PERMISSIONS.mqttEdit))
@@ -436,12 +443,12 @@ const publishModeOptions = [
   { label: 'Sparkplug B', value: 'SparkplugB' }
 ]
 
-const isSparkplug = computed(() => props.mqtt?.publishMode === 'SparkplugB' || props.status?.sparkplugEnabled)
+const isSparkplug = computed(() => mqtt.value?.publishMode === 'SparkplugB' || props.status?.sparkplugEnabled)
 
 const brokerPreview = computed(() => {
-  if (!props.mqtt) return '-'
-  const host = props.mqtt.host || '-'
-  const port = props.mqtt.port || 1883
+  if (!mqtt.value) return '-'
+  const host = mqtt.value.host || '-'
+  const port = mqtt.value.port || 1883
   return `${host}:${port}`
 })
 
@@ -450,35 +457,35 @@ const nodeDeathPreview = computed(() => buildSparkplugTopic('NDEATH'))
 const nodeCommandPreview = computed(() => buildSparkplugTopic('NCMD'))
 const deviceCommandPreview = computed(() => `${buildSparkplugTopic('DCMD')}/+`)
 const primaryHostStatePreview = computed(() => {
-  if (!props.mqtt?.sparkplugPrimaryHostId) return '未启用'
-  const namespaceName = sanitizeTopic(props.mqtt.sparkplugNamespace || 'spBv1.0')
-  return `${namespaceName}/STATE/${sanitizeTopic(props.mqtt.sparkplugPrimaryHostId)}`
+  if (!mqtt.value?.sparkplugPrimaryHostId) return '未启用'
+  const namespaceName = sanitizeTopic(mqtt.value.sparkplugNamespace || 'spBv1.0')
+  return `${namespaceName}/STATE/${sanitizeTopic(mqtt.value.sparkplugPrimaryHostId)}`
 })
 
 function ensureSparkplugDefaults() {
-  if (!props.mqtt) return
-  props.mqtt.publishMode ||= 'Classic'
-  props.mqtt.sparkplugNamespace ||= 'spBv1.0'
-  props.mqtt.sparkplugGroupId ||= props.mqtt.gatewayId || 'IPC-Gateway'
-  props.mqtt.sparkplugEdgeNodeId ||= props.mqtt.clientId || props.mqtt.gatewayId || 'EdgeNode'
-  props.mqtt.sparkplugDeviceIdSource ||= 'DeviceId'
-  props.mqtt.sparkplugMetricNameTemplate ||= '{channel}/{group}/{tag}'
-  props.mqtt.sparkplugPublishNodeBirth ??= true
-  props.mqtt.sparkplugPublishDeviceBirth ??= true
-  props.mqtt.sparkplugPublishDeviceDeath ??= true
-  props.mqtt.sparkplugIncludeProperties ??= true
-  props.mqtt.sparkplugUseAliases ??= false
-  props.mqtt.sparkplugBirthQos ??= 0
-  props.mqtt.sparkplugDeathQos ??= 0
-  props.mqtt.sparkplugEnableCommands ??= true
-  props.mqtt.sparkplugPrimaryHostId ??= ''
+  if (!mqtt.value) return
+  mqtt.value.publishMode ||= 'Classic'
+  mqtt.value.sparkplugNamespace ||= 'spBv1.0'
+  mqtt.value.sparkplugGroupId ||= mqtt.value.gatewayId || 'IPC-Gateway'
+  mqtt.value.sparkplugEdgeNodeId ||= mqtt.value.clientId || mqtt.value.gatewayId || 'EdgeNode'
+  mqtt.value.sparkplugDeviceIdSource ||= 'DeviceId'
+  mqtt.value.sparkplugMetricNameTemplate ||= '{channel}/{group}/{tag}'
+  mqtt.value.sparkplugPublishNodeBirth ??= true
+  mqtt.value.sparkplugPublishDeviceBirth ??= true
+  mqtt.value.sparkplugPublishDeviceDeath ??= true
+  mqtt.value.sparkplugIncludeProperties ??= true
+  mqtt.value.sparkplugUseAliases ??= false
+  mqtt.value.sparkplugBirthQos ??= 0
+  mqtt.value.sparkplugDeathQos ??= 0
+  mqtt.value.sparkplugEnableCommands ??= true
+  mqtt.value.sparkplugPrimaryHostId ??= ''
 }
 
 function buildSparkplugTopic(messageType: string) {
-  if (!props.mqtt) return '-'
-  const namespaceName = sanitizeTopic(props.mqtt.sparkplugNamespace || 'spBv1.0')
-  const groupId = sanitizeTopic(props.mqtt.sparkplugGroupId || props.mqtt.gatewayId || 'IPC-Gateway')
-  const edgeNodeId = sanitizeTopic(props.mqtt.sparkplugEdgeNodeId || props.mqtt.clientId || 'EdgeNode')
+  if (!mqtt.value) return '-'
+  const namespaceName = sanitizeTopic(mqtt.value.sparkplugNamespace || 'spBv1.0')
+  const groupId = sanitizeTopic(mqtt.value.sparkplugGroupId || mqtt.value.gatewayId || 'IPC-Gateway')
+  const edgeNodeId = sanitizeTopic(mqtt.value.sparkplugEdgeNodeId || mqtt.value.clientId || 'EdgeNode')
   return `${namespaceName}/${groupId}/${messageType}/${edgeNodeId}`
 }
 

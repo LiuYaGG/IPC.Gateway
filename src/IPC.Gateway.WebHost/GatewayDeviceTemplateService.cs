@@ -84,14 +84,14 @@ public sealed class GatewayDeviceTemplateService
                 ScanRateMs = scanRate
             };
             foreach (DeviceTemplateTag tag in group.Tags)
-                targetGroup.Tags.Add(CreateTag(device, targetGroup, tag, scanRate));
+                targetGroup.Tags.Add(CreateTag(device, targetGroup, tag));
             device.Groups.Add(targetGroup);
         }
 
         return device;
     }
 
-    private static TagConfigurationDto CreateTag(DeviceConfigurationDto device, GroupConfigurationDto group, DeviceTemplateTag source, int scanRate)
+    private static TagConfigurationDto CreateTag(DeviceConfigurationDto device, GroupConfigurationDto group, DeviceTemplateTag source)
     {
         return new TagConfigurationDto
         {
@@ -104,7 +104,6 @@ public sealed class GatewayDeviceTemplateService
             DataType = source.DataType,
             AccessMode = source.AccessMode,
             Enabled = true,
-            ScanRateMs = scanRate,
             MqttPublishEnabled = true,
             Unit = source.Unit,
             PointCode = source.PointCode,

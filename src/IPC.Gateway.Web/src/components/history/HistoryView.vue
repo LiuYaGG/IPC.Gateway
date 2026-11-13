@@ -23,7 +23,7 @@
         <HistoryRecordsView :active="tab === 'records'" :enabled="history?.enabled" />
       </a-tab-pane>
       <a-tab-pane key="alarms" :tab="tx('报警记录')">
-        <AlarmHistoryPanel v-if="tab === 'alarms'" />
+        <AlarmHistoryPanel />
       </a-tab-pane>
     </a-tabs>
   </section>

@@ -221,7 +221,8 @@ import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
 import { tagColor, confirmAction } from '../utils/ui'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { useAccountDirectory } from '../utils/accountDirectory'
 
 import {
   DeleteOutlined as Delete,
@@ -300,7 +301,7 @@ const filteredUsers = computed(() => {
   })
 })
 
-onMounted(() => load())
+const directoryChanged = useAccountDirectory(load)
 
 async function load() {
   loading.value = true
@@ -377,6 +378,7 @@ async function save() {
   try {
     if (editingUsername.value) await updateUser(editingUsername.value, payload)
     else await createUser(payload)
+    directoryChanged()
     notify.success('人员已保存')
     drawerVisible.value = false
     await load()
@@ -408,6 +410,7 @@ async function remove(user: GatewayUserInfo) {
 
   try {
     await deleteUser(user.username)
+    directoryChanged()
     notify.success('人员已删除')
     await load()
   } catch (error) {
