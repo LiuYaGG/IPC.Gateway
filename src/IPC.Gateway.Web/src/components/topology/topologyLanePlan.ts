@@ -1,67 +1,37 @@
-import { distributeY } from './topologyLayout'
+export const tagRowSpacing = 32
+const minLaneHeight = 92
 
-export interface TopologyLaneSource {
+export interface TopologyDeviceLane {
   key: string
-  deviceKey: string
   channelKey: string
-  tagCount: number
+  groups: Array<{ key: string; visibleTagCount: number }>
 }
 
-export interface TopologyLanePlan {
-  height: number
-  groupY: Map<string, number>
-  deviceY: Map<string, number>
-  channelY: Map<string, number>
-}
-
-export function buildTopologyLanePlan(
-  sources: TopologyLaneSource[],
-  channels: string[],
-  showTagNodes: boolean
-): TopologyLanePlan {
+export function buildTopologyLanePlan(channelKeys: string[], devices: TopologyDeviceLane[]) {
   const groupY = new Map<string, number>()
-  const deviceBands = new Map<string, number[]>()
-  const channelBands = new Map<string, number[]>()
-  let cursor = 120
-
-  for (const source of sources) {
-    const laneHeight = showTagNodes ? Math.max(96, source.tagCount * 34 + 56) : 88
-    const y = Math.round(cursor + laneHeight / 2)
-    groupY.set(source.key, y)
-    addBand(deviceBands, source.deviceKey, y)
-    addBand(channelBands, source.channelKey, y)
-    cursor += laneHeight
+  const deviceY = new Map<string, number>()
+  const channelY = new Map<string, number>()
+  const channels = new Map<string, TopologyDeviceLane[]>(channelKeys.map((key) => [key, []]))
+  for (const device of devices) {
+    if (!channels.has(device.channelKey)) channels.set(device.channelKey, [])
+    channels.get(device.channelKey)!.push(device)
   }
 
-  const height = Math.max(720, cursor + 120)
-  return {
-    height,
-    groupY,
-    deviceY: averageBands(deviceBands),
-    channelY: channels.length ? averageChannelBands(channelBands, channels, height) : new Map<string, number>()
-  }
-}
-
-function addBand(map: Map<string, number[]>, key: string, y: number) {
-  const values = map.get(key) ?? []
-  values.push(y)
-  map.set(key, values)
-}
-
-function averageBands(map: Map<string, number[]>) {
-  const result = new Map<string, number>()
-  for (const [key, values] of map.entries()) {
-    result.set(key, Math.round(values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length)))
-  }
-  return result
-}
-
-function averageChannelBands(map: Map<string, number[]>, channels: string[], height: number) {
-  const result = averageBands(map)
-  channels.forEach((channel, index) => {
-    if (!result.has(channel)) {
-      result.set(channel, distributeY(index, channels.length, height))
+  let cursor = 0
+  for (const [channelKey, channelDevices] of channels) {
+    const channelStart = cursor
+    for (const device of channelDevices) {
+      const deviceStart = cursor
+      for (const group of device.groups) {
+        const span = Math.max(minLaneHeight, group.visibleTagCount * tagRowSpacing + 24)
+        groupY.set(group.key, cursor + span / 2)
+        cursor += span
+      }
+      if (!device.groups.length) cursor += minLaneHeight
+      deviceY.set(device.key, (deviceStart + cursor) / 2)
     }
-  })
-  return result
+    if (!channelDevices.length) cursor += minLaneHeight
+    channelY.set(channelKey, (channelStart + cursor) / 2)
+  }
+  return { gatewayY: cursor / 2, groupY, deviceY, channelY }
 }

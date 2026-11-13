@@ -43,7 +43,7 @@ namespace IPC.Gateway.Core.Gateway
     
     
     
-    public sealed class GatewayCoreService : IDisposable
+    public sealed partial class GatewayCoreService : IDisposable
     {
         private readonly object _syncRoot;
         private readonly SemaphoreSlim _configurationMutationSemaphore;
@@ -89,16 +89,17 @@ namespace IPC.Gateway.Core.Gateway
             _runtimeOptions = runtimeOptions == null ? new GatewayRuntimeOptions() : runtimeOptions;
             if (_runtimeOptions.Resilience == null)
                 _runtimeOptions.Resilience = new GatewayResilienceOptions();
-            _configurationStore = new SqlSugarGatewayConfigurationRepository(_runtimeOptions.Database, _runtimeOptions.SecretProtection);
-            _runtimeStateCache = new GatewayRuntimeStateCache(new SqlSugarRuntimeStateRepository(_runtimeOptions.Database));
+            _configurationStore = GatewayStartupTiming.Measure("准备配置数据库", () =>
+                new SqlSugarGatewayConfigurationRepository(_runtimeOptions.Database, _runtimeOptions.SecretProtection));
+            _runtimeStateCache = new GatewayRuntimeStateCache();
             _systemResources = new SystemResourceMonitor();
             _flowRuleEngineFactory = flowRuleEngineFactory ?? new NoopFlowRuleEngineFactory();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
             _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
-            Runtime = new RuntimeEngine(_runtimeOptions.Scheduler, _valueTransformScripts);
-            _mqttOptions = _configurationStore.LoadOrCreateMqtt(mqttOptions);
-            _opcUaOptions = _configurationStore.LoadOrCreateOpcUa(opcUaOptions);
-            _historyOptions = _configurationStore.LoadOrCreateHistory(historyOptions);
+            Runtime = GatewayStartupTiming.Measure("创建采集引擎", () => new RuntimeEngine(_runtimeOptions.Scheduler, _valueTransformScripts));
+            _mqttOptions = GatewayStartupTiming.Measure("读取MQTT配置", () => _configurationStore.LoadOrCreateMqtt(mqttOptions));
+            _opcUaOptions = GatewayStartupTiming.Measure("读取OPC-UA配置", () => _configurationStore.LoadOrCreateOpcUa(opcUaOptions));
+            _historyOptions = GatewayStartupTiming.Measure("读取历史库配置", () => _configurationStore.LoadOrCreateHistory(historyOptions));
             // Use the installation's data root, independent of later edits to ordinary history.
             string historyDirectory = string.IsNullOrWhiteSpace(historyOptions?.Directory)
                 ? Path.Combine("Data", "History") : historyOptions.Directory.Trim().Replace('\\', Path.DirectorySeparatorChar);
@@ -107,11 +108,11 @@ namespace IPC.Gateway.Core.Gateway
             AlarmJournal = new GatewayAlarmJournal(Path.Combine(dataRoot, "Alarms", "alarms.sqlite"),
                 () => Volatile.Read(ref _historyOptions));
             _alarmConsumer = new ThresholdAlarmConsumer((RuntimeEngine)Runtime, AlarmJournal, () => Volatile.Read(ref _mqttOptions));
-            _storageHealthThresholds = _configurationStore.LoadOrCreateStorageHealth(storageHealthThresholds);
+            _storageHealthThresholds = GatewayStartupTiming.Measure("读取存储健康配置", () => _configurationStore.LoadOrCreateStorageHealth(storageHealthThresholds));
             SetCurrentProject(new ProjectConfig());
             _lastValidation = new ProjectConfigValidationResult();
-            _history = new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History);
-            _mqtt = CreateMqttService();
+            _history = GatewayStartupTiming.Measure("准备本地历史库", () => new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History));
+            _mqtt = GatewayStartupTiming.Measure("准备MQTT发件箱", CreateMqttService);
             _opcUa = CreateOpcUaService();
             _flowRuleEngine = CreateFlowRuleEngine();
         }
@@ -168,26 +169,37 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
-        public void Start()
+        public void Start() => Start(CancellationToken.None);
+
+        public void Start(CancellationToken cancellationToken)
         {
+            void RunStep(string name, Action start)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                GatewayStartupTiming.Measure(name, start);
+            }
+
             lock (_syncRoot)
             {
                 if (Runtime.IsRunning)
                     return;
 
-                SetCurrentProject(LoadProject());
-                _lastValidation = ProjectConfigValidator.Validate(_project);
-                if (!_lastValidation.IsValid)
-                    throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
+                RunStep("从数据库加载项目", () => SetCurrentProject(LoadProject()));
+                RunStep("校验项目与协议驱动", () =>
+                {
+                    _lastValidation = ProjectConfigValidator.Validate(_project);
+                    if (!_lastValidation.IsValid)
+                        throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
+                });
 
-                _alarmConsumer.Start();
-                Runtime.Start(_project);
-                _runtimeStateCache.Start(Runtime, _project);
-                _history.Start();
-                _mqtt.Start();
-                _opcUa.Start();
-                ReplaceFlowRuleEngine();
-                _flowRuleEngine.Start();
+                RunStep("恢复报警状态", _alarmConsumer.Start);
+                RunStep("启动采集调度", () => Runtime.Start(_project));
+                RunStep("初始化设备与点位内存状态", () => _runtimeStateCache.Start(Runtime, _runtimeScope.Tags));
+                RunStep("启动历史库", _history.Start);
+                RunStep("启动MQTT", _mqtt.Start);
+                RunStep("初始化OPC-UA服务", _opcUa.Start);
+                RunStep("加载规则引擎", ReplaceFlowRuleEngine);
+                RunStep("启动规则引擎", _flowRuleEngine.Start);
                 _startedTime = DateTime.Now;
                 _lastReloadTime = _startedTime;
             }
@@ -247,7 +259,7 @@ namespace IPC.Gateway.Core.Gateway
                     if (wasRunning)
                     {
                         MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
-                        MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(project, markDevicesOffline: true));
+                        MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(_project, project));
                         MeasureReloadStep(reloadSteps, "StopOpcUa", () => _opcUa.Stop());
                         MeasureReloadStep(reloadSteps, "StopRuntime", () => Runtime.Stop());
                     }
@@ -263,7 +275,7 @@ namespace IPC.Gateway.Core.Gateway
                     if (wasRunning)
                     {
                         MeasureReloadStep(reloadSteps, "StartRuntime", () => Runtime.Start(_project));
-                        MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _project));
+                        MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags));
                         MeasureReloadStep(reloadSteps, "StartOpcUa", () => _opcUa.Start());
                         MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                     }
@@ -350,7 +362,7 @@ namespace IPC.Gateway.Core.Gateway
                         if (wasRunning)
                         {
                             MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
-                            MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(project, markDevicesOffline: true));
+                            MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(_project, project));
                             MeasureReloadStep(reloadSteps, "StopOpcUa", () => _opcUa.Stop());
                             MeasureReloadStep(reloadSteps, "StopRuntime", () => Runtime.Stop());
                         }
@@ -365,7 +377,7 @@ namespace IPC.Gateway.Core.Gateway
                         if (wasRunning)
                         {
                             MeasureReloadStep(reloadSteps, "StartRuntime", () => Runtime.Start(_project));
-                            MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _project));
+                            MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags));
                             MeasureReloadStep(reloadSteps, "StartOpcUa", () => _opcUa.Start());
                             MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                         }
@@ -491,7 +503,7 @@ namespace IPC.Gateway.Core.Gateway
                     if (wasRunning)
                     {
                         MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
-                        MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _project));
+                        MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _runtimeScope.Tags));
                         MeasureReloadStep(reloadSteps, "SyncOpcUa", () => _opcUa.SynchronizeAddressSpace());
                         if (rebuildRules) MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                     }
@@ -596,7 +608,7 @@ namespace IPC.Gateway.Core.Gateway
                         if (wasRunning)
                         {
                             MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
-                            MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _project));
+                            MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _runtimeScope.Tags));
                             MeasureReloadStep(reloadSteps, "SyncOpcUa", () => _opcUa.SynchronizeAddressSpace());
                             if (rebuildRules) MeasureReloadStep(reloadSteps, "StartFlowRuleEngine", () => _flowRuleEngine.Start());
                         }
@@ -1032,7 +1044,7 @@ namespace IPC.Gateway.Core.Gateway
                 if (wasRunning)
                 {
                     _flowRuleEngine.Stop();
-                    _runtimeStateCache.Stop(markDevicesOffline: true);
+                    _runtimeStateCache.PrepareRuntimeReload(_project, project);
                     _opcUa.Stop();
                     Runtime.Stop();
                 }
@@ -1043,7 +1055,7 @@ namespace IPC.Gateway.Core.Gateway
                 if (wasRunning)
                 {
                     Runtime.Start(_project);
-                    _runtimeStateCache.Start(Runtime, _project);
+                    _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags);
                     _opcUa.Start();
                     _flowRuleEngine.Start();
                 }
@@ -1101,7 +1113,7 @@ namespace IPC.Gateway.Core.Gateway
                     if (wasRunning)
                     {
                         _flowRuleEngine.Stop();
-                        _runtimeStateCache.Stop(markDevicesOffline: true);
+                        _runtimeStateCache.PrepareRuntimeReload(_project, project);
                         _opcUa.Stop();
                         Runtime.Stop();
                     }
@@ -1112,7 +1124,7 @@ namespace IPC.Gateway.Core.Gateway
                     if (wasRunning)
                     {
                         Runtime.Start(_project);
-                        _runtimeStateCache.Start(Runtime, _project);
+                        _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags);
                         _opcUa.Start();
                         _flowRuleEngine.Start();
                     }
@@ -1411,6 +1423,8 @@ namespace IPC.Gateway.Core.Gateway
             lock (_syncRoot)
                 return _history.GetStats();
         }
+
+        public HistoryValueIndex HistoryValueQueries => Volatile.Read(ref _history).ValueQueries;
 
         public void Dispose()
         {

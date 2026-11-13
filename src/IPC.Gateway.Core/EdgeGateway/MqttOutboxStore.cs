@@ -243,7 +243,26 @@ namespace IPC.EdgeGateway
         // the claimed payload remains as a normal durable FIFO message.
         public MqttOutboxEntry? ClaimForSend(MqttOutboxEntry entry)
         {
-            if (TelemetrySlotKey(entry.FilePath) == null) return entry;
+            if (TelemetrySlotKey(entry.FilePath) == null)
+            {
+                var compactPayload = entry.Message.CompactLegacyGatewayStatus();
+                if (compactPayload == null)
+                    return entry;
+
+                // Rewrite just this FIFO record on first delivery. The original survives a
+                // failed/interrupted rewrite, and the compact record survives a missing ACK.
+                lock (_syncRoot)
+                {
+                    if (!File.Exists(entry.FilePath))
+                        return null;
+                    entry.Message.Payload = compactPayload;
+                    entry.Message.PayloadBytes = Encoding.UTF8.GetBytes(compactPayload);
+                    string temporary = Path.ChangeExtension(entry.FilePath, ".rewrite.tmp");
+                    File.WriteAllText(temporary, entry.Message.ToFileText(), Encoding.UTF8);
+                    File.Move(temporary, entry.FilePath, overwrite: true);
+                    return new MqttOutboxEntry(entry.FilePath, entry.Message, GetFileLength(entry.FilePath));
+                }
+            }
             lock (_syncRoot)
             {
                 if (!File.Exists(entry.FilePath) ||

@@ -17,12 +17,6 @@ export const toneColorMap: Record<TopologyTone, string> = {
   normal: '#2563eb'
 }
 
-export function distributeY(index: number, count: number, height: number) {
-  if (count <= 1) return Math.round(height / 2)
-  const gap = height / (count + 1)
-  return Math.round(gap * (index + 1))
-}
-
 export function nodeCategory(type: string) {
   if (type === 'gateway') return 0
   if (type === 'channel') return 1

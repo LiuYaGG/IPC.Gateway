@@ -18,6 +18,10 @@
 using System;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
+using System.Buffers;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace IPC.EdgeGateway
 {
@@ -50,6 +54,79 @@ namespace IPC.EdgeGateway
         public byte[] PayloadBytes { get; set; }
         public DateTime CreatedAt { get; set; }
         public int Qos { get; set; }
+
+        // Old outbox records have no origin field and the gateway status topic is configurable.
+        // Recognize the built-in publisher's envelope before removing transport metrics and inventory.
+        public string? CompactLegacyGatewayStatus()
+        {
+            if (PayloadFormat != "Text" ||
+                !Payload.StartsWith("{\"messageType\":\"gatewayStatus\",\"protocolVersion\":", StringComparison.Ordinal) ||
+                !Payload.Contains("\"mqtt\":{", StringComparison.Ordinal))
+                return null;
+
+            try
+            {
+                using var document = JsonDocument.Parse(Payload);
+                var root = document.RootElement;
+                if (!IsLegacyGatewayStatus(root))
+                    return null;
+
+                var buffer = new ArrayBufferWriter<byte>();
+                using (var writer = new Utf8JsonWriter(buffer, new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+                {
+                    writer.WriteStartObject();
+                    foreach (var property in root.EnumerateObject())
+                        if (!property.NameEquals("mqtt") && !property.NameEquals("channels"))
+                            property.WriteTo(writer);
+                    writer.WriteEndObject();
+                }
+                return Encoding.UTF8.GetString(buffer.WrittenSpan);
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private static bool IsLegacyGatewayStatus(JsonElement root)
+        {
+            if (!HasProperty(root, "protocolVersion", JsonValueKind.String) ||
+                !HasProperty(root, "gatewayId", JsonValueKind.String) ||
+                !HasProperty(root, "gatewayName", JsonValueKind.String) ||
+                !HasProperty(root, "siteName", JsonValueKind.String) ||
+                !HasProperty(root, "configVersion", JsonValueKind.Number) ||
+                !HasProperty(root, "timestamp", JsonValueKind.String) ||
+                !root.TryGetProperty("mqtt", out var mqtt) || mqtt.ValueKind != JsonValueKind.Object ||
+                !HasProperty(mqtt, "broker", JsonValueKind.String) ||
+                !HasProperty(mqtt, "outboxPending", JsonValueKind.Number) ||
+                !mqtt.TryGetProperty("connected", out var connected) ||
+                connected.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return false;
+
+            // The first migration omitted channels. The subsequent publisher also added isRunning.
+            // Each version emitted exactly this set of top-level properties.
+            int propertyCount = root.GetPropertyCount();
+            if (!root.TryGetProperty("channels", out var channels))
+            {
+                if (root.TryGetProperty("isRunning", out var isRunning))
+                    return propertyCount == 9 && isRunning.ValueKind is JsonValueKind.True or JsonValueKind.False;
+                return propertyCount == 8;
+            }
+            if (propertyCount != 9 || channels.ValueKind != JsonValueKind.Array)
+                return false;
+
+            foreach (var channel in channels.EnumerateArray())
+                if (channel.ValueKind != JsonValueKind.Object ||
+                    !HasProperty(channel, "channelId", JsonValueKind.String) ||
+                    !HasProperty(channel, "channelName", JsonValueKind.String) ||
+                    !HasProperty(channel, "deviceCount", JsonValueKind.Number) ||
+                    !HasProperty(channel, "devices", JsonValueKind.Array))
+                    return false;
+            return true;
+        }
+
+        private static bool HasProperty(JsonElement element, string name, JsonValueKind kind) =>
+            element.TryGetProperty(name, out var value) && value.ValueKind == kind;
 
         public string ToFileText()
         {

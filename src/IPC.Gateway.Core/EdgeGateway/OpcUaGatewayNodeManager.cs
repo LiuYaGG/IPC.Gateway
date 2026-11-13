@@ -572,13 +572,7 @@ namespace IPC.EdgeGateway
 
         private static string BuildTagPath(ChannelConfig channel, DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
-            // Escape separators within a name so a direct tag named "group.tag"
-            // cannot collide with a tag inside the group named "group".
-            static string Segment(string value, string fallback) => DisplayName(value, fallback)
-                .Replace("\\", "\\\\").Replace(".", "\\.");
-            string prefix = Segment(channel.Name, "Channel") + "." + Segment(device.Name, "Device");
-            if (group != null) prefix += "." + Segment(group.Name, "Group");
-            return prefix + "." + Segment(tag.Name, "Tag");
+            return HistoryValuePath.Build(channel.Name, device.Name, group == null ? null : group.Name ?? string.Empty, tag.Name);
         }
 
         private static string BuildSnapshotKey(TagValueSnapshot snapshot)

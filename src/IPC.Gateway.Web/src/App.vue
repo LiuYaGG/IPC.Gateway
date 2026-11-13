@@ -1,6 +1,6 @@
 <template>
   <a-config-provider :theme="gatewayTheme" :locale="antLocale" component-size="small">
-    <main v-if="!authenticated" class="login-shell" :inert="upgradeUploadState.active || configurationSaving || undefined">
+    <main v-if="!authenticated || showStartupPanel" class="login-shell" :inert="upgradeUploadState.active || configurationSaving || undefined">
       <LoginMonetBackdrop />
       <header class="login-brand">
         <strong>IPC Gateway</strong>
@@ -27,7 +27,9 @@
             Rules
           </span>
         </div>
-        <a-form :model="loginForm" @submit.prevent="handleLogin" layout="vertical">
+        <a-alert v-if="startupMessage" role="status" show-icon :type="startupState === 'failed' ? 'error' : 'info'" :message="tx(startupMessage)" />
+        <a-button v-if="authenticated" @click="handleLogout">{{ tx('退出登录') }}</a-button>
+        <a-form v-else :model="loginForm" @submit.prevent="handleLogin" layout="vertical">
           <a-form-item :label="tx('用户名')">
             <gateway-input v-model="loginForm.username" autocomplete="username" />
           </a-form-item>
@@ -125,6 +127,8 @@
               v-else-if="activeView === 'topology'"
               :project="project"
               :status="status"
+              :failed-tags-by-device="failedTagsByDevice"
+              :runtime-tags="runtimeTags"
               @select-error="openError"
             />
             <DashboardView
@@ -226,6 +230,7 @@ import {
   loadSync,
   loadReadyHealth,
   loadCurrentUser,
+  GatewayStartupError,
   SessionExpiredError,
   login,
   logout,
@@ -249,6 +254,7 @@ import AuditView from './components/AuditView.vue'
 import BigScreenView from './components/bigscreen/BigScreenView.vue'
 import ChangePasswordDialog from './components/ChangePasswordDialog.vue'
 import DeviceTopologyView from './components/topology/DeviceTopologyView.vue'
+import { isFailedTopologyQuality } from './components/topology/channelTopologyModel'
 import DevicesView from './components/DevicesView.vue'
 import ErrorDetailDrawer from './components/ErrorDetailDrawer.vue'
 import FlowRulesView from './components/FlowRulesView.vue'
@@ -280,10 +286,22 @@ import UsersView from './components/UsersView.vue'
 import { formatDateTime } from './utils/format'
 import { clearDeviceViewStates, deviceViewScope } from './utils/deviceViewState'
 import { connectRuntimeEvents, deviceKey, setLatestTag, tagKey, type RuntimeChanges } from './utils/runtimeStream'
+import { useGatewayStartup } from './utils/gatewayStartup'
 import { createPermissionSet, PermissionContextKey, PERMISSIONS, normalizePermission } from './utils/permissions'
 
 const defaultStartupView = 'bigScreen'
 const authenticated = ref(localStorage.getItem('ipc.gateway.authenticated') === 'true')
+const { state: startupState, check: checkStartup, observe: observeStartup } = useGatewayStartup()
+const startupMessage = computed(() => {
+  switch (startupState.value) {
+    case 'checking': return authenticated.value ? '正在检查网关状态…' : ''
+    case 'starting': return '网关正在初始化，完成后会自动加载运行数据。'
+    case 'failed': return '网关初始化失败，请查看服务端启动日志。'
+    case 'stopping': return '网关正在停止，正在等待服务重新启动。'
+    case 'unavailable': return '暂时无法获取网关启动状态，正在重新连接。'
+    default: return ''
+  }
+})
 const currentUserIdentity = ref('')
 const currentUserName = ref('')
 const currentLoginName = ref('')
@@ -293,6 +311,12 @@ const loading = ref(false)
 const autoRefresh = ref(true)
 const lastRefreshTime = ref('')
 const sync = ref<SyncPayload | null>(null)
+const showStartupPanel = computed(() => {
+  if (startupState.value === 'ready') return false
+  if (!sync.value) return true
+  // Keep the upgrade progress view mounted across the automatic service restart.
+  return activeView.value !== 'maintenance' && (startupState.value === 'starting' || startupState.value === 'failed' || startupState.value === 'stopping')
+})
 const health = ref<GatewayHealthResponse | null>(null)
 const storageHealth = ref<StorageHealthConfig | null>(null)
 const project = ref<ProjectConfig | null>(null)
@@ -326,6 +350,7 @@ const canStream = computed(() => hasAnyPermission([
 const projectScope = computed(() => buildProjectScope(sync.value?.project ?? null))
 const qualityCounts = reactive({ good: 0, bad: 0 })
 const goodTagsByDevice = shallowReactive(new Map<string, number>())
+const failedTagsByDevice = shallowReactive(new Map<string, number>())
 const visibleDevices = computed(() => Array.from(runtimeDevices.value.values())
   .filter(device => projectScope.value.deviceKeys.has(deviceKey(device))))
 const visibleTags = computed(() => {
@@ -412,7 +437,6 @@ provide(PermissionContextKey, {
 onMounted(() => {
   window.addEventListener('keydown', handleLoginEnter, true)
   document.addEventListener('visibilitychange', onVisibilityChanged)
-  if (authenticated.value) void refresh({ silent: false })
 })
 
 onBeforeUnmount(() => {
@@ -424,6 +448,21 @@ onBeforeUnmount(() => {
 })
 
 watch([authenticated, autoRefresh], syncAutoRefresh)
+watch(startupState, async (state, _, onCleanup) => {
+  if (state === 'ready' && authenticated.value) void refresh({ silent: false })
+  else if (state !== 'ready') stopRuntimeEvents()
+  if (state !== 'starting' || !authenticated.value || currentUserIdentity.value) return
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
+  try {
+    await loadCurrentUser(controller.signal)
+  } catch (error) {
+    if (!controller.signal.aborted && error instanceof SessionExpiredError) {
+      localStorage.removeItem('ipc.gateway.authenticated')
+      authenticated.value = false
+    }
+  }
+})
 watch(authenticated, async (value) => {
   if (!value) {
     clearSessionData()
@@ -453,7 +492,7 @@ async function handleLogin() {
     await login(loginForm.username, loginForm.password)
     localStorage.setItem('ipc.gateway.authenticated', 'true')
     authenticated.value = true
-    await refresh({ silent: false })
+    if (startupState.value === 'ready') await refresh({ silent: false })
   } catch (error) {
     captchaRef.value?.refresh()
     notify.error(error instanceof Error ? error.message : '登录失败')
@@ -472,6 +511,7 @@ async function handleLogout() {
 }
 
 async function refresh(options: { silent: boolean; reconnectOnly?: boolean }) {
+  if (startupState.value !== 'ready') return
   stopRuntimeEvents()
   refreshController?.abort()
   const controller = new AbortController()
@@ -510,6 +550,10 @@ async function refresh(options: { silent: boolean; reconnectOnly?: boolean }) {
     completed = true
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) return
+    if (error instanceof GatewayStartupError) {
+      observeStartup(error.state)
+      return
+    }
     if (error instanceof SessionExpiredError) {
       localStorage.removeItem('ipc.gateway.authenticated')
       currentPermissions.value = []
@@ -544,6 +588,7 @@ function clearSessionData() {
   storageHealth.value = health.value = null
   runtimeTags.value = shallowReactive(new Map())
   goodTagsByDevice.clear()
+  failedTagsByDevice.clear()
   qualityCounts.good = qualityCounts.bad = 0
   runtimeDevices.value = shallowReactive(new Map())
   trend.value = []
@@ -610,7 +655,7 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
 }
 
 function startRuntimeEvents() {
-  if (!authenticated.value || !autoRefresh.value || refreshController || document.hidden || unmounted || closeStream) return
+  if (startupState.value !== 'ready' || !authenticated.value || !autoRefresh.value || refreshController || document.hidden || unmounted || closeStream) return
   if (!canStream.value || typeof EventSource === 'undefined') {
     streamState.value = '推送不可用'
     return
@@ -646,12 +691,21 @@ function countQuality(key: string, tag: TagValueSnapshot | undefined, delta: num
       const device = deviceIdentityKey(tag.channelId, tag.deviceId)
       goodTagsByDevice.set(device, (goodTagsByDevice.get(device) ?? 0) + delta)
     }
-  } else if (quality && quality !== 'unknown') qualityCounts.bad += delta
+  } else if (quality && quality !== 'unknown') {
+    qualityCounts.bad += delta
+    if (projectScope.value.tagKeys.get(key) && isFailedTopologyQuality(quality)) {
+      const device = deviceIdentityKey(tag.channelId, tag.deviceId)
+      const count = (failedTagsByDevice.get(device) ?? 0) + delta
+      if (count > 0) failedTagsByDevice.set(device, count)
+      else failedTagsByDevice.delete(device)
+    }
+  }
 }
 
 function replaceTags(tags: Map<string, TagValueSnapshot>) {
   runtimeTags.value = shallowReactive(tags)
   goodTagsByDevice.clear()
+  failedTagsByDevice.clear()
   qualityCounts.good = qualityCounts.bad = 0
   for (const [key, tag] of tags) countQuality(key, tag, 1)
 }
@@ -680,12 +734,14 @@ function applyStreamChanges(changes: RuntimeChanges, full: boolean) {
 }
 
 function scheduleReconnect() {
-  if (unmounted || !autoRefresh.value || document.hidden || !authenticated.value || retryTimer !== undefined) return
+  if (startupState.value !== 'ready' || unmounted || !autoRefresh.value || document.hidden || !authenticated.value || retryTimer !== undefined) return
   streamState.value = '重连中'
   const delay = Math.min(1000 * 2 ** Math.min(retries++, 4), 15000)
-  retryTimer = window.setTimeout(() => {
+  retryTimer = window.setTimeout(async () => {
     retryTimer = undefined
-    void refresh({ silent: true, reconnectOnly: true })
+    await checkStartup()
+    if (startupState.value === 'ready' && authenticated.value && !unmounted && !document.hidden)
+      void refresh({ silent: true, reconnectOnly: true })
   }, delay)
 }
 

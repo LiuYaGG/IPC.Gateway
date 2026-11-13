@@ -77,6 +77,11 @@ public static class GatewayTlsSetup
         {
             if (!context.Request.IsHttps && context.Request.Path.StartsWithSegments("/api"))
             {
+                if (GatewayHistoryEndpoints.IsHistoryRead(context))
+                {
+                    await GatewayHistoryEndpoints.Error(context,403,"HISTORY_REQUIRES_HTTPS","当前接口要求通过 HTTPS/TLS 访问。","HTTPS is required for this endpoint.").ExecuteAsync(context);
+                    return;
+                }
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new { success = false, errorMessage = "当前接口要求通过 HTTPS/TLS 访问。" });
                 return;

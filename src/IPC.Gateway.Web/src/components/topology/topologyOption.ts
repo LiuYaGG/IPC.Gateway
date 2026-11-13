@@ -2,7 +2,27 @@ import type { EChartsOption } from 'echarts'
 import { toneColorMap, topologyCategories } from './topologyLayout'
 import type { DeviceTopologyModel, TopologyNode } from './topologyTypes'
 
-export function buildTopologyOption(model: DeviceTopologyModel, selectedNodeId: string): EChartsOption {
+export function buildTopologyOption(model: DeviceTopologyModel, selectedNodeId: string, width: number, height: number, fitAll = false): EChartsOption {
+  const margin = { left: Math.min(92, width * 0.14), right: Math.min(184, width * 0.20), top: 76, bottom: 62 }
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const node of model.nodes) {
+    minX = Math.min(minX, node.x)
+    maxX = Math.max(maxX, node.x)
+    minY = Math.min(minY, node.y)
+    maxY = Math.max(maxY, node.y)
+  }
+  const visibleWidth = Math.max(1, width - margin.left - margin.right)
+  const visibleHeight = Math.max(1, height - margin.top - margin.bottom)
+  const spanX = Math.max(1, maxX - minX)
+  const spanY = Math.max(1, maxY - minY)
+  // Keep at least one chart pixel per layout unit. Only the logical graph grows:
+  // panning over thousands of nodes still uses a viewport-sized canvas bitmap.
+  const graphWidth = Math.max(visibleWidth, spanX)
+  const graphHeight = Math.max(visibleHeight, spanY)
+  const fitZoom = Math.min(visibleWidth / graphWidth, visibleHeight / graphHeight)
   return {
     animationDurationUpdate: 320,
     tooltip: {
@@ -22,15 +42,23 @@ export function buildTopologyOption(model: DeviceTopologyModel, selectedNodeId: 
         type: 'graph',
         layout: 'none',
         roam: true,
-        scaleLimit: { min: 0.35, max: 2.6 },
+        left: margin.left + (visibleWidth - graphWidth) / 2,
+        top: margin.top + (visibleHeight - graphHeight) / 2,
+        width: graphWidth,
+        height: graphHeight,
+        preserveAspect: true,
+        center: [fitAll ? '50%' : visibleWidth / 2, '50%'],
+        zoom: fitAll ? fitZoom : 1,
+        scaleLimit: { min: Math.min(0.35, fitZoom), max: 2.6 },
+        nodeScaleRatio: 1,
         categories: topologyCategories,
         data: model.nodes.map((node) => ({
           id: node.id,
           name: shortLabel(node.name),
           category: node.category,
           symbolSize: node.symbolSize,
-          x: node.x,
-          y: node.y,
+          x: (node.x - minX) * graphWidth / spanX,
+          y: (node.y - minY) * graphHeight / spanY,
           value: node.value,
           rawNode: node,
           itemStyle: {
@@ -61,11 +89,7 @@ export function buildTopologyOption(model: DeviceTopologyModel, selectedNodeId: 
           focus: 'adjacency',
           lineStyle: { width: 3 }
         },
-        labelLayout: { hideOverlap: true },
-        left: 24,
-        right: 24,
-        top: 44,
-        bottom: 24
+        labelLayout: { hideOverlap: true }
       }
     ]
   }

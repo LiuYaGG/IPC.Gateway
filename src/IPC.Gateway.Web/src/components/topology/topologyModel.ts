@@ -10,7 +10,7 @@ import type {
   TagValueSnapshot
 } from '../../api'
 import { nodeCategory, nodeSize } from './topologyLayout'
-import { buildTopologyLanePlan } from './topologyLanePlan'
+import { buildTopologyLanePlan, tagRowSpacing } from './topologyLanePlan'
 import {
   filterErrors,
   mergeTone,
@@ -51,25 +51,25 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
     )
   })
   const channelKeys = visibleChannels.map(channelLayoutKey)
-  const groupRows = buildGroupRows(visibleDevices)
-  const tagCount = countTags(visibleDevices)
+  const groupsByDevice = buildGroupRows(visibleDevices, input.showTagNodes)
+  const groupRows = [...groupsByDevice.values()].flat()
+  const tagCount = groupRows.reduce((sum, row) => sum + row.tags.length, 0)
+  const renderedTagNodes = groupRows.reduce((sum, row) => sum + (row.expanded ? row.tags.length : 0), 0)
   const lanePlan = buildTopologyLanePlan(
-    groupRows.map((row) => ({
-      key: groupRowKey(row),
-      deviceKey: deviceLayoutKey(row.device),
-      channelKey: normalizeKey(row.device.channelId),
-      tagCount: row.tags.length
-    })),
     channelKeys,
-    input.showTagNodes
+    visibleDevices.map((device) => ({
+      key: deviceLayoutKey(device),
+      channelKey: normalizeKey(device.channelId),
+      groups: groupsByDevice.get(device)!.map((row) => ({
+        key: groupRowKey(row),
+        visibleTagCount: row.expanded ? row.tags.length : 0
+      }))
+    }))
   )
-  const height = lanePlan.height
 
   const nodes: TopologyNode[] = []
   const links: TopologyLink[] = []
   const matchedDeviceIds = new Set<string>()
-  let renderedTagNodes = 0
-  let hiddenTags = 0
 
   nodes.push(
     createNode({
@@ -78,7 +78,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       type: 'gateway',
       tone: input.status?.isRunning ? 'good' : 'warn',
       x: 90,
-      y: Math.round(height / 2),
+      y: lanePlan.gatewayY,
       value: visibleDevices.length,
       rows: [
         { label: '项目', value: input.project?.name || input.status?.projectName || '-' },
@@ -90,7 +90,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
     })
   )
 
-  addServiceNodes(nodes, links, input.status)
+  addServiceNodes(nodes, links, input.status, lanePlan.gatewayY)
   addChannelNodes(nodes, links, visibleChannels, visibleDevices, runtimeMap, lanePlan, errors)
 
   visibleDevices.forEach((device, index) => {
@@ -100,7 +100,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
     const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
     const deviceTags = collectDeviceTags(device)
     const deviceErrors = filterErrors(errors, device.channelId, device.id)
-    const y = lanePlan.deviceY.get(deviceLayoutKey(device)) ?? Math.round(height / 2)
+    const y = lanePlan.deviceY.get(deviceLayoutKey(device))!
     const tone = resolveDeviceTone(device, runtime)
 
     nodes.push(
@@ -130,16 +130,12 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       deviceId,
       nodes,
       links,
-      groupRows,
+      groupRows: groupsByDevice.get(device)!,
       lanePlan,
-      height,
       snapshotMap,
       errors,
-      showTagNodes: input.showTagNodes,
-      renderedTagNodes
+      showTagNodes: input.showTagNodes
     })
-    renderedTagNodes = countRenderedTagNodes(nodes)
-    hiddenTags = Math.max(0, tagCount - renderedTagNodes)
   })
 
   return {
@@ -162,7 +158,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
       groups: groupRows.filter((row) => row.group).length,
       tags: tagCount,
       visibleTags: renderedTagNodes,
-      hiddenTags,
+      hiddenTags: tagCount - renderedTagNodes,
       recentErrors: errors.filter(
         (error) =>
           !query ||
@@ -173,7 +169,7 @@ export function buildDeviceTopology(input: BuildTopologyInput): DeviceTopologyMo
   }
 }
 
-function addServiceNodes(nodes: TopologyNode[], links: TopologyLink[], status: GatewayStatus | null) {
+function addServiceNodes(nodes: TopologyNode[], links: TopologyLink[], status: GatewayStatus | null, gatewayY: number) {
   const services = [
     {
       id: 'service:mqtt',
@@ -216,8 +212,8 @@ function addServiceNodes(nodes: TopologyNode[], links: TopologyLink[], status: G
         name: service.name,
         type: 'service',
         tone: service.tone,
-        x: 92,
-        y: 58 + index * 58,
+        x: -120,
+        y: gatewayY + (index - (services.length - 1) / 2) * 78,
         rows: [
           { label: '状态', value: toneLabel(service.tone) },
           { label: '信息', value: service.message }
@@ -238,7 +234,7 @@ function addChannelNodes(
   lanePlan: ReturnType<typeof buildTopologyLanePlan>,
   errors: RuntimeErrorDetail[]
 ) {
-  channels.forEach((channel, index) => {
+  channels.forEach((channel) => {
     const channelDevices = devices.filter((device) => normalizeKey(device.channelId) === normalizeKey(channel.id))
     const tones = channelDevices.map((device) => {
       const runtime = runtimeMap.get(deviceRuntimeMapKey(device.channelId, device.id))
@@ -252,7 +248,7 @@ function addChannelNodes(
         type: 'channel',
         tone,
         x: 300,
-        y: lanePlan.channelY.get(channelLayoutKey(channel)) ?? 160 + index * 90,
+        y: lanePlan.channelY.get(channelLayoutKey(channel))!,
         value: channelDevices.length,
         rows: [
           { label: '通道', value: channel.name || '-' },
@@ -275,24 +271,20 @@ interface AddDeviceGroupArgs {
   links: TopologyLink[]
   groupRows: GroupRow[]
   lanePlan: ReturnType<typeof buildTopologyLanePlan>
-  height: number
   snapshotMap: Map<string, TagValueSnapshot>
   errors: RuntimeErrorDetail[]
   showTagNodes: boolean
-  renderedTagNodes: number
 }
 
 function addDeviceGroups(args: AddDeviceGroupArgs) {
-  const rows = args.groupRows.filter((row) => row.device === args.device)
-  rows.forEach((row) => {
-    args.renderedTagNodes = countRenderedTagNodes(args.nodes)
+  args.groupRows.forEach((row) => {
     const groupNode = groupNodeId(args.device, row.group, row.directIndex)
     const tags = row.tags
     const tagTones = tags.map((tag) =>
       resolveTagTone(tag, args.snapshotMap.get(tagConfigKey(args.device, row.group?.id || '', tag)))
     )
     const tone = row.group && !row.group.enabled ? 'disabled' : mergeTone(tagTones)
-    const y = args.lanePlan.groupY.get(groupRowKey(row)) ?? Math.round(args.height / 2)
+    const y = args.lanePlan.groupY.get(groupRowKey(row))!
 
     args.nodes.push(
       createNode({
@@ -324,7 +316,7 @@ function addDeviceGroups(args: AddDeviceGroupArgs) {
 
 function addTagNodesOrSummary(args: AddDeviceGroupArgs, row: GroupRow, groupNode: string, groupY: number) {
   const tags = row.tags
-  if (!args.showTagNodes || args.renderedTagNodes + tags.length > tagNodeLimit) {
+  if (!row.expanded) {
     args.nodes.push(
       createNode({
         id: `${groupNode}:tags`,
@@ -362,7 +354,7 @@ function addTagNodesOrSummary(args: AddDeviceGroupArgs, row: GroupRow, groupNode
         type: 'tag',
         tone,
         x: 1030,
-        y: groupY + (index - (tags.length - 1) / 2) * 30,
+        y: groupY + (index - (tags.length - 1) / 2) * tagRowSpacing,
         value: 1,
         rows: [
           { label: '地址', value: tag.address || tag.meterDataIdentifier || '-' },
@@ -416,29 +408,30 @@ interface GroupRow {
   group: GroupConfig | null
   tags: TagConfig[]
   directIndex: number
+  expanded: boolean
 }
 
-function buildGroupRows(devices: DeviceConfig[]) {
-  const rows: GroupRow[] = []
-  devices.forEach((device) => {
-    if ((device.tags ?? []).length > 0) {
-      rows.push({ device, group: null, tags: device.tags ?? [], directIndex: 0 })
+function buildGroupRows(devices: DeviceConfig[], showTagNodes: boolean) {
+  const groupsByDevice = new Map<DeviceConfig, GroupRow[]>()
+  const allDevicesEmpty = devices.every((device) => !device.tags?.length && !device.groups?.length)
+  let remaining = tagNodeLimit
+  for (const [index, device] of devices.entries()) {
+    const rows: GroupRow[] = []
+    function addGroup(group: GroupConfig | null, tags: TagConfig[], directIndex: number) {
+      const expanded = showTagNodes && tags.length <= remaining
+      if (expanded) remaining -= tags.length
+      rows.push({ device, group, tags, directIndex, expanded })
     }
-    ;(device.groups ?? []).forEach((group, index) =>
-      rows.push({ device, group, tags: group.tags ?? [], directIndex: index + 1 })
-    )
-  })
-  return rows.length > 0
-    ? rows
-    : devices.map((device, index) => ({ device, group: null, tags: [], directIndex: index }))
+    if (device.tags?.length) addGroup(null, device.tags, 0)
+    else if (allDevicesEmpty) addGroup(null, [], index)
+    device.groups?.forEach((group, index) => addGroup(group, group.tags ?? [], index + 1))
+    groupsByDevice.set(device, rows)
+  }
+  return groupsByDevice
 }
 
 function collectDeviceTags(device: DeviceConfig) {
   return [...(device.tags ?? []), ...(device.groups ?? []).flatMap((group) => group.tags ?? [])]
-}
-
-function countTags(devices: DeviceConfig[]) {
-  return devices.reduce((sum, device) => sum + collectDeviceTags(device).length, 0)
 }
 
 function matchesDevice(device: DeviceConfig, channel: ChannelConfig | undefined, query: string) {
@@ -506,10 +499,6 @@ function moduleTone(enabled?: boolean, running?: boolean, error?: string): Topol
   if (enabled === false) return 'disabled'
   if (error) return 'bad'
   return running ? 'good' : 'warn'
-}
-
-function countRenderedTagNodes(nodes: TopologyNode[]) {
-  return nodes.filter((node) => node.type === 'tag').length
 }
 
 function deviceRuntimeMapKey(channelId: string, deviceId: string) {

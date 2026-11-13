@@ -10,7 +10,7 @@
 | 数据库 `gateway_configurations` 中 `config_type = project` 的版本 | `payload_binary` 二进制列；原 `payload` 留空 |
 | 安装升级界面的项目备份与恢复 | `.pb` 二进制备份；包含项目、MQTT、OPC UA、历史和存储健康配置 |
 | `appsettings.json`、生产启动参数、REST API | 继续使用 JSON |
-| 数据库中的其他配置类型、运行快照、审计与历史数据 | 本次不更换格式 |
+| 数据库中的其他配置类型、审计与本地历史数据 | 各自沿用原有格式 |
 
 数据库列按提供程序使用 SQL Server `varbinary(max)`、PostgreSQL `bytea`、MySQL `longblob`、SQLite `blob`。
 

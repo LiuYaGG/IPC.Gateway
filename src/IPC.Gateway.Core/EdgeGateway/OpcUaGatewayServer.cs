@@ -26,18 +26,18 @@ namespace IPC.EdgeGateway
     internal sealed class OpcUaGatewayServer : StandardServer
     {
         private readonly IRuntimeService _runtime;
-        private readonly Func<ProjectConfig> _projectProvider;
+        private ProjectConfig _project;
         private readonly OpcUaServerOptions _options;
         private readonly OpcUaServerStatus _status;
 
         public OpcUaGatewayServer(
             IRuntimeService runtime,
-            Func<ProjectConfig> projectProvider,
+            ProjectConfig project,
             OpcUaServerOptions options,
             OpcUaServerStatus status)
         {
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-            _projectProvider = projectProvider ?? throw new ArgumentNullException(nameof(projectProvider));
+            _project = project ?? throw new ArgumentNullException(nameof(project));
             _options = OpcUaServerOptions.Normalize(options);
             _status = status ?? throw new ArgumentNullException(nameof(status));
 
@@ -53,7 +53,7 @@ namespace IPC.EdgeGateway
 
         protected override MasterNodeManager CreateMasterNodeManager(IServerInternal server, ApplicationConfiguration configuration)
         {
-            GatewayNodeManager = new OpcUaGatewayNodeManager(server, configuration, _runtime, _projectProvider, _options, _status);
+            GatewayNodeManager = new OpcUaGatewayNodeManager(server, configuration, _runtime, () => Volatile.Read(ref _project), _options, _status);
             return new MasterNodeManager(server, configuration, null, new INodeManager[] { GatewayNodeManager });
         }
 
@@ -67,6 +67,12 @@ namespace IPC.EdgeGateway
         public void UpdateValue(IPC.Runtime.Values.TagValueSnapshot snapshot)
         {
             GatewayNodeManager?.UpdateValue(snapshot);
+        }
+
+        public void SynchronizeAddressSpace(ProjectConfig project)
+        {
+            Volatile.Write(ref _project, project);
+            GatewayNodeManager?.SynchronizeAddressSpace();
         }
 
         private void OnImpersonateUser(ISession session, ImpersonateEventArgs args)

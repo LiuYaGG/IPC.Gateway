@@ -18,7 +18,8 @@ public static class ScriptingServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddGatewayScripting(
         this IServiceCollection services,
-        GatewayScriptingOptions options)
+        GatewayScriptingOptions options,
+        bool registerHostedServices = true)
     {
         ArgumentNullException.ThrowIfNull(services);
         GatewayScriptingOptions normalized = (options ?? new GatewayScriptingOptions()).Normalize();
@@ -29,14 +30,16 @@ public static class ScriptingServiceCollectionExtensions
         services.AddSingleton<ScriptDatabaseWriteExecutor>();
         services.AddSingleton<ScriptDatabaseWriteDispatcher>();
         services.AddSingleton<IScriptDatabaseQueue>(provider => provider.GetRequiredService<ScriptDatabaseWriteDispatcher>());
-        services.AddHostedService(provider => provider.GetRequiredService<ScriptDatabaseWriteDispatcher>());
+        if (registerHostedServices)
+            services.AddHostedService(provider => provider.GetRequiredService<ScriptDatabaseWriteDispatcher>());
         services.AddSingleton<GatewayScriptCompiler>();
         services.AddSingleton<ValueTransformScriptService>();
         services.AddSingleton<IValueTransformScriptRuntime>(provider =>
             provider.GetRequiredService<ValueTransformScriptService>());
         services.AddSingleton<GatewayScriptRuntimeService>();
         services.AddSingleton<IScriptRuntimeService>(provider => provider.GetRequiredService<GatewayScriptRuntimeService>());
-        services.AddHostedService(provider => provider.GetRequiredService<GatewayScriptRuntimeService>());
+        if (registerHostedServices)
+            services.AddHostedService(provider => provider.GetRequiredService<GatewayScriptRuntimeService>());
         services.AddSingleton<GatewayScriptManager>();
         return services;
     }

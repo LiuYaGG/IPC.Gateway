@@ -1,0 +1,170 @@
+.channel-topology {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  gap: 12px;
+  container-type: inline-size;
+  --wire: #8da6b9;
+  --edge: #cddce8;
+  --muted: #526a80;
+  --accent: #346b93;
+}
+.topology-tools, .channel-devices, .topology-inspector {
+  flex: none;
+  border: 1px solid var(--edge);
+  background: white;
+  border-radius: 7px;
+  padding: 12px 15px;
+}
+.topology-tools, .channel-devices header, .topology-inspector header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.topology-tools :deep(.ant-input-affix-wrapper) { width: min(580px, 100%); }
+.topology-tools > span:last-child, small, .muted { color: var(--muted); }
+h3 { margin: 0; font-size: 1.05em; color: #152d40; }
+h3 small { margin-inline-start: .5em; font-size: .82em; font-weight: normal; }
+.network-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(155px, .85fr) minmax(0, 1fr);
+  align-items: center;
+  flex: 1 0 380px;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 380px;
+  padding: 42px clamp(15px, 3%, 55px) 26px;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: radial-gradient(#d4e0eb .7px, transparent .8px) 0 0 / 14px 14px, #f4f8fb;
+}
+.network-side { min-width: 0; position: relative; }
+.south { --channel-height: 58px; }
+.network-side h3 { position: absolute; bottom: 100%; margin-bottom: 10px; }
+.node-stack { position: relative; }
+.channel-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  margin-right:8px;
+}
+.south-stack {
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(min(100%, 206px), 1fr);
+  align-items:start;
+  padding-block:12px 4px;
+}
+.channel-column {
+  position:relative;
+  display:grid;
+  gap:8px;
+  padding-inline:2px 18px;
+  min-width:0;
+}
+/* Each vertical bus meets the common trunk above the cards; short final columns
+   stop at their own last node. Scroll moves the cards and their branches together. */
+.channel-column::before, .channel-column::after, .south:has(.channel-scroll)::before {
+  content:''; position:absolute; pointer-events:none;
+}
+.channel-column::before { left:0; right:0; top:-10px; border-top:1px solid var(--wire); }
+.channel-column:first-child::before { left:calc(100% - 4px); }
+.channel-column::after {
+  right:4px; top:-10px; bottom:calc(var(--channel-height) / 2); border-left:1px solid var(--wire);
+}
+.south:has(.channel-scroll)::before {
+  right:0; top:2px; bottom:50%; width:8px;
+  border-top:1px solid var(--wire); border-right:1px solid var(--wire);
+}
+.node-stack::after, .gateway-node::before, .gateway-node::after {
+  content: ''; position: absolute; pointer-events: none;
+}
+.node-stack::after { top: 34px; bottom: 34px; border-left: 1px solid var(--wire); }
+.north-stack::after { left: -15px; }
+.channel-node::after, .north-stack :deep(.topology-north-node)::before {
+  content: ''; position: absolute; top: 50%; width: 15px; border-top: 1px solid var(--wire); pointer-events: none;
+}
+.channel-node::after { left: calc(100% + 1px); width:14px; }
+.north-stack :deep(.topology-north-node)::before { right: calc(100% + 1px); }
+.network-stage .channel-node {
+  display: flex; align-items: center; justify-content: flex-start; position: relative;
+  width: 100%; height: var(--channel-height); min-width: 0; padding: 8px 12px;
+  gap: 10px; text-align: left; white-space: normal; border-color: var(--edge); border-radius: 6px;
+}
+.network-stage button[aria-pressed=true], .device-chips :deep(button[aria-pressed=true]) {
+  border-color: var(--accent); background: #eef6fc;
+}
+.node-icon { padding: 7px; background: #e8f1f9; border-radius: 5px; color: var(--accent); }
+.node-copy { flex: 1; display: grid; min-width: 0; gap: 3px; }
+.node-copy strong, .node-copy small, .gateway-node strong, .device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-count { color: var(--muted); white-space: nowrap; font-size: .9em; }
+.light { display: inline-block; margin-inline-end: 5px; width: 8px; height: 8px; border-radius: 50%; background: #8094a5; }
+.light.online { background: #248757; }
+.light.offline { background: #c93e41; }
+.light.warning { background: #b77713; }
+.light.disabled { background: #9099a3; }
+.empty-node { padding: 1em; background: white; text-align: center; border: 1px solid var(--edge); border-radius: 6px; color: var(--muted); }
+.gateway-node {
+  position: relative; isolation: isolate; display: grid; justify-items: center; align-content: center; min-width: 0;
+  background: transparent; border: 0; color: #19364a; font: inherit; cursor: pointer;
+}
+.gateway-node img { display: block; width: clamp(106px, 12cqw, 174px); max-width: 78%; }
+.gateway-node strong { max-width: 90%; font-size: 1.13em; }
+.network-stage .gateway-node[aria-pressed=true] { background: transparent; }
+.gateway-node[aria-pressed=true] strong { color: var(--accent); text-decoration: underline; text-underline-offset: .25em; }
+.gateway-node::before, .gateway-node::after {
+  top: 50%; width: calc(50% - min(5.15cqw, 74px) - 14px); border-top: 1px solid var(--wire); z-index: -1;
+}
+.gateway-node::before { left: 0; width: calc(50% - min(5.15cqw, 74px)); }
+.gateway-node::after { right: 15px; }
+.network-stage:has(.empty-node) .gateway-node::before { display:none; }
+.south:has(.channel-scroll)::after {
+  content: ''; position:absolute; left: 100%; top: calc(50% - 3px);
+  border-block: 3.5px solid transparent; border-left: 5px solid var(--wire);
+}
+.channel-devices header { margin-bottom: 10px; }
+.device-chips {
+  display:grid;
+  grid-auto-flow:column;
+  grid-template-rows:repeat(var(--device-rows), auto);
+  grid-auto-columns:minmax(min(100%, 195px), max-content);
+  justify-content:start;
+  gap:7px;
+  padding:2px;
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+}
+.device-chips :deep(button) {
+  display:inline-flex; align-items:center; justify-content:flex-start; gap:4px;
+  min-width:0; max-width:min(330px, 75cqw);
+}
+.device-chips small { flex: none; }
+.topology-inspector { min-width: 0; }
+.topology-inspector dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 7px 0 0; }
+.topology-inspector dl > div { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.topology-inspector dt { color: var(--muted); }
+.topology-inspector dd { margin: 0; overflow-wrap: anywhere; }
+.topology-errors { display:grid; gap:3px; max-height:130px; overflow:auto; margin-top:10px; border-top:1px solid var(--edge); padding-top:7px; }
+.topology-errors :deep(button) { height:auto; justify-content:flex-start; padding:1px 0; text-align:start; white-space:normal; overflow-wrap:anywhere; }
+@container (max-width: 890px) {
+  .network-stage { grid-template-columns: minmax(0,1.8fr) minmax(106px,.65fr) minmax(0,1fr); padding-inline: 10px; }
+  .node-icon { display:none; }
+}
+@container (max-width: 620px) {
+  .network-stage { grid-template-columns: 1fr; grid-template-rows:auto; flex-basis:auto; gap: 12px; padding: 14px 10px; }
+  .network-side h3 { position:static; }
+  .node-stack::after,.north-stack :deep(.topology-north-node)::before,.south:has(.channel-scroll)::after,
+  .south:has(.channel-scroll)::before,.channel-column::before,.channel-column::after,.channel-node::after { display:none; }
+  .south-stack { padding-top:2px; }
+  .channel-scroll { margin-right:0; }
+  .channel-column { padding-right:6px; }
+  .gateway-node::before,.gateway-node::after { top:auto; right:auto; left:50%; width:0; height:12px; border:0; border-left:1px solid var(--wire); }
+  .gateway-node::before { bottom:100%; }
+  .gateway-node::after { top:100%; }
+  .node-icon { display:inline-flex; }
+  .topology-tools, .channel-devices, .topology-inspector { padding:10px; }
+  .topology-tools :deep(.ant-input-affix-wrapper) { width:100%; }
+}

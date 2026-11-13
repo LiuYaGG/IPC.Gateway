@@ -26,9 +26,11 @@ using Microsoft.Extensions.Hosting.Systemd;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using System.Security.Claims;
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
 
+long hostStartupTimestamp = Stopwatch.GetTimestamp();
 string startupContentRoot = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : Directory.GetCurrentDirectory();
 string startupWebRoot = GatewayWebRoot.PrepareBeforeBuilder(startupContentRoot, AppContext.BaseDirectory);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -77,15 +79,25 @@ builder.Services.AddSingleton<GatewayTagBulkService>();
 builder.Services.AddSingleton<GatewayProjectBackupService>();
 builder.Services.AddSingleton<GatewayCompatibilityService>();
 builder.Services.AddSingleton<GatewayRuntimeEventHub>();
+builder.Services.AddSingleton<GatewayHistoryQueries>();
+builder.Services.AddSingleton<GatewayStartupState>();
 builder.Services.AddHostedService<GatewayRuntimeHostedService>();
 builder.Services.AddSingleton<IScriptSecretProtector, GatewayScriptSecretProtector>();
 builder.Services.AddSingleton<IScriptTagAccessor, GatewayScriptTagAccessor>();
-builder.Services.AddGatewayScripting(scriptingOptions);
-builder.Services.AddHostedService<GatewayRuntimePushHostedService>();
-builder.Services.AddHostedService<VirtualModelTagRuntimeService>();
+// The runtime coordinator resolves these workers only after HTTP is listening and the project is loaded.
+builder.Services.AddGatewayScripting(scriptingOptions, registerHostedServices: false);
+builder.Services.AddSingleton<GatewayRuntimePushHostedService>();
+builder.Services.AddSingleton<VirtualModelTagRuntimeService>();
 builder.Services.AddGatewayWatchdog(builder.Configuration);
 
 var app = builder.Build();
+var runtimeStartup = app.Services.GetRequiredService<GatewayStartupState>();
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    GatewayStartupTiming.RecordCompleted("网站监听就绪", hostStartupTimestamp);
+    runtimeStartup.MarkListening();
+});
+app.Lifetime.ApplicationStopping.Register(runtimeStartup.MarkStopping);
 
 app.UseConfiguredForwardedHeaders(builder.Configuration);
 app.UseGatewayTlsControls(securityOptions);
@@ -103,6 +115,12 @@ app.UseDefaultFiles(new DefaultFilesOptions
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = webFileProvider
+});
+
+app.Use(async (context, next) =>
+{
+    if (!await runtimeStartup.TryHandleRequestAsync(context, observabilityOptions.PrometheusPath))
+        await next();
 });
 
 app.Use(async (context, next) =>
@@ -150,8 +168,7 @@ app.Use(async (context, next) =>
                     string.IsNullOrWhiteSpace(tokenErrorMessage) ? "API Token 无效。" : tokenErrorMessage);
             }
 
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { success = false, errorMessage = string.IsNullOrWhiteSpace(tokenErrorMessage) ? "API Token 无效。" : tokenErrorMessage });
+            await GatewayHistoryEndpoints.Unauthorized(context, string.IsNullOrWhiteSpace(tokenErrorMessage) ? "API Token 无效。" : tokenErrorMessage);
             return;
         }
         else
@@ -173,8 +190,7 @@ app.Use(async (context, next) =>
                         "未登录或会话已过期。");
                 }
 
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(new { success = false, errorMessage = "未登录或会话已过期。" });
+                await GatewayHistoryEndpoints.Unauthorized(context, "未登录或会话已过期。");
                 return;
             }
 
@@ -196,8 +212,7 @@ app.Use(async (context, next) =>
                     "未登录或会话已过期。");
             }
 
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { success = false, errorMessage = "未登录或会话已过期。" });
+            await GatewayHistoryEndpoints.Unauthorized(context, "未登录或会话已过期。");
             return;
         }
 
@@ -236,6 +251,7 @@ app.MapGatewaySecurityEndpoints();
 app.MapGatewayHealthEndpoints();
 app.MapGatewayMetricsEndpoints(observabilityOptions);
 app.MapGatewayConfigurationEndpoints();
+app.MapHistoryValueEndpoints();
 app.MapGatewayCommercialEndpoints();
 app.MapGatewayUpdateEndpoints();
 app.MapGatewayWatchdogEndpoints();

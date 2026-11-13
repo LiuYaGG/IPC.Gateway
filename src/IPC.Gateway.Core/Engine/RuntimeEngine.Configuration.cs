@@ -68,6 +68,18 @@ namespace IPC.Runtime.Engine
                 previousSnapshotsByTagId = BuildSnapshotLookupByTagIdNoLock(_snapshotsByPath);
                 previousNextReadUtcByTagId = new Dictionary<string, DateTime>(_nextReadUtcByTagId, StringComparer.OrdinalIgnoreCase);
                 previousDeviceStatesById = new Dictionary<string, DeviceRuntimeState>(_deviceStatesById, StringComparer.OrdinalIgnoreCase);
+                if (previousConfig != null && !string.Equals(previousConfig.ProjectId, runtimeConfig.ProjectId, StringComparison.OrdinalIgnoreCase))
+                {
+                    statesToRelease.AddRange(previousDeviceStatesById.Values);
+                    previousDeviceStatesById.Clear();
+                    previousSnapshots.Clear();
+                    previousSnapshotsByTagId.Clear();
+                    previousNextReadUtcByTagId.Clear();
+                    _runtimeEvents.Clear();
+                    _valueProcessingResetTagIds.Clear();
+                    _configurationRefreshTagIds.Clear();
+                    previousConfig = null;
+                }
 
                 _config = runtimeConfig;
                 RebuildChannelNameCacheNoLock(runtimeConfig);
@@ -348,7 +360,8 @@ namespace IPC.Runtime.Engine
                 if (device == null)
                     continue;
 
-                InitializeDeviceTags(device);
+                bool deviceEnabled = device.Enabled && _configuredChannelScheduler.IsEnabled(device);
+                InitializeDeviceTags(device, null, device.Tags, deviceEnabled);
 
                 if (device.Groups == null)
                     continue;
@@ -360,23 +373,7 @@ namespace IPC.Runtime.Engine
                         continue;
 
                     group.DeviceId = device.Id;
-                    for (int t = 0; t < group.Tags.Count; t++)
-                    {
-                        TagConfig tag = group.Tags[t];
-                        if (tag == null)
-                            continue;
-
-                        tag.DeviceId = device.Id;
-                        tag.GroupId = group.Id;
-                        if (tag.Scaling == null)
-                            tag.Scaling = ScalingConfig.Default();
-
-                        string path = TagPath.BuildIdentity(device.ChannelId, device.Id, group.Id, tag.Id);
-                        _snapshotStore.Set(_snapshotsByPath, path, CanRead(tag)
-                            ? CreateSnapshot(device, group, tag, TagQuality.Unknown, "Waiting for first scan.")
-                            : CreateSnapshot(device, group, tag, TagQuality.AccessDenied, "Tag is write-only."));
-                        _nextReadUtcByTagId[tag.Id] = DateTime.UtcNow;
-                    }
+                    InitializeDeviceTags(device, group, group.Tags, deviceEnabled && group.Enabled);
                 }
             }
         }
@@ -461,26 +458,23 @@ namespace IPC.Runtime.Engine
             }
         }
 
-        private void InitializeDeviceTags(DeviceConfig device)
+        private void InitializeDeviceTags(DeviceConfig device, GroupConfig? group, IList<TagConfig>? tags, bool parentEnabled)
         {
-            if (device.Tags == null)
+            if (tags == null)
                 return;
 
-            for (int t = 0; t < device.Tags.Count; t++)
+            foreach (TagConfig tag in tags)
             {
-                TagConfig tag = device.Tags[t];
                 if (tag == null)
                     continue;
 
                 tag.DeviceId = device.Id;
-                tag.GroupId = string.Empty;
+                tag.GroupId = group?.Id ?? string.Empty;
                 if (tag.Scaling == null)
                     tag.Scaling = ScalingConfig.Default();
 
-                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, string.Empty, tag.Id);
-                _snapshotStore.Set(_snapshotsByPath, path, CanRead(tag)
-                    ? CreateSnapshot(device, null, tag, TagQuality.Unknown, "Waiting for first scan.")
-                    : CreateSnapshot(device, null, tag, TagQuality.AccessDenied, "Tag is write-only."));
+                string path = TagPath.BuildIdentity(device.ChannelId, device.Id, tag.GroupId, tag.Id);
+                _snapshotStore.Set(_snapshotsByPath, path, CreateConfiguredSnapshot(device, group, tag, parentEnabled));
                 _nextReadUtcByTagId[tag.Id] = DateTime.UtcNow;
             }
         }

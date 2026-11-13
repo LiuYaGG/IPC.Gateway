@@ -28,7 +28,6 @@ public static class GatewayWatchdogSetup
         services.AddSingleton(options);
         services.AddSingleton<GatewayWatchdogHostedService>();
         services.AddSingleton<IGatewayWatchdogService>(provider => provider.GetRequiredService<GatewayWatchdogHostedService>());
-        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<GatewayWatchdogHostedService>());
         return services;
     }
 

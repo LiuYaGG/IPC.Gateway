@@ -1667,7 +1667,19 @@ export interface GatewayProtocolDriverInfo {
 export class SessionExpiredError extends Error {}
 export class NetworkRequestError extends Error {}
 export class HttpRequestError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
+}
+
+export type GatewayStartupState = 'starting' | 'ready' | 'failed' | 'stopping';
+export class GatewayStartupError extends HttpRequestError {
+  constructor(readonly state: Exclude<GatewayStartupState, 'ready'>, message: string) { super(503, message); }
+}
+
+export async function loadStartupState(signal: AbortSignal): Promise<GatewayStartupState> {
+  const status = await request<{ state: GatewayStartupState }>('/api/startup/status', { signal, cache: 'no-store' });
+  if (!['starting', 'ready', 'failed', 'stopping'].includes(status.state))
+    throw new Error('无法获取网关启动状态');
+  return status.state;
 }
 
 export async function request<T>(url: string, init?: RequestInit, legacyFallback?: () => Promise<T>): Promise<T> {
@@ -1699,10 +1711,12 @@ export async function request<T>(url: string, init?: RequestInit, legacyFallback
   }
   if (!response.ok) {
     const payload = (await response.json().catch(() => undefined)) as
-      { errorMessage?: string } | undefined;
+      { errorMessage?: string; errorCode?: string; state?: string } | undefined;
     const message = localizeErrorMessage(payload?.errorMessage);
     if (response.status === 401) throw new SessionExpiredError(message || "登录已过期，请重新登录");
-    throw new HttpRequestError(response.status, message || `请求失败（HTTP ${response.status}）`);
+    if (response.status === 503 && (payload?.state === 'starting' || payload?.state === 'failed' || payload?.state === 'stopping'))
+      throw new GatewayStartupError(payload.state, message);
+    throw new HttpRequestError(response.status, message || `请求失败（HTTP ${response.status}）`, payload?.errorCode);
   }
 
   return (await response.json()) as T;
@@ -2852,9 +2866,81 @@ export interface AlarmHistoryRow {
   deliveryStatus: string;
 }
 
-export async function loadAlarmHistoryPage(page: number, pageSize: number) {
+export type HistoryOptionLevel = 'channel' | 'device' | 'group' | 'tag'
+export interface HistoryRecordOption { id: string; name: string; path?: string | null }
+export interface HistoryRecordFilters {
+  channelId?: string
+  deviceId?: string
+  groupId?: string
+  tagId?: string
+}
+export interface HistoryRecordsQuery extends HistoryRecordFilters {
+  from: string
+  to: string
+  quality?: string
+  page: number
+  pageSize: number
+  snapshot?: string
+}
+export interface HistoryRecord {
+  timestamp: string
+  path: string
+  valueText?: string | null
+  rawValueText?: string | null
+  quality?: string
+  dataType?: string
+  unit?: string
+  errorMessage?: string
+  edgeProcessingType?: string
+  details?: Record<string, unknown>
+}
+export interface HistoryRecordsPage {
+  items: HistoryRecord[]
+  page: number
+  pageSize: number
+  total: number
+  snapshot: string
+  exportToken?: string
+}
+function historyParams(params: object) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    // An explicitly empty groupId selects device-level tags.
+    if (value != null) search.set(key, String(value))
+  }
+  return search
+}
+export async function loadHistoryRecordOptions(level: HistoryOptionLevel, filters: HistoryRecordFilters, search: string, language: string, signal: AbortSignal) {
+  const response = await request<ApiResult<HistoryRecordOption[]>>(
+    '/api/config/history/options?' + historyParams({ ...filters, level, search }),
+    { signal, headers: { 'Accept-Language': language }, cache: 'no-store' }
+  )
+  if (!response.success) throw new Error(response.errorMessage || '读取点位候选失败')
+  return response.data
+}
+export async function queryHistoryRecords(query: HistoryRecordsQuery, language: string, signal: AbortSignal) {
+  const response = await request<ApiResult<HistoryRecordsPage>>(
+    '/api/config/history/records?' + historyParams(query),
+    { signal, headers: { 'Accept-Language': language }, cache: 'no-store' }
+  )
+  if (!response.success) throw new Error(response.errorMessage || '历史查询失败')
+  return response.data
+}
+export async function exportHistoryPage(token: string, language: string, signal: AbortSignal) {
+  const response = await fetch('/api/config/history/export?' + historyParams({ token }), {
+    credentials: 'include', cache: 'no-store', signal, headers: { 'Accept-Language': language }
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => undefined)
+    throw new HttpRequestError(response.status, body?.errorMessage || '导出本页失败', body?.errorCode)
+  }
+  return response.blob()
+}
+
+export async function loadAlarmHistoryPage(page: number, pageSize: number, signal?: AbortSignal) {
   const result = await request<ApiResult<{ total: number; items: AlarmHistoryRow[] }>>(
     `/api/config/history/alarms?page=${page}&pageSize=${pageSize}`,
+    { signal },
   );
   if (!result.success)
     throw new Error(localizeErrorMessage(result.errorMessage) || "读取报警记录失败");

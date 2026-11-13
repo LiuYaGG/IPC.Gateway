@@ -77,6 +77,7 @@ public static class GatewayPermissions
     public const string ViewProject = "project.view";
     public const string EditProject = "project.edit";
     public const string ViewHistory = "history.view";
+    public const string ExportHistory = "history.export";
     public const string EditHistory = "history.edit";
     public const string ViewScripts = "scripts.view";
     public const string EditScripts = "scripts.edit";
@@ -131,7 +132,8 @@ public static class GatewayPermissions
         Action(EditOpcUa, "保存 OPC UA Server 配置", "OPC UA Server", "编辑并保存 OPC UA Server 监听地址、命名空间、证书和采样参数。"),
         Page(ViewProject, "项目配置", "项目配置", "查看项目 JSON 配置。"),
         Action(EditProject, "保存项目配置", "项目配置", "保存项目 JSON 配置、应用配置和回滚配置。"),
-        Page(ViewHistory, "历史库", "历史库", "查看历史库配置和状态。"),
+        Page(ViewHistory, "历史库", "历史库", "查看历史库配置、状态和点位历史。"),
+        Action(ExportHistory, "导出点位历史", "历史库", "将查询结果的当前页导出为 Excel。"),
         Action(EditHistory, "保存历史库配置", "历史库", "编辑历史库配置和健康阈值。"),
 
         Page(ViewScripts, "脚本中心", "脚本中心", "查看 .NET 脚本、运行状态和数据库写入队列。"),

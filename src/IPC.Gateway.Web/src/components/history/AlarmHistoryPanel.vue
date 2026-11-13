@@ -1,11 +1,11 @@
 <template>
-  <a-modal :open="true" :title="tx('报警记录')" width="min(1200px, 96vw)" centered :footer="null" @cancel="emit('close')">
+  <div class="alarm-history">
     <div class="alarm-history-tools">
       <a-button :loading="loading" @click="refresh++">{{ tx('刷新') }}</a-button>
     </div>
     <a-alert v-if="error" type="error" show-icon :message="tx(error)" />
-    <GatewayTable resize-key="alarm-history" :columns="columns" :data-source="rows" :loading="loading"
-      row-key="eventId" size="small" :paging="false" :scroll="{ x: 1150, y: '48vh' }">
+    <AutoHeightTable resize-key="alarm-history" :columns="columns" :data-source="rows" :loading="loading"
+      row-key="eventId" :paging="false" :scroll-x="1150">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'timestamp'">{{ new Date(record.timestamp).toLocaleString(locale) }}</template>
         <template v-else-if="column.key === 'path'">{{ path(record) }}</template>
@@ -14,9 +14,9 @@
         <template v-else-if="column.key === 'message'">{{ tx(record.message) || '—' }}</template>
         <template v-else-if="column.key === 'value' || column.key === 'threshold'">{{ record[column.key] ?? '—' }}</template>
       </template>
-    </GatewayTable>
+    </AutoHeightTable>
     <TablePager :current="page" :page-size="pageSize" :total="total" @change="changePage" />
-  </a-modal>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -24,10 +24,9 @@ import { computed, ref, watch } from 'vue'
 import { loadAlarmHistoryPage, type AlarmHistoryRow } from '../../api'
 import { locale, tx } from '../../i18n'
 import { qualityText, statusText } from '../../utils/display'
-import GatewayTable from '../controls/GatewayTable.vue'
+import AutoHeightTable from '../AutoHeightTable.vue'
 import TablePager from '../controls/TablePager.vue'
 
-const emit = defineEmits<{ close: [] }>()
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -68,30 +67,41 @@ function changePage(current: number, size: number) {
   pageSize.value = size
 }
 watch([page, pageSize, refresh], async ([current, size], _, onCleanup) => {
-  let active = true
-  onCleanup(() => { active = false })
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
   loading.value = true
   error.value = ''
   try {
-    const result = await loadAlarmHistoryPage(current, size)
-    if (!active) return
+    const result = await loadAlarmHistoryPage(current, size, controller.signal)
+    if (controller.signal.aborted) return
     total.value = result.total
     const lastPage = Math.max(1, Math.ceil(result.total / size))
     if (current > lastPage) page.value = lastPage
     else rows.value = result.items
   } catch (cause) {
-    if (active) {
+    if (!controller.signal.aborted) {
       rows.value = []
       total.value = 0
       error.value = cause instanceof Error ? cause.message : '读取报警记录失败'
     }
   } finally {
-    if (active) loading.value = false
+    if (!controller.signal.aborted) loading.value = false
   }
 }, { immediate: true })
 </script>
 
 <style scoped>
+.alarm-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--gateway-border);
+  border-radius: 8px;
+}
 .alarm-history-tools {
   display: flex;
   justify-content: flex-end;

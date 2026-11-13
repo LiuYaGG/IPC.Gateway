@@ -331,7 +331,10 @@ namespace IPC.Runtime.Engine
                     if (!_snapshotsByPath.TryGetValue(key, out current) || current == null)
                         continue;
 
-                    if (CanRestoreSnapshot(current, persisted))
+                    // The restarted scheduler may already have committed a sample or a
+                    // connection failure, even if the PLC's source timestamp is older.
+                    if (current.Quality == TagQuality.Unknown && persisted.Timestamp != DateTime.MinValue &&
+                        persisted.Quality != TagQuality.Unknown && persisted.Quality != TagQuality.Disabled)
                         _snapshotStore.Set(_snapshotsByPath, key, MergeRestoredSnapshot(current, persisted));
                 }
             }
@@ -961,7 +964,11 @@ namespace IPC.Runtime.Engine
         private TagValueSnapshot CreateConfiguredSnapshot(DeviceConfig device, GroupConfig? group, TagConfig tag, bool parentEnabled)
         {
             if (!parentEnabled)
-                return CreateSnapshot(device, group, tag, TagQuality.Disabled, group == null && !device.Enabled ? "Device is disabled." : "Group is disabled.");
+            {
+                string reason = !device.Enabled ? "Device is disabled." :
+                    group?.Enabled == false ? "Group is disabled." : "Configured channel is disabled.";
+                return CreateSnapshot(device, group, tag, TagQuality.Disabled, reason);
+            }
             if (!tag.Enabled)
                 return CreateSnapshot(device, group, tag, TagQuality.Disabled, "Tag is disabled.");
             if (!CanRead(tag))
@@ -2359,7 +2366,8 @@ namespace IPC.Runtime.Engine
                 ? "值处理脚本执行失败。"
                 : result.ErrorMessage;
             if (string.Equals(policy, "KeepLastGood", StringComparison.OrdinalIgnoreCase) &&
-                previousSnapshot is not null)
+                previousSnapshot is not null && previousSnapshot.Quality is not (TagQuality.Unknown or TagQuality.Disabled or
+                    TagQuality.NotConnected or TagQuality.ReadError or TagQuality.NotFound or TagQuality.AccessDenied))
             {
                 snapshot.Value = previousSnapshot.Value;
                 snapshot.ValueText = previousSnapshot.ValueText;
@@ -3926,17 +3934,6 @@ namespace IPC.Runtime.Engine
             }
         }
 
-        private static bool CanRestoreSnapshot(TagValueSnapshot current, TagValueSnapshot persisted)
-        {
-            if (persisted.Timestamp == DateTime.MinValue)
-                return false;
-            if (current.Quality == TagQuality.Unknown)
-                return true;
-            if (current.Timestamp == DateTime.MinValue)
-                return true;
-            return persisted.Timestamp >= current.Timestamp;
-        }
-
         private static TagValueSnapshot MergeRestoredSnapshot(TagValueSnapshot current, TagValueSnapshot persisted)
         {
             TagValueSnapshot restored = current.Clone();
@@ -3948,6 +3945,9 @@ namespace IPC.Runtime.Engine
             restored.Timestamp = persisted.Timestamp;
             restored.ErrorMessage = persisted.ErrorMessage ?? string.Empty;
             restored.LastReadError = persisted.LastReadError ?? string.Empty;
+            restored.CleaningApplied = persisted.CleaningApplied;
+            restored.CleaningAction = persisted.CleaningAction;
+            restored.CleaningMessage = persisted.CleaningMessage;
             if (!string.IsNullOrWhiteSpace(persisted.DataType))
                 restored.DataType = persisted.DataType;
             return restored;

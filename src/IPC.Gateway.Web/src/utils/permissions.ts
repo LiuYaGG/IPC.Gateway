@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   projectEdit: 'project.edit',
   historyView: 'history.view',
   historyEdit: 'history.edit',
+  historyExport: 'history.export',
   scriptsView: 'scripts.view',
   scriptsEdit: 'scripts.edit',
   scriptsExecute: 'scripts.execute',

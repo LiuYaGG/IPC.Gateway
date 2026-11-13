@@ -1,21 +1,31 @@
 <template>
-  <section class="view-stack history-view">
-    <HistoryStatusBar :config="draft" :status="status" />
-    <div class="history-toolbar">
-      <div>
-        <h3>{{ tx('历史库与边缘处理配置') }}</h3>
-        <span>{{ dirty ? tx('有未保存修改') : tx('配置已同步') }}</span>
-      </div>
-      <div class="history-toolbar__actions">
-        <a-button @click="showAlarms = true">{{ tx('报警记录') }}</a-button>
-        <a-button :disabled="saving || !dirty" @click="resetDraft">{{ tx('重置') }}</a-button>
-        <a-button type="primary" :loading="saving" :disabled="!canSave" @click="submit">{{ tx('保存配置') }}</a-button>
-      </div>
-    </div>
-    <HistoryBaseForm :config="draft" :disabled="!canSave" />
-    <HistoryProcessingTabs :config="draft" :disabled="!canSave" />
-    <HistoryStoragePane :config="draft" :disabled="!canSave" />
-    <AlarmHistoryDialog v-if="showAlarms" @close="showAlarms = false" />
+  <section class="history-view">
+    <a-tabs v-model:active-key="tab" class="history-tabs" :animated="false">
+      <a-tab-pane key="settings" :tab="tx('历史库配置')">
+        <div class="history-settings">
+          <HistoryStatusBar :config="draft" :status="status" />
+          <div class="history-toolbar">
+            <div>
+              <h3>{{ tx('历史库与边缘处理配置') }}</h3>
+              <span>{{ dirty ? tx('有未保存修改') : tx('配置已同步') }}</span>
+            </div>
+            <div class="history-toolbar__actions">
+              <a-button :disabled="saving || !dirty" @click="resetDraft">{{ tx('重置') }}</a-button>
+              <a-button type="primary" :loading="saving" :disabled="!canSave" @click="submit">{{ tx('保存配置') }}</a-button>
+            </div>
+          </div>
+          <HistoryBaseForm :config="draft" :disabled="!canSave" />
+          <HistoryProcessingTabs :config="draft" :disabled="!canSave" />
+          <HistoryStoragePane :config="draft" :disabled="!canSave" />
+        </div>
+      </a-tab-pane>
+      <a-tab-pane key="records" :tab="tx('点位历史')">
+        <HistoryRecordsView :active="tab === 'records'" :enabled="history?.enabled" />
+      </a-tab-pane>
+      <a-tab-pane key="alarms" :tab="tx('报警记录')">
+        <AlarmHistoryPanel v-if="tab === 'alarms'" />
+      </a-tab-pane>
+    </a-tabs>
   </section>
 </template>
 
@@ -26,7 +36,8 @@ import { nextTick, reactive, ref, watch } from 'vue'
 
 import type { HistoryConfig, HistoryRuntimeStatus } from '../../api'
 import HistoryBaseForm from './HistoryBaseForm.vue'
-import AlarmHistoryDialog from './AlarmHistoryDialog.vue'
+import AlarmHistoryPanel from './AlarmHistoryPanel.vue'
+import HistoryRecordsView from './HistoryRecordsView.vue'
 import HistoryProcessingTabs from './HistoryProcessingTabs.vue'
 import HistoryStoragePane from './HistoryStoragePane.vue'
 import HistoryStatusBar from './HistoryStatusBar.vue'
@@ -56,7 +67,7 @@ const emit = defineEmits<{
 
 const draft = reactive(createDefaultHistoryConfig())
 const dirty = ref(false)
-const showAlarms = ref(false)
+const tab = ref('settings')
 let syncing = false
 
 watch(
@@ -165,8 +176,29 @@ function resolveFillIntervalMs() {
 
 <style scoped>
 .history-view {
+  height: 100%;
+  min-height: 340px;
+}
+
+.history-tabs {
+  height: 100%;
+}
+.history-tabs > :deep(.ant-tabs-nav) {
+  margin-bottom: 10px;
+}
+.history-tabs > :deep(.ant-tabs-content-holder) {
+  min-height: 0;
+}
+.history-tabs > :deep(.ant-tabs-content-holder > .ant-tabs-content),
+.history-tabs > :deep(.ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active) {
+  height: 100%;
+}
+.history-settings {
   display: grid;
   gap: 16px;
+  height: 100%;
+  overflow: auto;
+  align-content: start;
 }
 
 .history-toolbar {

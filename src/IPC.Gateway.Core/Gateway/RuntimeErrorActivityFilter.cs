@@ -36,7 +36,7 @@ public static class RuntimeErrorActivityFilter
     /// <summary>
     /// 判断一条错误是否仍代表当前故障状态。
     /// </summary>
-    private static bool IsActive(
+    internal static bool IsActive(
         RuntimeErrorDetail error,
         IReadOnlyDictionary<string, DeviceRuntimeStatus> devices,
         IReadOnlyDictionary<string, TagValueSnapshot> tags)
@@ -46,19 +46,23 @@ public static class RuntimeErrorActivityFilter
             return false;
 
         if (category.StartsWith("DeviceConnection", StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(error.DeviceId) &&
-            devices.TryGetValue(BuildDeviceIdentity(error.ChannelId, error.DeviceId), out DeviceRuntimeStatus? device))
+            !string.IsNullOrWhiteSpace(error.DeviceId))
         {
-            return device.Enabled && !device.IsConnected;
+            if (!devices.TryGetValue(BuildDeviceIdentity(error.ChannelId, error.DeviceId), out var device) ||
+                !device.Enabled || device.IsConnected)
+                return false;
+            if (!string.IsNullOrWhiteSpace(error.TagId))
+                return tags.TryGetValue(TagPath.BuildIdentity(error.ChannelId, error.DeviceId, error.GroupId, error.TagId), out var tag) &&
+                    tag.Quality == TagQuality.NotConnected;
+            // The event ring can contain retries from an earlier outage of the same device.
+            return !category.Equals("DeviceConnectionFailure", StringComparison.OrdinalIgnoreCase) ||
+                (device.ConsecutiveFailures > 0 && error.Timestamp >= device.LastSuccessTime);
         }
 
-        if (category.Equals("TagRead", StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(error.TagId) &&
-            tags.TryGetValue(
-                TagPath.BuildIdentity(error.ChannelId, error.DeviceId, error.GroupId, error.TagId),
-                out TagValueSnapshot? tag))
+        if (category.Equals("TagRead", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(error.TagId))
         {
-            return tag.Quality == TagQuality.ReadError;
+            return tags.TryGetValue(TagPath.BuildIdentity(error.ChannelId, error.DeviceId, error.GroupId, error.TagId), out var tag) &&
+                tag.Quality == TagQuality.ReadError;
         }
 
         return true;

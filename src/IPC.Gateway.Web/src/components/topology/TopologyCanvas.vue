@@ -12,18 +12,20 @@
 import { locale } from '../../i18n'
 import { localizeChartOption } from '../../i18n/charts'
 import { tx } from '../../i18n'
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { GraphChart } from 'echarts/charts'
 import { LegendComponent, TooltipComponent } from 'echarts/components'
 import { init, use, type EChartsType } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsOption } from 'echarts'
-import type { TopologyNode } from './topologyTypes'
+import { buildTopologyOption } from './topologyOption'
+import type { DeviceTopologyModel, TopologyNode } from './topologyTypes'
 
 use([GraphChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{
-  option: EChartsOption
+  model: DeviceTopologyModel
+  selectedNodeId: string
   empty: boolean
   fitToken: number
 }>()
@@ -36,24 +38,32 @@ const container = ref<HTMLDivElement | null>(null)
 const chart = shallowRef<EChartsType | null>(null)
 let observer: ResizeObserver | undefined
 let lastViewState: TopologyGraphViewState = {}
+let fitAll = false
 
-onMounted(async () => {
-  await nextTick()
+onMounted(() => {
   if (!container.value) return
   chart.value = init(
     container.value,
     { textStyle: { fontFamily: '"Cascadia Code", "Microsoft YaHei", sans-serif', fontSize: 13.333 } },
     { renderer: 'canvas' }
   )
-  chart.value.setOption(localizeChartOption(props.option), true)
+  updateOption()
   chart.value.on('click', (params) => {
     const node = (params as any).data?.rawNode as TopologyNode | undefined
     if (node) emit('select-node', node)
   })
   chart.value.on('graphRoam', () => {
+    fitAll = false
     lastViewState = readGraphViewState()
   })
-  observer = new ResizeObserver(() => chart.value?.resize())
+  observer = new ResizeObserver(() => {
+    const element = container.value
+    const instance = chart.value
+    if (!element || !instance || !element.clientWidth || !element.clientHeight) return
+    if (element.clientWidth === instance.getWidth() && element.clientHeight === instance.getHeight()) return
+    instance.resize()
+    updateOption()
+  })
   observer.observe(container.value)
 })
 
@@ -62,35 +72,28 @@ onBeforeUnmount(() => {
   chart.value?.dispose()
 })
 
-watch(
-  () => props.option,
-  (option) => updateOption(option, true),
-  { deep: true }
-)
+watch([() => props.model, () => props.selectedNodeId, locale], () => updateOption())
 
 watch(
   () => props.fitToken,
   () => {
+    fitAll = true
     lastViewState = {}
-    chart.value?.setOption(props.option, true)
-    chart.value?.resize()
+    updateOption(false)
   }
 )
-
-watch(locale, () => updateOption(props.option, true))
 
 interface TopologyGraphViewState {
   zoom?: number
   center?: unknown[]
 }
 
-function updateOption(option: EChartsOption, preserveView: boolean) {
+function updateOption(preserveView = true) {
   const instance = chart.value
   if (!instance) return
 
-  const nextOption = preserveView
-    ? withGraphViewState(localizeChartOption(option), lastViewState)
-    : localizeChartOption(option)
+  const option = localizeChartOption(buildTopologyOption(props.model, props.selectedNodeId, instance.getWidth(), instance.getHeight(), fitAll))
+  const nextOption = preserveView ? withGraphViewState(option, lastViewState) : option
   instance.setOption(nextOption, !preserveView)
 }
 
@@ -133,7 +136,7 @@ function withGraphViewState(option: EChartsOption, state: TopologyGraphViewState
 <style scoped>
 .topology-canvas {
   position: relative;
-  min-height: 620px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #dbe4ef;
   border-radius: 8px;
@@ -143,9 +146,8 @@ function withGraphViewState(option: EChartsOption, state: TopologyGraphViewState
 }
 
 .topology-canvas__chart {
-  width: 100%;
-  height: 100%;
-  min-height: 620px;
+  position: absolute;
+  inset: 0;
 }
 
 .topology-canvas__empty {

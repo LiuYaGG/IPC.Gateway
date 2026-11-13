@@ -52,6 +52,7 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
     }
 
     public void Start() => _gateway.Start();
+    public void Start(CancellationToken cancellationToken) => _gateway.Start(cancellationToken);
 
     public void Stop() => _gateway.Stop();
 

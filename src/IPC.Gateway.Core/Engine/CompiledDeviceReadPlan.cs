@@ -297,7 +297,7 @@ namespace IPC.Runtime.Engine
             return parts.Length < 4 || uint.TryParse(parts[3], out _);
         }
 
-        private static string ResolveAddress(DeviceConfig? device, TagConfig tag)
+        internal static string ResolveAddress(DeviceConfig? device, TagConfig tag)
         {
             if (!string.IsNullOrWhiteSpace(tag.Address))
                 return tag.Address.Trim();
@@ -372,12 +372,18 @@ namespace IPC.Runtime.Engine
         {
             return IsStaticallyValid == previous.IsStaticallyValid &&
                    string.Equals(ValidationError, previous.ValidationError, StringComparison.Ordinal) &&
-                   string.Equals(Address, previous.Address, StringComparison.Ordinal) &&
-                   Tag.DataType == previous.Tag.DataType &&
-                   Tag.ElementCount == previous.Tag.ElementCount && Tag.ElementOffset == previous.Tag.ElementOffset &&
+                   HasSameSource(Tag, Address, previous.Tag, previous.Address) &&
+                   Tag.Enabled == previous.Tag.Enabled && (Group?.Enabled ?? true) == (previous.Group?.Enabled ?? true) &&
                    (Tag.AccessMode == TagAccessMode.WriteOnly) == (previous.Tag.AccessMode == TagAccessMode.WriteOnly) &&
-                   Tag.IsVirtual == previous.Tag.IsVirtual &&
                    string.Equals(Group?.Id ?? string.Empty, previous.Group?.Id ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool HasSameSource(TagConfig tag, string address, TagConfig other, string otherAddress)
+        {
+            return string.Equals(address, otherAddress, StringComparison.Ordinal) &&
+                   tag.DataType == other.DataType && tag.ElementCount == other.ElementCount && tag.ElementOffset == other.ElementOffset &&
+                   tag.IsVirtual == other.IsVirtual &&
+                   (!tag.IsVirtual || System.Text.Json.JsonSerializer.Serialize(tag.VirtualModel) == System.Text.Json.JsonSerializer.Serialize(other.VirtualModel));
         }
 
         public void PreserveRuntime(CompiledTagRead previous)

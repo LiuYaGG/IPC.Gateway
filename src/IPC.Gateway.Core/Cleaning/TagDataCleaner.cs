@@ -88,7 +88,8 @@ namespace IPC.Runtime.Cleaning
             TagValueSnapshot? previous,
             double currentNumber)
         {
-            if (previous == null || previous.Quality == TagQuality.Unknown)
+            // Filtered and Spike retain a comparison baseline established by a successful read.
+            if (previous?.Quality is not (TagQuality.Good or TagQuality.Filtered or TagQuality.Spike))
                 return false;
 
             double previousNumber;
@@ -232,6 +233,12 @@ namespace IPC.Runtime.Cleaning
 
         private static bool TryToDouble(object? value, out double number)
         {
+            if (value == null)
+            {
+                number = 0D;
+                return false;
+            }
+
             try
             {
                 number = Convert.ToDouble(value, CultureInfo.InvariantCulture);

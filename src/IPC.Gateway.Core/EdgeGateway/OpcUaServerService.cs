@@ -17,6 +17,7 @@
 //----------------------------------------------------------------*/
 using System.IO;
 using System.Collections.Generic;
+using IPC.Gateway.Core.Gateway;
 using IPC.Runtime.Configuration;
 using IPC.Runtime.Engine;
 using IPC.Runtime.Values;
@@ -76,18 +77,24 @@ namespace IPC.EdgeGateway
                 try
                 {
                     ApplicationConfiguration configuration = CreateApplicationConfiguration(_options);
-                    configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None).GetAwaiter().GetResult();
+                    GatewayStartupTiming.Measure("校验OPC-UA服务配置", () =>
+                        configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None).GetAwaiter().GetResult());
 
-                    _server = new OpcUaGatewayServer(_runtime, _projectProvider, _options, _status);
+                    // Capture on the configuration caller's thread. The UA SDK can build
+                    // its address space on another thread while this caller waits for it.
+                    _server = new OpcUaGatewayServer(_runtime, _projectProvider(), _options, _status);
                     _application = new ApplicationInstance(configuration, s_telemetry);
-                    bool certificateRenewed = EnsureApplicationCertificate(_application, configuration);
+                    bool certificateRenewed = GatewayStartupTiming.Measure("检查OPC-UA应用证书", () => EnsureApplicationCertificate(_application, configuration));
 
-                    _application.StartAsync(_server).GetAwaiter().GetResult();
+                    GatewayStartupTiming.Measure("启动OPC-UA端点并构建地址空间", () => _application.StartAsync(_server).GetAwaiter().GetResult());
 
                     _runtime.TagValueChanged -= OnRuntimeTagValueChanged;
                     _runtime.TagValueChanged += OnRuntimeTagValueChanged;
-                    foreach (TagValueSnapshot snapshot in _runtime.GetSnapshots())
-                        _server.UpdateValue(snapshot);
+                    GatewayStartupTiming.Measure("同步OPC-UA节点初始值", () =>
+                    {
+                        foreach (TagValueSnapshot snapshot in _runtime.GetSnapshots())
+                            _server.UpdateValue(snapshot);
+                    });
 
                     _status.IsRunning = true;
                     _status.StartedTime = DateTime.Now;
@@ -140,7 +147,7 @@ namespace IPC.EdgeGateway
         {
             lock (_syncRoot)
             {
-                if (_server != null) _server.GatewayNodeManager?.SynchronizeAddressSpace();
+                if (_server != null) _server.SynchronizeAddressSpace(_projectProvider());
                 else if (_options.Enabled) Start();
             }
         }

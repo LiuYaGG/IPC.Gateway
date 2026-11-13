@@ -68,6 +68,7 @@ namespace IPC.EdgeGateway
         private bool _running;
         private bool _writerStopping;
         private bool _disposed;
+        public HistoryValueIndex ValueQueries { get; }
 
         public LocalHistoryService(IRuntimeService runtime, LocalHistoryOptions options)
             : this(runtime, options, new GatewayResilienceOptions().History)
@@ -78,6 +79,7 @@ namespace IPC.EdgeGateway
         {
             _runtime = runtime;
             _options = options == null ? new LocalHistoryOptions() : options.Clone();
+            ValueQueries = new HistoryValueIndex(ResolveDirectory(), ResolveColdDirectory());
             _syncRoot = new object();
             _writeQueueSyncRoot = new object();
             _writeQueue = new Queue<LocalHistoryWriteItem>();
@@ -104,6 +106,8 @@ namespace IPC.EdgeGateway
 
         public void Start()
         {
+            // Previously recorded samples stay searchable when recording is switched off.
+            ValueQueries.Start();
             if (!_options.Enabled || _runtime == null)
                 return;
 
@@ -149,6 +153,7 @@ namespace IPC.EdgeGateway
             if (_disposed)
                 return;
             _disposed = true;
+            ValueQueries.Dispose();
             Stop();
             _maintenanceCancellation.Dispose();
         }
@@ -1063,7 +1068,7 @@ namespace IPC.EdgeGateway
         }
 
         // Hot and cold directories can contain user files. Manage only names produced by AppendCategory.
-        private static bool TryGetHistoryFileDate(string path, out DateTime timestamp)
+        internal static bool TryGetHistoryFileDate(string path, out DateTime timestamp)
         {
             timestamp = default;
             ReadOnlySpan<char> name = Path.GetFileName(path.AsSpan());

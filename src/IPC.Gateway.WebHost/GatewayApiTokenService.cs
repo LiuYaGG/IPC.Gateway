@@ -73,6 +73,7 @@ public sealed class GatewayApiTokenService
         identity.AddClaim(new Claim(ClaimTypes.Name, tokenName));
         identity.AddClaim(new Claim(ClaimTypes.Role, string.IsNullOrWhiteSpace(matched.Role) ? "ApiToken" : matched.Role.Trim()));
         identity.AddClaim(new Claim("apiToken", "true"));
+        identity.AddClaim(new Claim("apiTokenId", tokenHash));
         if (matched.ExpiresUtc != DateTime.MinValue)
             identity.AddClaim(new Claim("exp", new DateTimeOffset(DateTime.SpecifyKind(matched.ExpiresUtc, DateTimeKind.Utc))
                 .ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));

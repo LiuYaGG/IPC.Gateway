@@ -26,6 +26,11 @@ namespace IPC.Gateway.Core.Application.Gateway;
 public interface IGatewayApplicationService : IDisposable
 {
     void Start();
+    void Start(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Start();
+    }
     void Stop();
     GatewayRuntimeStatusDto GetStatus();
     GatewayRuntimeStatusDto GetRuntimeStreamSnapshot() => GetStatus();

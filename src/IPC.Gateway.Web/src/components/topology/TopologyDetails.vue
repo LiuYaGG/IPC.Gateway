@@ -73,11 +73,19 @@ const nodeTypeLabel = computed(() => {
   display: grid;
   align-content: start;
   gap: 14px;
-  min-height: 620px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
   padding: 16px;
   border: 1px solid #dbe4ef;
   border-radius: 8px;
   background: #ffffff;
+}
+
+@media (max-width: 1240px) {
+  .topology-details {
+    overflow: visible;
+  }
 }
 
 .topology-details header {
