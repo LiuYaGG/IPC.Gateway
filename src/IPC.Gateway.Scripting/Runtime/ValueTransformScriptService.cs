@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using IPC.Gateway.Core.Gateway;
@@ -10,12 +9,15 @@ namespace IPC.Gateway.Scripting.Runtime;
 /// <summary>
 /// 缓存已发布值处理脚本，并为采集清洗和规则引擎提供同步执行入口。
 /// </summary>
-public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
+public sealed partial class ValueTransformScriptService : IValueTransformScriptRuntime
 {
     private readonly IScriptConfigurationStore _configurationStore;
     private readonly GatewayScriptCompiler _compiler;
-    private readonly ConcurrentDictionary<string, GatewayScriptDefinition> _publishedScripts =
-        new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, GatewayScriptDefinition> _publishedScripts =
+        new Dictionary<string, GatewayScriptDefinition>(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly object _publicationLock = new();
+    private bool _loaded;
 
     /// <summary>
     /// 创建值处理脚本服务。
@@ -26,7 +28,6 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
     {
         _configurationStore = configurationStore;
         _compiler = compiler;
-        ReloadAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -42,9 +43,11 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
     /// <summary>
     /// 使用已经读取的配置文档刷新已发布脚本缓存。
     /// </summary>
-    public void Reload(ScriptConfigurationDocument document)
+    public void Reload(ScriptConfigurationDocument document) => PublishDefinitions(document);
+
+    private void PublishDefinitions(ScriptConfigurationDocument document, bool onlyIfUnloaded = false)
     {
-        _publishedScripts.Clear();
+        var published = new Dictionary<string, GatewayScriptDefinition>(StringComparer.OrdinalIgnoreCase);
         foreach (GatewayScriptDefinition script in document?.Scripts ?? [])
         {
             if (script.ScriptType != GatewayScriptType.ValueTransform ||
@@ -54,23 +57,22 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
                 continue;
             }
 
-            GatewayScriptDefinition latest = script.Clone();
-            if (!_compiler.PrepareValueTransform(latest.PublishedSourceCode).Success)
-                continue;
-            _publishedScripts[BuildCacheKey(script.Id, script.PublishedVersion)] = latest;
-            _publishedScripts[BuildCacheKey(script.Id, 0)] = latest;
+            GatewayScriptDefinition latest = PublishedDefinition(script, script.PublishedVersion, script.PublishedSourceCode);
+            published[BuildCacheKey(script.Id, script.PublishedVersion)] = latest;
+            published[BuildCacheKey(script.Id, 0)] = latest;
             foreach (ValueTransformPublishedVersion version in script.PublishedVersions ?? [])
             {
-                if (version.Version <= 0 || string.IsNullOrWhiteSpace(version.SourceCode))
+                if (version.Version <= 0 || version.Version == script.PublishedVersion || string.IsNullOrWhiteSpace(version.SourceCode))
                     continue;
-                GatewayScriptDefinition historical = script.Clone();
-                historical.PublishedVersion = version.Version;
-                historical.PublishedSourceCode = version.SourceCode;
-                historical.PublishedUtc = version.PublishedUtc;
-                if (!_compiler.PrepareValueTransform(historical.PublishedSourceCode).Success)
-                    continue;
-                _publishedScripts[BuildCacheKey(script.Id, version.Version)] = historical;
+                published[BuildCacheKey(script.Id, version.Version)] = PublishedDefinition(script, version.Version, version.SourceCode);
             }
+        }
+        // Publish the complete index at once, so a concurrent read never sees Clear()/partial adds.
+        lock (_publicationLock)
+        {
+            if (onlyIfUnloaded && _loaded) return;
+            Volatile.Write(ref _publishedScripts, published);
+            Volatile.Write(ref _loaded, true);
         }
     }
 
@@ -81,7 +83,9 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
     {
         ArgumentNullException.ThrowIfNull(request);
         Stopwatch stopwatch = Stopwatch.StartNew();
-        if (!_publishedScripts.TryGetValue(BuildCacheKey(request.ScriptId, request.ScriptVersion), out GatewayScriptDefinition? script))
+        try { EnsureLoadedAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+        catch (Exception ex) { return Failed(ex.GetBaseException().Message, stopwatch); }
+        if (!Volatile.Read(ref _publishedScripts).TryGetValue(BuildCacheKey(request.ScriptId, request.ScriptVersion), out GatewayScriptDefinition? script))
             return Failed("未找到已发布的值处理脚本。", stopwatch);
         if (!IsUsageAllowed(script.ValueTransformScope, request.Usage))
             return Failed("该值处理脚本未授权用于当前执行位置。", stopwatch);
@@ -90,15 +94,16 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
             request.TimeoutMilliseconds > 0 ? request.TimeoutMilliseconds : script.TransformTimeoutMilliseconds,
             10,
             5000);
-        using CancellationTokenSource timeout = new(timeoutMilliseconds);
         ScriptLogCollector logs = new();
         try
         {
+            // New references can arrive after startup. Compilation must not consume the execution timeout.
+            var runner = _compiler.GetValueTransformRunner(script.PublishedSourceCode);
+            using CancellationTokenSource timeout = new(timeoutMilliseconds);
             ValueTransformScriptInput input = MapInput(request);
             input.Value = ConvertOutput(request.Value ?? request.ValueText, script.InputDataType);
             ValueTransformScriptGlobals globals = new(input, logs, timeout.Token);
-            object? returned = _compiler
-                .RunValueTransformAsync(script.PublishedSourceCode, globals, timeout.Token)
+            object? returned = runner(globals, timeout.Token)
                 .GetAwaiter()
                 .GetResult();
             if (returned is ValueTransformScriptResult scriptResult && !scriptResult.Success)
@@ -128,6 +133,19 @@ public sealed class ValueTransformScriptService : IValueTransformScriptRuntime
             return Failed(ex.GetBaseException().Message, stopwatch);
         }
     }
+
+    private static GatewayScriptDefinition PublishedDefinition(GatewayScriptDefinition source, int version, string code) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        ScriptType = GatewayScriptType.ValueTransform,
+        ValueTransformScope = source.ValueTransformScope,
+        InputDataType = source.InputDataType,
+        OutputDataType = source.OutputDataType,
+        TransformTimeoutMilliseconds = source.TransformTimeoutMilliseconds,
+        PublishedVersion = version,
+        PublishedSourceCode = code
+    };
 
     /// <summary>
     /// 执行尚未发布的草稿代码，供脚本中心测试输入输出。

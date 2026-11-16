@@ -24,7 +24,7 @@ using System.Text.Json;
 
 namespace IPC.Gateway.WebHost;
 
-public sealed class GatewayUpdatePackageService
+public sealed partial class GatewayUpdatePackageService
 {
     private const string ManifestEntryName = "ipc-gateway-package.json";
     private const string PendingActionFileName = "pending-action.json";
@@ -75,37 +75,6 @@ public sealed class GatewayUpdatePackageService
         CurrentVersion = GatewayUpdateVersion.Current,
         PendingAction = ReadJson<GatewayPendingUpdateAction>(GetPendingActionPath())
     };
-
-    // The previous host may predate upgrade-trust support. Reconstruct continuity
-    // only from its completed upgrade, original ZIP and verified rollback copy.
-    public void RestoreCompletedUpgradeTrust()
-    {
-        lock (_actionLock)
-        {
-            if (_completedTrustRestored) return;
-            GatewayPendingUpdateAction? action = ReadJson<GatewayPendingUpdateAction>(GetPendingActionPath());
-            // Windows helpers start the new service before writing Applied. At
-            // this point only exact hashes extracted from the validated ZIP are granted trust.
-            if (action?.ActionType != "Upgrade" || action.Status is not ("Applying" or "Applied")) return;
-            if (!Path.TrimEndingDirectorySeparator(Path.GetFullPath(action.TargetDirectory)).Equals(ResolveInstallDirectory(), StringComparison.OrdinalIgnoreCase)) return;
-            GatewayUpdatePackageRecord record = FindPackage(action.PackageId);
-            var validation = ValidateStoredPackage(record);
-            if (!validation.Trust.ContentHashValid) return;
-            GatewayRollbackPoint rollback = FindRollback(action.RollbackId);
-            string previous = Path.Combine(rollback.Directory, "payload");
-            if (!Directory.Exists(previous)) return;
-            string payload = Path.Combine(GetStagingDirectory(), "trust-" + Guid.NewGuid().ToString("N"));
-            try
-            {
-                Directory.CreateDirectory(payload);
-                ExtractPayload(record.StoredPath, validation.Manifest.EntryDirectory, payload);
-                int restored = PlcDriverPluginRegistry.PreserveUpgradeTrust(payload, ResolveInstallDirectory(), record.PackageId, record.Sha256, previous);
-                if (restored > 0) PlcDriverPluginRegistry.RefreshDefaultPlugins();
-                _completedTrustRestored = true;
-            }
-            finally { if (Directory.Exists(payload)) Directory.Delete(payload, true); }
-        }
-    }
 
     private GatewayUpdateStatus GetStatusCore()
     {
@@ -237,6 +206,9 @@ public sealed class GatewayUpdatePackageService
             RollbackDirectory = rollbackPoint.Directory,
             RequiresServiceRestart = true,
             CreatedTime = DateTime.UtcNow,
+            DriverTrustPrepared = validation.Trust.ContentHashValid,
+            DriverTrustStateSha256 = PlcDriverPluginRegistry.GetUpgradeTrustStateSha256(),
+            DriverTrustPackageSha256 = record.Sha256,
             Status = "Pending"
         };
         action.ScriptPath = WriteOfflineScript(action);
@@ -315,6 +287,9 @@ public sealed class GatewayUpdatePackageService
                 ExtractPayload(record.StoredPath, manifest.EntryDirectory, action.SourceDirectory);
                 if (validated.Trust.ContentHashValid)
                     PlcDriverPluginRegistry.PreserveUpgradeTrust(action.SourceDirectory, action.TargetDirectory, record.PackageId, record.Sha256);
+                action.DriverTrustPrepared = validated.Trust.ContentHashValid;
+                action.DriverTrustStateSha256 = PlcDriverPluginRegistry.GetUpgradeTrustStateSha256();
+                action.DriverTrustPackageSha256 = record.Sha256;
             }
             else if (action.ActionType == "Rollback")
             {
@@ -351,9 +326,10 @@ public sealed class GatewayUpdatePackageService
         if (state is "Scheduled" or "Applying") throw new InvalidOperationException("升级正在执行，请等待服务恢复。");
     }
 
-    internal GatewayUpdatePackageManifest ReadAndValidateManifest(string zipPath)
+    internal GatewayUpdatePackageManifest ReadAndValidateManifest(string zipPath) => ReadAndValidatePackage(zipPath).Manifest;
+
+    private GatewayUpdatePackageManifest ReadManifest(ZipArchive archive)
     {
-        using ZipArchive archive = ZipFile.OpenRead(zipPath);
         ZipArchiveEntry? manifestEntry = archive.GetEntry(ManifestEntryName);
         if (manifestEntry == null)
             throw new ArgumentException("升级包缺少 ipc-gateway-package.json 清单。");
@@ -385,14 +361,13 @@ public sealed class GatewayUpdatePackageService
         if (archive.Entries.All(entry => !IsPayloadEntry(entry, manifest.EntryDirectory)))
             throw new ArgumentException("升级包缺少 payload 目录。");
 
-        _ = ValidatePackageTrust(archive, manifest);
         return manifest;
     }
 
     private GatewayUpdatePackageValidationResult ReadAndValidatePackage(string zipPath)
     {
-        GatewayUpdatePackageManifest manifest = ReadAndValidateManifest(zipPath);
         using ZipArchive archive = ZipFile.OpenRead(zipPath);
+        GatewayUpdatePackageManifest manifest = ReadManifest(archive);
         GatewayUpdatePackageTrustResult trust = ValidatePackageTrust(archive, manifest);
         return new GatewayUpdatePackageValidationResult(manifest, trust);
     }
@@ -725,7 +700,7 @@ public sealed class GatewayUpdatePackageService
         return point;
     }
 
-    private void ExtractPayload(string zipPath, string entryDirectory, string targetDirectory)
+    private void ExtractPayload(string zipPath, string entryDirectory, string targetDirectory, bool driversOnly = false)
     {
         string normalizedEntryDirectory = NormalizeEntryDirectory(entryDirectory);
         using ZipArchive archive = ZipFile.OpenRead(zipPath);
@@ -736,6 +711,12 @@ public sealed class GatewayUpdatePackageService
 
             string relative = entry.FullName.Substring(normalizedEntryDirectory.Length).TrimStart('/', '\\');
             if (string.IsNullOrWhiteSpace(relative))
+                continue;
+
+            // Legacy recovery needs only driver assemblies/manifests, not the website and runtime.
+            string normalizedRelative = relative.Replace('\\', '/');
+            if (driversOnly && !normalizedRelative.StartsWith("Drivers/", StringComparison.OrdinalIgnoreCase) &&
+                !normalizedRelative.StartsWith("Plugins/Drivers/", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             string targetPath = GetSafeExtractPath(targetDirectory, relative);

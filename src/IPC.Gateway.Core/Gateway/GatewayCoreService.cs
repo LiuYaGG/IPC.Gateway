@@ -185,14 +185,35 @@ namespace IPC.Gateway.Core.Gateway
                     return;
 
                 RunStep("从数据库加载项目", () => SetCurrentProject(LoadProject()));
-                RunStep("校验项目与协议驱动", () =>
+                RunStep("并行准备运行依赖", () =>
                 {
-                    _lastValidation = ProjectConfigValidator.Validate(_project);
-                    if (!_lastValidation.IsValid)
-                        throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
+                    using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    // At most two script compiler workers plus one certificate preparation worker.
+                    // Neither job starts acquisition or exposes partially processed tag values.
+                    Task scripts = Task.Run(() => GatewayStartupTiming.MeasureAsync("预编译项目引用脚本",
+                        () => _valueTransformScripts.PrepareProjectAsync(_project, preparation.Token)), preparation.Token);
+                    Task certificates = Task.Run(() => GatewayStartupTiming.Measure("准备OPC-UA配置与证书", _opcUa.Prepare), preparation.Token);
+                    Task dependencies = Task.WhenAll(scripts, certificates);
+                    try
+                    {
+                        RunStep("校验项目与协议驱动", () =>
+                        {
+                            _lastValidation = ProjectConfigValidator.Validate(_project);
+                            if (!_lastValidation.IsValid)
+                                throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
+                        });
+                        RunStep("恢复报警状态", _alarmConsumer.Start);
+                        dependencies.GetAwaiter().GetResult();
+                    }
+                    catch
+                    {
+                        preparation.Cancel();
+                        // Join before the host can dispose services used by an initialization worker.
+                        try { dependencies.GetAwaiter().GetResult(); } catch { }
+                        throw;
+                    }
                 });
 
-                RunStep("恢复报警状态", _alarmConsumer.Start);
                 RunStep("启动采集调度", () => Runtime.Start(_project));
                 RunStep("初始化设备与点位内存状态", () => _runtimeStateCache.Start(Runtime, _runtimeScope.Tags));
                 RunStep("启动历史库", _history.Start);

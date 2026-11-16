@@ -154,6 +154,9 @@ public sealed class GatewayPendingUpdateAction
     public string ErrorMessage { get; set; } = string.Empty;
     public string ExecutionLogPath { get; set; } = string.Empty;
     public DateTime? AppliedTime { get; set; }
+    public bool DriverTrustPrepared { get; set; }
+    public string DriverTrustStateSha256 { get; set; } = string.Empty;
+    public string DriverTrustPackageSha256 { get; set; } = string.Empty;
 }
 
 public sealed class GatewayApplyUpdateRequest

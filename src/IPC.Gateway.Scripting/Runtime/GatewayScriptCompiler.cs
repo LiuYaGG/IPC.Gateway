@@ -33,8 +33,16 @@ public sealed class GatewayScriptCompiler
         "HttpClient", "WebClient", "Socket", "TcpClient", "UdpClient", "Thread", "GC"
     };
 
-    private readonly ConcurrentDictionary<string, ScriptRunner<object?>> _compiledScripts = new(StringComparer.Ordinal);
+    private sealed record PreparedScript(ScriptValidationResult Validation, ScriptRunner<object?>? Runner);
+
+    // Lazy coalesces concurrent preparations of the same source into one validation/compilation.
+    private readonly ConcurrentDictionary<string, Lazy<PreparedScript>> _preparedScripts = new(StringComparer.Ordinal);
     private readonly ScriptOptions _scriptOptions;
+    private int _compilationCount;
+    private long _cacheHitCount;
+
+    public int CompilationCount => Volatile.Read(ref _compilationCount);
+    public long CacheHitCount => Interlocked.Read(ref _cacheHitCount);
 
     /// <summary>
     /// 创建带固定引用和命名空间导入的脚本编译器。
@@ -75,25 +83,34 @@ public sealed class GatewayScriptCompiler
         GatewayScriptType scriptType,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        PreparedScript prepared = GetPreparedScript(sourceCode, scriptType);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(CloneValidation(prepared.Validation));
+    }
+
+    private PreparedScript CompileScript(string source, GatewayScriptType scriptType)
+    {
         ScriptValidationResult result = new();
-        string source = sourceCode?.Trim() ?? string.Empty;
         if (source.Length == 0)
         {
             result.Errors.Add("脚本内容不能为空。");
-            return Task.FromResult(result);
+            return new PreparedScript(result, null);
         }
 
-        SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(kind: SourceCodeKind.Script), cancellationToken: cancellationToken);
-        SyntaxNode root = syntaxTree.GetRoot(cancellationToken);
+        SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(kind: SourceCodeKind.Script));
+        SyntaxNode root = syntaxTree.GetRoot();
         InspectSecurityBoundary(root, result);
         InspectScriptTypeBoundary(root, scriptType, result);
+        ScriptRunner<object?>? runner = null;
         if (result.Errors.Count == 0)
         {
+            Interlocked.Increment(ref _compilationCount);
             Script<object?> script = CSharpScript.Create<object?>(
                 source,
                 _scriptOptions,
                 ResolveGlobalsType(scriptType));
-            foreach (Diagnostic diagnostic in script.Compile(cancellationToken))
+            foreach (Diagnostic diagnostic in script.Compile())
             {
                 string message = diagnostic.GetMessage(CultureInfo.GetCultureInfo("zh-CN"));
                 if (diagnostic.Severity == DiagnosticSeverity.Error)
@@ -101,12 +118,15 @@ public sealed class GatewayScriptCompiler
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning)
                     result.Warnings.Add(message);
             }
+            // Reuse this Script's compilation rather than creating a second Roslyn Script.
+            if (result.Errors.Count == 0)
+                runner = script.CreateDelegate();
         }
 
         result.Errors = result.Errors.Distinct(StringComparer.Ordinal).ToList();
         result.Warnings = result.Warnings.Distinct(StringComparer.Ordinal).ToList();
         result.Success = result.Errors.Count == 0;
-        return Task.FromResult(result);
+        return new PreparedScript(result, runner);
     }
 
     /// <summary>
@@ -129,14 +149,11 @@ public sealed class GatewayScriptCompiler
         GatewayScriptGlobals globals,
         CancellationToken cancellationToken = default)
     {
-        ScriptValidationResult validation = await ValidateAsync(sourceCode, scriptType, cancellationToken).ConfigureAwait(false);
-        if (!validation.Success)
-            throw new InvalidOperationException(string.Join(Environment.NewLine, validation.Errors));
-        string cacheKey = scriptType + ":" +
-                          Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceCode)));
-        ScriptRunner<object?> runner = _compiledScripts.GetOrAdd(cacheKey, _ =>
-            CSharpScript.Create<object?>(sourceCode, _scriptOptions, typeof(GatewayScriptGlobals)).CreateDelegate(cancellationToken));
-        return await runner(globals, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        PreparedScript prepared = GetPreparedScript(sourceCode, scriptType);
+        if (!prepared.Validation.Success)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, prepared.Validation.Errors));
+        return await prepared.Runner!(globals, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -147,14 +164,8 @@ public sealed class GatewayScriptCompiler
         ValueTransformScriptGlobals globals,
         CancellationToken cancellationToken = default)
     {
-        string cacheKey = BuildCacheKey(sourceCode, GatewayScriptType.ValueTransform);
-        if (!_compiledScripts.TryGetValue(cacheKey, out ScriptRunner<object?>? runner))
-        {
-            ScriptValidationResult validation = PrepareValueTransform(sourceCode);
-            if (!validation.Success)
-                throw new InvalidOperationException(string.Join(Environment.NewLine, validation.Errors));
-            runner = _compiledScripts[cacheKey];
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        ScriptRunner<object?> runner = GetValueTransformRunner(sourceCode);
         return await runner(globals, cancellationToken).ConfigureAwait(false);
     }
 
@@ -163,23 +174,43 @@ public sealed class GatewayScriptCompiler
     /// </summary>
     public ScriptValidationResult PrepareValueTransform(string sourceCode)
     {
-        ScriptValidationResult validation = ValidateAsync(
-                sourceCode,
-                GatewayScriptType.ValueTransform,
-                CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
-        if (!validation.Success)
-            return validation;
-
-        string cacheKey = BuildCacheKey(sourceCode, GatewayScriptType.ValueTransform);
-        _compiledScripts.GetOrAdd(cacheKey, _ =>
-            CSharpScript.Create<object?>(
-                sourceCode,
-                _scriptOptions,
-                typeof(ValueTransformScriptGlobals)).CreateDelegate(CancellationToken.None));
-        return validation;
+        return CloneValidation(GetPreparedScript(sourceCode, GatewayScriptType.ValueTransform).Validation);
     }
+
+    internal ScriptRunner<object?> GetValueTransformRunner(string sourceCode)
+    {
+        PreparedScript prepared = GetPreparedScript(sourceCode, GatewayScriptType.ValueTransform);
+        if (!prepared.Validation.Success)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, prepared.Validation.Errors));
+        return prepared.Runner!;
+    }
+
+    private PreparedScript GetPreparedScript(string sourceCode, GatewayScriptType scriptType)
+    {
+        string source = sourceCode?.Trim() ?? string.Empty;
+        string cacheKey = BuildCacheKey(source, scriptType);
+        if (_preparedScripts.TryGetValue(cacheKey, out var prepared)) Interlocked.Increment(ref _cacheHitCount);
+        else
+        {
+            var candidate = new Lazy<PreparedScript>(() => CompileScript(source, scriptType), LazyThreadSafetyMode.ExecutionAndPublication);
+            prepared = _preparedScripts.GetOrAdd(cacheKey, candidate);
+            if (!ReferenceEquals(candidate, prepared)) Interlocked.Increment(ref _cacheHitCount);
+        }
+        try { return prepared.Value; }
+        catch
+        {
+            // Unexpected compiler/load failures can be retried, without evicting another caller's entry.
+            ((ICollection<KeyValuePair<string, Lazy<PreparedScript>>>)_preparedScripts).Remove(new(cacheKey, prepared));
+            throw;
+        }
+    }
+
+    private static ScriptValidationResult CloneValidation(ScriptValidationResult result) => new()
+    {
+        Success = result.Success,
+        Errors = [.. result.Errors],
+        Warnings = [.. result.Warnings]
+    };
 
     /// <summary>
     /// 检查脚本是否尝试访问文件、进程、网络、反射或不受控并发能力。
@@ -287,7 +318,7 @@ public sealed class GatewayScriptCompiler
     /// </summary>
     private static string BuildCacheKey(string sourceCode, GatewayScriptType scriptType)
     {
-        return scriptType + ":" +
+        return scriptType + ":" + ResolveGlobalsType(scriptType).FullName + ":" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceCode)));
     }
 }

@@ -5,6 +5,10 @@ namespace IPC.Gateway.Core.Gateway;
 /// </summary>
 public interface IValueTransformScriptRuntime
 {
+    /// <summary>在采集启动前准备项目实际引用的脚本；无脚本模块时无需准备。</summary>
+    Task PrepareProjectAsync(IPC.Runtime.Configuration.ProjectConfig project, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     /// <summary>
     /// 使用指定的已发布脚本处理一个输入值。
     /// </summary>

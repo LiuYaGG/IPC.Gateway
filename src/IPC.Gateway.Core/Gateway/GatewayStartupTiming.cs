@@ -4,6 +4,9 @@ namespace IPC.Gateway.Core.Gateway;
 
 public static class GatewayStartupTiming
 {
+    public static void RecordDetail(string stage, string detail) =>
+        IpcLogService.WriteInfo($"GatewayStartup pid={Environment.ProcessId} stage={stage} {detail}");
+
     private static long RecordStart(string stage)
     {
         IpcLogService.WriteInfo($"GatewayStartup pid={Environment.ProcessId} stage={stage} status=开始");

@@ -37,6 +37,8 @@ namespace IPC.EdgeGateway
         private readonly OpcUaServerStatus _status;
         private ApplicationInstance? _application;
         private OpcUaGatewayServer? _server;
+        private bool _prepared;
+        private bool _certificateRenewed;
         private bool _disposed;
 
         public OpcUaServerService(IRuntimeService runtime, Func<ProjectConfig> projectProvider, OpcUaServerOptions options)
@@ -58,6 +60,33 @@ namespace IPC.EdgeGateway
             }
         }
 
+        /// <summary>准备配置和证书，不绑定端口，也不读取运行时点位，可与脚本预编译并行。</summary>
+        public void Prepare()
+        {
+            lock (_syncRoot)
+            {
+                ThrowIfDisposed();
+                if (!_options.Enabled || _prepared) return;
+                try
+                {
+                    ApplicationConfiguration configuration = CreateApplicationConfiguration(_options);
+                    GatewayStartupTiming.Measure("校验OPC-UA服务配置", () =>
+                        configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None).GetAwaiter().GetResult());
+                    _application = new ApplicationInstance(configuration, s_telemetry);
+                    _certificateRenewed = GatewayStartupTiming.Measure("检查OPC-UA应用证书", () => EnsureApplicationCertificate(_application, configuration));
+                }
+                catch (Exception ex)
+                {
+                    TryStopUnlocked();
+                    _status.IsRunning = false;
+                    _status.LastError = FormatExceptionMessage(ex);
+                    _status.LastMessage = "OPC UA Server failed to start.";
+                    IpcLogService.WriteError("OPC UA preparation failed: " + _status.LastError);
+                }
+                _prepared = true;
+            }
+        }
+
         public void Start()
         {
             lock (_syncRoot)
@@ -76,16 +105,12 @@ namespace IPC.EdgeGateway
 
                 try
                 {
-                    ApplicationConfiguration configuration = CreateApplicationConfiguration(_options);
-                    GatewayStartupTiming.Measure("校验OPC-UA服务配置", () =>
-                        configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None).GetAwaiter().GetResult());
+                    Prepare();
+                    if (_application == null) return;
 
                     // Capture on the configuration caller's thread. The UA SDK can build
                     // its address space on another thread while this caller waits for it.
                     _server = new OpcUaGatewayServer(_runtime, _projectProvider(), _options, _status);
-                    _application = new ApplicationInstance(configuration, s_telemetry);
-                    bool certificateRenewed = GatewayStartupTiming.Measure("检查OPC-UA应用证书", () => EnsureApplicationCertificate(_application, configuration));
-
                     GatewayStartupTiming.Measure("启动OPC-UA端点并构建地址空间", () => _application.StartAsync(_server).GetAwaiter().GetResult());
 
                     _runtime.TagValueChanged -= OnRuntimeTagValueChanged;
@@ -100,7 +125,7 @@ namespace IPC.EdgeGateway
                     _status.StartedTime = DateTime.Now;
                     _status.LastReloadTime = _status.StartedTime;
                     _status.LastError = string.Empty;
-                    _status.LastMessage = certificateRenewed
+                    _status.LastMessage = _certificateRenewed
                         ? "OPC UA Server started after replacing an invalid application certificate."
                         : "OPC UA Server started.";
                 }
@@ -131,7 +156,7 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
             {
                 bool wasRunning = _server != null;
-                if (wasRunning)
+                if (wasRunning || _prepared)
                     Stop();
 
                 _options = OpcUaServerOptions.Normalize(options);
@@ -210,6 +235,8 @@ namespace IPC.EdgeGateway
 
             _application = null;
             _server = null;
+            _prepared = false;
+            _certificateRenewed = false;
         }
 
         private static ApplicationConfiguration CreateApplicationConfiguration(OpcUaServerOptions options)

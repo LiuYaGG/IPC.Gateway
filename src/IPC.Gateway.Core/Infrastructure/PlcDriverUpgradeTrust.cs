@@ -17,6 +17,22 @@ public static partial class PlcDriverPluginRegistry
         public DateTime CreatedUtc { get; set; }
     }
 
+    /// <summary>
+    /// Fingerprints trust configuration and persisted receipts, without opening an upgrade ZIP.
+    /// This is only a recovery cache key; driver DLLs still undergo normal hash/signature verification.
+    /// </summary>
+    public static string GetUpgradeTrustStateSha256()
+    {
+        lock (SyncRoot)
+        {
+            string receiptsPath = _trustStorePath + ".upgrades.json";
+            string receipts = !string.IsNullOrWhiteSpace(_trustStorePath) && File.Exists(receiptsPath)
+                ? File.ReadAllText(receiptsPath) : string.Empty;
+            string state = string.Join("\n", _trustStorePath, _trustedPublicKeyPem, _requireSignature, receipts);
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(state)));
+        }
+    }
+
     /// <summary>Called only after authorized package validation and extraction.</summary>
     public static int PreserveUpgradeTrust(string payloadDirectory, string installDirectory, string packageId, string packageSha256, string? previousDirectory = null)
     {
@@ -86,6 +102,11 @@ public static partial class PlcDriverPluginRegistry
     private static bool HasUpgradeTrust(string path, PlcDriverPluginManifest manifest, string digest)
     {
         if (string.IsNullOrWhiteSpace(_trustedPublicKeyPem)) return false;
+        // BuildSignaturePayload can use the manifest's declared digest. Check it against
+        // the actual DLL first, before an inherited-trust receipt is allowed to match.
+        if (!string.IsNullOrWhiteSpace(manifest.AssemblySha256) &&
+            !string.Equals(NormalizeHex(manifest.AssemblySha256), NormalizeHex(digest), StringComparison.OrdinalIgnoreCase))
+            return false;
         string payloadHash = UpgradePayloadHash(manifest, digest);
         string publicHash = PublicKeyHash();
         return ReadUpgradeTrust().Any(r => r.AssemblyPath == Path.GetFullPath(path) && r.PayloadSha256 == payloadHash &&
