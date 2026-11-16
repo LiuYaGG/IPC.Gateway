@@ -246,21 +246,7 @@ public static class GatewayConfigurationEndpoints
         group.MapGet("/history/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
             ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewHistory, "当前用户没有查看历史库状态权限。", () => gateway.GetHistoryStatus()));
 
-        group.MapGet("/history/alarms", (ClaimsPrincipal user, GatewayCoreService gateway, int? page, int? pageSize) =>
-            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewHistory, "当前用户没有查看报警记录权限。", () =>
-            {
-                var records = gateway.AlarmJournal.ReadPage(Math.Max(page ?? 1, 1), Math.Clamp(pageSize ?? 20, 1, 500));
-                return new
-                {
-                    records.Total,
-                    Items = records.Items.Select(record => new
-                    {
-                        record.EventId, record.Timestamp, record.ChannelName, record.DeviceName, record.GroupName,
-                        record.TagName, record.TagId, record.Source, record.RuleName, record.EventType, record.PreviousState, record.State, record.Value,
-                        record.Threshold, record.Message, record.DeliveryStatus
-                    })
-                };
-            }));
+        app.MapAlarmHistoryEndpoints();
 
         group.MapPut("/history", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, SaveHistoryConfigurationCommand command) =>
             await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditHistory, "当前用户没有保存历史库配置权限。", () => gateway.UpdateHistoryOptionsAsync(command)));

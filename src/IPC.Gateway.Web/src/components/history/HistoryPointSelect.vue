@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { loadHistoryRecordOptions, type HistoryOptionLevel, type HistoryRecordFilters, type HistoryRecordOption } from '../../api'
+import { loadAlarmHistoryOptions, loadHistoryRecordOptions, type HistoryOptionLevel, type HistoryRecordFilters, type HistoryRecordOption } from '../../api'
 import { locale, tx } from '../../i18n'
 import { historyQueryError } from './historyQueryError'
 
@@ -27,6 +27,7 @@ const props = defineProps<{
   selected?: HistoryRecordOption
   disabled?: boolean
   active: boolean
+  source?: 'history' | 'alarms'
 }>()
 const emit = defineEmits<{ change: [option?: HistoryRecordOption] }>()
 const open = ref(false)
@@ -46,7 +47,7 @@ const options = computed(() => {
   }))
 })
 
-watch([open, term, () => props.filters.channelId, () => props.filters.deviceId, () => props.filters.groupId, () => props.active, locale], (_, __, onCleanup) => {
+watch([open, term, () => props.filters.channelId, () => props.filters.deviceId, () => props.filters.groupId, () => props.active, () => props.disabled, () => props.source, locale], (_, __, onCleanup) => {
   error.value = ''
   candidates.value = []
   loading.value = false
@@ -59,11 +60,12 @@ watch([open, term, () => props.filters.channelId, () => props.filters.deviceId, 
   const timer = window.setTimeout(async () => {
     try {
       const keyword = term.value.trim()
+      const loadOptions = props.source === 'alarms' ? loadAlarmHistoryOptions : loadHistoryRecordOptions
       const findDirect = props.level === 'group' && keyword !== '' &&
         ['直属标签', 'direct tags', tx('直属标签')].some(label => label.toLowerCase().includes(keyword.toLowerCase()))
-      const matching = await loadHistoryRecordOptions(props.level, props.filters, keyword, locale.value, controller.signal)
+      const matching = await loadOptions(props.level, props.filters, keyword, locale.value, controller.signal)
       if (findDirect && !matching.some(item => item.id === '')) {
-        const groups = await loadHistoryRecordOptions('group', props.filters, '', locale.value, controller.signal)
+        const groups = await loadOptions('group', props.filters, '', locale.value, controller.signal)
         const direct = groups.find(item => item.id === '')
         if (direct) matching.unshift(direct)
       }
@@ -77,7 +79,8 @@ watch([open, term, () => props.filters.channelId, () => props.filters.deviceId, 
   onCleanup(() => { clearTimeout(timer); controller.abort() })
 })
 function change(key: unknown) {
-  const selected = candidates.value.find(item => optionKey(item) === key)
+  const selected = candidates.value.find(item => optionKey(item) === key) ??
+    (props.selected && optionKey(props.selected) === key ? props.selected : undefined)
   emit('change', selected)
 }
 </script>

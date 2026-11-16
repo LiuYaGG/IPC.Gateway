@@ -133,7 +133,7 @@ public static class GatewayPermissions
         Page(ViewProject, "项目配置", "项目配置", "查看项目 JSON 配置。"),
         Action(EditProject, "保存项目配置", "项目配置", "保存项目 JSON 配置、应用配置和回滚配置。"),
         Page(ViewHistory, "历史库", "历史库", "查看历史库配置、状态和点位历史。"),
-        Action(ExportHistory, "导出点位历史", "历史库", "将查询结果的当前页导出为 Excel。"),
+        Action(ExportHistory, "导出历史记录", "历史库", "将点位历史或报警记录的查询结果当前页导出为 Excel。"),
         Action(EditHistory, "保存历史库配置", "历史库", "编辑历史库配置和健康阈值。"),
 
         Page(ViewScripts, "脚本中心", "脚本中心", "查看 .NET 脚本、运行状态和数据库写入队列。"),

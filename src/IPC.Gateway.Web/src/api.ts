@@ -2867,6 +2867,16 @@ export interface AlarmHistoryRow {
 }
 
 export type HistoryOptionLevel = 'channel' | 'device' | 'group' | 'tag'
+export interface AlarmHistoryQuery extends HistoryRecordFilters {
+  from?: string
+  to?: string
+  snapshot?: number
+}
+export interface AlarmHistoryPage {
+  total: number
+  items: AlarmHistoryRow[]
+  snapshot: number
+}
 export interface HistoryRecordOption { id: string; name: string; path?: string | null }
 export interface HistoryRecordFilters {
   channelId?: string
@@ -2927,7 +2937,7 @@ export async function queryHistoryRecords(query: HistoryRecordsQuery, language: 
   return response.data
 }
 export async function exportHistoryPage(token: string, language: string, signal: AbortSignal) {
-  const response = await fetch('/api/config/history/export?' + historyParams({ token }), {
+  const response = await fetch('/api/config/history/export?' + historyParams({ token, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), {
     credentials: 'include', cache: 'no-store', signal, headers: { 'Accept-Language': language }
   })
   if (!response.ok) {
@@ -2937,14 +2947,34 @@ export async function exportHistoryPage(token: string, language: string, signal:
   return response.blob()
 }
 
-export async function loadAlarmHistoryPage(page: number, pageSize: number, signal?: AbortSignal) {
-  const result = await request<ApiResult<{ total: number; items: AlarmHistoryRow[] }>>(
-    `/api/config/history/alarms?page=${page}&pageSize=${pageSize}`,
-    { signal },
+export async function loadAlarmHistoryPage(page: number, pageSize: number, filters: AlarmHistoryQuery, language: string, signal?: AbortSignal) {
+  const result = await request<ApiResult<AlarmHistoryPage>>(
+    '/api/config/history/alarms?' + historyParams({ ...filters, page, pageSize }),
+    { signal, cache: 'no-store', headers: { 'Accept-Language': language } },
   );
   if (!result.success)
     throw new Error(localizeErrorMessage(result.errorMessage) || "读取报警记录失败");
   return result.data;
+}
+
+export async function loadAlarmHistoryOptions(level: HistoryOptionLevel, filters: HistoryRecordFilters, search: string, language: string, signal: AbortSignal) {
+  const result = await request<ApiResult<HistoryRecordOption[]>>(
+    '/api/config/history/alarms/options?' + historyParams({ ...filters, level, search }),
+    { signal, cache: 'no-store', headers: { 'Accept-Language': language } }
+  )
+  if (!result.success) throw new Error(result.errorMessage || '读取报警筛选项失败')
+  return result.data
+}
+
+export async function exportAlarmHistory(filters: AlarmHistoryQuery, page: number, pageSize: number, language: string, signal: AbortSignal) {
+  const response = await fetch('/api/config/history/alarms/export?' + historyParams({ ...filters, page, pageSize, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), {
+    credentials: 'include', cache: 'no-store', signal, headers: { 'Accept-Language': language }
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => undefined)
+    throw new HttpRequestError(response.status, body?.errorMessage || '导出报警记录失败', body?.errorCode)
+  }
+  return response.blob()
 }
 
 export async function loadHistoryStatus() {

@@ -56,13 +56,13 @@ internal static class GatewayHistoryEndpoints
         group.MapGet("/export", (HttpContext ctx, GatewayHistoryQueries queries, GatewayCoreService gateway) =>
             queries.Run(ctx, queries.ExportSlots, async ct =>
             {
-                CheckKeys(ctx, "token");
+                CheckKeys(ctx, "token", "timeZone");
                 if (!CanExport(ctx.User))
                     return Error(ctx, 403, "HISTORY_EXPORT_FORBIDDEN", "缺少点位历史导出权限。", "History export permission is required.");
                 var rows = await queries.GetPageAsync(ctx.User, gateway.HistoryValueQueries, Get(ctx,"token"), ct);
                 if (rows == null)
                     return Error(ctx, 409, "HISTORY_PAGE_EXPIRED", "当前页已过期，请重新查询后导出。", "This page has expired. Run the query again before exporting.");
-                return queries.PrepareWorkbook(rows, English(ctx), ct);
+                return queries.PrepareWorkbook(rows, English(ctx), ct, WorkbookTimeZone.FromRequest(ctx));
             }));
     }
 
@@ -71,7 +71,8 @@ internal static class GatewayHistoryEndpoints
 
     internal static bool IsHistoryRead(HttpContext ctx) =>
         ctx.Request.Path.Value?.TrimEnd('/').ToLowerInvariant() is "/api/config/history/values" or "/api/config/history/records" or
-            "/api/config/history/options" or "/api/config/history/export";
+            "/api/config/history/options" or "/api/config/history/export" or
+            "/api/config/history/alarms" or "/api/config/history/alarms/options" or "/api/config/history/alarms/export";
 
     internal static IResult Error(HttpContext ctx, int status, string code, string chinese, string english) =>
         Results.Json(new { success = false, data = (object?)null, errorCode = code, errorMessage = English(ctx) ? english : chinese }, statusCode: status);

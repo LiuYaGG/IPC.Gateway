@@ -33,11 +33,11 @@ public sealed class GatewayAlarmRecord
     [JsonIgnore] public int Qos { get; set; }
 }
 
-public sealed record GatewayAlarmPage(long Total, IReadOnlyList<GatewayAlarmRecord> Items);
+public sealed record GatewayAlarmPage(long Total, IReadOnlyList<GatewayAlarmRecord> Items, long Snapshot = 0);
 internal readonly record struct AlarmTagState(string State, double Threshold);
 
 /// <summary>Pending alarms remain durable independently of ordinary history and MQTT outbox limits.</summary>
-public sealed class GatewayAlarmJournal
+public sealed partial class GatewayAlarmJournal
 {
     private readonly string _path;
     private readonly string _connectionString;
@@ -212,29 +212,6 @@ public sealed class GatewayAlarmJournal
         _nextCleanup = DateTime.UtcNow.AddHours(storage.CleanupIntervalHours);
     }
 
-    public GatewayAlarmPage ReadPage(int page, int pageSize, IReadOnlyCollection<string>? allowedDeviceIds = null)
-    {
-        if (allowedDeviceIds is { Count: 0 }) return new(0, Array.Empty<GatewayAlarmRecord>());
-        using var connection = Open();
-        using var transaction = connection.BeginTransaction(deferred: true);
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        string filter = string.Empty;
-        if (allowedDeviceIds != null)
-        {
-            filter = " WHERE device_id IN (SELECT value FROM json_each($devices))";
-            command.Parameters.AddWithValue("$devices", JsonSerializer.Serialize(allowedDeviceIds));
-        }
-        command.CommandText = "SELECT COUNT(*) FROM alarm_event" + filter;
-        long total = (long)command.ExecuteScalar()!;
-        int size = Math.Clamp(pageSize, 1, 500);
-        command.CommandText = "SELECT body,delivery FROM alarm_event" + filter + " ORDER BY seq DESC LIMIT $size OFFSET $offset";
-        command.Parameters.AddWithValue("$size", size);
-        command.Parameters.AddWithValue("$offset", (long)(Math.Max(1, page) - 1) * size);
-        using var reader = command.ExecuteReader();
-        return new(total, ReadRows(reader, false));
-    }
-
     public IReadOnlyList<GatewayAlarmRecord> ReadPending(int count)
     {
         using var connection = Open();
@@ -249,11 +226,12 @@ public sealed class GatewayAlarmJournal
         return ReadRows(reader, true);
     }
 
-    private static List<GatewayAlarmRecord> ReadRows(SqliteDataReader reader, bool withPayload)
+    private static List<GatewayAlarmRecord> ReadRows(SqliteDataReader reader, bool withPayload, CancellationToken cancellationToken = default)
     {
         var rows = new List<GatewayAlarmRecord>();
         while (reader.Read())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var row = JsonSerializer.Deserialize<GatewayAlarmRecord>(reader.GetString(0))!;
             row.DeliveryStatus = reader.GetInt32(1) switch { 1 => "Pending", 2 => "Sent", _ => "Local" };
             if (withPayload)

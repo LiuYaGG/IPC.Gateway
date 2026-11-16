@@ -192,7 +192,7 @@ const actions: Record<string, string> = {
   prepare: "准备",
 };
 const permissionOverrides: Record<string, string> = {
-  "history.export": "导出点位历史",
+  "history.export": "导出历史记录",
   "dashboard.storagehealth.edit": "编辑存储健康阈值",
   "scripts.databases.manage": "管理数据库连接与写入目标",
   "security.certificates.manage": "管理安全证书",

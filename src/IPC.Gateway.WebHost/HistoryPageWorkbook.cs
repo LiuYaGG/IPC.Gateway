@@ -14,32 +14,41 @@ internal static class HistoryPageWorkbook
     private const string Types = "http://schemas.openxmlformats.org/package/2006/content-types";
     private const int CellLimit = 32767;
 
-    public static void Write(Stream destination, IReadOnlyList<HistoryValueRow> rows, bool english, CancellationToken ct)
+    public static void Write(Stream destination, IReadOnlyList<HistoryValueRow> rows, bool english, CancellationToken ct, TimeZoneInfo? timeZone = null)
     {
+        timeZone ??= TimeZoneInfo.Local;
         string[] headers = english
-            ? ["Timestamp (UTC)", "Tag path", "Data type", "Value", "Raw value", "Unit", "Quality", "Error", "Processing type", "Processing details"]
-            : ["采样时间 (UTC)", "点位路径", "数据类型", "工程值", "原始值", "单位", "质量", "错误信息", "处理类型", "处理详情"];
+            ? [$"Timestamp ({timeZone.Id})", "Tag path", "Data type", "Value", "Raw value", "Unit", "Quality", "Error", "Processing type", "Processing details"]
+            : [$"采样时间 ({timeZone.Id})", "点位路径", "数据类型", "工程值", "原始值", "单位", "质量", "错误信息", "处理类型", "处理详情"];
+        WriteTable(destination, headers, [31, 58, 16, 30, 30, 12, 18, 44, 20, 54],
+            rows.Select(row => new string?[] { WorkbookTimeZone.Format(row.Timestamp, timeZone),
+                row.Path, row.DataType, row.ValueText, row.RawValueText, row.Unit,
+                LocalizeQuality(row.Quality, english), row.ErrorMessage, row.EdgeProcessingType, row.Details?.GetRawText() }),
+            english ? "Tag history" : "点位历史", english, ct);
+    }
+
+    internal static void WriteTable(Stream destination, string[] headers, int[] widths, IEnumerable<string?[]> rows,
+        string sheetName, bool english, CancellationToken ct)
+    {
         string longSheet = english ? "Long values" : "超长字段";
         var overflow = new List<(int Row, string Column, string Value)>();
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
         using (var sheet = OpenXml(archive, "xl/worksheets/sheet1.xml"))
         {
-            BeginSheet(sheet, [31, 58, 16, 30, 30, 12, 18, 44, 20, 54]);
+            BeginSheet(sheet, widths);
             WriteRow(sheet, 1, headers);
-            for (int i = 0; i < rows.Count; i++)
+            int sheetRow = 1;
+            foreach (string?[] values in rows)
             {
                 ct.ThrowIfCancellationRequested();
-                var row = rows[i];
-                string?[] values = [row.Timestamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
-                    row.Path, row.DataType, row.ValueText, row.RawValueText, row.Unit,
-                    LocalizeQuality(row.Quality, english), row.ErrorMessage, row.EdgeProcessingType, row.Details?.GetRawText()];
+                if (++sheetRow > 1048576) throw new InvalidDataException("The export exceeds the Excel worksheet row limit.");
                 for (int j = 0; j < values.Length; j++)
                 {
                     if (values[j] is not { Length: > CellLimit } value) continue;
-                    overflow.Add((i + 2, headers[j], value));
+                    overflow.Add((sheetRow, headers[j], value));
                     values[j] = english ? "See Long values sheet" : "见「超长字段」工作表";
                 }
-                WriteRow(sheet, i + 2, values);
+                WriteRow(sheet, sheetRow, values);
             }
             sheet.WriteEndElement();
             sheet.WriteEndElement();
@@ -68,7 +77,7 @@ internal static class HistoryPageWorkbook
             sheet.WriteEndElement();
             sheet.WriteEndElement();
         }
-        string[] names = overflow.Count == 0 ? [english ? "Tag history" : "点位历史"] : [english ? "Tag history" : "点位历史", longSheet];
+        string[] names = overflow.Count == 0 ? [sheetName] : [sheetName, longSheet];
         using (var xml = OpenXml(archive, "xl/workbook.xml"))
         {
             xml.WriteStartElement("workbook", Spreadsheet);

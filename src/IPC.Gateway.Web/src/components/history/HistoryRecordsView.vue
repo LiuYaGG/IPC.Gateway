@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, reactive, ref, shallowRef, watch } from 'vue'
 import { exportHistoryPage, HttpRequestError, queryHistoryRecords, type HistoryOptionLevel, type HistoryRecord,
   type HistoryRecordFilters, type HistoryRecordOption, type HistoryRecordsPage, type HistoryRecordsQuery } from '../../api'
 import { locale, tx } from '../../i18n'
@@ -74,6 +74,7 @@ import AutoHeightTable from '../AutoHeightTable.vue'
 import TablePager from '../controls/TablePager.vue'
 import HistoryPointSelect from './HistoryPointSelect.vue'
 import { historyQueryError } from './historyQueryError'
+import { localExportFileName, saveExcelAs } from '../../utils/excelSave'
 
 const props = defineProps<{ enabled?: boolean; active: boolean }>()
 const { hasPermission } = usePermissions()
@@ -166,6 +167,7 @@ watch(() => props.active, active => {
   if (!active) { cancelQuery(); cancelExport(); detail.value = undefined }
 })
 onBeforeUnmount(() => { cancelQuery(); cancelExport() })
+onDeactivated(() => { cancelQuery(); cancelExport() })
 
 async function load(page: number, size: number, snapshot?: string) {
   if (!valid.value || !range.value || !selected.tag) return
@@ -202,17 +204,10 @@ async function downloadPage() {
   const current = downloadController = new AbortController()
   exporting.value = true
   error.value = ''
+  const language = locale.value
   try {
-    const blob = await exportHistoryPage(token, locale.value, current.signal)
-    if (current.signal.aborted) return
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'point-history-' + result.value!.page + '.xlsx'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    await saveExcelAs(localExportFileName('point-history', result.value!.page),
+      () => exportHistoryPage(token, language, current.signal), current.signal)
   } catch (cause) {
     if (!current.signal.aborted) error.value = historyQueryError(cause, '导出本页失败')
   } finally {

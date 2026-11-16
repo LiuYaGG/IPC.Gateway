@@ -153,14 +153,28 @@ internal sealed class GatewayHistoryQueries
         return Digest(page.Items, ct).AsSpan().SequenceEqual(ticket.Digest) ? page.Items : null;
     }
 
-    internal IResult PrepareWorkbook(IReadOnlyList<HistoryValueRow> rows, bool english, CancellationToken ct)
+    internal IResult PrepareWorkbook(IReadOnlyList<HistoryValueRow> rows, bool english, CancellationToken ct, TimeZoneInfo? timeZone = null)
     {
         var file = NewFile("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            (english ? "Tag-history-" : "点位历史-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".xlsx");
+            (english ? "Tag-history-" : "点位历史-") + TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone ?? TimeZoneInfo.Local).ToString("yyyyMMdd-HHmmss") + ".xlsx");
         try
         {
             using var output = new WorkbookOutput(file);
-            HistoryPageWorkbook.Write(output, rows, english, ct);
+            HistoryPageWorkbook.Write(output, rows, english, ct, timeZone);
+            ct.ThrowIfCancellationRequested();
+            return file;
+        }
+        catch { file.Dispose(); throw; }
+    }
+
+    internal IResult PrepareAlarmWorkbook(IReadOnlyList<GatewayAlarmRecord> rows, bool english, CancellationToken ct, TimeZoneInfo? timeZone = null)
+    {
+        var file = NewFile("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            (english ? "Alarm-history-" : "报警记录-") + TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone ?? TimeZoneInfo.Local).ToString("yyyyMMdd-HHmmss") + ".xlsx");
+        try
+        {
+            using var output = new WorkbookOutput(file);
+            AlarmHistoryWorkbook.Write(output, rows, english, ct, timeZone);
             ct.ThrowIfCancellationRequested();
             return file;
         }
