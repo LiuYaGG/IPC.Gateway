@@ -9,7 +9,7 @@ public sealed class GatewayTagBulkService
     private static readonly string[] Headers =
     {
         "channelId", "channelName", "deviceId", "deviceName", "groupId", "groupName", "tagId", "tagName",
-        "address", "dataType",
+        "address", "dataType", "scanRateMs",
         "enabled", "mqttPublishEnabled", "unit", "pointCode", "accessMode", "description"
     };
 
@@ -87,6 +87,7 @@ public sealed class GatewayTagBulkService
                 tag.Name,
                 tag.Address,
                 tag.DataType,
+                tag.ScanRateMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 tag.Enabled ? "true" : "false",
                 tag.MqttPublishEnabled ? "true" : "false",
                 tag.Unit,
@@ -197,6 +198,9 @@ public sealed class GatewayTagBulkService
         tag.Description = ReadOrDefault(row, headerMap, "description", tag.Description);
         tag.Enabled = ReadBool(row, headerMap, "enabled", tag.Enabled);
         tag.MqttPublishEnabled = ReadBool(row, headerMap, "mqttPublishEnabled", tag.MqttPublishEnabled);
+        if (int.TryParse(Read(row, headerMap, "scanRateMs"), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out int scanRateMs))
+            tag.ScanRateMs = Math.Max(0, scanRateMs);
     }
 
     private static IList<string[]> ParseCsv(string csv)

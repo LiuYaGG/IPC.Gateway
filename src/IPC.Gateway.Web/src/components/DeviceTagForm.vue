@@ -52,6 +52,16 @@
               <a-form-item v-if="!model.isVirtual" class="tag-span-two" :label="tx('地址')" :name="['address']" :required="!isMeter">
                 <gateway-input v-model="model.address" :placeholder="tx(addressPlaceholder)" />
               </a-form-item>
+              <a-form-item v-if="!model.isVirtual" :label="tx('采集周期(ms)')" :name="['scanRateMs']">
+                <gateway-number-input
+                  :model-value="model.scanRateMs || null"
+                  :placeholder="formatMessage('继承上级周期（{0} ms）', [inheritedScanRateMs ?? 1000])"
+                  :min="0"
+                  :max="86400000"
+                  integer
+                  @update:model-value="model.scanRateMs = $event ?? 0"
+                />
+              </a-form-item>
               <a-form-item :label="tx('失败重试(ms)')" :name="['failureRetryDelayMs']">
                 <gateway-number-input v-model="model.failureRetryDelayMs" :min="100" :max="3600000" />
               </a-form-item>
@@ -335,6 +345,7 @@ import {
 const props = defineProps<{
   model: TagConfig
   deviceProtocol: string
+  inheritedScanRateMs?: number
   project: ProjectConfig | null
 }>()
 
@@ -534,6 +545,7 @@ const rules: FormRules<TagConfig> = {
   meterAddress: [{ required: false, validator: validateMeterAddress, trigger: 'blur' }],
   meterDataIdentifier: [{ required: false, validator: validateMeterDataIdentifier, trigger: 'blur' }],
   failureRetryDelayMs: [{ validator: validateMin100, trigger: 'change' }],
+  scanRateMs: [{ validator: validateScanRate, trigger: 'change' }],
   elementCount: [{ validator: validateElementCount, trigger: 'change' }],
   'scaling.multiplier': [{ validator: validateScalingMultiplier, trigger: 'change' }],
   'scaling.offset': [{ validator: validateScalingOffset, trigger: 'change' }],
@@ -621,6 +633,12 @@ function validateMeterAddress(_rule: unknown, value: string, callback: (error?: 
 function validateMeterDataIdentifier(_rule: unknown, value: string, callback: (error?: Error) => void) {
   if (!isMeter.value || String(value ?? '').trim()) callback()
   else callback(new Error('请输入数据标识'))
+}
+
+function validateScanRate(_rule: unknown, value: number, callback: (error?: Error) => void) {
+  const rate = Number(value)
+  if (Number.isInteger(rate) && (rate === 0 || (rate >= 100 && rate <= 86400000))) callback()
+  else callback(new Error('采集周期填 0 表示继承，或填写 100～86400000 的整数毫秒值'))
 }
 
 function validateMin100(_rule: unknown, value: number, callback: (error?: Error) => void) {

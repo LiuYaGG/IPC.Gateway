@@ -75,6 +75,8 @@ namespace IPC.Runtime.Configuration
         public bool Enabled { get; set; }
         public bool MqttPublishEnabled { get; set; }
         public TagAccessMode AccessMode { get; set; }
+        /// <summary>采集周期，0 表示继承分组或设备周期。</summary>
+        public int ScanRateMs { get; set; }
         public int FailureRetryDelayMs { get; set; }
         public string Unit { get; set; }
         public string PointCode { get; set; }

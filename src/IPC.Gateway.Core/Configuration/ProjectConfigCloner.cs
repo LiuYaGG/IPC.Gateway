@@ -700,6 +700,7 @@ namespace IPC.Runtime.Configuration
                 Enabled = source.Enabled,
                 MqttPublishEnabled = source.MqttPublishEnabled,
                 AccessMode = source.AccessMode,
+                ScanRateMs = source.ScanRateMs,
                 Unit = source.Unit,
                 PointCode = source.PointCode,
                 AssetPath = source.AssetPath,

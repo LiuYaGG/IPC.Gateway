@@ -23,6 +23,8 @@ export const extraEnglish: Record<string, string> = {
   '异常点位数': 'Tags with errors',
   '采集周期(ms)': 'Scan interval (ms)',
   '继承设备周期（{0} ms）': 'Device interval ({0} ms)',
+  '继承上级周期（{0} ms）': 'Inherited interval ({0} ms)',
+  '采集周期填 0 表示继承，或填写 100～86400000 的整数毫秒值': 'Enter 0 to inherit, or an integer interval from 100 to 86400000 ms',
   '消息发布': 'Message publishing',
   'Broker 已连接': 'Broker connected',
   'Broker 未连接': 'Broker disconnected',

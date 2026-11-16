@@ -650,6 +650,8 @@ namespace IPC.Runtime.Configuration
                     tag.ElementCount = 1;
                 if (tag.FailureRetryDelayMs < 0)
                     tag.FailureRetryDelayMs = 0;
+                if (tag.ScanRateMs < 0)
+                    tag.ScanRateMs = 0;
                 if (tag.Scaling == null)
                     tag.Scaling = ScalingConfig.Default();
                 NormalizeCleaning(tag);

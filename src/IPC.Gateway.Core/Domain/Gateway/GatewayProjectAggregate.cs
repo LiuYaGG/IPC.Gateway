@@ -447,6 +447,7 @@ public sealed class GatewayProjectAggregate
         target.Enabled = input.Enabled;
         target.MqttPublishEnabled = input.MqttPublishEnabled;
         target.AccessMode = input.AccessMode;
+        target.ScanRateMs = input.ScanRateMs;
         target.FailureRetryDelayMs = input.FailureRetryDelayMs;
         target.Unit = input.Unit;
         target.PointCode = input.PointCode;

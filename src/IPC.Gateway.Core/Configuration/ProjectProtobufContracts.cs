@@ -626,7 +626,7 @@ internal static class ProjectProtobufContracts
             .Add(12, nameof(global::IPC.Runtime.Configuration.TagConfig.Enabled))
             .Add(13, nameof(global::IPC.Runtime.Configuration.TagConfig.MqttPublishEnabled))
             .Add(14, nameof(global::IPC.Runtime.Configuration.TagConfig.AccessMode))
-            // Field 15 was the per-tag scan interval. Never reuse it; old overrides are skipped.
+            .Add(15, nameof(global::IPC.Runtime.Configuration.TagConfig.ScanRateMs))
             .Add(16, nameof(global::IPC.Runtime.Configuration.TagConfig.FailureRetryDelayMs))
             .Add(17, nameof(global::IPC.Runtime.Configuration.TagConfig.Unit))
             .Add(18, nameof(global::IPC.Runtime.Configuration.TagConfig.PointCode))

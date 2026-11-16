@@ -3465,10 +3465,9 @@ namespace IPC.Runtime.Engine
                 if (tag == null || !tag.Enabled || !CanDeviceRead(tag))
                     continue;
 
-                int period = GetEffectiveScanRateMs(device, group);
+                int period = GetEffectiveScanRateMs(device, group, tag);
                 if (scanRate <= 0 || period < scanRate)
                     scanRate = period;
-                return;
             }
         }
 
@@ -3525,27 +3524,28 @@ namespace IPC.Runtime.Engine
         private void SchedulePeriodicReadNoLock(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime completedUtc)
         {
             _nextReadUtcByTagId[tag.Id] = GetNextPeriodicReadUtc(state.CadenceOriginUtc,
-                GetEffectiveScanRateMs(state.Config, group), completedUtc);
+                GetEffectiveScanRateMs(state.Config, group, tag), completedUtc);
         }
 
         private void ScheduleNextSubscriptionFallback(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now)
         {
-            int interval = GetSubscriptionFallbackIntervalMs(device, group);
+            int interval = GetSubscriptionFallbackIntervalMs(device, group, tag);
             _nextReadUtcByTagId[tag.Id] = now.AddMilliseconds(interval);
         }
 
-        private static int GetSubscriptionFallbackIntervalMs(DeviceConfig device, GroupConfig? group)
+        private static int GetSubscriptionFallbackIntervalMs(DeviceConfig device, GroupConfig? group, TagConfig tag)
         {
-            int scanRate = GetEffectiveScanRateMs(device, group);
+            int scanRate = GetEffectiveScanRateMs(device, group, tag);
             long interval = Math.Max(scanRate * 10L, 30000L);
             if (interval > 300000L)
                 interval = 300000L;
             return (int)interval;
         }
 
-        private static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group)
+        private static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group, TagConfig? tag = null)
         {
-            int scanRate = group is { ScanRateMs: > 0 } ? group.ScanRateMs : device.DefaultScanRateMs;
+            int scanRate = tag is { ScanRateMs: > 0 } ? tag.ScanRateMs
+                : group is { ScanRateMs: > 0 } ? group.ScanRateMs : device.DefaultScanRateMs;
             if (scanRate <= 0)
                 scanRate = 1000;
             return ClampInterval(scanRate, 100, 86400000);

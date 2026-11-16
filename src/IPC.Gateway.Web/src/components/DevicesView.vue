@@ -416,7 +416,7 @@
                   {{ row.tag.meterDataIdentifier || '-' }}
                 </span>
                 <span class="tag-col-extra">{{ row.tag.meterType || '-' }}</span>
-                <span class="tag-col-extra">{{ workspaceScanRate }}</span>
+                <span class="tag-col-extra">{{ effectiveScanRateMs(selectedDevice, selectedGroup, row.tag) }}</span>
                 <span class="device-tag-table__actions table-actions">
                   <a-button
                     v-if="hasTagWritePermission"
@@ -645,6 +645,7 @@
           v-if="tagForm"
           :model="tagForm"
           :device-protocol="tagTargetDevice?.protocol || ''"
+          :inherited-scan-rate-ms="effectiveScanRateMs(tagTargetDevice, tagTargetGroup)"
           :project="project"
         />
       </div>
