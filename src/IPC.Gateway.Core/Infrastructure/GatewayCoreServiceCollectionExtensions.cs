@@ -172,7 +172,9 @@ public static class GatewayCoreServiceCollectionExtensions
             Port = GetInt(database, "Port", 5432),
             Database = database["Database"] ?? "ipc_gateway",
             Username = database["Username"] ?? "postgres",
-            Password = database["Password"] ?? string.Empty,
+            Password = GatewayDatabasePasswordResolver.Decrypt(
+                database["Password"],
+                GetBool(database, "PasswordEncrypted", false)),
             AutoCreateDatabase = GetBool(database, "AutoCreateDatabase", true)
         };
     }

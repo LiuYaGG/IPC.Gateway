@@ -39,6 +39,7 @@ internal static class MaintenanceProgram
             return command switch
             {
                 "reset-admin" => ResetAdminPassword(options),
+                "encrypt-database-password" => EncryptDatabasePassword(options),
                 _ => UnknownCommand(command)
             };
         }
@@ -47,6 +48,48 @@ internal static class MaintenanceProgram
             Console.Error.WriteLine("执行失败：" + ex.Message);
             return 1;
         }
+    }
+
+    private static int EncryptDatabasePassword(IReadOnlyDictionary<string, string> options)
+    {
+        string password = GetOption(options, "password");
+        if (string.IsNullOrEmpty(password))
+        {
+            Console.Write("请输入要加密的数据库密码（输入不会显示）：");
+            password = ReadSecret();
+            Console.WriteLine();
+        }
+        if (string.IsNullOrEmpty(password))
+            throw new InvalidOperationException("数据库密码不能为空。");
+
+        string encrypted = GatewayDatabasePasswordResolver.Encrypt(password);
+        Console.WriteLine("数据库密码加密及解密校验完成。");
+        Console.WriteLine("密文：" + encrypted);
+        Console.WriteLine("请将密文写入 Gateway:Database:Password，并将 PasswordEncrypted 设置为 true。");
+        return 0;
+    }
+
+    private static string ReadSecret()
+    {
+        if (Console.IsInputRedirected)
+            return Console.ReadLine() ?? string.Empty;
+
+        List<char> characters = new List<char>();
+        while (true)
+        {
+            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+                break;
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (characters.Count > 0)
+                    characters.RemoveAt(characters.Count - 1);
+                continue;
+            }
+            if (!char.IsControl(key.KeyChar))
+                characters.Add(key.KeyChar);
+        }
+        return new string(characters.ToArray());
     }
 
     private static int ResetAdminPassword(IReadOnlyDictionary<string, string> options)
@@ -180,7 +223,9 @@ internal static class MaintenanceProgram
             Port = GetInt(database, "Port", 5432),
             Database = database["Database"] ?? "ipc_gateway",
             Username = database["Username"] ?? "postgres",
-            Password = database["Password"] ?? string.Empty,
+            Password = GatewayDatabasePasswordResolver.Decrypt(
+                database["Password"],
+                GetBool(database, "PasswordEncrypted", false)),
             AutoCreateDatabase = GetBool(database, "AutoCreateDatabase", true)
         };
     }
@@ -253,7 +298,17 @@ internal static class MaintenanceProgram
     {
         Console.WriteLine("IPC.Gateway.Maintenance");
         Console.WriteLine();
+        PrintEncryptDatabasePasswordUsage();
         PrintResetAdminUsage();
+    }
+
+    private static void PrintEncryptDatabasePasswordUsage()
+    {
+        Console.WriteLine("数据库密码加密：");
+        Console.WriteLine("  IPC.Gateway.Maintenance encrypt-database-password");
+        Console.WriteLine("  IPC.Gateway.Maintenance encrypt-database-password --password \"database-password\"");
+        Console.WriteLine("未指定 --password 时会提示隐藏输入，可避免密码进入命令历史。");
+        Console.WriteLine();
     }
 
     private static void PrintResetAdminUsage()
