@@ -175,7 +175,6 @@ namespace IPC.EdgeGateway
                    IsNodeType(node, FlowRuleNodeTypes.Expression) ||
                    IsNodeType(node, FlowRuleNodeTypes.SlidingWindow) ||
                    IsNodeType(node, FlowRuleNodeTypes.Aggregation) ||
-                   IsNodeType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsNodeType(node, FlowRuleNodeTypes.Trend) ||
                    IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout) ||
                    IsNodeType(node, FlowRuleNodeTypes.StateMachine) ||

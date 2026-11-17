@@ -21,6 +21,11 @@ public sealed class GatewayAlarmRecord
     public string TagName { get; set; } = string.Empty;
     public string PreviousState { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
+    // Presentation text is frozen when the event is created; canonical states remain available to the engine.
+    public string PreviousStateText { get; set; } = string.Empty;
+    public string StateText { get; set; } = string.Empty;
+    [JsonIgnore] public string DisplayState => string.IsNullOrEmpty(StateText) ? State : StateText;
+    [JsonIgnore] public string DisplayPreviousState => string.IsNullOrEmpty(PreviousStateText) ? PreviousState : PreviousStateText;
     public string EventType { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public double? Value { get; set; }

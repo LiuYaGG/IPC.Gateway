@@ -6,7 +6,7 @@
         <strong>IPC Gateway</strong>
         <span>{{ tx('工业边缘网关') }}</span>
       </header>
-      <LanguageSwitcher class="login-language" />
+      <LanguageSwitcher class="login-language" @change="handleLanguageSelection" />
       <section class="login-panel">
         <div class="login-panel__header">
           <div class="login-panel__brand"><GatewayLogo /><p class="eyebrow">IPC Gateway</p></div>
@@ -82,7 +82,7 @@
             </a-breadcrumb>
           </div>
           <div class="top-actions">
-            <LanguageSwitcher />
+            <LanguageSwitcher @change="handleLanguageSelection" />
             <div class="refresh-state">
               <span>{{ tx(autoRefresh ? streamState : '手动刷新') }}</span>
               <a-switch v-model:checked="autoRefresh" :disabled="!canStream" size="small" :aria-label="tx('实时推送')" />
@@ -243,6 +243,7 @@ import {
   logout,
   saveHistory,
   saveMqtt,
+  saveMessageLanguage,
   saveOpcUa,
   saveStorageHealth,
   type DeviceRuntimeStatus,
@@ -444,6 +445,29 @@ provide(PermissionContextKey, {
   hasPermission,
   hasAnyPermission
 })
+
+const languageSelectionRevision = ref(0)
+let languageSyncVersion = 0
+let languageSyncQueue = Promise.resolve()
+function handleLanguageSelection() {
+  languageSelectionRevision.value++ // Also permits retrying a failed save by selecting the same language.
+  if (currentUserIdentity.value && !hasPermission(PERMISSIONS.mqttEdit))
+    notify.info('当前账号没有 MQTT 配置权限，仅切换界面语言。')
+}
+watch([locale, currentUserIdentity, () => hasPermission(PERMISSIONS.mqttEdit), startupState, languageSelectionRevision],
+  ([language, identity, allowed, state]) => {
+    const version = ++languageSyncVersion
+    if (!identity || !allowed || state !== 'ready') return
+    // Serialize switches and coalesce queued selections, so a slower old request cannot win.
+    languageSyncQueue = languageSyncQueue.then(async () => {
+      if (version !== languageSyncVersion) return
+      try { await saveMessageLanguage(language) }
+      catch {
+        if (version === languageSyncVersion)
+          notify.warning('界面语言已切换，但 MQTT 发布语言同步失败，请重新选择语言重试。')
+      }
+    })
+  })
 
 onMounted(() => {
   window.addEventListener('keydown', handleLoginEnter, true)

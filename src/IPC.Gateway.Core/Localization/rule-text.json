@@ -1,0 +1,496 @@
+{
+  "labels": {
+    "Normal": [
+      "正常",
+      "Normal"
+    ],
+    "Good": [
+      "正常",
+      "Good"
+    ],
+    "HighAlarm": [
+      "高限报警",
+      "High alarm"
+    ],
+    "LowAlarm": [
+      "低限报警",
+      "Low alarm"
+    ],
+    "HighWarning": [
+      "高限预警",
+      "High warning"
+    ],
+    "LowWarning": [
+      "低限预警",
+      "Low warning"
+    ],
+    "Pending": [
+      "待发送",
+      "Pending"
+    ],
+    "Sent": [
+      "已发送",
+      "Sent"
+    ],
+    "Local": [
+      "仅本地记录",
+      "Recorded locally"
+    ],
+    "Alarm": [
+      "报警",
+      "Alarm"
+    ],
+    "Warning": [
+      "预警",
+      "Warning"
+    ],
+    "Warn": [
+      "预警",
+      "Warning"
+    ],
+    "Critical": [
+      "严重",
+      "Critical"
+    ],
+    "Error": [
+      "错误",
+      "Error"
+    ],
+    "Info": [
+      "信息",
+      "Info"
+    ],
+    "Recovery": [
+      "恢复",
+      "Recovery"
+    ],
+    "Clear": [
+      "恢复",
+      "Recovery"
+    ],
+    "Active": [
+      "触发",
+      "Triggered"
+    ],
+    "Value": [
+      "数值输出",
+      "Value output"
+    ],
+    "High": [
+      "高限",
+      "High limit"
+    ],
+    "Low": [
+      "低限",
+      "Low limit"
+    ],
+    "Threshold": [
+      "阈值判断",
+      "Threshold"
+    ],
+    "Deadband": [
+      "死区",
+      "Deadband"
+    ],
+    "RateOfChange": [
+      "变化率",
+      "Rate of change"
+    ],
+    "Condition": [
+      "基础条件",
+      "Basic condition"
+    ],
+    "Combination": [
+      "逻辑组合",
+      "Combination"
+    ],
+    "CombinationAnd": [
+      "逻辑与",
+      "Logical AND"
+    ],
+    "CombinationOr": [
+      "逻辑或",
+      "Logical OR"
+    ],
+    "CombinationInputUnavailable": [
+      "组合输入不可用",
+      "Combination input unavailable"
+    ],
+    "Hysteresis": [
+      "滞回规则",
+      "Hysteresis"
+    ],
+    "HysteresisHigh": [
+      "高限滞回",
+      "High hysteresis"
+    ],
+    "HysteresisLow": [
+      "低限滞回",
+      "Low hysteresis"
+    ],
+    "MultiLevelAlarm": [
+      "多级警告",
+      "Multi-level alarm"
+    ],
+    "Expression": [
+      "表达式",
+      "Expression"
+    ],
+    "Sequence": [
+      "顺序/时序",
+      "Sequence / timing"
+    ],
+    "QualityGate": [
+      "质量门控",
+      "Quality gate"
+    ],
+    "SlidingWindow": [
+      "窗口统计",
+      "Window statistics"
+    ],
+    "WindowCalculation": [
+      "窗口计算",
+      "Window calculation"
+    ],
+    "StateMachine": [
+      "状态机",
+      "State machine"
+    ],
+    "CycleTime": [
+      "周期时间",
+      "Cycle time"
+    ],
+    "CycleTooFast": [
+      "周期过快",
+      "Cycle too fast"
+    ],
+    "CycleTooSlow": [
+      "周期过慢",
+      "Cycle too slow"
+    ],
+    "CycleNormal": [
+      "周期正常",
+      "Cycle normal"
+    ],
+    "ProcessTakt": [
+      "工艺节拍",
+      "Process takt"
+    ],
+    "TaktTooFast": [
+      "节拍过快",
+      "Takt too fast"
+    ],
+    "TaktTooSlow": [
+      "节拍过慢",
+      "Takt too slow"
+    ],
+    "TaktNormal": [
+      "节拍正常",
+      "Takt normal"
+    ],
+    "TagRelation": [
+      "标签关联",
+      "Tag relation"
+    ],
+    "TagRelationInputUnavailable": [
+      "关联标签输入不可用",
+      "Related tag input unavailable"
+    ],
+    "ContextGate": [
+      "上下文门控",
+      "Context gate"
+    ],
+    "ContextInputUnavailable": [
+      "上下文输入不可用",
+      "Context input unavailable"
+    ],
+    "Aggregation": [
+      "标签聚合",
+      "Tag aggregation"
+    ],
+    "AggregationInputUnavailable": [
+      "聚合输入不可用",
+      "Aggregation input unavailable"
+    ],
+    "Trend": [
+      "趋势检测",
+      "Trend detection"
+    ],
+    "TrendSlope": [
+      "趋势斜率",
+      "Trend slope"
+    ],
+    "TrendRising": [
+      "持续上升",
+      "Rising trend"
+    ],
+    "TrendFalling": [
+      "持续下降",
+      "Falling trend"
+    ],
+    "TrendStable": [
+      "趋势稳定",
+      "Stable trend"
+    ],
+    "AnomalyDetection": [
+      "异常检测",
+      "Anomaly detection"
+    ],
+    "AnomalyZScore": [
+      "标准分数异常",
+      "Z-score anomaly"
+    ],
+    "AnomalyDeviation": [
+      "偏差异常",
+      "Deviation anomaly"
+    ],
+    "AnomalySpike": [
+      "突变异常",
+      "Spike anomaly"
+    ],
+    "ModelInference": [
+      "模型推理",
+      "Model inference"
+    ],
+    "DeviceAnomaly": [
+      "设备异常",
+      "Device anomaly"
+    ],
+    "QualityPrediction": [
+      "质量预测",
+      "Quality prediction"
+    ],
+    "NoChangeTimeout": [
+      "连续无变化超时",
+      "Unchanged value timeout"
+    ],
+    "Unknown": [
+      "无数据",
+      "No data"
+    ],
+    "Bad": [
+      "异常",
+      "Bad"
+    ],
+    "Disabled": [
+      "停用",
+      "Disabled"
+    ],
+    "NotConnected": [
+      "未连接",
+      "Not connected"
+    ],
+    "ReadError": [
+      "读取失败",
+      "Read error"
+    ],
+    "NotFound": [
+      "未找到",
+      "Not found"
+    ],
+    "AccessDenied": [
+      "拒绝访问",
+      "Access denied"
+    ],
+    "OutOfRange": [
+      "越界",
+      "Out of range"
+    ],
+    "Filtered": [
+      "已过滤",
+      "Filtered"
+    ],
+    "Spike": [
+      "毛刺",
+      "Spike"
+    ],
+    "Uncertain": [
+      "不确定",
+      "Uncertain"
+    ],
+    "WindowAverage": [
+      "窗口平均值",
+      "Window average"
+    ],
+    "AggregationAverage": [
+      "聚合平均值",
+      "Aggregation average"
+    ],
+    "WindowMin": [
+      "窗口最小值",
+      "Window minimum"
+    ],
+    "AggregationMin": [
+      "聚合最小值",
+      "Aggregation minimum"
+    ],
+    "WindowMax": [
+      "窗口最大值",
+      "Window maximum"
+    ],
+    "AggregationMax": [
+      "聚合最大值",
+      "Aggregation maximum"
+    ],
+    "WindowSum": [
+      "窗口求和",
+      "Window sum"
+    ],
+    "AggregationSum": [
+      "聚合求和",
+      "Aggregation sum"
+    ],
+    "WindowCount": [
+      "窗口计数",
+      "Window count"
+    ],
+    "AggregationCount": [
+      "聚合计数",
+      "Aggregation count"
+    ],
+    "WindowDelta": [
+      "窗口差值",
+      "Window delta"
+    ],
+    "AggregationDelta": [
+      "聚合差值",
+      "Aggregation delta"
+    ],
+    "WindowRange": [
+      "窗口极差",
+      "Window range"
+    ],
+    "AggregationRange": [
+      "聚合极差",
+      "Aggregation range"
+    ],
+    "WindowStdDev": [
+      "窗口标准差",
+      "Window standard deviation"
+    ],
+    "AggregationStdDev": [
+      "聚合标准差",
+      "Aggregation standard deviation"
+    ],
+    "WindowFirst": [
+      "窗口首值",
+      "Window first value"
+    ],
+    "AggregationFirst": [
+      "聚合首值",
+      "Aggregation first value"
+    ],
+    "WindowLast": [
+      "窗口末值",
+      "Window last value"
+    ],
+    "AggregationLast": [
+      "聚合末值",
+      "Aggregation last value"
+    ]
+  },
+  "messages": [
+    [
+      "数值已恢复至正常范围。",
+      "Value returned to the normal range."
+    ],
+    [
+      "数值高于报警上限。",
+      "Value is above high alarm limit."
+    ],
+    [
+      "数值低于报警下限。",
+      "Value is below low alarm limit."
+    ],
+    [
+      "数值达到高限预警范围。",
+      "Value reached high warning deviation."
+    ],
+    [
+      "数值达到低限预警范围。",
+      "Value reached low warning deviation."
+    ],
+    [
+      "{0} 触发：{1} = {2}",
+      "{0} triggered: {1} = {2}"
+    ],
+    [
+      "{0} 恢复：{1} = {2}",
+      "{0} cleared: {1} = {2}"
+    ],
+    [
+      "标签关联需要选择标签来源",
+      "Tag Relation requires a source tag"
+    ],
+    [
+      "标签关联需要选择关联标签",
+      "Tag Relation requires a related tag"
+    ],
+    [
+      "标签关联乘数不合法",
+      "Tag Relation multiplier is invalid"
+    ],
+    [
+      "标签关联偏移不合法",
+      "Tag Relation offset is invalid"
+    ],
+    [
+      "上下文门控需要选择上下文标签",
+      "Context Gate requires a context tag"
+    ],
+    [
+      "上下文门控的期望值不能为空",
+      "Context Gate expected value is required"
+    ],
+    [
+      "报警生命周期抑制时间不能小于 0 秒",
+      "Alarm Lifecycle suppress seconds must be >= 0"
+    ],
+    [
+      "报警生命周期重复触发时间不能小于 0 秒",
+      "Alarm Lifecycle retrigger seconds must be >= 0"
+    ],
+    [
+      "报警生命周期升级时间不能小于 0 秒",
+      "Alarm Lifecycle escalation seconds must be >= 0"
+    ],
+    [
+      "动作策略延迟时间不能小于 0 秒",
+      "Action Policy delay seconds must be >= 0"
+    ],
+    [
+      "动作策略冷却时间不能小于 0 秒",
+      "Action Policy cooldown seconds must be >= 0"
+    ],
+    [
+      "动作策略每分钟最大次数不能小于 0",
+      "Action Policy max per minute must be >= 0"
+    ],
+    [
+      "MQTT 发布语言保存失败",
+      "Failed to save the MQTT message language"
+    ],
+    [
+      "界面语言已切换，但 MQTT 发布语言同步失败，请重新选择语言重试。",
+      "The display language changed, but MQTT language synchronization failed. Select the language again to retry."
+    ],
+    [
+      "当前账号没有 MQTT 配置权限，仅切换界面语言。",
+      "This account cannot configure MQTT. Only the display language was changed."
+    ]
+  ],
+  "prefixes": {
+    "Quality:": [
+      "质量：",
+      "Quality: "
+    ],
+    "Escalated:": [
+      "报警升级：",
+      "Escalated: "
+    ],
+    "Retriggered:": [
+      "再次触发：",
+      "Retriggered: "
+    ]
+  }
+}

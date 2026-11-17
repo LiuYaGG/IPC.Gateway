@@ -47,7 +47,8 @@ export const FLOW_NODE_GROUPS = [
     title: '处理',
     nodes: [
       { type: 'Transform', label: '数据处理' },
-      { type: 'Function', label: '函数节点' }
+      { type: 'Function', label: '函数节点' },
+      { type: 'WindowCalculation', label: '窗口计算' }
     ]
   },
   {
@@ -71,7 +72,6 @@ export const FLOW_NODE_GROUPS = [
 FLOW_NODE_GROUPS[0]?.nodes.push({ type: 'QualityGate', label: '质量门控' })
 FLOW_NODE_GROUPS[1]?.nodes.push(
   { type: 'SlidingWindow', label: '窗口统计' },
-  { type: 'WindowCalculation', label: '窗口计算' },
   { type: 'Aggregation', label: '聚合计算' },
   { type: 'Trend', label: '趋势判断' },
   { type: 'NoChangeTimeout', label: '连续无变化超时' },
@@ -118,7 +118,6 @@ const CONDITION_NODE_TYPES = new Set([
   'Expression',
   'QualityGate',
   'SlidingWindow',
-  'WindowCalculation',
   'Aggregation',
   'Trend',
   'NoChangeTimeout',
@@ -402,6 +401,44 @@ function validateFlowGraph(rule: FlowRuleDefinition) {
   }
   if (visited !== nodes.length) errors.push('规则引擎不能包含环路')
 
+  if (nodes.some(node => node.nodeType === 'WindowCalculation')) {
+    const message = '窗口计算需要单一路径：标签输入 → 处理节点 → 可选判断节点 → 动作；多个动作可以共用计算结果。'
+    const sources = nodes.filter(node => node.nodeType === 'TagInput')
+    const conditions = nodes.filter(node => CONDITION_NODE_TYPES.has(node.nodeType) && node.nodeType !== 'QualityGate')
+    const processors = new Set(['WindowCalculation', 'Transform', 'Function', 'ValueScript', 'QualityGate'])
+    const tails = new Set([...ACTION_NODE_TYPES, 'Duration', 'AlarmLifecycle', 'ActionPolicy'])
+    if (sources.length !== 1 || conditions.length > 1 || nodes.some(node => ['Logic', 'Sequence'].includes(node.nodeType))) {
+      return [...errors, message]
+    }
+    let current = sources[0]!
+    const path = new Set([current.id])
+    let hasWindow = false
+    while (true) {
+      const nextEdges = outgoing.get(current.id) ?? []
+      const next = nextEdges.length === 1 ? nodeById.get(nextEdges[0]!.targetNodeId) : undefined
+      if (!next || (!processors.has(next.nodeType) && !conditions.includes(next))) break
+      current = next
+      if (path.has(current.id) || (incoming.get(current.id)?.length ?? 0) !== 1) return [...errors, message]
+      path.add(current.id)
+      if (conditions.includes(current)) break
+      hasWindow ||= current.nodeType === 'WindowCalculation'
+    }
+    const descendants = new Set<string>()
+    const pending = [current.id]
+    while (pending.length) for (const edge of outgoing.get(pending.pop()!) ?? []) {
+      if (descendants.has(edge.targetNodeId)) continue
+      descendants.add(edge.targetNodeId)
+      pending.push(edge.targetNodeId)
+    }
+    if (!hasWindow || (conditions.length && current !== conditions[0]) ||
+        nodes.some(node => !path.has(node.id) && (!descendants.has(node.id) || !tails.has(node.nodeType))) ||
+        nodes.some(node => ACTION_NODE_TYPES.has(node.nodeType) && (outgoing.get(node.id)?.length ?? 0) > 0) ||
+        !nodes.some(node => ACTION_NODE_TYPES.has(node.nodeType))) errors.push(message)
+    if (conditions.some(node => ['Aggregation', 'TagRelation', 'ContextGate', 'ModelInference'].includes(node.nodeType)))
+      errors.push('窗口计算之后请使用单值判断节点，多标签关联与模型输入需要直接连接标签来源。')
+    return errors
+  }
+
   let conditions = nodes.filter((node) => CONDITION_NODE_TYPES.has(node.nodeType) && node.nodeType !== 'QualityGate')
   if (!conditions.length) conditions = nodes.filter((node) => node.nodeType === 'QualityGate')
   const logicNodes = nodes.filter((node) => node.nodeType === 'Logic')
@@ -454,6 +491,25 @@ function validateFlowGraph(rule: FlowRuleDefinition) {
 
 function isFiniteRuleNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+function hasConnectedTagInput(rule: FlowRuleDefinition, target: FlowRuleNode) {
+  const byId = new Map(rule.nodes.map(node => [node.id, node]))
+  const visited = new Set<string>()
+  const pending = [target.id]
+  while (pending.length) {
+    const id = pending.pop()!
+    if (visited.has(id)) continue
+    visited.add(id)
+    for (const edge of rule.edges ?? []) {
+      if (edge.targetNodeId !== id) continue
+      const source = byId.get(edge.sourceNodeId)
+      if (!source) continue
+      if (source.nodeType === 'TagInput' && hasPrimaryTagSource(source)) return true
+      pending.push(source.id)
+    }
+  }
+  return false
 }
 
 export function validateFlowRule(rule: FlowRuleDefinition) {
@@ -515,7 +571,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         errors.push('窗口统计时间窗口必须大于 0 秒')
       if (!isFiniteRuleNumber(node.windowSampleCount) || Number(node.windowSampleCount) < 0)
         errors.push('窗口统计样本数不能小于 0')
-      if (!isFiniteRuleNumber(node.compareValue)) errors.push('窗口统计比较值不合法')
+      if (node.nodeType === 'SlidingWindow' && !isFiniteRuleNumber(node.compareValue)) errors.push('窗口统计比较值不合法')
     }
     if (node.nodeType === 'Aggregation') {
       if (
@@ -556,7 +612,7 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
         errors.push('状态机目标值与明确恢复值不能相同')
     }
     if (node.nodeType === 'CycleTime' || node.nodeType === 'ProcessTakt') {
-      if (!hasPrimaryTagSource(node)) errors.push('节拍规则需要选择标签来源')
+      if (!hasPrimaryTagSource(node) && !hasConnectedTagInput(rule, node)) errors.push('节拍规则需要选择标签来源')
       if (!node.cycleStartValue?.trim()) errors.push('节拍规则开始值不能为空')
       if (!node.cycleEndValue?.trim()) errors.push('节拍规则结束值不能为空')
       if (!isFiniteRuleNumber(node.cycleMinSeconds) || Number(node.cycleMinSeconds) < 0)
@@ -608,30 +664,30 @@ export function validateFlowRule(rule: FlowRuleDefinition) {
       }
     }
     if (node.nodeType === 'TagRelation') {
-      if (!hasPrimaryTagSource(node)) errors.push('Tag Relation requires a source tag')
-      if (!hasRelatedTagSource(node)) errors.push('Tag Relation requires a related tag')
-      if (!isFiniteRuleNumber(node.relationMultiplier)) errors.push('Tag Relation multiplier is invalid')
-      if (!isFiniteRuleNumber(node.relationOffset)) errors.push('Tag Relation offset is invalid')
+      if (!hasPrimaryTagSource(node)) errors.push('标签关联需要选择标签来源')
+      if (!hasRelatedTagSource(node)) errors.push('标签关联需要选择关联标签')
+      if (!isFiniteRuleNumber(node.relationMultiplier)) errors.push('标签关联乘数不合法')
+      if (!isFiniteRuleNumber(node.relationOffset)) errors.push('标签关联偏移不合法')
     }
     if (node.nodeType === 'ContextGate') {
-      if (!hasPrimaryTagSource(node) && !hasContextTagSource(node)) errors.push('Context Gate requires a context tag')
-      if (!node.contextExpectedValue?.trim()) errors.push('Context Gate expected value is required')
+      if (!hasPrimaryTagSource(node) && !hasContextTagSource(node)) errors.push('上下文门控需要选择上下文标签')
+      if (!node.contextExpectedValue?.trim()) errors.push('上下文门控的期望值不能为空')
     }
     if (node.nodeType === 'AlarmLifecycle') {
       if (!isFiniteRuleNumber(node.alarmSuppressSeconds) || Number(node.alarmSuppressSeconds) < 0)
-        errors.push('Alarm Lifecycle suppress seconds must be >= 0')
+        errors.push('报警生命周期抑制时间不能小于 0 秒')
       if (!isFiniteRuleNumber(node.alarmReTriggerSeconds) || Number(node.alarmReTriggerSeconds) < 0)
-        errors.push('Alarm Lifecycle retrigger seconds must be >= 0')
+        errors.push('报警生命周期重复触发时间不能小于 0 秒')
       if (!isFiniteRuleNumber(node.alarmEscalateAfterSeconds) || Number(node.alarmEscalateAfterSeconds) < 0)
-        errors.push('Alarm Lifecycle escalation seconds must be >= 0')
+        errors.push('报警生命周期升级时间不能小于 0 秒')
     }
     if (node.nodeType === 'ActionPolicy') {
       if (!isFiniteRuleNumber(node.actionDelaySeconds) || Number(node.actionDelaySeconds) < 0)
-        errors.push('Action Policy delay seconds must be >= 0')
+        errors.push('动作策略延迟时间不能小于 0 秒')
       if (!isFiniteRuleNumber(node.actionCooldownSeconds) || Number(node.actionCooldownSeconds) < 0)
-        errors.push('Action Policy cooldown seconds must be >= 0')
+        errors.push('动作策略冷却时间不能小于 0 秒')
       if (!isFiniteRuleNumber(node.actionMaxPerMinute) || Number(node.actionMaxPerMinute) < 0)
-        errors.push('Action Policy max per minute must be >= 0')
+        errors.push('动作策略每分钟最大次数不能小于 0')
     }
     if (node.nodeType === 'Transform' || node.nodeType === 'Function') {
       if (node.nodeType === 'Transform') {
@@ -757,7 +813,7 @@ export function nodeDisplayName(node: FlowRuleNode, translate: (label: string) =
   if (node.nodeType === 'SlidingWindow')
     return `${title}: ${flowOptionLabel('statistic', node.windowStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
   if (node.nodeType === 'WindowCalculation')
-    return `${title}: ${flowOptionLabel('statistic', node.windowStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
+    return `${title}: ${flowOptionLabel('statistic', node.windowStatistic, translate)} · ${formatSeconds(node.windowSeconds)} → ${translate('数值')}`
   if (node.nodeType === 'Aggregation')
     return `${title}: ${flowOptionLabel('statistic', node.aggregationStatistic, translate)} ${operatorSymbol(node.operator)} ${node.compareValue ?? ''}`
   if (node.nodeType === 'Trend') return `${title}: ${flowOptionLabel('trend', node.trendMode, translate)}`

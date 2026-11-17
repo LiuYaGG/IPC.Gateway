@@ -225,6 +225,7 @@ namespace IPC.Runtime.Engine
         }
 
         public event EventHandler<TagValueChangedEventArgs>? TagValueChanged;
+        public event EventHandler<TagValueChangedEventArgs>? TagValueSampled;
         internal event Action<TagValueSnapshot>? AlarmSampleCommitted;
         public event EventHandler<TagValueChangedEventArgs>? TagDiagnosticsChanged;
 
@@ -3852,6 +3853,7 @@ namespace IPC.Runtime.Engine
                     EnqueueTagValueChanged(clone, GetCurrentRuntimeGeneration());
             }
 
+            NotifyTagSubscribers(TagValueSampled, clone);
             if (diagnosticsOnly)
                 NotifyTagSubscribers(TagDiagnosticsChanged, clone);
         }

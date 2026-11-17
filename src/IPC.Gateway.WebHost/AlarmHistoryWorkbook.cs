@@ -21,8 +21,8 @@ internal static class AlarmHistoryWorkbook
             string.IsNullOrEmpty(row.TagName) ? row.TagId : row.TagName }.Where(value => !string.IsNullOrEmpty(value)));
         string source = string.Join(" · ", new[] { row.RuleName, path }.Where(value => !string.IsNullOrEmpty(value)));
         string transition = !string.IsNullOrEmpty(row.PreviousState) && !string.IsNullOrEmpty(row.State)
-            ? Label(row.PreviousState, english) + " → " + Label(row.State, english)
-            : Label(string.IsNullOrEmpty(row.State) ? row.EventType : row.State, english);
+            ? row.DisplayPreviousState + " → " + row.DisplayState
+            : string.IsNullOrEmpty(row.State) ? row.EventType : row.DisplayState;
         return [WorkbookTimeZone.Format(row.Timestamp.ToUniversalTime(), timeZone),
             row.ChannelName, row.DeviceName, row.GroupName, row.TagName, source, transition,
             row.Value?.ToString("R", CultureInfo.InvariantCulture), row.Threshold?.ToString("R", CultureInfo.InvariantCulture),

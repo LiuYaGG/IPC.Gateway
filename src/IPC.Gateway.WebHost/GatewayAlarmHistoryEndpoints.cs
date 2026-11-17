@@ -23,7 +23,8 @@ internal static partial class GatewayAlarmHistoryEndpoints
                     {
                         record.EventId, record.Timestamp, record.ChannelId, record.ChannelName, record.DeviceId, record.DeviceName,
                         record.GroupId, record.GroupName, record.TagName, record.TagId, record.Source, record.RuleName,
-                        record.EventType, record.PreviousState, record.State, record.Value, record.Threshold, record.Message, record.DeliveryStatus
+                        record.EventType, PreviousState = record.DisplayPreviousState, State = record.DisplayState,
+                        record.Value, record.Threshold, record.Message, record.DeliveryStatus
                     })
                 } });
             }));

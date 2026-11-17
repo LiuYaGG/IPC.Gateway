@@ -1,4 +1,12 @@
 export const extraEnglish: Record<string, string> = {
+  '数值': 'Value',
+  '输出窗口内的统计数值，后续函数的 {value}、条件比较和 MQTT 的 value 均使用计算结果。需要报警时，请在后面连接判断节点。': 'Outputs the window statistic. Subsequent functions use it as {value}, conditions compare it, and MQTT sends it as value. Add a condition afterwards to generate alarms.',
+  '窗口计算需要单一路径：标签输入 → 处理节点 → 可选判断节点 → 动作；多个动作可以共用计算结果。': 'Window calculation requires a single path: tag input → processing → optional condition → actions. Multiple actions can share the result.',
+  '窗口计算之后请使用单值判断节点，多标签关联与模型输入需要直接连接标签来源。': 'Use a single-value condition after window calculation. Multi-tag relations and model inputs must use tag sources directly.',
+  '窗口参数无效：请选择有效统计方法，时间窗口必须大于 0，最大样本数不能小于 0。': 'Invalid window settings: select a statistic, use a positive time window and a non-negative sample limit.',
+  '窗口计算结果必须为有限数值。': 'The window calculation result must be finite.',
+  '窗口计算输入必须为有限数值。': 'The window calculation input must be finite.',
+  '窗口计算需要先配置标签输入的点位。': 'Select a tag in the tag input before using window calculation.',
   '搜索通道、设备、协议、分组或标签': 'Search channels, devices, protocols, groups or tags',
   '搜索分组、标签或地址': 'Search groups, tags or addresses',
   '南向通道': 'Southbound channels',

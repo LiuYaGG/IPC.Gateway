@@ -434,7 +434,9 @@ function nodeFooter(node: FlowRuleNode) {
     ])
   if (node.nodeType === 'MultiLevelAlarm') return formatMessage('{0} 个级别', [(node.alarmLevels ?? []).length])
   if (node.nodeType === 'Expression') return node.expression || '{value} > 0'
-  if (node.nodeType === 'SlidingWindow' || node.nodeType === 'WindowCalculation')
+  if (node.nodeType === 'WindowCalculation')
+    return `${flowOptionLabel('statistic', node.windowStatistic, tx)} · ${node.windowSeconds}s → ${tx('数值')}`
+  if (node.nodeType === 'SlidingWindow')
     return `${flowOptionLabel('statistic', node.windowStatistic, tx)} ${operatorSymbol(node.operator)} ${node.compareValue}`
   if (node.nodeType === 'Aggregation')
     return `${flowOptionLabel('statistic', node.aggregationStatistic, tx)} ${operatorSymbol(node.operator)} ${node.compareValue}`

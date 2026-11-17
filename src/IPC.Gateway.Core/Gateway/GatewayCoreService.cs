@@ -82,7 +82,8 @@ namespace IPC.Gateway.Core.Gateway
             StorageHealthThresholds storageHealthThresholds,
             IFlowRuleEngineFactory? flowRuleEngineFactory = null,
             IModelInferenceService? modelInference = null,
-            IValueTransformScriptRuntime? valueTransformScripts = null)
+            IValueTransformScriptRuntime? valueTransformScripts = null,
+            GatewayMessageLanguage? messageLanguage = null)
         {
             _syncRoot = new object();
             _configurationMutationSemaphore = new SemaphoreSlim(1, 1);
@@ -107,7 +108,7 @@ namespace IPC.Gateway.Core.Gateway
                 Path.GetFullPath(historyDirectory, AppContext.BaseDirectory))) ?? AppContext.BaseDirectory;
             AlarmJournal = new GatewayAlarmJournal(Path.Combine(dataRoot, "Alarms", "alarms.sqlite"),
                 () => Volatile.Read(ref _historyOptions));
-            _alarmConsumer = new ThresholdAlarmConsumer((RuntimeEngine)Runtime, AlarmJournal, () => Volatile.Read(ref _mqttOptions));
+            _alarmConsumer = new ThresholdAlarmConsumer((RuntimeEngine)Runtime, AlarmJournal, () => Volatile.Read(ref _mqttOptions), messageLanguage);
             _storageHealthThresholds = GatewayStartupTiming.Measure("读取存储健康配置", () => _configurationStore.LoadOrCreateStorageHealth(storageHealthThresholds));
             SetCurrentProject(new ProjectConfig());
             _lastValidation = new ProjectConfigValidationResult();

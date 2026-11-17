@@ -218,6 +218,11 @@ namespace IPC.Runtime.Configuration
 
         private static void ValidateTopology(FlowRuleGraphMap graph, List<string> errors)
         {
+            if (FlowWindowCalculationPlan.Contains(graph.Definition))
+            {
+                FlowWindowCalculationPlan.Create(graph, errors);
+                return;
+            }
             List<FlowRuleNode> conditions = graph.Nodes.Where(IsConditionNode).ToList();
             if (conditions.Count == 0)
                 conditions.AddRange(graph.Nodes.Where(node => IsType(node, FlowRuleNodeTypes.QualityGate)));
@@ -281,6 +286,10 @@ namespace IPC.Runtime.Configuration
             for (int i = 0; i < graph.Nodes.Count; i++)
             {
                 FlowRuleNode node = graph.Nodes[i];
+                if (IsType(node, FlowRuleNodeTypes.WindowCalculation) &&
+                    (node.WindowSeconds <= 0 || node.WindowSampleCount < 0 ||
+                     !new[] { "Average", "Min", "Max", "Sum", "Count", "StdDev" }.Contains(node.WindowStatistic, StringComparer.OrdinalIgnoreCase)))
+                    errors.Add("窗口参数无效：请选择有效统计方法，时间窗口必须大于 0，最大样本数不能小于 0。");
                 if ((IsType(node, FlowRuleNodeTypes.CycleTime) || IsType(node, FlowRuleNodeTypes.ProcessTakt)) &&
                     string.Equals(node.CycleStartValue, node.CycleEndValue, StringComparison.OrdinalIgnoreCase))
                 {
@@ -313,7 +322,7 @@ namespace IPC.Runtime.Configuration
             }
         }
 
-        private static bool IsConditionNode(FlowRuleNode node)
+        internal static bool IsConditionNode(FlowRuleNode node)
         {
             return IsBasicConditionNode(node) ||
                    IsType(node, FlowRuleNodeTypes.Deadband) ||
@@ -322,7 +331,6 @@ namespace IPC.Runtime.Configuration
                    IsType(node, FlowRuleNodeTypes.MultiLevelAlarm) ||
                    IsType(node, FlowRuleNodeTypes.Expression) ||
                    IsType(node, FlowRuleNodeTypes.SlidingWindow) ||
-                   IsType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsType(node, FlowRuleNodeTypes.Aggregation) ||
                    IsType(node, FlowRuleNodeTypes.Trend) ||
                    IsType(node, FlowRuleNodeTypes.NoChangeTimeout) ||

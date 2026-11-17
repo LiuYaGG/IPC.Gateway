@@ -17,6 +17,7 @@ namespace IPC.EdgeGateway
         {
             if (rule == null)
                 return false;
+            if (HasWindowCalculation(rule)) return true;
 
             if (rule.DurationSeconds > 0 ||
                 rule.ClearDurationSeconds > 0 ||
@@ -156,10 +157,31 @@ namespace IPC.EdgeGateway
             if (snapshot == null)
                 return;
 
+            if (HasWindowCalculation(rule))
+            {
+                TagValueSnapshot? latest = null;
+                if (_runtime != null)
+                    _runtime.TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out latest);
+                if (latest == null || latest.Quality != TagQuality.Good)
+                {
+                    if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
+                        EvaluateNoChangeTimeout(rule, latest, state, now);
+                    return;
+                }
+                if (latest.Timestamp.ToUniversalTime() > state.LastValuePipelineTimestamp && TryGetNumericValue(latest, out double input))
+                {
+                    RememberSnapshot(latest);
+                    EvaluateRuleSafely(rule, latest, input, recordEvaluation: true);
+                }
+                snapshot = state.LastEvaluationSnapshot;
+                if (snapshot == null || snapshot.Quality != TagQuality.Good) return;
+                if (rule.ConditionType == EdgeRuleConditionType.WindowCalculation) return;
+            }
+
             if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
             {
                 TagValueSnapshot? latest = snapshot;
-                if (_runtime != null)
+                if (_runtime != null && !HasWindowCalculation(rule))
                     _runtime.TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out latest);
                 EvaluateNoChangeTimeout(rule, latest, state, now);
                 if (state.NoChangeTracker?.Available == true)
@@ -167,7 +189,7 @@ namespace IPC.EdgeGateway
                 return;
             }
 
-            if (IsTimeSeriesRule(rule) &&
+            if (!HasWindowCalculation(rule) && IsTimeSeriesRule(rule) &&
                 (state.LastPeriodicEvaluationTime == DateTime.MinValue ||
                  now - state.LastPeriodicEvaluationTime >= TimeSpan.FromMilliseconds(TimeSeriesSampleIntervalMilliseconds)))
             {

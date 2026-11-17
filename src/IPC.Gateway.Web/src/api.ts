@@ -2657,6 +2657,14 @@ export async function saveMqtt(options: Record<string, unknown>) {
   return result.data;
 }
 
+export async function saveMessageLanguage(locale: 'zh-CN' | 'en-US') {
+  const result = await request<ApiResult<{ locale: string }>>('/api/preferences/message-language', {
+    method: 'PUT', body: JSON.stringify({ locale }), signal: AbortSignal.timeout(10000)
+  });
+  if (!result.success) throw new Error(result.errorMessage || 'MQTT 发布语言保存失败');
+  return result.data;
+}
+
 export async function saveOpcUa(options: OpcUaServerConfig) {
   const result = await request<ApiResult<OpcUaServerConfig>>(
     "/api/config/opcua",

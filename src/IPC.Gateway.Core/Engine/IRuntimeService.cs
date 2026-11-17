@@ -37,6 +37,8 @@ namespace IPC.Runtime.Engine
     public interface IRuntimeService : IDisposable
     {
         event EventHandler<TagValueChangedEventArgs>? TagValueChanged;
+        // Every committed sample, including samples whose value and quality did not change.
+        event EventHandler<TagValueChangedEventArgs>? TagValueSampled { add { } remove { } }
         // Diagnostics-only changes do not represent process value or quality transitions.
         event EventHandler<TagValueChangedEventArgs>? TagDiagnosticsChanged { add { } remove { } }
 

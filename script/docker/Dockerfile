@@ -5,6 +5,7 @@ WORKDIR /build/web
 COPY src/IPC.Gateway.Web/package*.json ./
 RUN npm ci
 COPY src/IPC.Gateway.Web/ ./
+COPY src/IPC.Gateway.Core/Localization/rule-text.json /build/IPC.Gateway.Core/Localization/rule-text.json
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS publish

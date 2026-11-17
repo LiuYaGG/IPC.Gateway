@@ -25,23 +25,36 @@ namespace IPC.Runtime.Configuration
     public static class FlowRuleCompiler
     {
         public static bool TryCompile(FlowRuleDefinition? definition, [NotNullWhen(true)] out EdgeRuleConfig? rule)
+            => TryCompileCore(definition, out rule, null);
+
+        public static bool TryCompileWindowCalculation(FlowRuleDefinition definition, [NotNullWhen(true)] out EdgeRuleConfig? rule)
+        {
+            rule = null;
+            if (FlowRuleGraphValidator.Validate(definition).Count > 0) return false;
+            var plan = FlowWindowCalculationPlan.Create(new FlowRuleGraphMap(definition), new List<string>());
+            return plan != null && TryCompileCore(definition, out rule, plan);
+        }
+
+        private static bool TryCompileCore(FlowRuleDefinition? definition, [NotNullWhen(true)] out EdgeRuleConfig? rule, FlowWindowCalculationPlan? windowPlan)
         {
             rule = null;
             if (definition == null || definition.Nodes == null)
                 return false;
+            // Window pipelines are rebuilt from the flow, including for previously SimpleCompiled flows.
+            if (windowPlan == null && FlowWindowCalculationPlan.Contains(definition)) return false;
 
             List<FlowRuleNode> nodes = MaterializeNodes(definition.Nodes);
             FlowRuleGraphMap graph = new FlowRuleGraphMap(definition);
             if (nodes.Any(IsSequenceNode))
                 return false;
 
-            FlowRuleNode? tagNode = nodes.FirstOrDefault(IsTagNode);
-            FlowRuleNode? conditionNode = nodes.FirstOrDefault(IsRuleNode);
+            FlowRuleNode? tagNode = windowPlan?.Source ?? nodes.FirstOrDefault(IsTagNode);
+            FlowRuleNode? conditionNode = windowPlan?.Result ?? nodes.FirstOrDefault(IsRuleNode);
             FlowRuleNode? logicNode = nodes.FirstOrDefault(IsLogicNode);
             if (tagNode == null || conditionNode == null || logicNode != null)
                 return false;
 
-            if (nodes.Count(IsTagNode) != 1 || nodes.Count(IsRuleNode) != 1)
+            if (windowPlan == null && (nodes.Count(IsTagNode) != 1 || nodes.Count(IsRuleNode) != 1))
                 return false;
 
             if (!graph.IsReachable(tagNode.Id, conditionNode.Id))
@@ -52,7 +65,8 @@ namespace IPC.Runtime.Configuration
             if (!ancestors.Contains(tagNode.Id))
                 return false;
 
-            EdgeRuleConditionType conditionType = ResolveConditionType(conditionNode);
+            EdgeRuleConditionType conditionType = windowPlan != null && windowPlan.Condition == null
+                ? EdgeRuleConditionType.WindowCalculation : ResolveConditionType(conditionNode);
             FlowRuleNode? durationNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsDurationNode(node));
             FlowRuleNode? mqttNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsMqttNode(node));
             List<EdgeRuleActionConfig> actions = BuildActions(nodes.Where(node => descendants.Contains(node.Id)).ToList());
@@ -61,7 +75,7 @@ namespace IPC.Runtime.Configuration
             FlowRuleNode? lifecycleNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsAlarmLifecycleNode(node));
             FlowRuleNode? actionPolicyNode = nodes.FirstOrDefault(node => descendants.Contains(node.Id) && IsActionPolicyNode(node));
             string id = string.IsNullOrWhiteSpace(definition.CompiledRuleId)
-                ? Guid.NewGuid().ToString("N")
+                ? (windowPlan == null ? Guid.NewGuid().ToString("N") : definition.Id)
                 : definition.CompiledRuleId;
 
             rule = new EdgeRuleConfig
@@ -185,6 +199,29 @@ namespace IPC.Runtime.Configuration
                 Actions = actions
             };
 
+            if (windowPlan != null)
+            {
+                rule.ValuePipeline = windowPlan.Processors;
+                rule.SourceChannelId = tagNode.ChannelId;
+                rule.SourceChannelName = tagNode.ChannelName;
+                rule.SourceDeviceId = tagNode.DeviceId;
+                rule.SourceDeviceName = tagNode.DeviceName;
+                rule.SourceGroupId = tagNode.GroupId;
+                rule.SourceGroupName = tagNode.GroupName;
+                rule.SourceTagId = tagNode.TagId;
+                rule.SourceTagName = tagNode.TagName;
+                rule.SourcePointCode = tagNode.PointCode;
+                rule.SourceDataType = tagNode.DataType;
+                // Quality gates are applied in graph order as part of the numeric path.
+                rule.QualityValues = string.Empty;
+                rule.TransformMultiplier = 1;
+                rule.TransformOffset = 0;
+                rule.TransformUseAbsolute = false;
+                rule.TransformExpression = string.Empty;
+                rule.ValueScriptId = string.Empty;
+                rule.ValueScriptVersion = 0;
+            }
+
             return true;
         }
 
@@ -271,7 +308,6 @@ namespace IPC.Runtime.Configuration
                    IsNodeType(node, FlowRuleNodeTypes.QualityGate) ||
                    IsNodeType(node, FlowRuleNodeTypes.SlidingWindow) ||
                    IsNodeType(node, FlowRuleNodeTypes.Aggregation) ||
-                   IsNodeType(node, FlowRuleNodeTypes.WindowCalculation) ||
                    IsNodeType(node, FlowRuleNodeTypes.Trend) ||
                    IsNodeType(node, FlowRuleNodeTypes.NoChangeTimeout) ||
                    IsNodeType(node, FlowRuleNodeTypes.StateMachine) ||

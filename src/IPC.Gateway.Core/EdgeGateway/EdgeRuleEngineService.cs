@@ -87,6 +87,7 @@ namespace IPC.EdgeGateway
         private readonly Func<string, string, int, bool> _mqttPublisher;
         private readonly Action<GatewayAlarmRecord, bool>? _recordAlarm;
         private readonly MqttGatewayOptions _gatewayOptions;
+        private readonly GatewayMessageLanguage _messageLanguage;
         private readonly IModelInferenceService _modelInference;
         private readonly IValueTransformScriptRuntime _valueTransformScripts;
         private readonly Dictionary<string, EdgeRuleState> _states;
@@ -120,12 +121,14 @@ namespace IPC.EdgeGateway
             CircuitBreakerOptions circuitBreakerOptions,
             IModelInferenceService? modelInference = null,
             IValueTransformScriptRuntime? valueTransformScripts = null,
-            Action<GatewayAlarmRecord, bool>? recordAlarm = null)
+            Action<GatewayAlarmRecord, bool>? recordAlarm = null,
+            GatewayMessageLanguage? messageLanguage = null)
         {
             _runtime = runtime;
             _projectConfig = projectConfig;
             _mqttPublisher = mqttPublisher;
             _recordAlarm = recordAlarm;
+            _messageLanguage = messageLanguage ?? new GatewayMessageLanguage();
             _gatewayOptions = gatewayOptions == null ? new MqttGatewayOptions() : gatewayOptions.Clone();
             _ruleCircuitBreakerOptions = (circuitBreakerOptions ?? new GatewayResilienceOptions().RuleEngine).Normalize();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
@@ -326,7 +329,7 @@ namespace IPC.EdgeGateway
                     continue;
                 if (_seedingRuntimeSnapshots && _restoredRuleIds.Contains(GetRuleId(rule)))
                     continue;
-                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule) && rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout)
+                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule) && rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout && !HasWindowCalculation(rule))
                     continue;
                 if (RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
                     continue;
@@ -361,6 +364,7 @@ namespace IPC.EdgeGateway
         private void EvaluateRule(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value)
         {
             EdgeRuleState state = GetState(rule);
+            if (HasWindowCalculation(rule) && !TryCalculateWindowPipeline(rule, state, ref snapshot, ref value)) return;
             if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
             {
                 EvaluateNoChangeTimeout(rule, snapshot, state, DateTime.Now);
@@ -376,7 +380,7 @@ namespace IPC.EdgeGateway
             if (rule.ConditionType != EdgeRuleConditionType.QualityGate && snapshot.Quality != TagQuality.Good)
                 return;
 
-            value = ApplyValueTransform(rule, snapshot, value);
+            if (!HasWindowCalculation(rule)) value = ApplyValueTransform(rule, snapshot, value);
             if (rule.ConditionType == EdgeRuleConditionType.QualityGate)
             {
                 EvaluateQualityGate(rule, snapshot, value, state);
@@ -391,7 +395,9 @@ namespace IPC.EdgeGateway
 
             if (rule.ConditionType == EdgeRuleConditionType.WindowCalculation)
             {
-                EvaluateSlidingWindow(rule, snapshot, value, state);
+                // A calculated value is a data output, not an alarm transition.
+                PublishEvent(rule, snapshot, "value", "WindowCalculation", value, 0,
+                    BuildActiveMessage(rule, snapshot, "WindowCalculation"), rule.PublishToMqtt);
                 return;
             }
 
@@ -1555,7 +1561,10 @@ namespace IPC.EdgeGateway
                 EventType = eventType,
                 State = state,
                 Message = message,
-                Severity = FirstText(ruleState.ActiveSeverity, rule.AlarmSeverity, "Warning"),
+                MqttMessageTemplate = eventType == "clear" ? rule.ClearMessage
+                    : FirstText(ruleState.ActiveMessageOverride, rule.ActiveMessage),
+                MessageEnglish = _messageLanguage.English,
+                Severity = eventType == "value" ? "Info" : FirstText(ruleState.ActiveSeverity, rule.AlarmSeverity, "Warning"),
                 Snapshot = snapshot.Clone(),
                 SourceValues = BuildSourceValues(rule, snapshot),
                 Value = value,
@@ -1569,12 +1578,13 @@ namespace IPC.EdgeGateway
             AddRecentEvent(ruleEvent);
             if (string.Equals(eventType, "active", StringComparison.OrdinalIgnoreCase))
                 MarkActiveEventPublished(ruleState, now);
-            IpcLogService.WriteAudit("EdgeRule", rule.Name, eventType + ":" + state + " " + value.ToString("R", CultureInfo.InvariantCulture));
+            if (eventType != "value")
+                IpcLogService.WriteAudit("EdgeRule", rule.Name, eventType + ":" + state + " " + value.ToString("R", CultureInfo.InvariantCulture));
 
             if (rule.Actions != null && rule.Actions.Count > 0)
             {
                 bool dispatch = CanDispatchActions(rule, ruleState, now, eventType);
-                foreach (var action in rule.Actions.Where(IsAlarmOutput))
+                foreach (var action in rule.Actions.Where(action => eventType != "value" && IsAlarmOutput(action)))
                 {
                     try
                     {
@@ -1805,7 +1815,7 @@ namespace IPC.EdgeGateway
 
         private void DispatchActions(EdgeRuleRuntimeEvent ruleEvent, IList<EdgeRuleActionConfig> actions, int delaySeconds)
         {
-            List<EdgeRuleActionConfig> actionCopies = CloneActions(actions);
+            List<EdgeRuleActionConfig> actionCopies = CloneActions(actions, ruleEvent.EventType == "value");
             if (actionCopies.Count == 0)
                 return;
 
@@ -1816,7 +1826,8 @@ namespace IPC.EdgeGateway
                     if (IsActionEventCurrent(eventCopy))
                         ExecuteActions(eventCopy, actionCopies);
                 },
-                TimeSpan.FromSeconds(Math.Min(3600, Math.Max(0, delaySeconds))));
+                TimeSpan.FromSeconds(Math.Min(3600, Math.Max(0, delaySeconds))),
+                ruleEvent.EventType == "value" ? ruleEvent.RuleId : null);
             if (!queued)
                 RecordActionQueueFailure(ruleEvent);
         }
@@ -1846,10 +1857,13 @@ namespace IPC.EdgeGateway
                 GroupId = tag.GroupId, GroupName = tag.GroupName, TagId = tag.TagId, TagName = tag.TagName,
                 EventType = clear ? "recovery" : "alarm",
                 PreviousState = clear ? source.State : FirstText(previousState ?? string.Empty, "Normal"),
-                State = clear ? "Normal" : source.State, Message = message.Message,
+                State = clear ? "Normal" : source.State,
+                PreviousStateText = RuleMessageText.Label(clear ? source.State : FirstText(previousState ?? string.Empty, "Normal"), source.MessageEnglish),
+                StateText = RuleMessageText.Label(clear ? "Normal" : source.State, source.MessageEnglish),
+                Message = BuildMqttMessageText(message, template),
                 Value = double.IsFinite(source.Value) ? source.Value : null,
                 Threshold = double.IsFinite(source.Threshold) ? source.Threshold : null,
-                Topic = message.Topic, Payload = BuildPayload(message, compactMqtt: true), Qos = ClampQos(action.Qos),
+                Topic = message.Topic, Payload = BuildPayload(message, compactMqtt: true, messageTemplate: template), Qos = ClampQos(action.Qos),
                 NotBeforeUtc = publish && delaySeconds > 0 ? occurredUtc.AddSeconds(Math.Min(3600, delaySeconds)) : null
             }, publish);
         }
@@ -1926,7 +1940,8 @@ namespace IPC.EdgeGateway
             string topic = BuildActionTopic(action, ruleEvent);
             if (string.IsNullOrWhiteSpace(topic))
                 topic = ruleEvent.Topic;
-            if (!_mqttPublisher(topic, BuildPayload(ruleEvent, compactMqtt: true), ClampQos(action.Qos)))
+            string template = ruleEvent.EventType == "clear" ? action.ClearMessage : action.ActiveMessage;
+            if (!_mqttPublisher(topic, BuildPayload(ruleEvent, compactMqtt: true, messageTemplate: template), ClampQos(action.Qos)))
                 throw new InvalidOperationException("MQTT publisher rejected the rule action.");
         }
 
@@ -2158,7 +2173,7 @@ namespace IPC.EdgeGateway
             return topic.Trim('/');
         }
 
-        private string RenderActionTemplate(string template, EdgeRuleRuntimeEvent ruleEvent, bool jsonEscapeStrings = false)
+        private string RenderActionTemplate(string template, EdgeRuleRuntimeEvent ruleEvent, bool jsonEscapeStrings = false, bool? english = null)
         {
             if (ruleEvent == null)
                 return NullToEmpty(template);
@@ -2166,17 +2181,18 @@ namespace IPC.EdgeGateway
             TagValueSnapshot snapshot = ruleEvent.Snapshot;
             string text = NullToEmpty(template);
             Func<string, string> formatString = value => jsonEscapeStrings ? JsonEscape(NullToEmpty(value)) : NullToEmpty(value);
+            string Label(string value) => english.HasValue ? RuleMessageText.Label(value, english.Value) : value;
             return text
                 .Replace("{gatewayId}", formatString(_gatewayOptions.GatewayId))
                 .Replace("{gatewayName}", formatString(_gatewayOptions.GatewayName))
                 .Replace("{siteName}", formatString(_gatewayOptions.SiteName))
                 .Replace("{ruleId}", formatString(ruleEvent.RuleId))
                 .Replace("{ruleName}", formatString(ruleEvent.RuleName))
-                .Replace("{conditionType}", formatString(ruleEvent.ConditionType.ToString()))
-                .Replace("{eventType}", formatString(ruleEvent.EventType))
-                .Replace("{state}", formatString(ruleEvent.State))
-                .Replace("{message}", formatString(ruleEvent.Message))
-                .Replace("{severity}", formatString(ruleEvent.Severity))
+                .Replace("{conditionType}", formatString(Label(ruleEvent.ConditionType.ToString())))
+                .Replace("{eventType}", formatString(Label(ruleEvent.EventType)))
+                .Replace("{state}", formatString(Label(ruleEvent.State)))
+                .Replace("{message}", formatString(english.HasValue ? RuleMessageText.Message(ruleEvent.Message, english.Value) : ruleEvent.Message))
+                .Replace("{severity}", formatString(Label(ruleEvent.Severity)))
                 .Replace("{eventId}", formatString(ruleEvent.EventId))
                 .Replace("{payload}", NullToEmpty(ruleEvent.Payload))
                 .Replace("{topic}", formatString(ruleEvent.Topic))
@@ -2193,7 +2209,7 @@ namespace IPC.EdgeGateway
                 .Replace("{tagId}", snapshot == null ? string.Empty : formatString(snapshot.TagId))
                 .Replace("{tag}", snapshot == null ? string.Empty : formatString(snapshot.TagName))
                 .Replace("{unit}", snapshot == null ? string.Empty : formatString(snapshot.Unit))
-                .Replace("{quality}", snapshot == null ? string.Empty : formatString(snapshot.Quality.ToString()))
+                .Replace("{quality}", snapshot == null ? string.Empty : formatString(Label(snapshot.Quality.ToString())))
                 .Replace("{assetPath}", snapshot == null ? string.Empty : formatString(snapshot.AssetPath))
                 .Replace("{businessType}", snapshot == null ? string.Empty : formatString(snapshot.BusinessType));
         }
@@ -2214,7 +2230,7 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private static List<EdgeRuleActionConfig> CloneActions(IList<EdgeRuleActionConfig>? source)
+        private static List<EdgeRuleActionConfig> CloneActions(IList<EdgeRuleActionConfig>? source, bool valueOutput = false)
         {
             List<EdgeRuleActionConfig> target = new List<EdgeRuleActionConfig>();
             if (source == null)
@@ -2223,7 +2239,7 @@ namespace IPC.EdgeGateway
             for (int i = 0; i < source.Count; i++)
             {
                 // Alarm outputs were durably recorded at the transition, before state can change again.
-                if (IsAlarmOutput(source[i])) continue;
+                if (!valueOutput && IsAlarmOutput(source[i])) continue;
                 EdgeRuleActionConfig? action = CloneAction(source[i]);
                 if (action != null)
                     target.Add(action);
@@ -2289,19 +2305,19 @@ namespace IPC.EdgeGateway
             {
                 if (string.Equals(ruleEvent.EventType, "clear", StringComparison.OrdinalIgnoreCase))
                     _clearedCount++;
-                else
+                else if (ruleEvent.EventType != "value")
                     _triggeredCount++;
                 _lastEventTime = ruleEvent.Timestamp == DateTime.MinValue ? DateTime.Now : ruleEvent.Timestamp;
 
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(ruleEvent);
-                status.IsActive = !string.Equals(ruleEvent.EventType, "clear", StringComparison.OrdinalIgnoreCase);
+                status.IsActive = ruleEvent.EventType != "value" && !string.Equals(ruleEvent.EventType, "clear", StringComparison.OrdinalIgnoreCase);
                 status.ActiveState = status.IsActive ? ruleEvent.State : string.Empty;
                 if (status.IsActive)
                 {
                     status.TriggeredCount++;
                     status.LastTriggeredTime = _lastEventTime;
                 }
-                else
+                else if (ruleEvent.EventType != "value")
                 {
                     status.ClearedCount++;
                     status.LastClearedTime = _lastEventTime;
@@ -3247,9 +3263,12 @@ namespace IPC.EdgeGateway
             return topic.Trim('/');
         }
 
-        private string BuildPayload(EdgeRuleRuntimeEvent ruleEvent, bool compactMqtt = false)
+        private string BuildPayload(EdgeRuleRuntimeEvent ruleEvent, bool compactMqtt = false, string? messageTemplate = null)
         {
             TagValueSnapshot snapshot = ruleEvent.Snapshot;
+            bool english = ruleEvent.MessageEnglish;
+            string Label(string value) => compactMqtt ? RuleMessageText.Label(value, english) : value;
+            string message = compactMqtt ? BuildMqttMessageText(ruleEvent, messageTemplate) : ruleEvent.Message;
             return "{" +
                    "\"messageType\":\"ruleEvent\"," +
                    "\"eventId\":\"" + JsonEscape(ruleEvent.EventId) + "\"," +
@@ -3261,11 +3280,11 @@ namespace IPC.EdgeGateway
                    "\"configVersion\":" + _gatewayOptions.ConfigVersion.ToString(CultureInfo.InvariantCulture) + "," +
                    "\"ruleId\":\"" + JsonEscape(ruleEvent.RuleId) + "\"," +
                    "\"ruleName\":\"" + JsonEscape(ruleEvent.RuleName) + "\"," +
-                   "\"conditionType\":\"" + JsonEscape(ruleEvent.ConditionType.ToString()) + "\"," +
-                   "\"state\":\"" + JsonEscape(ruleEvent.State) + "\"," +
+                   "\"conditionType\":\"" + JsonEscape(Label(ruleEvent.ConditionType.ToString())) + "\"," +
+                   "\"state\":\"" + JsonEscape(Label(ruleEvent.State)) + "\"," +
                    (compactMqtt ? string.Empty : "\"action\":\"" + JsonEscape(ruleEvent.EventType) + "\",") +
-                   "\"message\":\"" + JsonEscape(ruleEvent.Message) + "\"," +
-                   "\"severity\":\"" + JsonEscape(ruleEvent.Severity) + "\"," +
+                   "\"message\":\"" + JsonEscape(message) + "\"," +
+                   "\"severity\":\"" + JsonEscape(Label(ruleEvent.Severity)) + "\"," +
                    "\"value\":" + FormatJsonValue(ruleEvent.Value) + "," +
                    "\"threshold\":" + FormatJsonValue(ruleEvent.Threshold) + "," +
                    "\"channelId\":\"" + JsonEscape(snapshot.ChannelId) + "\"," +
@@ -3285,6 +3304,13 @@ namespace IPC.EdgeGateway
                    "\"timestamp\":\"" + JsonEscape(ruleEvent.Timestamp.ToString("o")) + "\"," +
                    "\"sourceValues\":" + BuildSourceValuesPayload(ruleEvent.SourceValues, compactMqtt) +
                    "}";
+        }
+
+        private string BuildMqttMessageText(EdgeRuleRuntimeEvent ruleEvent, string? messageTemplate)
+        {
+            string template = FirstText(messageTemplate ?? string.Empty, ruleEvent.MqttMessageTemplate);
+            return string.IsNullOrWhiteSpace(template) ? RuleMessageText.Message(ruleEvent.Message, ruleEvent.MessageEnglish)
+                : RenderActionTemplate(template, ruleEvent, english: ruleEvent.MessageEnglish);
         }
 
         private static string BuildSourceValuesPayload(IList<EdgeRuleRuntimeSourceValue> sourceValues, bool compactMqtt)
@@ -3380,6 +3406,8 @@ namespace IPC.EdgeGateway
                 EventType = source.EventType,
                 State = source.State,
                 Message = source.Message,
+                MqttMessageTemplate = source.MqttMessageTemplate,
+                MessageEnglish = source.MessageEnglish,
                 Severity = source.Severity,
                 Topic = source.Topic,
                 Payload = source.Payload,
@@ -3504,6 +3532,8 @@ namespace IPC.EdgeGateway
         
         private sealed class EdgeRuleState
         {
+            public DateTime LastValuePipelineTimestamp { get; set; }
+            public Dictionary<string, List<FlowRuleWindowSampleState>> ValueWindows { get; set; } = new();
             public NoChangeTimeoutTracker? NoChangeTracker { get; set; }
             public bool NoChangeClearRequested { get; set; }
             public EdgeRuleState()

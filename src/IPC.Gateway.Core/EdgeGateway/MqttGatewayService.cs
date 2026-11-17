@@ -251,7 +251,8 @@ namespace IPC.EdgeGateway
                 _tagValueWorker.Start();
 
                 _runtime.TagValueChanged -= OnRuntimeTagValueChanged;
-                _runtime.TagValueChanged += OnRuntimeTagValueChanged;
+                _runtime.TagValueSampled -= OnRuntimeTagValueChanged;
+                _runtime.TagValueSampled += OnRuntimeTagValueChanged;
                 _status.IsRunning = true;
                 _status.Enabled = true;
                 ApplyIdentityStatus(_status);
@@ -275,7 +276,10 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
                 if (_workerThread == null) return;
             if (_runtime != null)
+            {
                 _runtime.TagValueChanged -= OnRuntimeTagValueChanged;
+                _runtime.TagValueSampled -= OnRuntimeTagValueChanged;
+            }
             _tagValueWorker.Stop(TimeSpan.FromSeconds(3));
 
             TryQueueSparkplugDeath();
@@ -1226,10 +1230,12 @@ namespace IPC.EdgeGateway
 
         internal static (string Topic, string Payload) BuildAlarmMessage(MqttGatewayOptions options,
             TagValueSnapshot snapshot, string eventId, string eventType, string state, string direction,
-            double value, double threshold, string message, string transition, string previousState = "")
+            double value, double threshold, string message, string transition, string previousState = "", bool english = false)
         {
             string suffix = eventType == "warning" ? "warning" : "alarm";
-            var alarm = new AlarmPayload(eventId, eventType, state, direction, value, threshold, message, transition, previousState);
+            var alarm = new AlarmPayload(eventId, eventType, RuleMessageText.Label(state, english),
+                RuleMessageText.Label(direction, english), value, threshold, RuleMessageText.Message(message, english),
+                transition, RuleMessageText.Label(previousState, english));
             return (BuildPublishTopic(options, snapshot) + "/" + suffix, BuildPointPayload(options, snapshot, alarm));
         }
 

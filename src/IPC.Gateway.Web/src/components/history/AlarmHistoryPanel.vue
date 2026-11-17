@@ -36,7 +36,7 @@
           <template v-else-if="column.key === 'path'">{{ path(record) }}</template>
           <template v-else-if="column.key === 'state'">{{ transition(record) }}</template>
           <template v-else-if="column.key === 'deliveryStatus'">{{ label(record.deliveryStatus) }}</template>
-          <template v-else-if="column.key === 'message'">{{ tx(record.message) || '—' }}</template>
+          <template v-else-if="column.key === 'message'">{{ record.message || '—' }}</template>
           <template v-else-if="column.key === 'value' || column.key === 'threshold'">{{ record[column.key] ?? '—' }}</template>
         </template>
         <template #emptyText>
@@ -55,7 +55,7 @@ import { DownloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { exportAlarmHistory, loadAlarmHistoryPage, type AlarmHistoryPage, type AlarmHistoryQuery, type AlarmHistoryRow,
   type HistoryOptionLevel, type HistoryRecordFilters, type HistoryRecordOption } from '../../api'
 import { locale, tx } from '../../i18n'
-import { qualityText, statusText } from '../../utils/display'
+import { ruleStateText } from '../../i18n/ruleText'
 import { PERMISSIONS, usePermissions } from '../../utils/permissions'
 import { localExportFileName, saveExcelAs } from '../../utils/excelSave'
 import AutoHeightTable from '../AutoHeightTable.vue'
@@ -107,15 +107,8 @@ const columns = computed(() => [
   { title: tx('消息'), key: 'message', width: 230 },
   { title: tx('发送状态'), key: 'deliveryStatus', width: 120 },
 ])
-const labels: Record<string, string> = {
-  Normal: '正常', HighAlarm: '高限报警', LowAlarm: '低限报警', HighWarning: '高限预警', LowWarning: '低限预警',
-  Pending: '待发送', Sent: '已发送', Local: '仅本地记录',
-  alarm: '报警', warning: '预警', recovery: '恢复', active: '触发', clear: '恢复', High: '高限', Low: '低限',
-  Deadband: '死区', RateOfChange: '变化率', QualityGate: '质量门控', Expression: '表达式', Sequence: '顺序/时序',
-}
 function label(code: string) {
-  if (code?.startsWith('Quality:')) return tx(qualityText(code.slice(8)))
-  return tx(labels[code] || labels[code?.toLowerCase()] || statusText(code, '—'))
+  return ruleStateText(code, locale.value)
 }
 function path(record: AlarmHistoryRow) {
   const tagPath = [record.channelName, record.deviceName, record.groupName, record.tagName || record.tagId].filter(Boolean).join('.')
@@ -123,8 +116,8 @@ function path(record: AlarmHistoryRow) {
 }
 function transition(record: AlarmHistoryRow) {
   return record.previousState && record.state
-    ? `${label(record.previousState)} → ${label(record.state)}`
-    : label(record.state || record.eventType)
+    ? `${record.previousState} → ${record.state}`
+    : record.state || record.eventType || '—'
 }
 function cancelRequests() {
   queryController?.abort()

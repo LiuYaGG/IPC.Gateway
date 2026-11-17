@@ -8,6 +8,8 @@ namespace IPC.EdgeGateway
     {
         private readonly object _syncRoot = new object();
         private readonly PriorityQueue<WorkItem, long> _queue = new PriorityQueue<WorkItem, long>();
+        private readonly Dictionary<string, Queue<WorkItem>> _ordered = new(StringComparer.Ordinal);
+        private int _pendingCount;
         private readonly Thread[] _workers;
         private readonly int _capacity;
         private readonly Action<Exception>? _errorHandler;
@@ -38,7 +40,7 @@ namespace IPC.EdgeGateway
             get
             {
                 lock (_syncRoot)
-                    return _queue.Count;
+                    return _pendingCount;
             }
         }
 
@@ -51,7 +53,7 @@ namespace IPC.EdgeGateway
             }
         }
 
-        public bool TryEnqueue(Action action, TimeSpan delay)
+        public bool TryEnqueue(Action action, TimeSpan delay, string? orderingKey = null)
         {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
@@ -61,13 +63,24 @@ namespace IPC.EdgeGateway
             {
                 if (_stopping || _disposed)
                     return false;
-                if (_queue.Count >= _capacity)
+                if (_pendingCount >= _capacity)
                 {
                     _droppedCount++;
                     return false;
                 }
 
-                _queue.Enqueue(new WorkItem(action, dueUtc), dueUtc.Ticks);
+                var item = new WorkItem(action, dueUtc, orderingKey);
+                _pendingCount++;
+                if (string.IsNullOrEmpty(orderingKey)) _queue.Enqueue(item, dueUtc.Ticks);
+                else
+                {
+                    if (!_ordered.TryGetValue(orderingKey, out var ordered))
+                    {
+                        _ordered[orderingKey] = ordered = new Queue<WorkItem>();
+                        _queue.Enqueue(item, dueUtc.Ticks);
+                    }
+                    ordered.Enqueue(item);
+                }
                 Monitor.PulseAll(_syncRoot);
                 return true;
             }
@@ -78,6 +91,8 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
             {
                 _queue.Clear();
+                _ordered.Clear();
+                _pendingCount = 0;
                 Monitor.PulseAll(_syncRoot);
             }
         }
@@ -88,6 +103,8 @@ namespace IPC.EdgeGateway
             {
                 _stopping = true;
                 _queue.Clear();
+                _ordered.Clear();
+                _pendingCount = 0;
                 Monitor.PulseAll(_syncRoot);
             }
 
@@ -138,6 +155,7 @@ namespace IPC.EdgeGateway
                         }
 
                         workItem = _queue.Dequeue();
+                        _pendingCount--;
                         Monitor.PulseAll(_syncRoot);
                         break;
                     }
@@ -154,19 +172,35 @@ namespace IPC.EdgeGateway
                 {
                     _errorHandler?.Invoke(ex);
                 }
+                finally
+                {
+                    lock (_syncRoot)
+                    {
+                        if (workItem?.OrderingKey is { Length: > 0 } key &&
+                            _ordered.TryGetValue(key, out var ordered) && ReferenceEquals(ordered.Peek(), workItem))
+                        {
+                            ordered.Dequeue();
+                            if (ordered.Count == 0) _ordered.Remove(key);
+                            else _queue.Enqueue(ordered.Peek(), ordered.Peek().DueUtc.Ticks);
+                            Monitor.PulseAll(_syncRoot);
+                        }
+                    }
+                }
             }
         }
 
         private sealed class WorkItem
         {
-            public WorkItem(Action action, DateTime dueUtc)
+            public WorkItem(Action action, DateTime dueUtc, string? orderingKey)
             {
                 Action = action;
                 DueUtc = dueUtc;
+                OrderingKey = orderingKey;
             }
 
             public Action Action { get; }
             public DateTime DueUtc { get; }
+            public string? OrderingKey { get; }
         }
     }
 }

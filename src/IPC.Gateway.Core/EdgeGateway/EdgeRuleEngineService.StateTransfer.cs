@@ -108,13 +108,15 @@ namespace IPC.EdgeGateway
 
         private static string BuildRuleFingerprint(EdgeRuleConfig rule)
         {
-            return JsonSerializer.Serialize(rule);
+            return JsonSerializer.Serialize(rule) + (rule.ValuePipeline.Count == 0 ? string.Empty : JsonSerializer.Serialize(rule.ValuePipeline));
         }
 
         private static FlowRuleRuntimeStateEntry ToRuntimeState(string ruleId, string fingerprint, EdgeRuleState state)
         {
             FlowRuleRuntimeStateEntry result = new FlowRuleRuntimeStateEntry
             {
+                LastValuePipelineTimestamp = state.LastValuePipelineTimestamp,
+                ValueWindows = CloneValueWindows(state.ValueWindows),
                 RuleId = ruleId,
                 NoChangeTracker = state.NoChangeTracker?.Clone(),
                 NoChangeClearRequested = state.NoChangeClearRequested,
@@ -163,6 +165,8 @@ namespace IPC.EdgeGateway
         {
             EdgeRuleState state = new EdgeRuleState
             {
+                LastValuePipelineTimestamp = source.LastValuePipelineTimestamp,
+                ValueWindows = CloneValueWindows(source.ValueWindows),
                 NoChangeTracker = source.NoChangeTracker?.Clone(),
                 NoChangeClearRequested = source.NoChangeClearRequested,
                 ActiveState = source.ActiveState ?? string.Empty,

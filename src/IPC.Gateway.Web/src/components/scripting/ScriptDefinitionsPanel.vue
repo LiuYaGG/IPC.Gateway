@@ -131,7 +131,7 @@
               />
             </a-form-item>
             <a-form-item :label="tx('触发点位')">
-              <gateway-select v-model="form.triggerTagPath" searchable style="width: 100%" mode="tags">
+              <gateway-select v-model="form.triggerTagPath" searchable style="width: 100%">
                 <a-select-option
                   v-for="option in filteredTagOptions"
                   :key="option.value"
@@ -211,7 +211,7 @@
                 </gateway-select>
               </a-form-item>
               <a-form-item v-if="form.valueTransformScope !== 'TagCleaning'" :label="tx('规则节点分类')">
-                <gateway-select v-model="form.nodeCategory" searchable style="width: 100%" mode="tags">
+                <gateway-select v-model="form.nodeCategory" searchable style="width: 100%">
                   <a-select-option
                     v-for="category in nodeCategories"
                     :key="category"
@@ -653,15 +653,19 @@ function handleScriptTypeChange(scriptType: GatewayScriptType) {
   width: 100%;
 }
 :global(.script-editor-dialog.ant-modal) {
-  height: min(820px, calc(100dvh - 32px));
+  top: 0;
+  height: auto;
+  max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   margin: 0;
+  padding-bottom: 0;
 }
 :global(.script-editor-dialog.ant-modal .ant-modal-content) {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 100%;
+  height: auto;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   min-height: 0;
   padding: 0;
   overflow: hidden;

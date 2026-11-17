@@ -251,7 +251,7 @@
           type="error"
           :closable="false"
           class="flow-errors"
-          :message="tx(errors.join('；'))"
+          :message="errors.map(error => tx(error)).join(locale === 'zh-CN' ? '；' : '; ')"
         />
       </template>
       <template #footer>
@@ -267,7 +267,7 @@
 <script setup lang="ts">
 import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
-import { tx, localizeColumns } from '../i18n'
+import { tx, locale, localizeColumns } from '../i18n'
 import { statusText } from '../utils/display'
 import { tagColor, confirmAction } from '../utils/ui'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
@@ -410,7 +410,7 @@ const debugNodeIds = computed(() => {
   for (const node of form.value.nodes) {
     if (node.nodeType.toLowerCase() === conditionType) ids.add(node.id)
     if (isConditionLikeNode(node) && status?.isActive) ids.add(node.id)
-    if (isActionNode(node) && (status?.isActive || recent?.eventType === 'active')) ids.add(node.id)
+    if (isActionNode(node) && (status?.isActive || recent?.eventType === 'active' || recent?.eventType === 'value')) ids.add(node.id)
   }
   return Array.from(ids)
 })
@@ -781,7 +781,6 @@ function isConditionLikeNode(node: FlowRuleNode) {
     'Expression',
     'QualityGate',
     'SlidingWindow',
-    'WindowCalculation',
     'Aggregation',
     'Trend',
     'NoChangeTimeout',

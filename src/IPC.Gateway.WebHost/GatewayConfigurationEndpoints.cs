@@ -16,6 +16,7 @@
 *******************************************************************
 //----------------------------------------------------------------*/
 using IPC.Gateway.Core.Application.Gateway;
+using IPC.EdgeGateway;
 using IPC.Gateway.Core.Application.Gateway.Contracts;
 using IPC.Gateway.Core.Gateway;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,10 +30,19 @@ namespace IPC.Gateway.WebHost;
 public static class GatewayConfigurationEndpoints
 {
     private const int RuntimeSnapshotTagBatchSize = 500;
+    public sealed record MessageLanguageRequest(string Locale);
 
     public static IEndpointRouteBuilder MapGatewayConfigurationEndpoints(this IEndpointRouteBuilder app)
     {
         RouteGroupBuilder group = app.MapGroup("/api/config");
+
+        app.MapGet("/api/preferences/message-language", (ClaimsPrincipal user, GatewayMessageLanguage language) =>
+            ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewMqtt, "当前用户没有查看 MQTT 状态权限。",
+                () => new { locale = language.Locale }));
+        app.MapPut("/api/preferences/message-language", async (HttpContext context, ClaimsPrincipal user,
+            GatewayMessageLanguage language, MessageLanguageRequest request) =>
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditMqtt, "当前用户没有保存 MQTT 配置权限。",
+                () => Task.FromResult(new { locale = language.SetLocale(request.Locale) })));
 
         group.MapGet("/status", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
             ExecuteReadAuthorized(user, CanViewRuntimeStatus, "当前用户没有查看运行状态权限。", () =>

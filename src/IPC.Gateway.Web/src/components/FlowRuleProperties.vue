@@ -147,7 +147,9 @@
           <a-form-item :label="tx('最大样本数（0 为不限）')">
             <gateway-number-input v-model="node.windowSampleCount" :min="0" :controls="false" />
           </a-form-item>
-          <a-form-item :label="tx('运算符')">
+          <a-alert v-if="node.nodeType === 'WindowCalculation'" class="protocol-compatibility-notice" type="info" show-icon
+            :message="tx('输出窗口内的统计数值，后续函数的 {value}、条件比较和 MQTT 的 value 均使用计算结果。需要报警时，请在后面连接判断节点。')" />
+          <a-form-item v-if="node.nodeType === 'SlidingWindow'" :label="tx('运算符')">
             <gateway-select v-model="node.operator">
               <a-select-option label=">" value="GreaterThan">{{ '>' }}</a-select-option>
               <a-select-option label=">=" value="GreaterThanOrEqual">{{ '>=' }}</a-select-option>
@@ -157,7 +159,7 @@
               <a-select-option label="!=" value="NotEqual">{{ '!=' }}</a-select-option>
             </gateway-select>
           </a-form-item>
-          <a-form-item :label="tx('比较值')">
+          <a-form-item v-if="node.nodeType === 'SlidingWindow'" :label="tx('比较值')">
             <gateway-number-input v-model="node.compareValue" :controls="false" />
           </a-form-item>
         </template>
@@ -664,7 +666,6 @@ const needsTagSource = computed(
       'MultiLevelAlarm',
       'Expression',
       'SlidingWindow',
-      'WindowCalculation',
       'Aggregation',
       'Trend',
       'NoChangeTimeout',

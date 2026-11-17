@@ -59,6 +59,9 @@ namespace IPC.EdgeGateway
         public string EventType { get; set; }
         public string State { get; set; }
         public string Message { get; set; }
+        // Preserve the user template so MQTT can localize built-in tokens without rewriting literal text.
+        internal string MqttMessageTemplate { get; set; } = string.Empty;
+        internal bool MessageEnglish { get; set; }
         public string Severity { get; set; }
         public string Topic { get; set; }
         public string Payload { get; set; }

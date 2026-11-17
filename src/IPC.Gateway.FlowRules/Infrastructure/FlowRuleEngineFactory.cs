@@ -26,13 +26,15 @@ namespace IPC.Gateway.FlowRules;
 public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
 {
     private readonly IValueTransformScriptRuntime _valueTransformScripts;
+    private readonly GatewayMessageLanguage _messageLanguage;
 
     /// <summary>
     /// 创建携带值处理脚本运行时的规则引擎工厂。
     /// </summary>
-    public FlowRuleEngineFactory(IValueTransformScriptRuntime? valueTransformScripts = null)
+    public FlowRuleEngineFactory(IValueTransformScriptRuntime? valueTransformScripts = null, GatewayMessageLanguage? messageLanguage = null)
     {
         _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
+        _messageLanguage = messageLanguage ?? new GatewayMessageLanguage();
     }
 
     /// <summary>
@@ -55,6 +57,7 @@ public sealed class FlowRuleEngineFactory : IFlowRuleEngineFactory
             circuitBreakerOptions,
             modelInference,
             _valueTransformScripts,
-            recordAlarm);
+            recordAlarm,
+            _messageLanguage);
     }
 }

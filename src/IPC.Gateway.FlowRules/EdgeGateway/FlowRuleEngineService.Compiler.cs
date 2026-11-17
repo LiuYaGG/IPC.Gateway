@@ -57,6 +57,7 @@ namespace IPC.EdgeGateway
 
         private EdgeRuleConfig? FindCompiledProjectRule(FlowRuleDefinition? flowRule)
         {
+            if (flowRule?.Nodes.Any(n => IsNodeType(n, FlowRuleNodeTypes.WindowCalculation)) == true) return null;
             if (flowRule == null ||
                 !flowRule.Enabled ||
                 string.Equals(flowRule.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase) ||
@@ -90,6 +91,9 @@ namespace IPC.EdgeGateway
                 !flowRule.Enabled ||
                 string.Equals(flowRule.LifecycleState, FlowRuleLifecycleStates.Archived, StringComparison.OrdinalIgnoreCase))
                 return null;
+
+            if (flowRule.Nodes.Any(n => IsNodeType(n, FlowRuleNodeTypes.WindowCalculation)))
+                return FlowRuleCompiler.TryCompileWindowCalculation(flowRule, out var windowRule) ? windowRule : null;
 
             if (string.Equals(flowRule.Mode, FlowRuleModes.SimpleCompiled, StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(flowRule.CompiledRuleId))

@@ -42,6 +42,15 @@ public static class GatewayCoreServiceCollectionExtensions
         IpcLogService.ConfigureRetentionDays(auditOptions.RetentionDays);
         ConfigureProtocolDriverTrust(configuration);
 
+        services.AddSingleton(_ =>
+        {
+            string directory = CreateHistoryOptions(configuration).Directory.Replace('\\', Path.DirectorySeparatorChar);
+            string root = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(string.IsNullOrWhiteSpace(directory) ? Path.Combine("Data", "History") : directory,
+                    AppContext.BaseDirectory))) ?? AppContext.BaseDirectory;
+            return new GatewayMessageLanguage(Path.Combine(root, "mqtt-message-language.txt"));
+        });
+
         services.AddSingleton(sp => new GatewayCoreService(
             CreateRuntimeOptions(configuration, secretProtectionOptions),
             CreateMqttOptions(configuration),
@@ -50,7 +59,8 @@ public static class GatewayCoreServiceCollectionExtensions
             CreateStorageHealthThresholds(configuration),
             sp.GetService<IFlowRuleEngineFactory>(),
             sp.GetService<IModelInferenceService>(),
-            sp.GetService<IValueTransformScriptRuntime>()));
+            sp.GetService<IValueTransformScriptRuntime>(),
+            sp.GetRequiredService<GatewayMessageLanguage>()));
 
         services.AddSingleton<IGatewayProjectApplicationService, GatewayProjectApplicationService>();
         services.AddSingleton<IGatewayDeviceConfigurationApplicationService, GatewayDeviceConfigurationApplicationService>();

@@ -22,6 +22,8 @@ namespace IPC.EdgeGateway
 
     public sealed class FlowRuleRuntimeStateEntry
     {
+        internal DateTime LastValuePipelineTimestamp { get; set; }
+        internal Dictionary<string, List<FlowRuleWindowSampleState>> ValueWindows { get; set; } = new();
         internal NoChangeTimeoutTracker? NoChangeTracker { get; set; }
         internal bool NoChangeClearRequested { get; set; }
         public string RuleId { get; set; } = string.Empty;

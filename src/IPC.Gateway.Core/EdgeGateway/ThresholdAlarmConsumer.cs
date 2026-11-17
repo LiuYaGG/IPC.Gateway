@@ -11,6 +11,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
     private readonly RuntimeEngine _runtime;
     private readonly GatewayAlarmJournal _journal;
     private readonly Func<MqttGatewayOptions> _mqttOptions;
+    private readonly GatewayMessageLanguage _messageLanguage;
     private readonly object _gate = new();
     private readonly OverflowQueue<Transition> _queue = new(4096);
     private Dictionary<string, AlarmTagState> _states = new(StringComparer.Ordinal);
@@ -19,11 +20,12 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
     private Thread? _writer;
     private bool _stopping;
 
-    public ThresholdAlarmConsumer(RuntimeEngine runtime, GatewayAlarmJournal journal, Func<MqttGatewayOptions> mqttOptions)
+    public ThresholdAlarmConsumer(RuntimeEngine runtime, GatewayAlarmJournal journal, Func<MqttGatewayOptions> mqttOptions, GatewayMessageLanguage? messageLanguage = null)
     {
         _runtime = runtime;
         _journal = journal;
         _mqttOptions = mqttOptions;
+        _messageLanguage = messageLanguage ?? new GatewayMessageLanguage();
     }
 
     public void Start()
@@ -99,7 +101,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
             var transition = new Transition
             {
                 Key = key, Snapshot = snapshot, Previous = from, State = state, Value = value,
-                Threshold = threshold, Message = message, Route = GetPublishRoute(),
+                Threshold = threshold, Message = message, Route = GetPublishRoute(), English = _messageLanguage.English,
             };
             _queue.Enqueue(transition);
             if (state == "Normal") _states.Remove(key);
@@ -212,6 +214,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         public double Value { get; set; }
         public double Threshold { get; set; }
         public MqttGatewayOptions? Route { get; set; }
+        public bool English { get; set; }
 
         public GatewayAlarmRecord ToRecord()
         {
@@ -225,12 +228,14 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
                 ChannelId = s.ChannelId, ChannelName = s.ChannelName, DeviceId = s.DeviceId, DeviceName = s.DeviceName,
                 GroupId = s.GroupId, GroupName = s.GroupName, TagId = s.TagId, TagName = s.TagName,
                 PreviousState = Previous, State = State, EventType = clear ? "recovery" : severity,
-                Direction = active.StartsWith("High", StringComparison.Ordinal) ? "High" : "Low", Message = Message,
+                Direction = active.StartsWith("High", StringComparison.Ordinal) ? "High" : "Low",
+                PreviousStateText = RuleMessageText.Label(Previous, English), StateText = RuleMessageText.Label(State, English),
+                Message = RuleMessageText.Message(Message, English),
             };
             if (Route != null)
             {
                 (item.Topic, item.Payload) = MqttGatewayService.BuildAlarmMessage(Route, s, EventId, severity,
-                    State, item.Direction, Value, Threshold, Message, clear ? "clear" : "active", Previous);
+                    State, item.Direction, Value, Threshold, Message, clear ? "clear" : "active", Previous, English);
                 item.DeliveryStatus = "Pending";
                 item.Qos = Route.PublishQos;
             }

@@ -31,6 +31,8 @@ namespace IPC.Runtime.Configuration
     
     public sealed class EdgeRuleConfig
     {
+        // Derived from persisted flow nodes when the engine starts; never stored as a second configuration.
+        internal IReadOnlyList<FlowRuleNode> ValuePipeline { get; set; } = Array.Empty<FlowRuleNode>();
         public EdgeRuleConfig()
         {
             Id = Guid.NewGuid().ToString("N");

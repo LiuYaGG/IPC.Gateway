@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Localization/rule-text.json" LogicalName="IPC.Gateway.RuleText.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\IPC.Gateway.DataProcessing\IPC.Gateway.DataProcessing.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Mqtt\IPC.Gateway.Mqtt.csproj" />
   </ItemGroup>

@@ -28,7 +28,7 @@ namespace IPC.EdgeGateway
                 if (string.Equals(ruleEvent.EventType, "clear", StringComparison.OrdinalIgnoreCase))
                     return string.IsNullOrWhiteSpace(state.ActiveState);
 
-                if (ruleEvent.ConditionType == IPC.Runtime.Configuration.EdgeRuleConditionType.Deadband ||
+                if (ruleEvent.EventType == "value" || ruleEvent.ConditionType == IPC.Runtime.Configuration.EdgeRuleConditionType.Deadband ||
                     ruleEvent.ConditionType == IPC.Runtime.Configuration.EdgeRuleConditionType.Sequence)
                 {
                     return true;

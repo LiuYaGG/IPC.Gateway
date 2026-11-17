@@ -44,6 +44,7 @@ const statusLabels: Record<string, string> = {
   timeout: "超时",
   timedout: "超时",
   nochangetimeout: "连续无变化超时",
+  windowcalculation: "窗口计算",
   canceled: "已取消",
   cancelled: "已取消",
   completed: "已完成",
