@@ -772,7 +772,7 @@ namespace IPC.Plc.Communication.OmronFins
 
         private static FinsErrorScope GetEndCodeScope(ushort endCode)
         {
-            if (endCode == 0x0401)
+            if (endCode == 0x0401 || endCode == 0x0402)
                 return FinsErrorScope.Tag;
             int mainCode = endCode >> 8;
             if (mainCode >= 0x01 && mainCode <= 0x05)
@@ -975,6 +975,8 @@ namespace IPC.Plc.Communication.OmronFins
                     return "Unit missing";
                 case 0x0401:
                     return "Undefined command";
+                case 0x0402:
+                    return "Not supported by model/version";
                 case 0x1001:
                     return "Command too large";
                 case 0x1002:

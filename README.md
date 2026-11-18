@@ -1,5 +1,9 @@
 **在线演示：[IPC Gateway 演示系统](https://liuyagg.github.io/IPC-Gateway-Demo/)**（使用模拟数据，无需连接 PLC）
 
+**项目交流：Q 2673904969。
+
+**教程请关注微信公众号：.NET开源码农
+
 # IPC Gateway 工业边缘网关
 
 IPC Gateway 面向制造业现场，连接 PLC、仪表和上位系统，将设备采集、数据处理、规则与脚本、MQTT/OPC UA 服务、历史记录及运维管理集中到一个 Web 系统中。
@@ -121,8 +125,6 @@ dotnet run --project src/IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj
 访问地址以 WebHost 输出为准，常用地址为 `http://localhost:5184`。前端热更新开发在 `src/IPC.Gateway.Web` 执行 `npm run dev`，默认端口 5173。
 首次管理员账号和生产密钥需要通过现场配置提供；仓库不提供可通用于生产部署的固定密码。
 
-
-
 ## 数据库加密
 
 当前系统支持json中密文展示数据库密码，数据库密码加密方式如下
@@ -174,7 +176,5 @@ Windows 上打包示例：
 ## 开发文档
 
 从 [文档导航](docs/文档导航.md) 查看全部中文资料。开发前阅读 [开发指南](docs/开发指南.md)，发布前阅读 [生产配置基线](docs/生产配置基线.md) 和 [发布验收清单](docs/发布验收清单.md)。
-
-项目交流：Q 2673904969。
 
 已将json文件优化为protobuf文件，实测1500点位空间占用率降低75%。

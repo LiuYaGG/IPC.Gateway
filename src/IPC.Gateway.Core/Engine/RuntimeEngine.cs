@@ -2148,6 +2148,13 @@ namespace IPC.Runtime.Engine
             }
             if (connectionFailure)
             {
+                // Batch reads must use the same UDP timeout debounce as single reads.
+                // The per-tag failure pass above deliberately keeps the connection;
+                // register one device-level timeout here instead of once per tag.
+                if (LooksLikeTimeoutMessage(connectionError) &&
+                    TryRegisterTransientUdpTimeout(state, connectionError))
+                    return false;
+
                 state.ProtocolCircuitBreaker.RecordFailure(connectionError);
                 await DropDeviceConnectionAsync(state, connectionError, cancellationToken).ConfigureAwait(false);
                 return false;
@@ -2438,13 +2445,20 @@ namespace IPC.Runtime.Engine
             DeviceConfig device = deviceState.Config;
             sourceTimestampUtc = deviceTimestampUtc ?? sourceTimestampUtc;
             string message = errorMessage ?? string.Empty;
+            // UDP has no persistent connection state. A transport failure therefore
+            // makes the affected tag NotConnected immediately, independently of the
+            // device-level timeout debounce and subsequent recovery probes.
+            TagQuality failureQuality = isCommunicationError &&
+                                        (IsUdpTransport(deviceState) || deviceState.IsIsolated)
+                ? TagQuality.NotConnected
+                : TagQuality.ReadError;
             CompiledTagRead compiledRead = readDefinition ?? deviceState.ReadPlan.Get(tag);
             lock (_syncRoot)
             {
                 if (runtimeGeneration != 0 && !IsCurrentGeneration(runtimeGeneration)) return true;
                 if (sourceTimestampUtc.HasValue)
                 {
-                    TagValueSnapshot historical = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
+                    TagValueSnapshot historical = CreateSnapshot(device, group, tag, failureQuality, message);
                     historical.Timestamp = sourceTimestampUtc.Value.ToLocalTime();
                     historical.LastReadError = message;
                     if (deviceTimestampUtc.HasValue ? deviceTimestampUtc.Value < compiledRead.Runtime.LastSourceTimestampUtc : IsOlderThanCurrentSnapshot(historical))
@@ -2467,7 +2481,7 @@ namespace IPC.Runtime.Engine
                     deviceState.SubscriptionFingerprint = string.Empty;
                     deviceState.NextPollUtc = DateTime.MinValue;
                 }
-                TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, TagQuality.ReadError, message);
+                TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, failureQuality, message);
                 if (sourceTimestampUtc.HasValue) failureSnapshot.Timestamp = sourceTimestampUtc.Value.ToLocalTime();
                 failureSnapshot.LastReadError = message;
                 ApplyTagRuntimeState(failureSnapshot, compiledRead.Runtime);
@@ -2518,9 +2532,13 @@ namespace IPC.Runtime.Engine
 
         private static void ApplyTagRuntimeState(TagValueSnapshot snapshot, TagRuntimeState runtime)
         {
-            snapshot.TagState = runtime.IsIsolated ? "Isolated" : "Active";
-            snapshot.IsTagIsolated = runtime.IsIsolated;
-            snapshot.IsStaticValidationError = runtime.IsStaticIsolation;
+            // Loss of device communication is the primary tag state. Keep the
+            // internal isolation cursor for recovery, but do not display a stale
+            // tag/static isolation state while the device is NotConnected.
+            bool notConnected = snapshot.Quality == TagQuality.NotConnected;
+            snapshot.TagState = notConnected ? "NotConnected" : runtime.IsIsolated ? "Isolated" : "Active";
+            snapshot.IsTagIsolated = !notConnected && runtime.IsIsolated;
+            snapshot.IsStaticValidationError = !notConnected && runtime.IsStaticIsolation;
             snapshot.TagConsecutiveFailures = runtime.ConsecutiveFailures;
             snapshot.NextTagRecoveryProbeTime = runtime.NextRecoveryProbeUtc == DateTime.MinValue || runtime.NextRecoveryProbeUtc == DateTime.MaxValue
                 ? runtime.NextRecoveryProbeUtc

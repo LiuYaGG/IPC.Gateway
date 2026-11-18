@@ -335,50 +335,64 @@ namespace IPC.Plc.Communication.OmronFins
             List<FinsBatchReadItem> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
             FinsBatchReadContext context, PlcBatchReadResult[] results)
         {
-            context.Recovery.ReadRange(items, startIndex, endIndex, item => item.Request, item => item.Index,
-                (left, right) =>
+            try
+            {
+                FinsBatchReadItem first = items[startIndex];
+                int start = first.StartPoint;
+                int count = GetSegmentEnd(items, startIndex, endIndex) - start + 1;
+                if (first.Kind == FinsBatchReadKind.Bit)
                 {
-                    FinsBatchReadItem first = items[left];
-                    int start = first.StartPoint;
-                    int count = GetSegmentEnd(items, left, right) - start + 1;
-                    if (first.Kind == FinsBatchReadKind.Bit)
-                    {
-                        int word = first.Area.BitAddressUsesWordIndex ? start : start / 16;
-                        int bit = first.Area.BitAddressUsesWordIndex ? 0 : start % 16;
-                        byte[] data = context.ReadMemory(first.Area.BitCode, word, bit, count, Math.Max(1, context.MaxBitCount));
-                        for (int i = left; i < right; i++) results[items[i].Index] = DecodeBitResult(items[i], data, start);
-                    }
-                    else
-                    {
-                        byte[] data = context.ReadMemory(first.Area.WordCode, start, 0, count, Math.Max(1, context.MaxWordCount));
-                        for (int i = left; i < right; i++) results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
-                    }
-                }, results, items[startIndex].Area.Name + "|" + items[startIndex].AreaCode + "|" + items[startIndex].Kind);
+                    int word = first.Area.BitAddressUsesWordIndex ? start : start / 16;
+                    int bit = first.Area.BitAddressUsesWordIndex ? 0 : start % 16;
+                    byte[] data = context.ReadMemory(first.Area.BitCode, word, bit, count, Math.Max(1, context.MaxBitCount));
+                    for (int i = startIndex; i < endIndex; i++) results[items[i].Index] = DecodeBitResult(items[i], data, start);
+                }
+                else
+                {
+                    byte[] data = context.ReadMemory(first.Area.WordCode, start, 0, count, Math.Max(1, context.MaxWordCount));
+                    for (int i = startIndex; i < endIndex; i++) results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
+                }
+            }
+            catch (Exception error)
+            {
+                // Omron batch failures stay batched: do not recursively split a range into single-point reads.
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+                for (int i = startIndex; i < endIndex; i++)
+                    results[items[i].Index] ??= PlcBatchReadResult.FromFailure(items[i].Request, error.Message, scope);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope)) throw;
+            }
         }
 
         private static async ValueTask ExecuteSegmentAsync(
             List<FinsBatchReadItem> items, int startIndex, int endIndex, int segmentStart, int segmentEnd,
             FinsAsyncBatchReadContext context, PlcBatchReadResult[] results, CancellationToken cancellationToken)
         {
-            await context.Recovery.ReadRangeAsync(items, startIndex, endIndex, item => item.Request, item => item.Index,
-                async (left, right) =>
+            try
+            {
+                FinsBatchReadItem first = items[startIndex];
+                int start = first.StartPoint;
+                int count = GetSegmentEnd(items, startIndex, endIndex) - start + 1;
+                if (first.Kind == FinsBatchReadKind.Bit)
                 {
-                    FinsBatchReadItem first = items[left];
-                    int start = first.StartPoint;
-                    int count = GetSegmentEnd(items, left, right) - start + 1;
-                    if (first.Kind == FinsBatchReadKind.Bit)
-                    {
-                        int word = first.Area.BitAddressUsesWordIndex ? start : start / 16;
-                        int bit = first.Area.BitAddressUsesWordIndex ? 0 : start % 16;
-                        byte[] data = await context.ReadMemoryAsync(first.Area.BitCode, word, bit, count, Math.Max(1, context.MaxBitCount), cancellationToken).ConfigureAwait(false);
-                        for (int i = left; i < right; i++) results[items[i].Index] = DecodeBitResult(items[i], data, start);
-                    }
-                    else
-                    {
-                        byte[] data = await context.ReadMemoryAsync(first.Area.WordCode, start, 0, count, Math.Max(1, context.MaxWordCount), cancellationToken).ConfigureAwait(false);
-                        for (int i = left; i < right; i++) results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
-                    }
-                }, results, items[startIndex].Area.Name + "|" + items[startIndex].AreaCode + "|" + items[startIndex].Kind, cancellationToken).ConfigureAwait(false);
+                    int word = first.Area.BitAddressUsesWordIndex ? start : start / 16;
+                    int bit = first.Area.BitAddressUsesWordIndex ? 0 : start % 16;
+                    byte[] data = await context.ReadMemoryAsync(first.Area.BitCode, word, bit, count, Math.Max(1, context.MaxBitCount), cancellationToken).ConfigureAwait(false);
+                    for (int i = startIndex; i < endIndex; i++) results[items[i].Index] = DecodeBitResult(items[i], data, start);
+                }
+                else
+                {
+                    byte[] data = await context.ReadMemoryAsync(first.Area.WordCode, start, 0, count, Math.Max(1, context.MaxWordCount), cancellationToken).ConfigureAwait(false);
+                    for (int i = startIndex; i < endIndex; i++) results[items[i].Index] = DecodeWordResult(items[i], data, start, context);
+                }
+            }
+            catch (Exception error)
+            {
+                // Keep async Omron reads batched as well; never diagnose by issuing single-point reads.
+                PlcReadFailureScope scope = PlcFailureClassifier.Classify(error, PlcReadFailureScope.Batch);
+                for (int i = startIndex; i < endIndex; i++)
+                    results[items[i].Index] ??= PlcBatchReadResult.FromFailure(items[i].Request, error.Message, scope);
+                if (PlcBatchReadResult.IsConnectionFailureScope(scope)) throw;
+            }
         }
 
         private static int GetSegmentEnd(List<FinsBatchReadItem> items, int startIndex, int endIndex)

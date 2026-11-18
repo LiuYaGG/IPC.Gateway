@@ -13,8 +13,10 @@ namespace IPC.Plc.Communication.OmronFins
         public byte DestinationNode { get; private set; }
         public byte SourceUnit { get; private set; }
         public byte DestinationUnit { get; private set; }
-        public int MaxWordCount { get; private set; } = 240;
-        public int MaxBitCount { get; private set; } = 480;
+        // FINS 01 01/01 02 commands carry at most 999 items per request.
+        // These are protocol limits, not user-tunable device options.
+        public int MaxWordCount { get; } = 999;
+        public int MaxBitCount { get; } = 999;
         public int MaxSparseItems { get; private set; } = 120;
         public int MaxGapWords { get; private set; } = 4;
         public int MaxEmBank { get; private set; } = 0x18;
@@ -47,8 +49,6 @@ namespace IPC.Plc.Communication.OmronFins
                 options.DestinationNode = GetByte(root, "destinationNode", options.DestinationNode, 0, 254);
                 options.SourceUnit = GetByte(root, "sourceUnit", options.SourceUnit, 0, 254);
                 options.DestinationUnit = GetByte(root, "destinationUnit", options.DestinationUnit, 0, 254);
-                options.MaxWordCount = GetInt32(root, "maxWordCount", options.MaxWordCount, 1, 999);
-                options.MaxBitCount = GetInt32(root, "maxBitCount", options.MaxBitCount, 1, 1998);
                 options.MaxSparseItems = GetInt32(root, "maxSparseItems", options.MaxSparseItems, 1, 167);
                 options.MaxGapWords = GetInt32(root, "maxGapWords", options.MaxGapWords, 0, 64);
                 options.MaxEmBank = GetInt32(root, "maxEmBank", options.MaxEmBank, 0, 0x18);

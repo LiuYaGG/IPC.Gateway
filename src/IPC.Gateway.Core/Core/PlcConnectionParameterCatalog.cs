@@ -178,8 +178,6 @@ namespace IPC.Plc.Communication.Core
                         InGroup(Number("driverOptions.network", "目标网络号", "0", 0, 127, string.Empty), "FINS 路由"),
                         InGroup(Number("driverOptions.sourceUnit", "源单元号", "0", 0, 254, string.Empty), "FINS 路由"),
                         InGroup(Number("driverOptions.destinationUnit", "目标单元号", "0", 0, 254, string.Empty), "FINS 路由"),
-                        InGroup(Number("driverOptions.maxWordCount", "单次最大字数", "240", 1, 999, string.Empty), "批读优化"),
-                        InGroup(Number("driverOptions.maxBitCount", "单次最大位数", "480", 1, 1998, string.Empty), "批读优化"),
                         InGroup(Number("driverOptions.maxGapWords", "允许合并间隔", "4", 0, 64, "word"), "批读优化"),
                         InGroup(WithHelp(Number("driverOptions.maxEmBank", "最大 EM 银行（十进制）", "24", 0, 24, string.Empty), "24 对应 FINS 地址中的十六进制银行 E18。"), "地址能力"),
                         InGroup(Number("driverOptions.udpReadRetries", "UDP 读重试次数", "1", 0, 1, string.Empty), "UDP 可靠性")

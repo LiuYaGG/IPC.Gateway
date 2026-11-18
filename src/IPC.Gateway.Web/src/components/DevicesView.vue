@@ -1591,6 +1591,7 @@ function applyConnectionParameterDefault(
 
 function shouldApplyParameterDefault(currentValue: unknown, parameter: GatewayConnectionParameterDefinition) {
   if (currentValue === undefined || currentValue === null || currentValue === '') return true
+  if (typeof currentValue === 'number' && currentValue === 0 && (parameter.min ?? 1) <= 0) return false
   return typeof currentValue === 'number' && currentValue === 0 && parameter.defaultValue !== '0'
 }
 

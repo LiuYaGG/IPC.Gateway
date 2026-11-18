@@ -345,6 +345,7 @@ const currentPermissions = ref<string[]>([])
 const loginForm = reactive({ username: '', password: '' })
 const captchaRef = ref<InstanceType<typeof LoginCaptcha> | null>(null)
 let refreshController: AbortController | undefined
+let healthRefreshController: AbortController | undefined
 let closeStream: (() => void) | undefined
 let retryTimer: number | undefined
 let retries = 0
@@ -745,6 +746,22 @@ function replaceTags(tags: Map<string, TagValueSnapshot>) {
   for (const [key, tag] of tags) countQuality(key, tag, 1)
 }
 
+async function refreshRuntimeHealth() {
+  if (healthRefreshController || unmounted || document.hidden || startupState.value !== 'ready' || !authenticated.value ||
+    (!canAccessView('dashboard') && !canAccessView('bigScreen'))) return
+  const controller = new AbortController()
+  healthRefreshController = controller
+  try {
+    const data = await loadReadyHealth(controller.signal)
+    if (healthRefreshController === controller && !controller.signal.aborted && authenticated.value && startupState.value === 'ready')
+      health.value = data
+  } catch {
+    // Keep the last successful health snapshot during transient refresh failures.
+  } finally {
+    if (healthRefreshController === controller) healthRefreshController = undefined
+  }
+}
+
 function applyStreamChanges(changes: RuntimeChanges, full: boolean) {
   if (!sync.value) return
   if (full) {
@@ -764,6 +781,7 @@ function applyStreamChanges(changes: RuntimeChanges, full: boolean) {
   if (changes.status) {
     sync.value.status = { ...sync.value.status, ...changes.status, tags: [], devices: [] }
     pushTrend()
+    void refreshRuntimeHealth()
   }
   lastRefreshTime.value = new Date().toISOString()
 }
@@ -783,6 +801,8 @@ function scheduleReconnect() {
 function stopRuntimeEvents() {
   closeStream?.()
   closeStream = undefined
+  healthRefreshController?.abort()
+  healthRefreshController = undefined
   window.clearTimeout(retryTimer)
   retryTimer = undefined
 }
