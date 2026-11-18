@@ -13,6 +13,8 @@ public sealed class GatewayRuntimeHostedService(
     IHostApplicationLifetime lifetime,
     ILogger<GatewayRuntimeHostedService> logger) : BackgroundService
 {
+    private static readonly TimeSpan DatabaseRetryWindow = TimeSpan.FromMinutes(2);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // ApplicationStopping fires before Kestrel drains requests and the host calls StopAsync.
@@ -38,7 +40,7 @@ public sealed class GatewayRuntimeHostedService(
             }
             token.ThrowIfCancellationRequested();
             currentStage = "构建网关及数据库依赖";
-            gateway = GatewayStartupTiming.Measure(currentStage, services.GetRequiredService<IGatewayApplicationService>);
+            gateway = await ResolveGatewayAfterDatabaseReadyAsync(currentStage, token);
             if (services.GetRequiredService<GatewayObservabilityOptions>().MetricsEnabled)
             {
                 currentStage = "注册运行指标";
@@ -110,6 +112,45 @@ public sealed class GatewayRuntimeHostedService(
             {
                 try { gateway.Stop(); }
                 catch (Exception ex) { logger.LogError(ex, "Stopping gateway runtime failed."); }
+            }
+        }
+    }
+
+    private async Task<IGatewayApplicationService> ResolveGatewayAfterDatabaseReadyAsync(string stage, CancellationToken token)
+    {
+        long retryBegan = Stopwatch.GetTimestamp();
+        int failedAttempts = 0;
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                return GatewayStartupTiming.Measure(stage, services.GetRequiredService<IGatewayApplicationService>);
+            }
+            catch (Exception ex)
+            {
+                failedAttempts++;
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(retryBegan);
+                if (elapsed >= DatabaseRetryWindow)
+                    throw;
+
+                TimeSpan delay = failedAttempts switch
+                {
+                    1 => TimeSpan.FromSeconds(2),
+                    2 => TimeSpan.FromSeconds(5),
+                    3 => TimeSpan.FromSeconds(10),
+                    _ => TimeSpan.FromSeconds(15)
+                };
+                TimeSpan remaining = DatabaseRetryWindow - elapsed;
+                if (delay > remaining)
+                    delay = remaining;
+
+                logger.LogWarning(ex,
+                    "Gateway database initialization attempt {Attempt} failed; retrying in {DelayMs} ms.",
+                    failedAttempts, (long)delay.TotalMilliseconds);
+                GatewayStartupTiming.RecordDetail(stage,
+                    $"status=等待重试 attempt={failedAttempts} elapsedMs={(long)elapsed.TotalMilliseconds} nextDelayMs={(long)delay.TotalMilliseconds} errorType={ex.GetType().Name}");
+                await Task.Delay(delay, token);
             }
         }
     }
