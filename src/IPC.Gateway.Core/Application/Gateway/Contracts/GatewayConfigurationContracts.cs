@@ -1234,6 +1234,7 @@ public sealed class WriteTagCommand
     public string DeviceId { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
     public string TagId { get; set; } = string.Empty;
+    public string ChannelName { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public string TagName { get; set; } = string.Empty;

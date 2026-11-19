@@ -1360,6 +1360,7 @@ export interface WriteTagCommand {
   deviceId: string;
   groupId: string;
   tagId: string;
+  channelName?: string;
   deviceName: string;
   groupName: string;
   tagName: string;

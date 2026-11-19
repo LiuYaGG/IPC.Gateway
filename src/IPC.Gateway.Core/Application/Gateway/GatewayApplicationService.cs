@@ -239,6 +239,7 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
             DeviceId = command.DeviceId ?? string.Empty,
             GroupId = command.GroupId ?? string.Empty,
             TagId = command.TagId ?? string.Empty,
+            ChannelName = command.ChannelName ?? string.Empty,
             DeviceName = command.DeviceName ?? string.Empty,
             GroupName = command.GroupName ?? string.Empty,
             TagName = command.TagName ?? string.Empty,

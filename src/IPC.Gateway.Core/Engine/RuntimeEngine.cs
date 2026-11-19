@@ -1832,10 +1832,11 @@ namespace IPC.Runtime.Engine
             group = null;
             tag = null;
 
-            if (string.IsNullOrWhiteSpace(request.ChannelId) ||
-                string.IsNullOrWhiteSpace(request.DeviceId) ||
-                string.IsNullOrWhiteSpace(request.TagId))
-                return false;
+            bool hasIdPath = !string.IsNullOrWhiteSpace(request.ChannelId) &&
+                             !string.IsNullOrWhiteSpace(request.DeviceId) &&
+                             !string.IsNullOrWhiteSpace(request.TagId);
+            if (!hasIdPath)
+                return TryFindWritableTagByName(request, out device, out group, out tag);
 
             ProjectConfig? config;
             lock (_syncRoot)
@@ -1886,6 +1887,86 @@ namespace IPC.Runtime.Engine
             }
 
             return false;
+        }
+
+        private bool TryFindWritableTagByName(WriteTagRequest request, out DeviceConfig? device, out GroupConfig? group, out TagConfig? tag)
+        {
+            device = null;
+            group = null;
+            tag = null;
+            if (string.IsNullOrWhiteSpace(request.ChannelName) ||
+                string.IsNullOrWhiteSpace(request.DeviceName) ||
+                string.IsNullOrWhiteSpace(request.TagName))
+                return false;
+
+            ProjectConfig? config;
+            lock (_syncRoot)
+            {
+                config = _config;
+            }
+            if (config?.Channels == null || config.Devices == null)
+                return false;
+
+            ChannelConfig? matchedChannel = null;
+            foreach (ChannelConfig candidate in config.Channels)
+            {
+                if (candidate == null || !NamesEqual(candidate.Name, request.ChannelName))
+                    continue;
+                if (matchedChannel != null)
+                    return false;
+                matchedChannel = candidate;
+            }
+            if (matchedChannel == null)
+                return false;
+
+            foreach (DeviceConfig candidate in config.Devices)
+            {
+                if (candidate == null ||
+                    TagPath.Normalize(candidate.ChannelId) != TagPath.Normalize(matchedChannel.Id) ||
+                    !NamesEqual(candidate.Name, request.DeviceName))
+                    continue;
+                if (device != null)
+                    return false;
+                device = candidate;
+            }
+            if (device == null)
+                return false;
+
+            if (string.IsNullOrWhiteSpace(request.GroupName))
+                return TryFindTagByName(device.Tags, request.TagName, out tag);
+
+            foreach (GroupConfig candidate in device.Groups ?? new List<GroupConfig>())
+            {
+                if (candidate == null || !NamesEqual(candidate.Name, request.GroupName))
+                    continue;
+                if (group != null)
+                    return false;
+                group = candidate;
+            }
+
+            return group != null && TryFindTagByName(group.Tags, request.TagName, out tag);
+        }
+
+        private static bool TryFindTagByName(List<TagConfig>? tags, string name, out TagConfig? tag)
+        {
+            tag = null;
+            foreach (TagConfig candidate in tags ?? new List<TagConfig>())
+            {
+                if (candidate == null || !NamesEqual(candidate.Name, name))
+                    continue;
+                if (tag != null)
+                {
+                    tag = null;
+                    return false;
+                }
+                tag = candidate;
+            }
+            return tag != null;
+        }
+
+        private static bool NamesEqual(string? left, string? right)
+        {
+            return string.Equals((left ?? string.Empty).Trim(), (right ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static TagConfig? FindTagById(List<TagConfig>? tags, string normalizedTagId)
