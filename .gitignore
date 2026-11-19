@@ -35,6 +35,14 @@ artifacts/
 # Standalone local demonstration; never include in product commits.
 /演示/
 
+# Local tools, PLC simulators, and standalone assets
+/tools/
+/虚拟倍福plc/
+/虚拟欧姆龙plc/
+/IPC Gateway公众号封面.png
+/IPC Gateway公众号封面_仅英文.png
+/pelican-bicycle.html
+
 # Machine-local certificates, exports, and scratch files
 CertificateStores/
 outputs/

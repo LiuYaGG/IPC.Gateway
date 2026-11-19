@@ -1,6 +1,0 @@
-.packages/
-.dotnet-home/
-**/bin/
-**/obj/
-dist/
-*.zip
