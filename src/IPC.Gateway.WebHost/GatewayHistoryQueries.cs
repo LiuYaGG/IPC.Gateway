@@ -112,6 +112,14 @@ internal sealed class GatewayHistoryQueries
     }
 
     private sealed record PageTicket(string Owner, HistoryValueFilter Filter, int Page, int Size, string Snapshot, byte[] Digest, DateTime Expires);
+    private sealed record CachedResult(string Owner, HistoryValueFilter Filter, string Snapshot, HistoryValueRow[] Rows, DateTime Expires)
+    {
+        public DateTime LastUsed { get; set; } = Expires;
+    }
+
+    private readonly Dictionary<string, CachedResult> _results = new();
+    private static readonly TimeSpan ResultLifetime = TimeSpan.FromMinutes(5);
+    private const int MaxCachedResults = 8;
 
     private static string Owner(ClaimsPrincipal user) =>
         user.Identity!.AuthenticationType + "/" + user.Identity.Name + "/" + (user.FindFirst("apiTokenId") ?? user.FindFirst("jti"))?.Value;
@@ -127,6 +135,56 @@ internal sealed class GatewayHistoryQueries
         }
         sink.FlushFinalBlock();
         return sha.Hash!;
+    }
+
+    private static HistoryValuePage Page(CachedResult cached, int page, int size) =>
+        new(cached.Rows.LongLength, page, size, cached.Snapshot,
+            cached.Rows.Skip((page - 1) * size).Take(size).ToArray());
+
+    private CachedResult? FindResult(ClaimsPrincipal user, HistoryValueFilter filter, string snapshot)
+    {
+        lock (_pageLock)
+        {
+            var now = DateTime.UtcNow;
+            var cached = _results.Values.FirstOrDefault(item => item.Owner == Owner(user) && item.Filter == filter &&
+                item.Snapshot == snapshot && now < item.Expires);
+            if (cached != null) cached.LastUsed = now;
+            return cached;
+        }
+    }
+
+    private void RememberResult(ClaimsPrincipal user, HistoryValueFilter filter, string snapshot, HistoryValueRow[] rows)
+    {
+        var now = DateTime.UtcNow;
+        lock (_pageLock)
+        {
+            foreach (var expiredKey in _results.Where(pair => pair.Value.Expires <= now).Select(pair => pair.Key).ToArray())
+                _results.Remove(expiredKey);
+            if (_results.Count >= MaxCachedResults)
+                _results.Remove(_results.MinBy(pair => pair.Value.LastUsed).Key);
+            var key = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+            _results.Add(key, new CachedResult(Owner(user), filter, snapshot, rows, now.Add(ResultLifetime)) { LastUsed = now });
+        }
+    }
+
+    internal async Task<HistoryValuePage> QueryPageAsync(ClaimsPrincipal user, HistoryValueIndex index, HistoryValueFilter filter,
+        int page, int size, string? snapshot, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(snapshot))
+        {
+            var cached = FindResult(user, filter, snapshot);
+            if (cached != null) return Page(cached, page, size);
+            return await index.QueryAsync(filter, page, size, snapshot, ct);
+        }
+
+        // Keep one immutable result set so changing page or page size never depends on newer history writes.
+        await using var stream = await index.OpenStreamAsync(filter, null, ct);
+        var rows = new List<HistoryValueRow>();
+        await foreach (var row in stream.Items.WithCancellation(ct)) rows.Add(row);
+        var cachedRows = rows.ToArray();
+        var result = new CachedResult(Owner(user), filter, stream.Snapshot, cachedRows, DateTime.UtcNow.Add(ResultLifetime));
+        RememberResult(user, filter, stream.Snapshot, cachedRows);
+        return Page(result, page, size);
     }
 
     internal string RememberPage(ClaimsPrincipal user, HistoryValueFilter filter, HistoryValuePage result, CancellationToken ct)
@@ -149,8 +207,10 @@ internal sealed class GatewayHistoryQueries
         {
             if (token == null || !_pages.TryGetValue(token,out ticket) || ticket.Owner != Owner(user) || DateTime.UtcNow >= ticket.Expires) return null;
         }
-        var page = await index.QueryAsync(ticket.Filter, ticket.Page, ticket.Size, ticket.Snapshot, ct);
-        return Digest(page.Items, ct).AsSpan().SequenceEqual(ticket.Digest) ? page.Items : null;
+        var cached = FindResult(user, ticket.Filter, ticket.Snapshot);
+        var items = cached != null ? Page(cached, ticket.Page, ticket.Size).Items
+            : (await index.QueryAsync(ticket.Filter, ticket.Page, ticket.Size, ticket.Snapshot, ct)).Items;
+        return Digest(items, ct).AsSpan().SequenceEqual(ticket.Digest) ? items : null;
     }
 
     internal IResult PrepareWorkbook(IReadOnlyList<HistoryValueRow> rows, bool english, CancellationToken ct, TimeZoneInfo? timeZone = null)

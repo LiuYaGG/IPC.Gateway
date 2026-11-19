@@ -28,7 +28,7 @@ internal static class GatewayHistoryEndpoints
                 long page = Integer(ctx, "page", 1), count = Integer(ctx, "pageSize", 20);
                 if (count is not (20 or 50 or 100 or 200 or 500) || page < 1 || page > int.MaxValue / count)
                     throw new ArgumentException();
-                var result = await gateway.HistoryValueQueries.QueryAsync(filter, (int)page, (int)count, Get(ctx,"snapshot"), ct);
+                var result = await queries.QueryPageAsync(ctx.User, gateway.HistoryValueQueries, filter, (int)page, (int)count, Get(ctx,"snapshot"), ct);
                 string? exportToken = CanExport(ctx.User) && result.Items.Count > 0
                     ? queries.RememberPage(ctx.User, filter, result, ct) : null;
                 return Results.Ok(new { success = true, data = new { result.Page, result.PageSize, result.Total, result.Snapshot, result.Items, exportToken } });
