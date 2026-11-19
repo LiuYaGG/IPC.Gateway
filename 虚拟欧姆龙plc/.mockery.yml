@@ -1,0 +1,14 @@
+all: false
+dir: "{{.InterfaceDir}}"
+filename: finstest/mocks.go
+force-file-write: true
+formatter: goimports
+log-level: warn
+structname: "{{.Mock}}{{.InterfaceName}}"
+pkgname: "finstest"
+recursive: true
+template: testify
+packages:
+  github.com/bronystylecrazy/gofins:
+    config:
+      all: true

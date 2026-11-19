@@ -46,6 +46,8 @@ public static class GatewayPermissions
     public const string ApplyUpdate = "maintenance.update.apply";
     public const string ApplyRollback = "maintenance.rollback.apply";
     public const string EditWatchdog = "maintenance.watchdog.edit";
+    public const string ExportProjectBackup = "maintenance.projectBackup.export";
+    public const string RestoreProjectBackup = "maintenance.projectBackup.restore";
 
     public const string ViewBigScreen = "bigScreen.view";
     public const string ViewTopology = "topology.view";
@@ -53,6 +55,9 @@ public static class GatewayPermissions
     public const string EditDashboardStorageHealth = "dashboard.storageHealth.edit";
 
     public const string ViewDevices = "devices.view";
+    public const string CreateChannel = "channels.create";
+    public const string EditChannel = "channels.edit";
+    public const string DeleteChannel = "channels.delete";
     public const string CreateDevice = "devices.create";
     public const string EditDevice = "devices.edit";
     public const string DeleteDevice = "devices.delete";
@@ -63,6 +68,8 @@ public static class GatewayPermissions
     public const string EditTag = "tags.edit";
     public const string DeleteTag = "tags.delete";
     public const string WriteTag = "tags.write";
+    public const string ImportTags = "tags.import";
+    public const string ExportTags = "tags.export";
 
     public const string ViewFlowRules = "flowRules.view";
     public const string CreateFlowRule = "flowRules.create";
@@ -109,6 +116,9 @@ public static class GatewayPermissions
         Action(EditDashboardStorageHealth, "保存历史库健康阈值", "运行总览", "保存运行总览中的历史库健康阈值。"),
 
         Page(ViewDevices, "设备管理", "设备管理", "查看设备树、分组、标签和实时值。"),
+        Action(CreateChannel, "新增通道", "设备管理", "在设备管理中新增通信通道。"),
+        Action(EditChannel, "编辑通道", "设备管理", "编辑通道基础信息和通信参数。"),
+        Action(DeleteChannel, "删除通道", "设备管理", "删除通道及通道下的设备、分组和标签。"),
         Action(CreateDevice, "新增设备", "设备管理", "在设备管理中新增设备。"),
         Action(EditDevice, "编辑设备", "设备管理", "编辑设备基础信息和连接参数。"),
         Action(DeleteDevice, "删除设备", "设备管理", "删除设备。"),
@@ -119,6 +129,8 @@ public static class GatewayPermissions
         Action(EditTag, "编辑标签", "设备管理", "编辑标签地址、数据类型、采集周期、清洗、缩放等配置。"),
         Action(DeleteTag, "删除标签", "设备管理", "删除标签。"),
         Action(WriteTag, "写入标签值", "设备管理", "在标签操作列执行写入。"),
+        Action(ImportTags, "导入标签", "设备管理", "通过 CSV 批量导入新增或更新标签。"),
+        Action(ExportTags, "导出标签", "设备管理", "将设备标签导出为 CSV 文件。"),
 
         Page(ViewFlowRules, "规则引擎", "规则引擎", "查看规则引擎列表和编辑器。"),
         Action(CreateFlowRule, "新增规则引擎", "规则引擎", "新增规则引擎。"),
@@ -158,6 +170,8 @@ public static class GatewayPermissions
         Action(ApplyUpdate, "执行升级并重启", "安装升级", "执行已准备的程序升级并重启 Windows 服务。"),
         Action(ApplyRollback, "执行回滚并重启", "安装升级", "执行已准备的版本回滚并重启 Windows 服务。"),
         Action(EditWatchdog, "保存看门狗配置", "安装升级", "编辑看门狗、自恢复和异常重启保护配置。"),
+        Action(ExportProjectBackup, "导出项目备份", "安装升级", "导出项目、通信和历史配置备份。"),
+        Action(RestoreProjectBackup, "恢复项目备份", "安装升级", "恢复项目备份并覆盖当前项目、通信和历史配置。"),
 
         Page(ViewUsers, "人员管理", "人员管理", "查看人员列表。"),
         Action(CreateUser, "新增人员", "人员管理", "新增 Web 登录人员。"),
@@ -222,6 +236,9 @@ public static class GatewayPermissions
                 ViewTopology,
                 EditDashboardStorageHealth,
                 ViewDevices,
+                CreateChannel,
+                EditChannel,
+                DeleteChannel,
                 CreateDevice,
                 EditDevice,
                 DeleteDevice,
@@ -232,6 +249,8 @@ public static class GatewayPermissions
                 EditTag,
                 DeleteTag,
                 WriteTag,
+                ImportTags,
+                ExportTags,
                 ViewFlowRules,
                 CreateFlowRule,
                 EditFlowRule,
@@ -246,6 +265,8 @@ public static class GatewayPermissions
                 ViewHistory,
                 EditHistory,
                 EditWatchdog,
+                ExportProjectBackup,
+                RestoreProjectBackup,
                 ViewModels,
                 EditModels,
                 UploadModels,
@@ -297,20 +318,23 @@ public static class GatewayPermissions
             yield return item;
 
         if (input.Contains(ViewRuntime))
-            foreach (string item in new[] { ViewDashboard, ViewBigScreen, ViewTopology, ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewHistory })
+            foreach (string item in new[] { ViewDashboard, ViewBigScreen, ViewTopology, ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewHistory, ExportTags })
                 yield return item;
 
         if (input.Contains(WriteRuntime))
             yield return WriteTag;
 
         if (input.Contains(ReadConfiguration))
-            foreach (string item in new[] { ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewProject, ViewHistory })
+            foreach (string item in new[] { ViewDevices, ViewFlowRules, ViewMqtt, ViewOpcUa, ViewProject, ViewHistory, ExportTags, ExportProjectBackup })
                 yield return item;
 
         if (input.Contains(WriteConfiguration))
             foreach (string item in new[]
             {
                 EditDashboardStorageHealth,
+                CreateChannel,
+                EditChannel,
+                DeleteChannel,
                 CreateDevice,
                 EditDevice,
                 DeleteDevice,
@@ -320,6 +344,7 @@ public static class GatewayPermissions
                 CreateTag,
                 EditTag,
                 DeleteTag,
+                ImportTags,
                 CreateFlowRule,
                 EditFlowRule,
                 DeleteFlowRule,
@@ -328,7 +353,8 @@ public static class GatewayPermissions
                 EditOpcUa,
                 EditProject,
                 EditHistory,
-                EditWatchdog
+                EditWatchdog,
+                RestoreProjectBackup
             })
                 yield return item;
 

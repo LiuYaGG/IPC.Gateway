@@ -49,6 +49,45 @@ namespace IPC.Plc.Communication.Ads
             return Array.Empty<int>();
         }
 
+        public static byte[] EncodeWriteValue(object value)
+        {
+            if (value == null) throw new NotSupportedException("ADS 不支持写入 null 值。");
+            using (var stream = new System.IO.MemoryStream())
+            using (var writer = new System.IO.BinaryWriter(stream))
+            {
+                if (value is Array array)
+                {
+                    foreach (object element in array)
+                        WriteValue(writer, element);
+                }
+                else
+                {
+                    WriteValue(writer, value);
+                }
+                writer.Flush();
+                return stream.ToArray();
+            }
+        }
+
+        private static void WriteValue(System.IO.BinaryWriter writer, object value)
+        {
+            switch (Type.GetTypeCode(value.GetType()))
+            {
+                case TypeCode.Boolean: writer.Write((bool)value ? (byte)1 : (byte)0); break;
+                case TypeCode.SByte: writer.Write((sbyte)value); break;
+                case TypeCode.Byte: writer.Write((byte)value); break;
+                case TypeCode.Int16: writer.Write((short)value); break;
+                case TypeCode.UInt16: writer.Write((ushort)value); break;
+                case TypeCode.Int32: writer.Write((int)value); break;
+                case TypeCode.UInt32: writer.Write((uint)value); break;
+                case TypeCode.Int64: writer.Write((long)value); break;
+                case TypeCode.UInt64: writer.Write((ulong)value); break;
+                case TypeCode.Single: writer.Write((float)value); break;
+                case TypeCode.Double: writer.Write((double)value); break;
+                default: throw new NotSupportedException("ADS 不支持写入类型 " + value.GetType().Name + "。");
+            }
+        }
+
         public static object ParseWriteValue(PlcDataType dataType, string valueText)
         {
             string text = valueText ?? string.Empty;

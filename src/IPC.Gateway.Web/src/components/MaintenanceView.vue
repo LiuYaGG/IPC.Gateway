@@ -320,7 +320,7 @@
               <small>{{ tx("导出或恢复项目、通信和历史配置") }}</small>
             </div>
             <div class="card-actions">
-              <a-button :loading="backupLoading" @click="downloadProjectBackup">
+              <a-button v-if="canExportProjectBackup" :loading="backupLoading" @click="downloadProjectBackup">
                 <template #icon>
                   <span class="ui-icon"><component :is="Download" /></span>
                 </template>
@@ -330,6 +330,7 @@
           </div>
         </template>
         <gateway-file-upload
+          v-if="canRestoreProjectBackup"
           drag
           accept=".pb"
           :show-upload-list="false"
@@ -1034,6 +1035,12 @@ const canExecute = computed(() =>
 );
 const canEditWatchdog = computed(() =>
   hasPermission(PERMISSIONS.maintenanceWatchdogEdit),
+);
+const canExportProjectBackup = computed(() =>
+  hasPermission(PERMISSIONS.maintenanceProjectBackupExport),
+);
+const canRestoreProjectBackup = computed(() =>
+  hasPermission(PERMISSIONS.maintenanceProjectBackupRestore),
 );
 const totalPackageBytes = computed(() =>
   (status.value?.packages ?? []).reduce(

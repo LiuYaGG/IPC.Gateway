@@ -1,0 +1,54 @@
+version: "3"
+
+vars:
+  BIN_DIR: bin
+  BINARY: fins-server
+  CLIENT_BINARY: fins-client
+  PLATFORMS:
+    - os: linux
+      arch: amd64
+    - os: linux
+      arch: arm64
+    - os: darwin
+      arch: amd64
+    - os: darwin
+      arch: arm64
+    - os: windows
+      arch: amd64
+
+tasks:
+  gen-mocks:
+    desc: Generate mocks for interfaces
+    cmds:
+      - mockery
+  build:server:
+    desc: Build the PLC simulator server for the local platform
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_DIR}}/{{.BINARY}}{{if eq OS "windows"}}.exe{{end}} ./examples/server
+
+  build:server:all:
+    desc: Cross-compile the PLC simulator server for common platforms
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - |
+        {{range .PLATFORMS}}
+        echo "Building {{.os}}/{{.arch}}..."
+        GOOS={{.os}} GOARCH={{.arch}} go build -o {{$.BIN_DIR}}/{{$.BINARY}}-{{.os}}-{{.arch}}{{if eq .os "windows"}}.exe{{end}} ./examples/server
+        {{end}}
+
+  build:client:
+    desc: Build the interactive/one-shot client for the local platform
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_DIR}}/{{.CLIENT_BINARY}}{{if eq OS "windows"}}.exe{{end}} ./examples/client
+
+  build:client:all:
+    desc: Cross-compile the interactive/one-shot client for common platforms
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - |
+        {{range .PLATFORMS}}
+        echo "Building client {{.os}}/{{.arch}}..."
+        GOOS={{.os}} GOARCH={{.arch}} go build -o {{$.BIN_DIR}}/{{$.CLIENT_BINARY}}-{{.os}}-{{.arch}}{{if eq .os "windows"}}.exe{{end}} ./examples/client
+        {{end}}

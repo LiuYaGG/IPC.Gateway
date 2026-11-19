@@ -1,0 +1,268 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "BeckhoffAdsTool/1.0.0": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads": "7.0.292"
+        },
+        "runtime": {
+          "BeckhoffAdsTool.dll": {}
+        }
+      },
+      "Beckhoff.TwinCAT.Ads/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Server": "7.0.292",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ServiceProcess.ServiceController": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Abstractions.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.ConfigurationProviders.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+        "dependencies": {
+          "Beckhoff.TwinCAT.Ads.Abstractions": "7.0.292",
+          "Beckhoff.TwinCAT.Ads.ConfigurationProviders": "7.0.292",
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.9",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "System.ComponentModel.Composition": "10.0.9",
+          "System.Reactive": "6.1.0"
+        },
+        "runtime": {
+          "lib/net10.0/TwinCAT.Ads.Server.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.292.0"
+          }
+        }
+      },
+      "Microsoft.Extensions.Configuration/10.0.9": {
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Primitives": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "Microsoft.Extensions.Configuration.Abstractions/10.0.9": {
+        "dependencies": {
+          "Microsoft.Extensions.Primitives": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.Abstractions.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "Microsoft.Extensions.Configuration.Binder/10.0.9": {
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.9",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Configuration.Binder.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.9": {
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "Microsoft.Extensions.Logging.Abstractions/10.0.9": {
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.9"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Logging.Abstractions.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "Microsoft.Extensions.Primitives/10.0.9": {
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.Primitives.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "System.ComponentModel.Composition/10.0.9": {
+        "runtime": {
+          "lib/net10.0/System.ComponentModel.Composition.dll": {
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "System.Reactive/6.1.0": {
+        "runtime": {
+          "lib/net6.0/System.Reactive.dll": {
+            "assemblyVersion": "6.1.0.0",
+            "fileVersion": "6.1.0.62682"
+          }
+        }
+      },
+      "System.ServiceProcess.ServiceController/10.0.9": {
+        "runtime": {
+          "lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "BeckhoffAdsTool/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Beckhoff.TwinCAT.Ads/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oCN8brTt4GNWgPJxQ4IuIevirHgQa48t6T+7CGv9P67L4e1vEwiF+xu8QVSaD88UvQwRp1W09RE5Mx98nPrYmw==",
+      "path": "beckhoff.twincat.ads/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.Abstractions/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-yAe0aZJ8QoKipPblSMLQsUt6We+1u7bQ0Yz0SQSKNwZ61bPfYFt2/ujFKsT7O79Ijmnsqrhx8MsWFuG9bR/cvQ==",
+      "path": "beckhoff.twincat.ads.abstractions/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.abstractions.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.ConfigurationProviders/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wHX0gKEBrlNmNBYJNBuF1Qs29cP1bNhKFu/cYN46US8rctuA7n70RRR0igJvUebeG3IGsU1Qx+bcCu3U2tM1EA==",
+      "path": "beckhoff.twincat.ads.configurationproviders/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.configurationproviders.7.0.292.nupkg.sha512"
+    },
+    "Beckhoff.TwinCAT.Ads.Server/7.0.292": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oAhfn6kcfSrWt50xuynUGazr0LT7m2g3SlATnqUCt1GgaICyxOf3XnmAi3yllGN2yrlcU2QqZF4LLl8Px0SvNw==",
+      "path": "beckhoff.twincat.ads.server/7.0.292",
+      "hashPath": "beckhoff.twincat.ads.server.7.0.292.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Configuration/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-woZsWLhOQsASuxbmgiZJqiGUBNo3IjRdXC92xt8rRokza+P6/nIsnzq7sm9Or6ZYcRl2kL1ufj8HVzp1QlPTXw==",
+      "path": "microsoft.extensions.configuration/10.0.9",
+      "hashPath": "microsoft.extensions.configuration.10.0.9.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Configuration.Abstractions/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-qGhRPd3VxfLV9UqatVOiD9mAeUbj2KiMwGFYC5uXlzExiZQoe4X/hdmzGIU7BQjNLTqCnnbTHVyBglG3668/HA==",
+      "path": "microsoft.extensions.configuration.abstractions/10.0.9",
+      "hashPath": "microsoft.extensions.configuration.abstractions.10.0.9.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Configuration.Binder/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Tp/+LPb70RyjjtLg9m5C959eP4KrUpJHThZfAegZVpsfmGvzfuNkuYbI/ft+LvXhMSyUcAeOPaN6rzTccwnZAg==",
+      "path": "microsoft.extensions.configuration.binder/10.0.9",
+      "hashPath": "microsoft.extensions.configuration.binder.10.0.9.nupkg.sha512"
+    },
+    "Microsoft.Extensions.DependencyInjection.Abstractions/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-g41l/30G3K4B/d/L8kjux0+30e27c8D0FVQ/PFCpbekgfDpj9mnDhieP67EqXWvl1EWNeZh2rpR4F5B/jcDOHA==",
+      "path": "microsoft.extensions.dependencyinjection.abstractions/10.0.9",
+      "hashPath": "microsoft.extensions.dependencyinjection.abstractions.10.0.9.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Logging.Abstractions/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-9S/DFt4cohlMPpzIxjG6kk0L8MuN2vDm9pbMCulxtJzzk82oJHVLBd8vuQxaPskaYQwKqmFmbannf5eoChgjYg==",
+      "path": "microsoft.extensions.logging.abstractions/10.0.9",
+      "hashPath": "microsoft.extensions.logging.abstractions.10.0.9.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Primitives/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-fmEbAUFsaIKirgLt/lYhuFRBwhcSJN31jjHgCdbQxJiWOum6EdLjkbgGuukSP9z/a+9LibaxII/kF+GwOXgC4g==",
+      "path": "microsoft.extensions.primitives/10.0.9",
+      "hashPath": "microsoft.extensions.primitives.10.0.9.nupkg.sha512"
+    },
+    "System.ComponentModel.Composition/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-qeEr33Kz5yILup3wWSOhb3LmEE/jK9Rk0dtGbAJI/W1jn8FJwPn9BI5azZ764tQmk1/3wtWeZI8Ypu+GIW3d8Q==",
+      "path": "system.componentmodel.composition/10.0.9",
+      "hashPath": "system.componentmodel.composition.10.0.9.nupkg.sha512"
+    },
+    "System.Reactive/6.1.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-M5cCC1ZMkZr9jbSQGTHnVkb5TDN67qWCV7AP8TAHdGkvDlu0puT5NzemESNn9+HkYIDpWpocP68/i+/ame2/2w==",
+      "path": "system.reactive/6.1.0",
+      "hashPath": "system.reactive.6.1.0.nupkg.sha512"
+    },
+    "System.ServiceProcess.ServiceController/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g==",
+      "path": "system.serviceprocess.servicecontroller/10.0.9",
+      "hashPath": "system.serviceprocess.servicecontroller.10.0.9.nupkg.sha512"
+    }
+  }
+}

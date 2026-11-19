@@ -26,7 +26,7 @@ public static class GatewayCommercialEndpoints
 
         group.MapGet("/tags/export", (ClaimsPrincipal user, GatewayTagBulkService tags, string? channelId, string? deviceId) =>
         {
-            if (!GatewayAuthEndpoints.CanViewDevices(user))
+            if (!GatewayAuthEndpoints.CanExportTags(user))
                 return Forbidden("Current user is not allowed to export tags.");
             byte[] payload = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(tags.ExportCsv(channelId ?? string.Empty, deviceId ?? string.Empty))).ToArray();
             return Results.File(payload, "text/csv", "ipc-gateway-tags.csv");
@@ -34,7 +34,7 @@ public static class GatewayCommercialEndpoints
 
         group.MapPost("/tags/import", async (ClaimsPrincipal user, HttpRequest request, GatewayTagBulkService tags, string? channelId, string? deviceId) =>
         {
-            if (!GatewayAuthEndpoints.CanCreateTag(user) && !GatewayAuthEndpoints.CanEditTag(user))
+            if (!GatewayAuthEndpoints.CanImportTags(user))
                 return Forbidden("Current user is not allowed to import tags.");
             using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8);
             string csv = await reader.ReadToEndAsync();
@@ -43,14 +43,14 @@ public static class GatewayCommercialEndpoints
 
         group.MapGet("/project/backup", (ClaimsPrincipal user, GatewayProjectBackupService backups) =>
         {
-            if (!GatewayAuthEndpoints.CanViewProject(user))
+            if (!GatewayAuthEndpoints.CanExportProjectBackup(user))
                 return Forbidden("Current user is not allowed to export project backups.");
             return Results.File(backups.CreateBackupBytes(), "application/x-protobuf", "ipc-gateway-project-backup.pb");
         });
 
         group.MapPost("/project/restore", async (ClaimsPrincipal user, HttpRequest request, GatewayProjectBackupService backups) =>
         {
-            if (!GatewayAuthEndpoints.CanEditProject(user))
+            if (!GatewayAuthEndpoints.CanRestoreProjectBackup(user))
                 return Forbidden("Current user is not allowed to restore project backups.");
             using var buffer = new MemoryStream();
             await request.Body.CopyToAsync(buffer, request.HttpContext.RequestAborted);

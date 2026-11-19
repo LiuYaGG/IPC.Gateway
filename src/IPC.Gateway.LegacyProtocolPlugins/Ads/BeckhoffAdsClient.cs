@@ -155,8 +155,8 @@ namespace IPC.Plc.Communication.Ads
             string instancePath = AdsAddress.WithElementOffset(address, elementOffset);
             uint handle = await GetHandleAsync(instancePath, cancellationToken).ConfigureAwait(false);
             object value = AdsDataCodec.ParseWriteValue(dataType, valueText);
-            int[] args = AdsDataCodec.GetMarshalArguments(dataType, value is Array array ? array.Length : 1, _options.StringLength);
-            ResultWrite result = await _client.WriteAnyAsync(handle, value, args, cancellationToken).ConfigureAwait(false);
+            byte[] data = AdsDataCodec.EncodeWriteValue(value);
+            ResultWrite result = await _client.WriteAsync(handle, data.AsMemory(), cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
                 throw AdsFailureClassifier.Create(result.ErrorCode, "写入 ADS 标签 " + instancePath);
         }

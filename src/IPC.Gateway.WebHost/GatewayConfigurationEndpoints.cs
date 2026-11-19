@@ -161,13 +161,13 @@ public static class GatewayConfigurationEndpoints
             ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewDevices, "当前用户没有查看通道配置权限。", gateway.GetChannels));
 
         group.MapPost("/channels", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, SaveChannelConfigurationCommand command) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanCreateDevice, "当前用户没有新增通道权限。", () => gateway.AddChannelAsync(command)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanCreateChannel, "当前用户没有新增通道权限。", () => gateway.AddChannelAsync(command)));
 
         group.MapPut("/channels/{channelId}", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, string channelId, SaveChannelConfigurationCommand command) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditDevice, "当前用户没有编辑通道权限。", () => gateway.UpdateChannelAsync(channelId, command)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanEditChannel, "当前用户没有编辑通道权限。", () => gateway.UpdateChannelAsync(channelId, command)));
 
         group.MapDelete("/channels/{channelId}", async (IGatewayApplicationService gateway, HttpContext context, ClaimsPrincipal user, string channelId) =>
-            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanDeleteDevice, "当前用户没有删除通道权限。", () => gateway.DeleteChannelAsync(channelId)));
+            await ExecuteAuthorizedAsync(context, user, GatewayAuthEndpoints.CanDeleteChannel, "当前用户没有删除通道权限。", () => gateway.DeleteChannelAsync(channelId)));
 
         group.MapGet("/devices", (ClaimsPrincipal user, IGatewayApplicationService gateway) =>
             ExecuteReadAuthorized(user, GatewayAuthEndpoints.CanViewDevices, "当前用户没有查看设备配置权限。", () =>

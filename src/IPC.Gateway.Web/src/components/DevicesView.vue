@@ -58,7 +58,7 @@
             </template>
             {{ tx('刷新') }}
           </a-button>
-          <a-button v-if="canCreateDevice" @click="openCreateChannel">
+          <a-button v-if="canCreateChannel" @click="openCreateChannel">
             <template #icon>
               <span class="ui-icon"><SetUp /></span>
             </template>
@@ -156,7 +156,7 @@
                 </template>
                 {{ tx('新增标签') }}
               </a-button>
-              <a-button v-if="selectedDevice" @click="exportSelectedTags">
+              <a-button v-if="selectedDevice && canExportTags" @click="exportSelectedTags">
                 <template #icon>
                   <span class="ui-icon"><Download /></span>
                 </template>
@@ -180,14 +180,14 @@
                 <template #overlay>
                   <a-menu>
                     <a-menu-item
-                      v-if="selectedChannel && selectedNode.type === 'channel' && canEditDevice"
+                      v-if="selectedChannel && selectedNode.type === 'channel' && canEditChannel"
                       key="edit-channel"
                       @click="openEditChannel(selectedChannel)"
                     >
                       {{ tx('编辑通道') }}
                     </a-menu-item>
                     <a-menu-item
-                      v-if="selectedChannel && selectedNode.type === 'channel' && canDeleteDevice"
+                      v-if="selectedChannel && selectedNode.type === 'channel' && canDeleteChannel"
                       key="delete-channel"
                       danger
                       @click="removeChannel(selectedChannel)"
@@ -316,10 +316,19 @@
         </div>
         <div v-else class="device-detail">
           <div v-if="selectedDevice" class="device-tag-options">
-            <span>
-              {{ selectedTags.length }} {{ tx('个标签') }}
-              <span v-if="selectedGroup">· {{ selectedDevice.name }} / {{ selectedGroup.name }}</span>
-            </span>
+            <a-input
+              v-model:value="tagNameFilter"
+              class="device-tag-filter"
+              allow-clear
+              :placeholder="tx('输入标签名模糊筛选')"
+              :aria-label="tx('筛选当前设备或分组的标签')"
+            >
+              <template #prefix>
+                <span class="ui-icon"><Search /></span>
+              </template>
+            </a-input>
+            <span class="device-tag-filter__count">{{ filteredSelectedTags.length }} / {{ selectedTags.length }} {{ tx('条') }}</span>
+            <span class="device-tag-options__spacer"></span>
             <a-radio-group v-model:value="showAllColumns" size="small" button-style="solid">
               <a-radio-button :value="false">{{ tx('常用列') }}</a-radio-button>
               <a-radio-button :value="true">{{ tx('全部列') }}</a-radio-button>
@@ -352,7 +361,7 @@
             </div>
           </div>
           <div
-            v-if="selectedTags.length"
+            v-if="filteredSelectedTags.length"
             ref="tagScroller"
             :class="['device-tag-table', { 'device-tag-table--all': showAllColumns }]"
             :style="tagColumnStyle"
@@ -439,7 +448,7 @@
           </div>
           <a-empty v-else :description="tx(tagEmptyText)" class="device-tag-empty">
             <a-button
-              v-if="selectedDevice && canCreateTag"
+              v-if="selectedDevice && canCreateTag && !tagNameFilter.trim()"
               type="primary"
               @click="openCreateTag(selectedDevice, selectedGroup)"
             >
@@ -450,7 +459,7 @@
             </a-button>
           </a-empty>
           <TablePager
-            :total="selectedTags.length"
+            :total="filteredSelectedTags.length"
             :current="tagPage"
             :page-size="tagPageSize"
             @change="changeTagPage"
@@ -883,6 +892,7 @@ const pageActive = ref(true)
 const expandedTreeKeys = ref(new Set<string>(['root']))
 const deviceFilterInput = ref('')
 const deviceNameFilter = ref('')
+const tagNameFilter = ref('')
 const devicePage = ref(1)
 const devicePageSize = ref(20)
 const tagPage = ref(1)
@@ -1020,6 +1030,9 @@ const editingActive = computed(
     writeSaving.value
 )
 
+const canCreateChannel = computed(() => hasPermission(PERMISSIONS.channelsCreate))
+const canEditChannel = computed(() => hasPermission(PERMISSIONS.channelsEdit))
+const canDeleteChannel = computed(() => hasPermission(PERMISSIONS.channelsDelete))
 const canCreateDevice = computed(() => hasPermission(PERMISSIONS.devicesCreate))
 const canEditDevice = computed(() => hasPermission(PERMISSIONS.devicesEdit))
 const canDeleteDevice = computed(() => hasPermission(PERMISSIONS.devicesDelete))
@@ -1033,7 +1046,8 @@ const hasTagWritePermission = computed(() => hasPermission(PERMISSIONS.tagsWrite
 const canSaveCurrentDevice = computed(() => (editingId.value ? canEditDevice.value : canCreateDevice.value))
 const canSaveCurrentGroup = computed(() => (editingGroupId.value ? canEditGroup.value : canCreateGroup.value))
 const canSaveCurrentTag = computed(() => (editingTagId.value ? canEditTag.value : canCreateTag.value))
-const canImportTags = computed(() => canCreateTag.value || canEditTag.value)
+const canImportTags = computed(() => hasPermission(PERMISSIONS.tagsImport))
+const canExportTags = computed(() => hasPermission(PERMISSIONS.tagsExport))
 const selectedTemplate = computed(
   () => deviceTemplates.value.find((item) => item.templateId === templateForm.templateId) ?? null
 )
@@ -1143,7 +1157,7 @@ const selectedDevice = computed(() =>
 )
 const selectedGroup = computed(() => (selectedNode.value.type === 'group' ? selectedNode.value.group : undefined))
 const hasSelectionActions = computed(() => {
-  if (selectedNode.value.type === 'channel') return canEditDevice.value || canDeleteDevice.value
+  if (selectedNode.value.type === 'channel') return canEditChannel.value || canDeleteChannel.value
   if (!selectedDevice.value) return false
   return (
     canEditDevice.value ||
@@ -1212,6 +1226,11 @@ const selectedTags = computed<TagConfig[]>(() => {
   if (selectedDevice.value) return selectedDevice.value.tags ?? []
   return []
 })
+const filteredSelectedTags = computed<TagConfig[]>(() => {
+  const keyword = tagNameFilter.value.trim().toLowerCase()
+  if (!keyword) return selectedTags.value
+  return selectedTags.value.filter((tag) => tag.name.toLowerCase().includes(keyword))
+})
 const flatTreeRows = computed<DeviceTreeRow[]>(() => {
   const rows: Array<Omit<DeviceTreeRow, 'top'>> = []
   pushTreeNode(rows, treeData.value[0], 0)
@@ -1223,8 +1242,8 @@ const visibleTreeRows = computed(() => {
   const count = Math.ceil(treeViewportHeight.value / treeRowHeight) + treeOverscan * 2
   return flatTreeRows.value.slice(start, start + count)
 })
-const tagPageRange = computed(() => pageWindow(selectedTags.value.length, tagPage.value, tagPageSize.value))
-const pagedTags = computed(() => selectedTags.value.slice(tagPageRange.value.start, tagPageRange.value.end))
+const tagPageRange = computed(() => pageWindow(filteredSelectedTags.value.length, tagPage.value, tagPageSize.value))
+const pagedTags = computed(() => filteredSelectedTags.value.slice(tagPageRange.value.start, tagPageRange.value.end))
 function changeTagPage(page: number, size: number) {
   tagPageSize.value = size
   tagPage.value = page
@@ -1232,8 +1251,13 @@ function changeTagPage(page: number, size: number) {
   tagScroller.value?.scrollTo({ top: 0 })
   persistViewState()
 }
-watch([() => selectedTags.value.length, tagPageSize], () => {
+watch([() => filteredSelectedTags.value.length, tagPageSize], () => {
   tagPage.value = tagPageRange.value.current
+})
+watch(tagNameFilter, () => {
+  tagPage.value = 1
+  tagScrollTop.value = 0
+  tagScroller.value?.scrollTo({ top: 0 })
 })
 const virtualTagHeight = computed(() => pagedTags.value.length * tagRowHeight)
 const visibleTagRows = computed<TagVirtualRow[]>(() => {
@@ -1274,6 +1298,7 @@ const detailSubtitle = computed(() => {
 
 const deviceEmptyText = computed(() => (deviceNameFilter.value.trim() ? '没有匹配的设备' : '还没有设备'))
 const tagEmptyText = computed(() => {
+  if (tagNameFilter.value.trim()) return '未找到匹配的标签'
   if (selectedNode.value.type === 'group') return '当前分组还没有标签'
   if (selectedNode.value.type === 'device') return '当前设备还没有直属标签'
   return '请选择设备或分组查看标签'
@@ -1298,6 +1323,7 @@ watch(
   }
 )
 watch(selectedNodeKey, (key) => {
+  tagNameFilter.value = ''
   if (restoringView) return
   pendingScroll = undefined
   tagPage.value = 1
@@ -1442,18 +1468,16 @@ function openValueDetails(tag: TagConfig, kind: 'raw' | 'current') {
 const contextActions = computed<ContextAction[]>(() => {
   const node = contextMenu.node
   if (!node || node.type === 'root') {
-    return canCreateDevice.value
-      ? [
-          { key: 'add-channel', label: '新增通道', icon: SetUp },
-          { key: 'add-device', label: '新增设备', icon: Plus }
-        ]
-      : []
+    return [
+      canCreateChannel.value ? { key: 'add-channel', label: '新增通道', icon: SetUp } : null,
+      canCreateDevice.value ? { key: 'add-device', label: '新增设备', icon: Plus } : null
+    ].filter(Boolean) as ContextAction[]
   }
   if (node.type === 'channel') {
     return [
       canCreateDevice.value ? { key: 'add-device', label: '新增设备', icon: Plus } : null,
-      canEditDevice.value ? { key: 'edit-channel', label: '编辑通道', icon: Edit } : null,
-      canDeleteDevice.value ? { key: 'delete-channel', label: '删除通道', icon: Delete } : null
+      canEditChannel.value ? { key: 'edit-channel', label: '编辑通道', icon: Edit } : null,
+      canDeleteChannel.value ? { key: 'delete-channel', label: '删除通道', icon: Delete } : null
     ].filter(Boolean) as ContextAction[]
   }
   if (node.type === 'device') {
@@ -2114,7 +2138,7 @@ async function handleImportTags(uploadFile: FileSelection) {
 }
 
 async function openCreateChannel() {
-  if (!canCreateDevice.value) return
+  if (!canCreateChannel.value) return
   await ensureProtocolCatalogLoaded()
   const driver =
     channelDriverOptions.value.find((item) => item.protocol === 'ModbusTcp') ?? channelDriverOptions.value[0]
@@ -2136,7 +2160,7 @@ async function openCreateChannel() {
 }
 
 async function openEditChannel(channel: ChannelConfig) {
-  if (!canEditDevice.value) return
+  if (!canEditChannel.value) return
   await ensureProtocolCatalogLoaded()
   editingChannelId.value = channel.id
   channelForm.value = { ...channel }
@@ -2144,7 +2168,7 @@ async function openEditChannel(channel: ChannelConfig) {
 }
 
 async function saveChannel() {
-  if (!channelForm.value) return
+  if (!channelForm.value || !(editingChannelId.value ? canEditChannel.value : canCreateChannel.value)) return
   const payload = { ...channelForm.value, name: channelForm.value.name.trim() }
   if (!payload.name) {
     notify.warning('请输入通道名称')
@@ -2168,6 +2192,7 @@ async function saveChannel() {
 }
 
 async function removeChannel(channel: ChannelConfig) {
+  if (!canDeleteChannel.value) return
   try {
     await confirmAction(
       formatMessage('确认删除通道“{0}”？该通道下的 {1} 台设备及其分组、标签将一并删除。', [

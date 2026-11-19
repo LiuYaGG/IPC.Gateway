@@ -242,6 +242,21 @@ public static class GatewayAuthEndpoints
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ViewDevices, GatewayPermissions.ReadConfiguration, GatewayPermissions.ViewRuntime);
     }
 
+    public static bool CanCreateChannel(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.CreateChannel, GatewayPermissions.WriteConfiguration);
+    }
+
+    public static bool CanEditChannel(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.EditChannel, GatewayPermissions.WriteConfiguration);
+    }
+
+    public static bool CanDeleteChannel(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.DeleteChannel, GatewayPermissions.WriteConfiguration);
+    }
+
     public static bool CanCreateDevice(ClaimsPrincipal user)
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.CreateDevice, GatewayPermissions.WriteConfiguration);
@@ -290,6 +305,16 @@ public static class GatewayAuthEndpoints
     public static bool CanWriteTag(ClaimsPrincipal user)
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.WriteTag, GatewayPermissions.WriteRuntime);
+    }
+
+    public static bool CanImportTags(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ImportTags, GatewayPermissions.WriteConfiguration);
+    }
+
+    public static bool CanExportTags(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasPermission(user, GatewayPermissions.ExportTags);
     }
 
     public static bool CanViewFlowRules(ClaimsPrincipal user)
@@ -523,6 +548,16 @@ public static class GatewayAuthEndpoints
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.EditWatchdog, GatewayPermissions.WriteConfiguration);
     }
 
+    public static bool CanExportProjectBackup(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ExportProjectBackup, GatewayPermissions.ReadConfiguration);
+    }
+
+    public static bool CanRestoreProjectBackup(ClaimsPrincipal user)
+    {
+        return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.RestoreProjectBackup, GatewayPermissions.WriteConfiguration);
+    }
+
     public static bool CanWriteConfiguration(ClaimsPrincipal user)
     {
         return user != null && (
@@ -530,6 +565,9 @@ public static class GatewayAuthEndpoints
             HasAnyPermission(user,
                 GatewayPermissions.WriteConfiguration,
                 GatewayPermissions.EditDashboardStorageHealth,
+                GatewayPermissions.CreateChannel,
+                GatewayPermissions.EditChannel,
+                GatewayPermissions.DeleteChannel,
                 GatewayPermissions.CreateDevice,
                 GatewayPermissions.EditDevice,
                 GatewayPermissions.DeleteDevice,

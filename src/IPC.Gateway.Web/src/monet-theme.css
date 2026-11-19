@@ -995,6 +995,22 @@ a:focus-visible {
   color: var(--gateway-muted);
   font-size: calc(11px + 1pt);
 }
+.device-tag-options .device-tag-filter {
+  width: 280px;
+  max-width: 45%;
+  flex: 0 1 280px;
+}
+.device-tag-filter__count {
+  flex: 0 0 auto;
+  color: var(--gateway-muted);
+  white-space: nowrap;
+}
+.device-tag-options__spacer {
+  flex: 1;
+}
+.device-tag-options .ant-radio-group {
+  flex: 0 0 auto;
+}
 .device-tag-options .ant-radio-button-wrapper {
   font-size: calc(11px + 1pt);
 }
