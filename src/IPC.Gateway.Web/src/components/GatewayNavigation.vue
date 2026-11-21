@@ -40,6 +40,7 @@ import {
   DesktopOutlined as Monitor,
   AppstoreOutlined as Operation,
   SendOutlined as Promotion,
+  ToolOutlined as Tool,
   ShareAltOutlined as Share,
   AuditOutlined as Tickets,
   UserOutlined as User,
@@ -77,7 +78,8 @@ const groups = [
     icon: Promotion,
     items: [
       { key: 'mqtt', label: 'MQTT', icon: Promotion },
-      { key: 'opcUa', label: 'OPC UA Server', icon: Connection }
+      { key: 'opcUa', label: 'OPC UA Server', icon: Connection },
+      { key: 'protocolDiagnostics', label: '协议诊断', icon: Tool }
     ]
   },
   {

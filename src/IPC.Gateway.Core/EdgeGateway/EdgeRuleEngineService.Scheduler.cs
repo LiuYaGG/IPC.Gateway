@@ -113,7 +113,7 @@ namespace IPC.EdgeGateway
                             return;
                     }
 
-                    DateTime now = DateTime.Now;
+                    DateTime now = RuleTime;
                     for (int i = 0; i < _timerRules.Count; i++)
                     {
                         EdgeRuleConfig rule = _timerRules[i];
@@ -162,6 +162,8 @@ namespace IPC.EdgeGateway
                 TagValueSnapshot? latest = null;
                 if (_runtime != null)
                     _runtime.TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out latest);
+                else if (_replayOutput != null)
+                    _snapshotsByTagId.TryGetValue(snapshot.TagId, out latest);
                 if (latest == null || latest.Quality != TagQuality.Good)
                 {
                     if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
@@ -183,13 +185,15 @@ namespace IPC.EdgeGateway
                 TagValueSnapshot? latest = snapshot;
                 if (_runtime != null && !HasWindowCalculation(rule))
                     _runtime.TryGetSnapshotById(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId, out latest);
+                else if (_replayOutput != null)
+                    _snapshotsByTagId.TryGetValue(snapshot.TagId, out latest);
                 EvaluateNoChangeTimeout(rule, latest, state, now);
                 if (state.NoChangeTracker?.Available == true)
                     PublishTimedLifecycleEvents(rule, state, latest!, now);
                 return;
             }
 
-            if (!HasWindowCalculation(rule) && IsTimeSeriesRule(rule) &&
+            if (_replayOutput == null && !HasWindowCalculation(rule) && IsTimeSeriesRule(rule) &&
                 (state.LastPeriodicEvaluationTime == DateTime.MinValue ||
                  now - state.LastPeriodicEvaluationTime >= TimeSpan.FromMilliseconds(TimeSeriesSampleIntervalMilliseconds)))
             {
@@ -301,7 +305,7 @@ namespace IPC.EdgeGateway
         {
             GetRuleCircuitBreaker(rule).RecordFailure(ex.Message);
             RecordEvaluationFailure(rule, ex);
-            IpcLogService.WriteError("Edge rule timer evaluation failed: " + rule.Name, ex);
+            if (_replayOutput == null) IpcLogService.WriteError("Edge rule timer evaluation failed: " + rule.Name, ex);
         }
 
         private static bool IsTimeSeriesRule(EdgeRuleConfig rule)

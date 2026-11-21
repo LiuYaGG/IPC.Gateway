@@ -225,6 +225,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
             var item = new GatewayAlarmRecord
             {
                 EventId = EventId, Timestamp = s.Timestamp.ToUniversalTime(), Value = Value, Threshold = Threshold,
+                AlarmCorrelationKey = "threshold:" + Key,
                 ChannelId = s.ChannelId, ChannelName = s.ChannelName, DeviceId = s.DeviceId, DeviceName = s.DeviceName,
                 GroupId = s.GroupId, GroupName = s.GroupName, TagId = s.TagId, TagName = s.TagName,
                 PreviousState = Previous, State = State, EventType = clear ? "recovery" : severity,

@@ -298,6 +298,7 @@ namespace IPC.Runtime.Engine
             {
                 _deviceStatesById.Clear();
                 _nextReadUtcByTagId.Clear();
+                _acquisitionTraces.Clear();
             }
 
             ClearTagValueChangedQueue();
@@ -1432,7 +1433,7 @@ namespace IPC.Runtime.Engine
                 probe.Group,
                 probe.Tag,
                 runtimeGeneration,
-                cancellationToken, recoveryProbe: true).ConfigureAwait(false);
+                cancellationToken, recoveryProbe: true, scheduled: true).ConfigureAwait(false);
 
             if (!IsCurrentGeneration(runtimeGeneration))
                 return;
@@ -1744,6 +1745,7 @@ namespace IPC.Runtime.Engine
                 nextReconnectDelayMs,
                 deviceState == null ? string.Empty : deviceState.LastConnectionError ?? string.Empty);
 
+            deviceState?.Diagnostics.RecordEvent("DeviceConnectionFailure", null, null, deviceState.LastConnectionError);
             _runtimeEvents.Add(new RuntimeErrorDetail
             {
                 Category = "DeviceConnectionFailure",
@@ -1767,6 +1769,7 @@ namespace IPC.Runtime.Engine
                 recoveredFailureCount,
                 previousConnectionError ?? string.Empty);
 
+            deviceState?.Diagnostics.RecordEvent("DeviceConnectionRecovered", null, null, previousConnectionError);
             _runtimeEvents.Add(new RuntimeErrorDetail
             {
                 Category = "DeviceConnectionRecovered",
@@ -2106,12 +2109,14 @@ namespace IPC.Runtime.Engine
                 if (resultIndexes != null) resultIndexes[index] = wireIndex;
             }
             IList<PlcBatchReadResult> results;
+            long driverStarted = 0;
             try
             {
                 results = await ExecutePlcOperationAsync(state,
                     token =>
                     {
                         foreach (PendingTagRead read in reads) RecordRecoveryOperationStart(state, read.Definition);
+                        driverStarted = Stopwatch.GetTimestamp();
                         return PlcClientInvoker.ReadManyAsync(client, requests, token);
                     }, cancellationToken,
                     recoveryVerification ? PlcOperationTimeoutKind.Recovery : PlcOperationTimeoutKind.Batch).ConfigureAwait(false);
@@ -2130,6 +2135,9 @@ namespace IPC.Runtime.Engine
             }
             if (!IsCurrentGeneration(generation)) return true;
 
+            DriverReadTiming timing = DriverReadTiming.Finish(state, driverStarted);
+            DateTime receivedUtc = DateTime.UtcNow;
+            int successfulItems = 0, deferredItems = 0;
             bool connectionFailure = false;
             bool anySuccess = false;
             string connectionError = string.Empty;
@@ -2141,6 +2149,7 @@ namespace IPC.Runtime.Engine
                 PlcBatchReadResult? result = results != null && resultIndex < results.Count ? results[resultIndex] : null;
                 if (result == null || result.IsDeferred)
                 {
+                    deferredItems++;
                     // Do not turn a diagnostic budget or an unexecuted segment
                     // into a read failure, first attempt, or tag quarantine.
                     TagValueSnapshot? rescheduled = null;
@@ -2150,8 +2159,14 @@ namespace IPC.Runtime.Engine
                         DateTime retry = DateTime.UtcNow.AddMilliseconds(_schedulerIntervalMs);
                         _nextReadUtcByTagId[read.Tag.Id] = retry;
                         var runtime = read.Definition.Runtime;
+                        bool previouslyRecovering = runtime.HasRecoveryWork;
                         DateTime previousProbe = runtime.NextRecoveryProbeUtc;
                         runtime.RecordDeferred(retry);
+                        if (!previouslyRecovering && runtime.HasRecoveryWork)
+                        {
+                            state.Diagnostics.Suspend(read.Tag.Id);
+                            state.Diagnostics.RecordEvent("TagProbePending", read.Tag.Id, read.Definition.Address, result?.ErrorMessage);
+                        }
                         if (runtime.NextRecoveryProbeUtc != previousProbe)
                         {
                             string key = TagPath.BuildIdentity(state.Config.ChannelId, state.Config.Id,
@@ -2180,11 +2195,12 @@ namespace IPC.Runtime.Engine
                             sample = new PlcReadResult(sample.TypeCode, sample.TypeName, array.Clone())
                             { SourceTimestampUtc = sample.SourceTimestampUtc, IsUncertain = sample.IsUncertain };
                         ApplyReadSuccess(state, read.Group, read.Tag, sample, false,
-                            runtimeGeneration: generation, readDefinition: read.Definition);
+                            runtimeGeneration: generation, readDefinition: read.Definition, timing: timing);
                         if (!IsCurrentGeneration(generation)) return true;
+                        successfulItems++;
                         anySuccess = true;
                         if (subscriptionFallback && !wasRecovering)
-                            ScheduleNextSubscriptionFallback(state.Config, read.Group, read.Tag, now);
+                            ScheduleNextSubscriptionFallback(state, read.Group, read.Tag, now);
                         else read.SchedulePeriodic = true;
                         continue;
                     }
@@ -2200,7 +2216,7 @@ namespace IPC.Runtime.Engine
                 await RecordReadFailureAsync(state, read.Group, read.Tag, result.ErrorMessage,
                     connectionFault, LooksLikeTimeoutMessage(result.ErrorMessage), false,
                     result.FailureScope == PlcReadFailureScope.Tag, cancellationToken,
-                    generation, read.Definition).ConfigureAwait(false);
+                    generation, read.Definition, timing: timing).ConfigureAwait(false);
                 if (!IsCurrentGeneration(generation)) return true;
                 if (connectionFault && requests.Count > 1 && !recoveryVerification)
                     read.Definition.Runtime.BatchVerificationPending = true;
@@ -2214,6 +2230,9 @@ namespace IPC.Runtime.Engine
                 }
             }
             if (!IsCurrentGeneration(generation)) return true;
+            state.Diagnostics.RecordBatch(new(receivedUtc, reads[0].Definition.Address, reads[^1].Definition.Address,
+                reads.Count, requests.Count, successfulItems, reads.Count - successfulItems - deferredItems, deferredItems,
+                timing.ReadMs, recoveryVerification ? "RecoveryBatch" : "Batch"));
             if (anySuccess)
             {
                 // All successful periodic items in this turn use the same
@@ -2224,7 +2243,7 @@ namespace IPC.Runtime.Engine
                     DateTime completedUtc = DateTime.UtcNow;
                     foreach (PendingTagRead read in reads)
                         if (read.SchedulePeriodic)
-                            SchedulePeriodicReadNoLock(state, read.Group, read.Tag, completedUtc);
+                            SchedulePeriodicReadNoLock(state, read.Group, read.Tag, completedUtc, read.Definition.Runtime.LastPeriodicSampleValid);
                 }
             }
             if (connectionFailure)
@@ -2272,10 +2291,13 @@ namespace IPC.Runtime.Engine
             TagConfig tag,
             int runtimeGeneration,
             CancellationToken cancellationToken,
-            bool recoveryProbe = false)
+            bool recoveryProbe = false,
+            bool scheduled = false)
         {
             DeviceConfig device = deviceState.Config;
             CompiledTagRead definition = deviceState.ReadPlan.Get(tag);
+            long driverStarted = 0;
+            DriverReadTiming? timing = null;
             try
             {
                 deviceState.TotalReads++;
@@ -2286,6 +2308,7 @@ namespace IPC.Runtime.Engine
                     token =>
                     {
                         RecordRecoveryOperationStart(deviceState, definition);
+                        driverStarted = Stopwatch.GetTimestamp();
                         return PlcClientInvoker.ReadAsync(
                         client,
                         definition.Address,
@@ -2298,7 +2321,11 @@ namespace IPC.Runtime.Engine
                 if (!IsCurrentGeneration(runtimeGeneration))
                     return (true, false, false);
 
-                ApplyReadSuccess(deviceState, group, tag, result, runtimeGeneration: runtimeGeneration, readDefinition: definition);
+                if (scheduled) timing = DriverReadTiming.Finish(deviceState, driverStarted);
+                ApplyReadSuccess(deviceState, group, tag, result, runtimeGeneration: runtimeGeneration, readDefinition: definition, timing: timing);
+                if (timing.HasValue)
+                    deviceState.Diagnostics.RecordBatch(new(DateTime.UtcNow, definition.Address, definition.Address,
+                        1, 1, 1, 0, 0, timing.Value.ReadMs, recoveryProbe ? "Probe" : "Single"));
                 return (true, true, true);
             }
             catch (Exception ex)
@@ -2311,6 +2338,12 @@ namespace IPC.Runtime.Engine
                     ex is ArgumentException || ex is FormatException || ex is OverflowException || ex is NotSupportedException || LooksLikeTagLevelError(ex.Message)
                         ? PlcReadFailureScope.Tag : PlcReadFailureScope.Batch);
                 bool isCommunicationError = IsConnectionFailureScope(failureScope);
+                if (scheduled)
+                {
+                    timing ??= DriverReadTiming.Finish(deviceState, driverStarted);
+                    deviceState.Diagnostics.RecordBatch(new(DateTime.UtcNow, definition.Address, definition.Address,
+                        1, 1, 0, 1, 0, timing.Value.ReadMs, recoveryProbe ? "Probe" : "Single"));
+                }
                 bool keepConnected = await RecordReadFailureAsync(
                     deviceState,
                     group,
@@ -2320,7 +2353,7 @@ namespace IPC.Runtime.Engine
                     LooksLikeTimeout(ex),
                     isCommunicationError,
                     failureScope == PlcReadFailureScope.Tag,
-                    cancellationToken, runtimeGeneration, definition).ConfigureAwait(false);
+                    cancellationToken, runtimeGeneration, definition, timing: timing).ConfigureAwait(false);
                 bool responseConfirmed = failureScope == PlcReadFailureScope.Tag && HasTagProtocolResponse(ex);
                 if (responseConfirmed && IsCurrentGeneration(runtimeGeneration))
                     RecordDeviceCommunicationSuccess(deviceState);
@@ -2346,7 +2379,8 @@ namespace IPC.Runtime.Engine
             bool recordDeviceSuccess = true,
             int runtimeGeneration = 0,
             DateTime? sourceTimestampUtc = null,
-            CompiledTagRead? readDefinition = null)
+            CompiledTagRead? readDefinition = null,
+            DriverReadTiming? timing = null)
         {
             DeviceConfig device = deviceState.Config;
             CompiledTagRead compiledRead = readDefinition ?? deviceState.ReadPlan.Get(tag);
@@ -2379,6 +2413,7 @@ namespace IPC.Runtime.Engine
                     ? result.SourceTimestampUtc.Value < compiledRead.Runtime.LastSourceTimestampUtc
                     : sourceTimestampUtc.HasValue && IsOlderThanCurrentSnapshot(snapshot))
                 {
+                    if (timing.HasValue) compiledRead.Runtime.LastPeriodicSampleValid = false;
                     PublishHistoricalRead(snapshot);
                     return true;
                 }
@@ -2390,11 +2425,17 @@ namespace IPC.Runtime.Engine
                 else if (!deviceState.IsIsolated && !compiledRead.Runtime.HasRecoveryWork && compiledRead.Runtime.HealthyReadBaselineUtc != DateTime.MinValue)
                     _acquisitionMetrics.RecordHealthyRefreshGapMs((observedUtc - compiledRead.Runtime.HealthyReadBaselineUtc).TotalMilliseconds);
                 deviceState.SuccessfulReads++;
+                if (compiledRead.Runtime.HasRecoveryWork)
+                    deviceState.Diagnostics.RecordEvent("TagRecovered", tag.Id, compiledRead.Address, null);
                 compiledRead.Runtime.RecordSuccess();
                 deviceState.LastKnownGoodTagId = tag.Id ?? string.Empty;
                 if (recordDeviceSuccess) RecordDeviceCommunicationSuccess(deviceState);
                 compiledRead.Runtime.HealthyReadBaselineUtc = observedUtc;
                 ApplyTagRuntimeState(snapshot, compiledRead.Runtime);
+                if (timing.HasValue)
+                    compiledRead.Runtime.LastPeriodicSampleValid = snapshot.Quality is TagQuality.Good or TagQuality.Filtered;
+                if (timing.HasValue || sourceTimestampUtc.HasValue)
+                    RecordTraceSample(device.Id, tag.Id, snapshot.Timestamp, timing);
                 UpdateSnapshot(snapshot, isReadResult: true);
                 return true;
             }
@@ -2521,7 +2562,8 @@ namespace IPC.Runtime.Engine
             int runtimeGeneration = 0,
             CompiledTagRead? readDefinition = null,
             DateTime? sourceTimestampUtc = null,
-            DateTime? deviceTimestampUtc = null)
+            DateTime? deviceTimestampUtc = null,
+            DriverReadTiming? timing = null)
         {
             DeviceConfig device = deviceState.Config;
             sourceTimestampUtc = deviceTimestampUtc ?? sourceTimestampUtc;
@@ -2552,6 +2594,7 @@ namespace IPC.Runtime.Engine
                 deviceState.FailedReads++;
                 deviceState.LastFailureTime = DateTime.Now;
                 bool wasRecovering = compiledRead.Runtime.HasRecoveryWork;
+                bool wasIsolated = compiledRead.Runtime.IsIsolated;
                 compiledRead.Runtime.RecoveryIntervalMs = _tagRecoveryProbeIntervalMs;
                 if (!isCommunicationError && isolateTag)
                     compiledRead.Runtime.RecordFailure(message);
@@ -2559,13 +2602,20 @@ namespace IPC.Runtime.Engine
                     compiledRead.Runtime.RecordUncertainFailure(message, _tagRecoveryProbeIntervalMs);
                 if (!wasRecovering && compiledRead.Runtime.HasRecoveryWork)
                 {
+                    deviceState.Diagnostics.RecordFailure(tag.Id, DateTime.UtcNow, message);
+                    if (!compiledRead.Runtime.IsIsolated)
+                        deviceState.Diagnostics.RecordEvent("TagProbePending", tag.Id, compiledRead.Address, message);
                     deviceState.SubscriptionFingerprint = string.Empty;
                     deviceState.NextPollUtc = DateTime.MinValue;
                 }
+                if (!wasIsolated && compiledRead.Runtime.IsIsolated)
+                    deviceState.Diagnostics.RecordEvent("TagIsolated", tag.Id, compiledRead.Address, message);
                 TagValueSnapshot failureSnapshot = CreateSnapshot(device, group, tag, failureQuality, message);
                 if (sourceTimestampUtc.HasValue) failureSnapshot.Timestamp = sourceTimestampUtc.Value.ToLocalTime();
                 failureSnapshot.LastReadError = message;
                 ApplyTagRuntimeState(failureSnapshot, compiledRead.Runtime);
+                if (timing.HasValue || sourceTimestampUtc.HasValue)
+                    RecordTraceSample(device.Id, tag.Id, failureSnapshot.Timestamp, timing);
                 UpdateSnapshot(failureSnapshot, isReadResult: true);
             }
             bool retainUdpConnection = isCommunicationError &&
@@ -3608,7 +3658,7 @@ namespace IPC.Runtime.Engine
             }
         }
 
-        private void ScheduleNextRead(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, int generation, bool failed)
+        private void ScheduleNextRead(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, int generation, bool failed, bool validSample = false)
         {
             lock (_syncRoot)
             {
@@ -3617,19 +3667,22 @@ namespace IPC.Runtime.Engine
                 if (failed)
                     _nextReadUtcByTagId[tag.Id] = completedUtc.AddMilliseconds(GetFailureRetryDelayMs(state.Config, tag));
                 else
-                    SchedulePeriodicReadNoLock(state, group, tag, completedUtc);
+                    SchedulePeriodicReadNoLock(state, group, tag, completedUtc, validSample);
             }
         }
 
-        private void SchedulePeriodicReadNoLock(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime completedUtc)
+        private void SchedulePeriodicReadNoLock(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime completedUtc, bool validSample)
         {
-            _nextReadUtcByTagId[tag.Id] = GetNextPeriodicReadUtc(state.CadenceOriginUtc,
-                GetEffectiveScanRateMs(state.Config, group, tag), completedUtc);
+            int periodMs = GetEffectiveScanRateMs(state.Config, group, tag);
+            DateTime nextDueUtc = GetNextPeriodicReadUtc(state.CadenceOriginUtc, periodMs, completedUtc);
+            _nextReadUtcByTagId[tag.Id] = nextDueUtc;
+            state.Diagnostics.RecordPeriodic(tag.Id, periodMs, completedUtc, nextDueUtc, validSample);
         }
 
-        private void ScheduleNextSubscriptionFallback(DeviceConfig device, GroupConfig? group, TagConfig tag, DateTime now)
+        private void ScheduleNextSubscriptionFallback(DeviceRuntimeState state, GroupConfig? group, TagConfig tag, DateTime now)
         {
-            int interval = GetSubscriptionFallbackIntervalMs(device, group, tag);
+            state.Diagnostics.Suspend(tag.Id);
+            int interval = GetSubscriptionFallbackIntervalMs(state.Config, group, tag);
             _nextReadUtcByTagId[tag.Id] = now.AddMilliseconds(interval);
         }
 
@@ -3642,7 +3695,7 @@ namespace IPC.Runtime.Engine
             return (int)interval;
         }
 
-        private static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group, TagConfig? tag = null)
+        internal static int GetEffectiveScanRateMs(DeviceConfig device, GroupConfig? group, TagConfig? tag = null)
         {
             int scanRate = tag is { ScanRateMs: > 0 } ? tag.ScanRateMs
                 : group is { ScanRateMs: > 0 } ? group.ScanRateMs : device.DefaultScanRateMs;
@@ -4185,7 +4238,7 @@ namespace IPC.Runtime.Engine
             return value.ToString() ?? string.Empty;
         }
 
-        private static bool TryValidateWriteValue(PlcDataType dataType, string valueText, int elementCount, out string errorMessage)
+        public static bool TryValidateWriteValue(PlcDataType dataType, string valueText, int elementCount, out string errorMessage)
         {
             errorMessage = string.Empty;
             if (dataType == PlcDataType.String) return true;

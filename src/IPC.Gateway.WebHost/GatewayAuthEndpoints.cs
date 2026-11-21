@@ -342,6 +342,12 @@ public static class GatewayAuthEndpoints
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.DebugFlowRule, GatewayPermissions.WriteConfiguration);
     }
 
+    public static bool CanRunProtocolDiagnostics(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.RunProtocolDiagnostics);
+
+    public static bool CanWriteProtocolDiagnostics(ClaimsPrincipal user) =>
+        IsAdmin(user) || (CanRunProtocolDiagnostics(user) && HasAnyPermission(user, GatewayPermissions.WriteProtocolDiagnostics));
+
     public static bool CanViewMqtt(ClaimsPrincipal user)
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.ViewMqtt, GatewayPermissions.ReadConfiguration);
@@ -371,6 +377,12 @@ public static class GatewayAuthEndpoints
     {
         return IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.EditProject, GatewayPermissions.WriteConfiguration);
     }
+
+    public static bool CanAcknowledgeAlarm(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.AlarmAcknowledge);
+
+    public static bool CanHandleAlarm(ClaimsPrincipal user) =>
+        IsAdmin(user) || HasAnyPermission(user, GatewayPermissions.AlarmHandle);
 
     public static bool CanViewHistory(ClaimsPrincipal user)
     {

@@ -194,6 +194,8 @@ const actions: Record<string, string> = {
 };
 const permissionOverrides: Record<string, string> = {
   "history.export": "导出历史记录",
+  "alarm.acknowledge": "确认报警",
+  "alarm.handle": "处理报警",
   "dashboard.storagehealth.edit": "编辑存储健康阈值",
   "scripts.databases.manage": "管理数据库连接与写入目标",
   "security.certificates.manage": "管理安全证书",

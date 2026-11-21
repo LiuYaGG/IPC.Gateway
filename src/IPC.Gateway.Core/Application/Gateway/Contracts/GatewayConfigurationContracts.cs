@@ -950,6 +950,13 @@ public sealed class RuntimeErrorDto
 
 public sealed class TagValueSnapshotDto
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public long DiagnosticPushEnqueuedAt { get; set; }
+
+    // Evaluate at SSE serialization, after the individual subscriber's latest-value queue.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? DiagnosticPushQueueMs => DiagnosticPushEnqueuedAt == 0 ? null :
+        System.Diagnostics.Stopwatch.GetElapsedTime(DiagnosticPushEnqueuedAt).TotalMilliseconds;
     public string ChannelId { get; set; } = string.Empty;
     public string ChannelName { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;

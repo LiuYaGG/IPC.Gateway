@@ -4,6 +4,7 @@ import type {
 } from '../api'
 import { createRuntimeEventGuard, shouldApplyRuntimeSnapshot } from './runtimePush'
 import { decodeTagSnapshot } from '../api'
+import { traceReceived } from './acquisitionBrowserTrace'
 
 export function tagKey(tag: TagValueSnapshot) {
   return [tag.channelId, tag.deviceId, tag.groupId, tag.tagId].map(id => (id ?? '').trim().toLowerCase()).join('/')
@@ -80,6 +81,7 @@ export function connectRuntimeEvents(handlers: {
   function listen<T>(type: string, callback: (envelope: RuntimeEventEnvelope<T>) => void) {
     source.addEventListener(type, event => {
       if (closed || document.hidden) return
+      const arrived = performance.now()
       let envelope: RuntimeEventEnvelope<T>
       try {
         envelope = JSON.parse((event as MessageEvent<string>).data)
@@ -96,7 +98,7 @@ export function connectRuntimeEvents(handlers: {
         if (result === 'resync') reconnect()
         if (result !== 'accept') return
       }
-      lastReceived = performance.now()
+      lastReceived = arrived
       callback(envelope)
     })
   }
@@ -138,7 +140,10 @@ export function connectRuntimeEvents(handlers: {
     handlers.snapshot(snapshot)
   })
   listen<RuntimeTagsChangedEvent>('tags', e => collect(e.sequence, changes => {
-    for (const tag of e.data.tags) setLatestTag(changes.tags, tagKey(tag), decodeTagSnapshot(tag))
+    for (const tag of e.data.tags) {
+      if (!staging && tag.diagnosticPushQueueMs !== undefined) traceReceived(tag, lastReceived)
+      setLatestTag(changes.tags, tagKey(tag), decodeTagSnapshot(tag))
+    }
   }))
   listen<RuntimeDevicesChangedEvent>('devices', e => collect(e.sequence, changes => {
     for (const device of e.data.devices) {

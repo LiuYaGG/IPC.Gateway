@@ -74,6 +74,7 @@ namespace IPC.Runtime.Engine
         public DeviceActor Actor { get; private set; }
         public CircuitBreaker ProtocolCircuitBreaker { get; private set; }
         public CompiledDeviceReadPlan ReadPlan { get; private set; }
+        public DeviceAcquisitionDiagnostics Diagnostics { get; } = new();
         public IPlcClient? Client { get; set; }
         public IPlcSubscription? Subscription { get; set; }
         public string SubscriptionFingerprint { get; set; }
@@ -129,7 +130,7 @@ namespace IPC.Runtime.Engine
         public bool CurrentPollIsRecovery { get; set; }
         public bool CurrentRecoveryMetricsRecorded { get; set; }
 
-        public DeviceRuntimeConfigTransition ReuseConfig(DeviceConfig config)
+        public DeviceRuntimeConfigTransition ReuseConfig(DeviceConfig config, bool channelEnabled)
         {
             if (config == null)
                 return DeviceRuntimeConfigTransition.None;
@@ -138,6 +139,9 @@ namespace IPC.Runtime.Engine
             bool isEnabled = config.Enabled;
             Config = config;
             ReadPlan = CompiledDeviceReadPlan.Compile(config, ReadPlan);
+            Diagnostics.Reconcile((id, period) => channelEnabled && isEnabled && wasEnabled && ReadPlan.TryGet(id, out var entry) &&
+                entry != null && entry.PreservesSchedule && RuntimeEngine.GetEffectiveScanRateMs(config, entry.Group, entry.Tag) == period,
+                connectionDisabled: !channelEnabled || !isEnabled);
             IsQueued = false;
             if (!IsPolling && string.Equals(LastTaskStatus, "Queued", StringComparison.OrdinalIgnoreCase))
                 LastTaskStatus = "Idle";

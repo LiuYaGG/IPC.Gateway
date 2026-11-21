@@ -37,8 +37,9 @@ public static class GatewayCommercialEndpoints
             if (!GatewayAuthEndpoints.CanImportTags(user))
                 return Forbidden("Current user is not allowed to import tags.");
             using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8);
-            string csv = await reader.ReadToEndAsync();
-            return Execute(() => tags.ImportCsv(csv, channelId ?? string.Empty, deviceId ?? string.Empty));
+            var token = request.HttpContext.RequestAborted;
+            string csv = await reader.ReadToEndAsync(token);
+            return Execute(() => tags.ImportCsv(csv, channelId ?? string.Empty, deviceId ?? string.Empty, token));
         });
 
         group.MapGet("/project/backup", (ClaimsPrincipal user, GatewayProjectBackupService backups) =>

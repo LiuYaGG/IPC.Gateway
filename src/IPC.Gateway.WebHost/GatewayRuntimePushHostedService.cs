@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using IPC.Gateway.Core.Application.Gateway.Contracts;
 using IPC.Gateway.Core.Gateway;
 using IPC.Runtime.Engine;
@@ -10,7 +11,8 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
 {
     private const int MaxTagBatchSize = 500;
     private const int MaxPendingTags = 5000;
-    private readonly record struct TagIdentity(string ChannelId, string DeviceId, string GroupId, string TagId);
+    private readonly record struct TagIdentity(string ChannelId, string DeviceId, string GroupId, string TagId,
+        long Revision, long EnqueuedAt);
     private static readonly TimeSpan TagFlushInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan DeviceSampleInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan StatusPatchInterval = TimeSpan.FromSeconds(10);
@@ -119,7 +121,10 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
                 return;
             }
 
-            _pendingTags[key] = new TagIdentity(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId);
+            long enqueuedAt = _gateway.Runtime is RuntimeEngine runtime && runtime.IsAcquisitionTraceActive(tag.DeviceId, tag.TagId)
+                ? Stopwatch.GetTimestamp() : 0;
+            _pendingTags[key] = new TagIdentity(tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId,
+                tag.RuntimeRevision, enqueuedAt);
         }
     }
 
@@ -156,7 +161,12 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
                     if (_gateway.ContainsRuntimeTag(notified.ChannelId, notified.DeviceId, notified.GroupId, notified.TagId) &&
                         _gateway.Runtime.TryGetSnapshotById(notified.ChannelId, notified.DeviceId,
                         notified.GroupId, notified.TagId, out var latest) && latest != null)
-                        pending.Add(GatewayConfigurationContractMapper.ToDto(latest));
+                    {
+                        var dto = GatewayConfigurationContractMapper.ToDto(latest);
+                        if (notified.EnqueuedAt != 0 && latest.RuntimeRevision == notified.Revision)
+                            dto.DiagnosticPushEnqueuedAt = notified.EnqueuedAt;
+                        pending.Add(dto);
+                    }
                 }
             }
         }

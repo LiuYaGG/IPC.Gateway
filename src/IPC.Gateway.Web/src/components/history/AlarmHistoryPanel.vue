@@ -17,6 +17,11 @@
           :selected="selected[field.level]" :active="active && !deactivated"
           :disabled="!!field.parent && !selected[field.parent]" @change="select(field.level, $event)" />
       </label>
+      <label>
+        <span>{{ at('处理状态') }}</span>
+        <a-select v-model:value="processingStatus" allow-clear :placeholder="at('全部处理状态')"
+          :aria-label="at('处理状态')" :options="statusOptions" />
+      </label>
       <div class="alarm-history-actions">
         <a-button type="primary" html-type="submit" :loading="loading" :disabled="exporting">
           <template #icon><SearchOutlined /></template>{{ tx('查询') }}
@@ -30,14 +35,28 @@
     <a-alert v-if="error" type="error" show-icon :message="tx(error)" />
     <div class="alarm-history-results">
       <AutoHeightTable resize-key="alarm-history" :columns="columns" :data-source="rows" :loading="loading"
-        row-key="eventId" :paging="false" :scroll-x="1150">
+        row-key="eventId" :paging="false" :scroll-x="1550">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'timestamp'">{{ new Date(record.timestamp).toLocaleString(locale) }}</template>
           <template v-else-if="column.key === 'path'">{{ path(record) }}</template>
           <template v-else-if="column.key === 'state'">{{ transition(record) }}</template>
+          <template v-else-if="column.key === 'alarmStatus'">
+            <a-tag v-if="record.alarmStatus === 'Active'" color="red">{{ at('报警中') }}</a-tag>
+            <a-tag v-else-if="record.alarmStatus === 'Recovered'" color="green">{{ at('已恢复') }}</a-tag>
+            <span v-else :title="record.canProcess ? at('恢复状态未知') : undefined">—</span>
+          </template>
+          <template v-else-if="column.key === 'processingStatus'">
+            <a-tag v-if="record.processingStatus" :color="statusColors[record.processingStatus as AlarmProcessingStatus]">
+              {{ processingLabel(record.processingStatus) }}
+            </a-tag>
+            <template v-else>—</template>
+          </template>
           <template v-else-if="column.key === 'deliveryStatus'">{{ label(record.deliveryStatus) }}</template>
           <template v-else-if="column.key === 'message'">{{ record.message || '—' }}</template>
           <template v-else-if="column.key === 'value' || column.key === 'threshold'">{{ record[column.key] ?? '—' }}</template>
+          <a-button v-else-if="column.key === 'actions'" type="link" size="small" @click="showDetail(record)">
+            {{ at(rowActionLabel(record)) }}
+          </a-button>
         </template>
         <template #emptyText>
           <a-empty :description="tx(result ? '没有符合查询条件的报警记录' : '设置查询条件后点击查询')" />
@@ -46,16 +65,54 @@
       <TablePager :current="page" :page-size="pageSize" :total="result?.total ?? 0"
         :disabled="loading || exporting || !result" @change="changePage" />
     </div>
+    <a-modal v-model:open="detailOpen" centered width="560px" destroy-on-close
+      :closable="!savingAction" :keyboard="!savingAction" :mask-closable="false"
+      :title="at(actionMode === 'acknowledge' ? '确认报警' : actionMode === 'handle' ? '填写处理记录' : '报警处理记录')">
+      <div v-if="detail" class="alarm-work-details">
+        <dl class="alarm-work-context">
+          <dt>{{ tx('报警来源') }}</dt><dd>{{ path(detail) }}</dd>
+          <dt>{{ tx('时间') }}</dt><dd>{{ displayTime(detail.timestamp) }}</dd>
+          <dt>{{ tx('状态变化') }}</dt><dd>{{ transition(detail) }}</dd>
+          <dt v-if="detail.recoveredAtUtc">{{ at('恢复时间') }}</dt><dd v-if="detail.recoveredAtUtc">{{ displayTime(detail.recoveredAtUtc) }}</dd>
+          <dt v-if="detail.message">{{ tx('消息') }}</dt><dd v-if="detail.message" class="alarm-operator-note">{{ detail.message }}</dd>
+        </dl>
+        <a-timeline v-if="detail.acknowledged || detail.handled">
+          <a-timeline-item v-if="detail.acknowledged" color="blue">
+            <strong>{{ at('已确认') }}</strong> · {{ detail.acknowledged.operator }} · {{ displayTime(detail.acknowledged.timestampUtc) }}
+            <div v-if="detail.acknowledged.note" class="alarm-operator-note">{{ detail.acknowledged.note }}</div>
+          </a-timeline-item>
+          <a-timeline-item v-if="detail.handled" color="green">
+            <strong>{{ at('已处理') }}</strong> · {{ detail.handled.operator }} · {{ displayTime(detail.handled.timestampUtc) }}
+            <div class="alarm-operator-note">{{ detail.handled.note }}</div>
+          </a-timeline-item>
+        </a-timeline>
+        <label v-if="actionMode" class="alarm-work-note">
+          <span>{{ at(actionMode === 'acknowledge' ? '确认备注（可选）' : '处理记录（必填）') }}</span>
+          <a-textarea v-model:value="operatorNote" :rows="4" :maxlength="1000" :disabled="savingAction"
+            :aria-required="actionMode === 'handle'" show-count />
+        </label>
+        <a-alert v-if="workflowError" type="error" show-icon :message="workflowError" />
+      </div>
+      <template #footer>
+        <a-button :disabled="savingAction" @click="detailOpen = false">{{ tx(actionMode ? '取消' : '关闭') }}</a-button>
+        <a-button v-if="actionMode" type="primary" :loading="savingAction"
+          :disabled="actionMode === 'handle' && !operatorNote.trim()" @click="saveAction">
+          {{ at(actionMode === 'acknowledge' ? '确认报警' : '保存处理记录') }}
+        </a-button>
+      </template>
+    </a-modal>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, reactive, ref, shallowRef, watch } from 'vue'
 import { DownloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
-import { exportAlarmHistory, loadAlarmHistoryPage, type AlarmHistoryPage, type AlarmHistoryQuery, type AlarmHistoryRow,
+import { exportAlarmHistory, loadAlarmHistoryPage, recordAlarmOperatorAction, type AlarmHistoryPage, type AlarmHistoryQuery, type AlarmHistoryRow,
+  type AlarmProcessingStatus,
   type HistoryOptionLevel, type HistoryRecordFilters, type HistoryRecordOption } from '../../api'
 import { locale, tx } from '../../i18n'
 import { ruleStateText } from '../../i18n/ruleText'
+import { alarmText as at } from '../../i18n/alarmProcessing'
 import { PERMISSIONS, usePermissions } from '../../utils/permissions'
 import { localExportFileName, saveExcelAs } from '../../utils/excelSave'
 import AutoHeightTable from '../AutoHeightTable.vue'
@@ -65,6 +122,12 @@ import HistoryPointSelect from './HistoryPointSelect.vue'
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 const { hasPermission } = usePermissions()
 const canExport = computed(() => hasPermission(PERMISSIONS.historyView) && hasPermission(PERMISSIONS.historyExport))
+const canAcknowledge = computed(() => hasPermission(PERMISSIONS.alarmAcknowledge))
+const canHandle = computed(() => hasPermission(PERMISSIONS.alarmHandle))
+const processingStatus = ref<AlarmProcessingStatus>()
+const statusLabels: Record<AlarmProcessingStatus, string> = { Pending: '待确认', Acknowledged: '已确认', Handled: '已处理' }
+const statusColors: Record<AlarmProcessingStatus, string> = { Pending: 'orange', Acknowledged: 'blue', Handled: 'green' }
+const statusOptions = computed(() => Object.entries(statusLabels).map(([value, label]) => ({ value, label: at(label) })))
 const fields: { level: HistoryOptionLevel; label: string; parent?: HistoryOptionLevel }[] = [
   { level: 'channel', label: '通道' }, { level: 'device', label: '设备', parent: 'channel' },
   { level: 'group', label: '分组', parent: 'device' }, { level: 'tag', label: '标签', parent: 'device' }
@@ -96,16 +159,25 @@ const loading = ref(false)
 const exporting = ref(false)
 const deactivated = ref(false)
 const error = ref('')
+const detail = shallowRef<AlarmHistoryRow>()
+const detailOpen = ref(false)
+const savingAction = ref(false)
+const operatorNote = ref('')
+const workflowError = ref('')
+const actionMode = computed(() => detail.value ? rowAction(detail.value) : undefined)
 let queryController: AbortController | undefined
 let exportController: AbortController | undefined
 const columns = computed(() => [
   { title: tx('时间'), key: 'timestamp', width: 180 },
   { title: tx('报警来源'), key: 'path', width: 250 },
   { title: tx('状态变化'), key: 'state', width: 180 },
+  { title: at('报警状态'), key: 'alarmStatus', width: 120 },
+  { title: at('处理状态'), key: 'processingStatus', width: 160 },
   { title: tx('触发值'), key: 'value', width: 100 },
   { title: tx('阈值'), key: 'threshold', width: 90 },
   { title: tx('消息'), key: 'message', width: 230 },
   { title: tx('发送状态'), key: 'deliveryStatus', width: 120 },
+  { title: tx('操作'), key: 'actions', width: 135, fixed: 'right' as const },
 ])
 function label(code: string) {
   return ruleStateText(code, locale.value)
@@ -118,6 +190,44 @@ function transition(record: AlarmHistoryRow) {
   return record.previousState && record.state
     ? `${record.previousState} → ${record.state}`
     : record.state || record.eventType || '—'
+}
+function processingLabel(status: AlarmProcessingStatus) {
+  return at(statusLabels[status] ?? status)
+}
+function displayTime(timestamp: string) {
+  return new Date(timestamp).toLocaleString(locale.value)
+}
+function rowAction(record: AlarmHistoryRow) {
+  if (record.canProcess && record.processingStatus === 'Pending' && canAcknowledge.value) return 'acknowledge'
+  if (record.canProcess && record.processingStatus === 'Acknowledged' && canHandle.value) return 'handle'
+}
+function rowActionLabel(record: AlarmHistoryRow) {
+  const action = rowAction(record)
+  return action === 'acknowledge' ? '确认' : action === 'handle' ? '填写处理' : '记录'
+}
+function showDetail(record: AlarmHistoryRow) {
+  detail.value = record
+  operatorNote.value = ''
+  workflowError.value = ''
+  detailOpen.value = true
+}
+async function saveAction() {
+  const record = detail.value
+  const action = actionMode.value
+  const note = operatorNote.value.trim()
+  if (!record || !action || savingAction.value || (action === 'handle' && !note)) return
+  savingAction.value = true
+  workflowError.value = ''
+  try {
+    await recordAlarmOperatorAction(record.eventId, action, note, locale.value)
+    detailOpen.value = false
+    if (applied.value && props.active && !deactivated.value) await load(page.value, pageSize.value, applied.value)
+    else resetResult()
+  } catch (cause) {
+    workflowError.value = cause instanceof Error ? at(cause.message) : at('保存报警记录失败')
+  } finally {
+    savingAction.value = false
+  }
 }
 function cancelRequests() {
   queryController?.abort()
@@ -132,7 +242,7 @@ function resetResult() {
   page.value = 1
   error.value = ''
 }
-watch([from, to, () => selected.channel?.id, () => selected.device?.id, () => selected.group?.id, () => selected.tag?.id], resetResult, { flush: 'sync' })
+watch([from, to, processingStatus, () => selected.channel?.id, () => selected.device?.id, () => selected.group?.id, () => selected.tag?.id], resetResult, { flush: 'sync' })
 watch(() => props.active, active => { if (!active) cancelRequests() })
 onActivated(() => { deactivated.value = false })
 onDeactivated(() => { deactivated.value = true; cancelRequests() })
@@ -148,7 +258,7 @@ function submit() {
     return
   }
   const filters: AlarmHistoryQuery = {
-    ...ancestors('tag'), tagId: selected.tag?.id,
+    ...ancestors('tag'), tagId: selected.tag?.id, processingStatus: processingStatus.value,
     from: begin !== undefined ? new Date(begin).toISOString() : undefined,
     to: end !== undefined ? new Date(end).toISOString() : undefined
   }
@@ -202,16 +312,22 @@ async function download() {
 <style scoped>
 .alarm-history { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; }
 .alarm-history-tools, .alarm-history-results { padding: 12px; background: #fff; border: 1px solid var(--gateway-border); border-radius: 8px; }
-.alarm-history-tools { display: grid; grid-template-columns: repeat(2, minmax(198px, 1.3fr)) repeat(4, minmax(110px, 1fr)) auto; gap: 10px; align-items: start; flex-shrink: 0; }
+.alarm-history-tools { display: grid; grid-template-columns: repeat(2, minmax(198px, 1.3fr)) repeat(4, minmax(110px, 1fr)) minmax(145px, 1fr) auto; gap: 10px; align-items: start; flex-shrink: 0; }
 .alarm-history-tools > label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .alarm-history-tools .ant-picker { width: 100%; min-width: 0; }
 .alarm-history-actions { display: flex; align-self: end; align-items: center; gap: 8px; white-space: nowrap; }
 .alarm-history-results { display: flex; flex-direction: column; flex: 1; min-height: 175px; min-width: 0; overflow: hidden; }
-@container (max-width: 1190px) {
+.alarm-work-details { display: grid; gap: 12px; min-width: 0; max-height: min(65dvh, 650px); overflow: auto; padding: 2px; }
+.alarm-work-context { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px 12px; margin: 0; }
+.alarm-work-context dt { color: var(--gateway-muted); }
+.alarm-work-context dd { margin: 0; overflow-wrap: anywhere; }
+.alarm-work-note { display: grid; gap: 5px; }
+.alarm-operator-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+@container (max-width: 1320px) {
   .alarm-history-tools { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .alarm-history-time { grid-column: span 2; }
-  .alarm-history-actions { grid-column: 1 / -1; justify-self: end; }
+  .alarm-history-actions { grid-column: span 3; justify-self: end; }
 }
-@container (max-width: 660px) { .alarm-history-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } .alarm-history-time { grid-column: auto; } }
+@container (max-width: 660px) { .alarm-history-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } .alarm-history-time { grid-column: auto; } .alarm-history-actions { grid-column: 1 / -1; } }
 @container (max-width: 430px) { .alarm-history-time { grid-column: span 2; } }
 </style>

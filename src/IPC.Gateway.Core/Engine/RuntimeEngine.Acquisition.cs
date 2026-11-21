@@ -85,7 +85,7 @@ public sealed partial class RuntimeEngine
             if (entry.Runtime.LastReadAttemptUtc == DateTime.MinValue)
                 lanes[(int)AcquisitionLane.Initial].Add(entry);
             else if (subscriptionFallback && !IsConfigurationRefreshPending(tag.Id))
-                ScheduleNextSubscriptionFallback(state.Config, entry.Group, tag, now);
+                ScheduleNextSubscriptionFallback(state, entry.Group, tag, now);
             else
                 lanes[(int)AcquisitionLane.Healthy].Add(entry);
         }
@@ -160,14 +160,14 @@ public sealed partial class RuntimeEngine
             SetAcquisitionCursor(state, lane.Value, entry.Tag.Id);
             bool wasRecovering = entry.Runtime.HasRecoveryWork;
             var result = await ReadTagAsync(client, state, entry.Group, entry.Tag, generation, cancellationToken,
-                recoveryProbe: lane == AcquisitionLane.Recovery).ConfigureAwait(false);
+                recoveryProbe: lane == AcquisitionLane.Recovery, scheduled: true).ConfigureAwait(false);
             if (!IsCurrentGeneration(generation)) return;
             if (entry.Runtime.HasRecoveryWork)
                 ScheduleTagRecoveryProbe(entry.Tag, entry.Runtime.NextRecoveryProbeUtc);
             else if (subscriptionFallback && result.ReadSucceeded && !wasRecovering)
-                ScheduleNextSubscriptionFallback(state.Config, entry.Group, entry.Tag, DateTime.UtcNow);
+                ScheduleNextSubscriptionFallback(state, entry.Group, entry.Tag, DateTime.UtcNow);
             else
-                ScheduleNextRead(state, entry.Group, entry.Tag, generation, !result.ReadSucceeded);
+                ScheduleNextRead(state, entry.Group, entry.Tag, generation, !result.ReadSucceeded, entry.Runtime.LastPeriodicSampleValid);
             if (!result.KeepConnected || turn.ElapsedMilliseconds >= _readTurnBudgetMs) break;
         }
     }

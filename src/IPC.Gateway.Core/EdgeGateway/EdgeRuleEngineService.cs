@@ -367,7 +367,7 @@ namespace IPC.EdgeGateway
             if (HasWindowCalculation(rule) && !TryCalculateWindowPipeline(rule, state, ref snapshot, ref value)) return;
             if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
             {
-                EvaluateNoChangeTimeout(rule, snapshot, state, DateTime.Now);
+                EvaluateNoChangeTimeout(rule, snapshot, state, RuleTime);
                 return;
             }
             if (rule.ConditionType != EdgeRuleConditionType.QualityGate &&
@@ -652,7 +652,7 @@ namespace IPC.EdgeGateway
             if (limit <= 0D)
                 return;
 
-            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             if (!state.HasLastValue)
             {
                 state.LastValue = value;
@@ -735,7 +735,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateSlidingWindow(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             if (state.WindowSamples == null)
                 state.WindowSamples = new List<EdgeRuleWindowSample>();
 
@@ -821,7 +821,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateTrend(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             if (state.WindowSamples == null)
                 state.WindowSamples = new List<EdgeRuleWindowSample>();
 
@@ -878,7 +878,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateStateMachine(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime now = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime now = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             string current = GetStateMachineValue(snapshot);
             bool expected = MatchesStateValue(current, rule.StateExpectedValue);
             bool hasExplicitClear = !string.IsNullOrWhiteSpace(rule.StateClearValue);
@@ -913,7 +913,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateCycleTime(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime now = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime now = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             string current = GetStateMachineValue(snapshot);
             if (MatchesStateValue(current, rule.CycleStartValue))
             {
@@ -960,7 +960,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateProcessTakt(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime now = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime now = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             string current = GetStateMachineValue(snapshot);
             ResolveProcessTaktRange(rule, out double targetSeconds, out double minSeconds, out double maxSeconds);
 
@@ -1018,7 +1018,7 @@ namespace IPC.EdgeGateway
 
         private void EvaluateAnomalyDetection(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value, EdgeRuleState state)
         {
-            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? DateTime.Now : snapshot.Timestamp;
+            DateTime timestamp = snapshot.Timestamp == DateTime.MinValue ? RuleTime : snapshot.Timestamp;
             if (state.WindowSamples == null)
                 state.WindowSamples = new List<EdgeRuleWindowSample>();
 
@@ -1319,7 +1319,7 @@ namespace IPC.EdgeGateway
             if (rule.Conditions == null || rule.Conditions.Count == 0)
                 return;
 
-            DateTime now = triggerSnapshot.Timestamp == DateTime.MinValue ? DateTime.Now : triggerSnapshot.Timestamp;
+            DateTime now = triggerSnapshot.Timestamp == DateTime.MinValue ? RuleTime : triggerSnapshot.Timestamp;
             ResetSequenceIfExpired(rule, state, now);
 
             int expectedIndex = Math.Max(0, state.SequenceStepIndex);
@@ -1449,7 +1449,7 @@ namespace IPC.EdgeGateway
             string? activeMessageOverride = null,
             string? severity = null)
         {
-            DateTime now = DateTime.Now;
+            DateTime now = RuleTime;
             state.LastEvaluationSnapshot = snapshot.Clone();
             state.LastEvaluationValue = value;
             state.LastEvaluationThreshold = threshold;
@@ -1545,7 +1545,7 @@ namespace IPC.EdgeGateway
 
         private bool PublishEvent(EdgeRuleConfig rule, TagValueSnapshot snapshot, string eventType, string state, double value, double threshold, string message, bool publishCustomEvent, string? previousState = null)
         {
-            DateTime now = DateTime.Now;
+            DateTime now = RuleTime;
             EdgeRuleState ruleState = GetState(rule);
             if (string.Equals(eventType, "active", StringComparison.OrdinalIgnoreCase) &&
                 !CanPublishActiveEvent(rule, ruleState, now))
@@ -1578,6 +1578,11 @@ namespace IPC.EdgeGateway
             AddRecentEvent(ruleEvent);
             if (string.Equals(eventType, "active", StringComparison.OrdinalIgnoreCase))
                 MarkActiveEventPublished(ruleState, now);
+            if (_replayOutput != null)
+            {
+                CaptureReplayOutput(rule, ruleState, ruleEvent, publishCustomEvent);
+                return true;
+            }
             if (eventType != "value")
                 IpcLogService.WriteAudit("EdgeRule", rule.Name, eventType + ":" + state + " " + value.ToString("R", CultureInfo.InvariantCulture));
 
@@ -1852,6 +1857,8 @@ namespace IPC.EdgeGateway
             _recordAlarm(new GatewayAlarmRecord
             {
                 Source = "rule", EventId = message.EventId, Timestamp = occurredUtc,
+                AlarmCorrelationKey = "rule:" + JsonSerializer.Serialize(new[] { source.RuleId, action.Id,
+                    tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId }),
                 RuleId = source.RuleId, RuleName = source.RuleName,
                 ChannelId = tag.ChannelId, ChannelName = tag.ChannelName, DeviceId = tag.DeviceId, DeviceName = tag.DeviceName,
                 GroupId = tag.GroupId, GroupName = tag.GroupName, TagId = tag.TagId, TagName = tag.TagName,
@@ -2218,7 +2225,7 @@ namespace IPC.EdgeGateway
         {
             lock (_syncRoot)
             {
-                _lastErrorTime = DateTime.Now;
+                _lastErrorTime = RuleTime;
                 _lastError = (ruleEvent == null ? string.Empty : ruleEvent.RuleName + ": ") +
                              (action == null ? string.Empty : action.ActionType + ": ") +
                              (ex == null ? string.Empty : ex.Message);
@@ -2307,7 +2314,7 @@ namespace IPC.EdgeGateway
                     _clearedCount++;
                 else if (ruleEvent.EventType != "value")
                     _triggeredCount++;
-                _lastEventTime = ruleEvent.Timestamp == DateTime.MinValue ? DateTime.Now : ruleEvent.Timestamp;
+                _lastEventTime = ruleEvent.Timestamp == DateTime.MinValue ? RuleTime : ruleEvent.Timestamp;
 
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(ruleEvent);
                 status.IsActive = ruleEvent.EventType != "value" && !string.Equals(ruleEvent.EventType, "clear", StringComparison.OrdinalIgnoreCase);
@@ -2337,7 +2344,7 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
             {
                 _evaluationCount++;
-                _lastEvaluationTime = DateTime.Now;
+                _lastEvaluationTime = RuleTime;
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(rule);
                 status.EvaluationCount++;
                 status.LastEvaluationTime = _lastEvaluationTime;
@@ -2349,7 +2356,7 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
             {
                 _failedEvaluationCount++;
-                _lastErrorTime = DateTime.Now;
+                _lastErrorTime = RuleTime;
                 _lastError = (rule == null ? string.Empty : rule.Name + ": ") + (ex == null ? string.Empty : ex.Message);
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(rule);
                 status.FailedEvaluationCount++;
@@ -2362,7 +2369,7 @@ namespace IPC.EdgeGateway
         {
             lock (_syncRoot)
             {
-                _lastErrorTime = DateTime.Now;
+                _lastErrorTime = RuleTime;
                 _lastError = message ?? string.Empty;
             }
         }

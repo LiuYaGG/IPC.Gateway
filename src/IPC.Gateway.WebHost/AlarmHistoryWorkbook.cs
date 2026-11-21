@@ -9,9 +9,11 @@ internal static class AlarmHistoryWorkbook
     {
         timeZone ??= TimeZoneInfo.Local;
         string[] headers = english
-            ? [$"Timestamp ({timeZone.Id})", "Channel", "Device", "Group", "Tag", "Alarm source", "State transition", "Sample value", "Threshold", "Message", "Delivery status"]
-            : [$"时间 ({timeZone.Id})", "通道", "设备", "分组", "标签", "报警来源", "状态变化", "触发值", "阈值", "消息", "发送状态"];
-        HistoryPageWorkbook.WriteTable(destination, headers, [31, 24, 24, 24, 28, 58, 30, 18, 18, 70, 22],
+            ? [$"Timestamp ({timeZone.Id})", "Channel", "Device", "Group", "Tag", "Alarm source", "State transition", "Sample value", "Threshold", "Message", "Delivery status",
+                "Alarm status", "Processing status", "Recovery time", "Acknowledged by", "Acknowledged at", "Acknowledgement note", "Handled by", "Handled at", "Handling note"]
+            : [$"时间 ({timeZone.Id})", "通道", "设备", "分组", "标签", "报警来源", "状态变化", "触发值", "阈值", "消息", "发送状态",
+                "报警状态", "处理状态", "恢复时间", "确认人", "确认时间", "确认备注", "处理人", "处理时间", "处理记录"];
+        HistoryPageWorkbook.WriteTable(destination, headers, [31, 24, 24, 24, 28, 58, 30, 18, 18, 70, 22, 22, 22, 25, 22, 25, 36, 22, 25, 44],
             rows.Select(row => Values(row, english, timeZone)), english ? "Alarm history" : "报警记录", english, ct);
     }
 
@@ -23,10 +25,26 @@ internal static class AlarmHistoryWorkbook
         string transition = !string.IsNullOrEmpty(row.PreviousState) && !string.IsNullOrEmpty(row.State)
             ? row.DisplayPreviousState + " → " + row.DisplayState
             : string.IsNullOrEmpty(row.State) ? row.EventType : row.DisplayState;
+        string? Time(DateTime? utc) => utc.HasValue ? WorkbookTimeZone.Format(utc.Value, timeZone) : null;
+        string alarm = row.AlarmStatus switch
+        {
+            "Active" => english ? "Active alarm" : "报警中",
+            "Recovered" => english ? "Recovered" : "已恢复",
+            _ => "—"
+        };
+        string processing = row.ProcessingStatus switch
+        {
+            "Pending" => english ? "Awaiting acknowledgement" : "待确认",
+            "Acknowledged" => english ? "Acknowledged" : "已确认",
+            "Handled" => english ? "Handled" : "已处理",
+            _ => "—"
+        };
         return [WorkbookTimeZone.Format(row.Timestamp.ToUniversalTime(), timeZone),
             row.ChannelName, row.DeviceName, row.GroupName, row.TagName, source, transition,
             row.Value?.ToString("R", CultureInfo.InvariantCulture), row.Threshold?.ToString("R", CultureInfo.InvariantCulture),
-            row.Message, Label(row.DeliveryStatus, english)];
+            row.Message, Label(row.DeliveryStatus, english), alarm, processing, Time(row.RecoveredAtUtc),
+            row.Acknowledged?.Operator, Time(row.Acknowledged?.TimestampUtc), row.Acknowledged?.Note,
+            row.Handled?.Operator, Time(row.Handled?.TimestampUtc), row.Handled?.Note];
     }
 
     internal static string Label(string? value, bool english)

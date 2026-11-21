@@ -431,7 +431,7 @@ namespace IPC.Runtime.Engine
                     previousStatesById.TryGetValue(device.Id, out previousState) &&
                     _configDiffer.CanReuseDeviceState(previousState.Config, device))
                 {
-                    DeviceRuntimeConfigTransition transition = previousState.ReuseConfig(device);
+                    DeviceRuntimeConfigTransition transition = previousState.ReuseConfig(device, _configuredChannelScheduler.IsEnabled(device));
                     _deviceStatesById[device.Id] = previousState;
                     reusedDeviceIds?.Add(device.Id);
                     if (previousState.Client is IPlcAddressCache addressCache && device.Enabled)
@@ -445,6 +445,9 @@ namespace IPC.Runtime.Engine
 
                 _deviceStatesById[device.Id] = new DeviceRuntimeState(device, _protocolDriverCircuitBreakerOptions);
             }
+
+            foreach (var pair in _acquisitionTraces)
+                if (!CanTraceAcquisition(pair.Key, pair.Value.TagId)) _acquisitionTraces.TryRemove(pair);
 
             if (previousStatesById == null || statesToRelease == null)
                 return;
@@ -770,7 +773,7 @@ namespace IPC.Runtime.Engine
                             current != null && current.Timestamp > sourceTimestampUtc.Value.ToLocalTime())
                             return;
                         RecordDeviceCommunicationSuccess(deviceState, confirmedSubscriptionUpdate: true);
-                        ScheduleNextSubscriptionFallback(device, group, tag, now);
+                        ScheduleNextSubscriptionFallback(deviceState, group, tag, now);
                     }
                     return;
                 }

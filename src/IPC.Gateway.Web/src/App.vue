@@ -170,6 +170,7 @@
                 :reset-revision="mqttResetRevision"
                 @persist-mqtt="persistMqtt"
               />
+              <ProtocolDiagnosticsView v-else-if="activeView === 'protocolDiagnostics'" :project="project" />
               <OpcUaView
                 v-else-if="activeView === 'opcUa'"
                 :opc-ua="opcUa"
@@ -213,7 +214,7 @@
 <script setup lang="ts">
 import { notify } from './utils/ui'
 import { tx } from './i18n'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 
 import {
   HomeFilled,
@@ -285,6 +286,7 @@ const antLocale = computed(() => (locale.value === 'en-US' ? antEnUs : antZhCn))
 import MaintenanceView from './components/MaintenanceView.vue'
 import ModelCenterView from './components/models/ModelCenterView.vue'
 import MqttView from './components/MqttView.vue'
+import { traceApplied } from './utils/acquisitionBrowserTrace'
 import OpcUaView from './components/OpcUaView.vue'
 import PermissionsView from './components/PermissionsView.vue'
 import RolesView from './components/RolesView.vue'
@@ -297,6 +299,7 @@ import { connectRuntimeEvents, deviceKey, setLatestTag, tagKey, type RuntimeChan
 import { useGatewayStartup } from './utils/gatewayStartup'
 import { createPermissionSet, PermissionContextKey, PERMISSIONS, normalizePermission } from './utils/permissions'
 
+const ProtocolDiagnosticsView = defineAsyncComponent(() => import('./components/ProtocolDiagnosticsView.vue'))
 const defaultStartupView = 'bigScreen'
 const authenticated = ref(localStorage.getItem('ipc.gateway.authenticated') === 'true')
 const { state: startupState, check: checkStartup, observe: observeStartup } = useGatewayStartup()
@@ -384,6 +387,7 @@ const pageTitle = computed(
       flowRules: '规则引擎',
       mqtt: 'MQTT',
       opcUa: 'OPC UA Server',
+      protocolDiagnostics: '协议诊断',
       history: '历史库',
       scripts: '脚本中心',
       models: '模型中心',
@@ -399,7 +403,7 @@ const pageTitle = computed(
 const pageSection = computed(() => {
   if (['bigScreen', 'topology', 'dashboard'].includes(activeView.value)) return '运行'
   if (['devices', 'flowRules', 'history', 'scripts', 'models'].includes(activeView.value)) return '配置'
-  if (['mqtt', 'opcUa'].includes(activeView.value)) return '通讯'
+  if (['mqtt', 'opcUa', 'protocolDiagnostics'].includes(activeView.value)) return '通讯'
   return '系统'
 })
 
@@ -411,6 +415,7 @@ const viewPermissions: Record<string, string[]> = {
   flowRules: [PERMISSIONS.flowRulesView],
   mqtt: [PERMISSIONS.mqttView],
   opcUa: [PERMISSIONS.opcUaView],
+  protocolDiagnostics: [PERMISSIONS.protocolDiagnosticsRun],
   history: [PERMISSIONS.historyView],
   scripts: [PERMISSIONS.scriptsView],
   models: [PERMISSIONS.modelsView],
@@ -432,6 +437,7 @@ const viewOrder = [
   'models',
   'mqtt',
   'opcUa',
+  'protocolDiagnostics',
   'audit',
   'security',
   'maintenance',
@@ -770,9 +776,12 @@ function applyStreamChanges(changes: RuntimeChanges, full: boolean) {
   } else {
     for (const [key, tag] of changes.tags) {
       const current = runtimeTags.value.get(key)
-      if (setLatestTag(runtimeTags.value, key, tag) && current?.quality !== tag.quality) {
-        countQuality(key, current, -1)
-        countQuality(key, tag, 1)
+      if (setLatestTag(runtimeTags.value, key, tag)) {
+        if (tag.diagnosticPushQueueMs !== undefined) traceApplied(tag)
+        if (current?.quality !== tag.quality) {
+          countQuality(key, current, -1)
+          countQuality(key, tag, 1)
+        }
       }
     }
     for (const key of changes.removedDevices) runtimeDevices.value.delete(key)

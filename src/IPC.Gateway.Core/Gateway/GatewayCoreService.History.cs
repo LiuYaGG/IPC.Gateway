@@ -6,7 +6,7 @@ namespace IPC.Gateway.Core.Gateway;
 public sealed partial class GatewayCoreService
 {
     public IReadOnlyList<HistoryPointOption> GetConfiguredHistoryOptions(string level, string? channelId, string? deviceId,
-        string? groupId, string? search, int limit, CancellationToken ct)
+        string? groupId, string? search, int limit, CancellationToken ct, bool numericOnly = false)
     {
         ProjectConfig project;
         lock (_syncRoot) project = _project; // SetCurrentProject replaces this configuration as a whole.
@@ -41,6 +41,7 @@ public sealed partial class GatewayCoreService
             if (groupId != "" && selected == null) break;
             foreach (var tag in selected?.Tags ?? device.Tags)
             {
+                if (numericOnly && !HistoryValueIndex.IsNumericTrendType(tag.DataType.ToString())) continue;
                 Add(tag.Id, tag.Name, HistoryValuePath.Build(source.Name, device.Name, selected?.Name, tag.Name));
                 if (result.Count >= limit) break;
             }

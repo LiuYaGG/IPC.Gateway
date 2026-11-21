@@ -229,6 +229,16 @@ namespace IPC.Runtime.Configuration
                 result.AddWarning(prefix + "超时时间未设置，将使用驱动默认值。");
         }
 
+        public static ProjectConfigValidationResult ValidateTag(DeviceConfig device, GroupConfig? group, TagConfig tag)
+        {
+            var result = new ProjectConfigValidationResult();
+            ValidateTag(device, group, tag, "", new(StringComparer.OrdinalIgnoreCase), new(StringComparer.OrdinalIgnoreCase), result, true);
+            return result;
+        }
+
+        public static string ResolveTagAddress(DeviceConfig device, TagConfig tag) =>
+            CompiledDeviceReadPlan.ResolveAddress(device, tag);
+
         private static void ValidateTag(
             DeviceConfig device,
             GroupConfig? group,
@@ -236,7 +246,8 @@ namespace IPC.Runtime.Configuration
             string prefix,
             HashSet<string> tagNames,
             HashSet<string> tagIds,
-            ProjectConfigValidationResult result)
+            ProjectConfigValidationResult result,
+            bool validateDisabled = false)
         {
             if (tag == null)
             {
@@ -258,7 +269,7 @@ namespace IPC.Runtime.Configuration
             if (tag.ScanRateMs < 0)
                 result.AddWarning(prefix + "采集周期小于0，将继承分组或设备周期。");
 
-            if (!tag.Enabled)
+            if (!tag.Enabled && !validateDisabled)
                 return;
 
             if (tag.IsVirtual)

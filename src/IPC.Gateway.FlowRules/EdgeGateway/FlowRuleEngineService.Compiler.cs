@@ -85,7 +85,24 @@ namespace IPC.EdgeGateway
             rules.Add(rule);
         }
 
-        private EdgeRuleConfig? CompileFlowRule(FlowRuleDefinition? flowRule)
+        public static EdgeRuleConfig? CompileReplayRule(FlowRuleDefinition definition, EdgeRuleConfig? savedCompiled)
+        {
+            var replay = ProjectConfigCloner.CloneFlowRule(definition)!;
+            replay.Enabled = true;
+            replay.LifecycleState = FlowRuleLifecycleStates.Published;
+            replay.CompiledRuleId = string.Empty;
+            if (savedCompiled != null && !replay.Nodes.Any(node => IsNodeType(node, FlowRuleNodeTypes.WindowCalculation)))
+            {
+                var compiled = ProjectConfigCloner.CloneRule(savedCompiled)!;
+                compiled.Enabled = true;
+                return compiled;
+            }
+            return FlowRuleCompiler.TryCompileWindowCalculation(replay, out var window)
+                ? window
+                : FlowRuleCompiler.TryCompile(replay, out var simple) ? simple : CompileFlowRule(replay);
+        }
+
+        private static EdgeRuleConfig? CompileFlowRule(FlowRuleDefinition? flowRule)
         {
             if (flowRule == null ||
                 !flowRule.Enabled ||

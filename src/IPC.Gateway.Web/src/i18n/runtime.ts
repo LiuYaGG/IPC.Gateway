@@ -4,6 +4,9 @@ import { ruleMessages } from './ruleText'
 // counts are copied verbatim; backend diagnostics and stored events are untouched.
 export const runtimeMessages: ReadonlyArray<readonly [string, string]> = [
   ...ruleMessages,
+  ['此设备正在跟踪另一个点位，请在本次跟踪结束后重试。', 'Another tag is being traced on this device.'],
+  ['找不到设备或可读点位。', 'Device or readable tag not found.'],
+  ['无效的采集周期。', 'Invalid sampling period.'],
   ['FINS 数据格式必须为 ABCD、BADC、CDAB 或 DCBA。', 'FINS data format must be ABCD, BADC, CDAB, or DCBA.'],
   ['连续无变化超时的数值处理节点需要数值输入。', 'Numeric processing before the unchanged timeout requires numeric input.'],
   ['连续无变化超时参数无效：超时和数据最大间隔必须大于 0，变化死区必须为非负有限数。', 'Invalid unchanged timeout settings: timeout and sample gap must be positive, and deadband must be finite and non-negative.'],

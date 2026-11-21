@@ -17,7 +17,7 @@ internal static partial class GatewayAlarmHistoryEndpoints
                 deadline.CancelAfter(TimeSpan.FromSeconds(20));
                 try
                 {
-                    CheckKeys(ctx, "from", "to", "channelId", "deviceId", "groupId", "tagId", "snapshot", "page", "pageSize", "timeZone");
+                    CheckKeys(ctx, "from", "to", "channelId", "deviceId", "groupId", "tagId", "snapshot", "page", "pageSize", "timeZone", "processingStatus");
                     var filter = ParseFilter(ctx);
                     var (page, pageSize) = ParsePagination(ctx);
                     var timeZone = WorkbookTimeZone.FromRequest(ctx);

@@ -1027,6 +1027,7 @@ namespace IPC.Plc.Communication.Cip
             _stream.Write(header, 0, header.Length);
             if (body.Length > 0)
                 _stream.Write(body, 0, body.Length);
+            PlcDiagnosticTrace.Record("TX", header, body);
 
             byte[] responseHeader = ReadExact(24);
             ushort responseCommand = ReadUInt16(responseHeader, 0);
@@ -1035,6 +1036,7 @@ namespace IPC.Plc.Communication.Cip
             uint status = ReadUInt32(responseHeader, 8);
             ulong responseContext = ReadUInt64(responseHeader, 12);
             byte[] responseBody = length == 0 ? new byte[0] : ReadExact(length);
+            PlcDiagnosticTrace.Record("RX", responseHeader, responseBody);
 
             ValidateEncapsulationResponse(sessionHandle, responseSession, senderContext, responseContext);
             if (responseCommand != command)
@@ -1065,6 +1067,7 @@ namespace IPC.Plc.Communication.Cip
             await _stream.WriteAsync(header, 0, header.Length, cancellationToken).ConfigureAwait(false);
             if (body.Length > 0)
                 await _stream.WriteAsync(body, 0, body.Length, cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", header, body);
 
             byte[] responseHeader = await ReadExactAsync(24, cancellationToken).ConfigureAwait(false);
             ushort responseCommand = ReadUInt16(responseHeader, 0);
@@ -1073,6 +1076,7 @@ namespace IPC.Plc.Communication.Cip
             uint status = ReadUInt32(responseHeader, 8);
             ulong responseContext = ReadUInt64(responseHeader, 12);
             byte[] responseBody = length == 0 ? new byte[0] : await ReadExactAsync(length, cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("RX", responseHeader, responseBody);
 
             ValidateEncapsulationResponse(sessionHandle, responseSession, senderContext, responseContext);
             if (responseCommand != command)

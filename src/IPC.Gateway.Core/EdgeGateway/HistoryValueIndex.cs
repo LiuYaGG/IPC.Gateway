@@ -165,7 +165,7 @@ public sealed partial class HistoryValueIndex : IDisposable
     }
 
     public Task<IReadOnlyList<HistoryPointOption>> OptionsAsync(string level, string? channelId, string? deviceId,
-        string? groupId, string? search, int limit, CancellationToken ct) =>
+        string? groupId, string? search, int limit, CancellationToken ct, bool numericOnly = false) =>
         Task.Run<IReadOnlyList<HistoryPointOption>>(() =>
         {
             RequireReady();
@@ -190,13 +190,16 @@ public sealed partial class HistoryValueIndex : IDisposable
             }
             if (!string.IsNullOrWhiteSpace(search))
             {
-                conditions.Add("instr(lower(" + name + "),lower($search))>0");
+                conditions.Add("instr(lower(" + name + "),lower($search))>0" +
+                    (numericOnly && level == "tag" ? " OR instr(lower(path),lower($search))>0" : ""));
                 cmd.Parameters.AddWithValue("$search", search.Trim());
             }
+            if (numericOnly)
+                conditions.Add("EXISTS (SELECT 1 FROM history_value v WHERE v.point_id=history_point.id AND v.dtype IN (" + NumericTrendTypes + "))");
             cmd.Parameters.AddWithValue("$limit", limit);
             string path = level == "tag" ? "path" : "NULL";
             cmd.CommandText = "SELECT DISTINCT " + id + "," + name + "," + path + " FROM history_point " +
-                (conditions.Count > 0 ? " WHERE " + string.Join(" AND ", conditions) : "") + " ORDER BY 2,1,3 LIMIT $limit";
+                (conditions.Count > 0 ? " WHERE (" + string.Join(") AND (", conditions) + ")" : "") + " ORDER BY 2,1,3 LIMIT $limit";
             var rows = new List<HistoryPointOption>();
             try
             {

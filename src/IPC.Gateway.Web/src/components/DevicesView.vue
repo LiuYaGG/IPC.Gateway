@@ -156,6 +156,7 @@
                 </template>
                 {{ tx('新增标签') }}
               </a-button>
+              <a-button v-if="selectedDevice" @click="openPreflight()">{{ tx('点表上线前检查') }}</a-button>
               <a-button v-if="selectedDevice && canExportTags" @click="exportSelectedTags">
                 <template #icon>
                   <span class="ui-icon"><Download /></span>
@@ -237,6 +238,11 @@
             </div>
           </div>
         </template>
+        <a-radio-group v-if="selectedNode.type === 'device'" v-model:value="devicePane" size="small"
+          class="device-pane-selector" @change="valueDetailsVisible = false">
+          <a-radio-button value="tags">{{ tx('标签列表') }}</a-radio-button>
+          <a-radio-button value="diagnostics">{{ tx('采集诊断') }}</a-radio-button>
+        </a-radio-group>
         <div v-if="selectedNode.type === 'root'" class="device-overview">
           <AutoHeightTable
             :data-source="filteredDevices"
@@ -314,6 +320,8 @@
             <template #emptyText><a-empty :description="tx('当前通道还没有设备')" /></template>
           </AutoHeightTable>
         </div>
+        <AcquisitionDiagnosticsPanel v-else-if="selectedNode.type === 'device' && selectedDevice && devicePane === 'diagnostics'"
+          :key="selectedNodeKey" :device="selectedDevice" :active="pageActive" />
         <div v-else class="device-detail">
           <div v-if="selectedDevice" class="device-tag-options">
             <a-input
@@ -730,6 +738,9 @@
         <span>{{ tx(action.label) }}</span>
       </button>
     </div>
+    <TagPreflightModal v-if="preflight" :device="preflight.device" :group-id="preflight.groupId"
+      :csv="preflight.csv" :filename="preflight.filename" @close="preflight = null"
+      @imported="preflight = null; emit('changed')" @locate="locatePreflightTag" />
   </section>
 </template>
 
@@ -740,7 +751,7 @@ import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
 import { qualityText, statusText } from '../utils/display'
 import { showBusy, confirmAction, type FileSelection } from '../utils/ui'
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 
 import {
   CaretDownOutlined,
@@ -773,7 +784,6 @@ import {
   deleteGroup as deleteGroupRequest,
   deleteTag as deleteTagRequest,
   exportTagsCsv,
-  importTagsCsv,
   loadDeviceTemplates,
   loadProtocolCatalog,
   updateChannel,
@@ -784,7 +794,6 @@ import {
   type ChannelConfig,
   type DeviceConfig,
   type DeviceRuntimeStatus,
-  type GatewayConnectionParameterDefinition,
   type GatewayDeviceTemplateSummary,
   type GatewayProtocolCatalogItem,
   type GroupConfig,
@@ -792,11 +801,13 @@ import {
   type TagConfig,
   type TagValueSnapshot
 } from '../api'
+import { applyCatalogProtocol, applyConnectionParameterDefaults } from '../utils/protocolCatalogDefaults'
 import DeviceConnectionFields from './DeviceConnectionFields.vue'
 import ChannelForm from './ChannelForm.vue'
 import DeviceGroupForm from './DeviceGroupForm.vue'
 import DeviceTagForm from './DeviceTagForm.vue'
 import TagValueDetailsDrawer from './TagValueDetailsDrawer.vue'
+import TagPreflightModal from './TagPreflightModal.vue'
 import AutoHeightTable from './AutoHeightTable.vue'
 import { deviceTreeMetric } from '../utils/deviceTreeCounts'
 import ColumnResizeHandle from './controls/ColumnResizeHandle.vue'
@@ -888,7 +899,9 @@ const tagScroller = ref<HTMLElement | null>(null)
 const tagViewportHeight = ref(tagHeaderHeight + tagRowHeight * 12)
 const tagScrollTop = ref(0)
 let tagScrollLeft = 0
+const AcquisitionDiagnosticsPanel = defineAsyncComponent(() => import('./AcquisitionDiagnosticsPanel.vue'))
 const pageActive = ref(true)
+const devicePane = ref<'tags' | 'diagnostics'>('tags')
 const expandedTreeKeys = ref(new Set<string>(['root']))
 const deviceFilterInput = ref('')
 const deviceNameFilter = ref('')
@@ -1573,74 +1586,6 @@ function findProtocolCatalogItem(protocol: string, driverId = '') {
   return protocolCatalog.value.find((item) => item.protocol === protocol) ?? null
 }
 
-function applyCatalogProtocol(device: DeviceConfig, item: GatewayProtocolCatalogItem) {
-  applyProtocolDefaults(device, item.protocol)
-  device.connection.protocol = item.protocol
-  device.connection.driverId = item.builtIn ? '' : item.driverId
-  applyConnectionParameterDefaults(device.connection, item.parameters)
-}
-
-function applyConnectionParameterDefaults(
-  connection: DeviceConfig['connection'],
-  parameters: GatewayConnectionParameterDefinition[]
-) {
-  for (const parameter of parameters) {
-    if (!parameter.key || parameter.defaultValue === '') continue
-    applyConnectionParameterDefault(connection, parameter)
-  }
-}
-
-function applyConnectionParameterDefault(
-  connection: DeviceConfig['connection'],
-  parameter: GatewayConnectionParameterDefinition
-) {
-  const value = parameter.key === 'driverOptions.finsDataFormat'
-    ? (connection.wordOrder === 'LowWordFirst' ? 'CDAB' : 'ABCD')
-    : parseParameterDefault(parameter)
-  if (parameter.key.startsWith('driverOptions.')) {
-    const optionKey = parameter.key.slice('driverOptions.'.length)
-    const options = readDriverOptionsJson(connection.driverOptionsJson)
-    if (shouldApplyParameterDefault(options[optionKey], parameter)) {
-      options[optionKey] = value
-      connection.driverOptionsJson = JSON.stringify(options)
-    }
-    return
-  }
-
-  const connectionRecord = connection as unknown as Record<string, unknown>
-  if (shouldApplyParameterDefault(connectionRecord[parameter.key], parameter)) {
-    connectionRecord[parameter.key] = value
-  }
-}
-
-function shouldApplyParameterDefault(currentValue: unknown, parameter: GatewayConnectionParameterDefinition) {
-  if (currentValue === undefined || currentValue === null || currentValue === '') return true
-  if (typeof currentValue === 'number' && currentValue === 0 && (parameter.min ?? 1) <= 0) return false
-  return typeof currentValue === 'number' && currentValue === 0 && parameter.defaultValue !== '0'
-}
-
-function parseParameterDefault(parameter: GatewayConnectionParameterDefinition) {
-  const type = (parameter.parameterType || '').toLowerCase()
-  if (type === 'number') {
-    const value = Number(parameter.defaultValue)
-    return Number.isFinite(value) ? value : undefined
-  }
-  if (type === 'switch') {
-    const value = parameter.defaultValue.toLowerCase()
-    return value === 'true' || value === '1'
-  }
-  return parameter.defaultValue
-}
-
-function readDriverOptionsJson(json: string) {
-  try {
-    const parsed = JSON.parse(json || '{}')
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
-
 function treeNodeIcon(node: DeviceTreeNode) {
   if (node.type === 'channel') return SetUp
   if (node.type === 'device') return Connection
@@ -2123,15 +2068,35 @@ async function exportSelectedTags() {
   }
 }
 
+const preflight = ref<{ device: DeviceConfig; groupId?: string; csv?: string; filename?: string } | null>(null)
+
+function openPreflight() {
+  if (selectedDevice.value) preflight.value = { device: selectedDevice.value, groupId: selectedGroup.value?.id }
+}
+
+async function locatePreflightTag(tagId: string, groupId: string) {
+  const device = preflight.value?.device
+  if (!device) return
+  const group = device.groups.find(g => g.id === groupId)
+  const tag = (group?.tags ?? device.tags).find(t => t.id === tagId)
+  if (!tag) return
+  preflight.value = null
+  devicePane.value = 'tags'
+  selectedNodeKey.value = group ? groupNodeKey(device, group) : deviceNodeKey(device)
+  expandSelectedNodePath(selectedNodeKey.value)
+  await nextTick()
+  tagNameFilter.value = tag.name
+}
+
 async function handleImportTags(uploadFile: FileSelection) {
   const raw = uploadFile.raw
-  if (!raw || !selectedDevice.value) return
+  const device = selectedDevice.value
+  const groupId = selectedGroup.value?.id
+  if (!raw || !device) return
+  if (raw.size > 8 * 1024 * 1024) { notify.error(tx('CSV 文件最大为 8 MiB。')); return }
   try {
     const text = await raw.text()
-    const result = await importTagsCsv(text, selectedDevice.value.channelId, selectedDevice.value.id)
-    notify.success(formatMessage('点位导入完成：新增 {0}，更新 {1}', [result.addedCount, result.updatedCount]))
-    if (result.warnings?.length) notify.warning(result.warnings[0])
-    emit('changed')
+    preflight.value = { device, groupId, csv: text, filename: raw.name }
   } catch (error) {
     notify.error(error instanceof Error ? error.message : '点位导入失败')
   }

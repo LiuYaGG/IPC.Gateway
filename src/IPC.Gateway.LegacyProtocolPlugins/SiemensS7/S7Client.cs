@@ -487,6 +487,7 @@ namespace IPC.Plc.Communication.SiemensS7
             };
 
             _stream.Write(packet, 0, packet.Length);
+            PlcDiagnosticTrace.Record("TX", packet);
             byte[] response = ReadTpkt();
             if (response.Length < 7 || response[5] != 0xD0)
                 throw new InvalidOperationException("ISO-on-TCP 连接确认失败。");
@@ -504,6 +505,7 @@ namespace IPC.Plc.Communication.SiemensS7
             };
 
             await _stream.WriteAsync(packet, 0, packet.Length, cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", packet);
             byte[] response = await ReadTpktAsync(cancellationToken).ConfigureAwait(false);
             if (response.Length < 7 || response[5] != 0xD0)
                 throw new InvalidOperationException("ISO-on-TCP connection confirm failed.");
@@ -651,6 +653,7 @@ namespace IPC.Plc.Communication.SiemensS7
 
             byte[] packet = WrapS7(s7Payload);
             _stream.Write(packet, 0, packet.Length);
+            PlcDiagnosticTrace.Record("TX", packet);
             return ReadTpkt();
         }
 
@@ -663,6 +666,7 @@ namespace IPC.Plc.Communication.SiemensS7
 
             byte[] packet = WrapS7(s7Payload);
             await _stream.WriteAsync(packet, 0, packet.Length, cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", packet);
             return await ReadTpktAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -842,6 +846,7 @@ namespace IPC.Plc.Communication.SiemensS7
             Buffer.BlockCopy(header, 0, packet, 0, 4);
             byte[] rest = ReadExact(length - 4);
             Buffer.BlockCopy(rest, 0, packet, 4, rest.Length);
+            PlcDiagnosticTrace.Record("RX", packet);
             return packet;
         }
 
@@ -858,6 +863,7 @@ namespace IPC.Plc.Communication.SiemensS7
             Buffer.BlockCopy(header, 0, packet, 0, 4);
             byte[] rest = await ReadExactAsync(length - 4, cancellationToken).ConfigureAwait(false);
             Buffer.BlockCopy(rest, 0, packet, 4, rest.Length);
+            PlcDiagnosticTrace.Record("RX", packet);
             return packet;
         }
 

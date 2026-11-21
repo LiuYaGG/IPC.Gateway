@@ -20,7 +20,7 @@ public sealed partial class EdgeRuleEngineService
         {
             state.LastEvaluationSnapshot = snapshot.Clone();
             if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
-                EvaluateNoChangeTimeout(rule, snapshot, state, DateTime.Now);
+                EvaluateNoChangeTimeout(rule, snapshot, state, RuleTime);
             return false;
         }
         // A rejected gate or failed transform must not leave the previous good result available to timers.

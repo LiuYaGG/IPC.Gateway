@@ -32,10 +32,24 @@ public sealed class GatewayAlarmRecord
     public double? Threshold { get; set; }
     public string Message { get; set; } = string.Empty;
     public string DeliveryStatus { get; set; } = "Local";
+    // Used to track a matching activation/recovery without involving MQTT delivery.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AlarmCorrelationKey { get; set; }
+    [JsonIgnore] public bool CanProcess => IsActiveEvent(EventType);
+    [JsonIgnore] public string AlarmStatus => string.Equals(EventType, "recovery", StringComparison.OrdinalIgnoreCase)
+        ? "Recovered" : !CanProcess || !OccurrenceTracked ? "Unknown" : RecoveredAtUtc.HasValue ? "Recovered" : "Active";
+    [JsonIgnore] public string? ProcessingStatus => !CanProcess ? null : Handled != null ? "Handled" : Acknowledged != null ? "Acknowledged" : "Pending";
+    [JsonIgnore] public bool OccurrenceTracked { get; set; }
+    [JsonIgnore] public DateTime? RecoveredAtUtc { get; set; }
+    [JsonIgnore] public GatewayAlarmOperatorRecord? Acknowledged { get; set; }
+    [JsonIgnore] public GatewayAlarmOperatorRecord? Handled { get; set; }
     [JsonIgnore] public DateTime? NotBeforeUtc { get; set; }
     [JsonIgnore] public string Topic { get; set; } = string.Empty;
     [JsonIgnore] public string Payload { get; set; } = string.Empty;
     [JsonIgnore] public int Qos { get; set; }
+
+    internal static bool IsActiveEvent(string? eventType) =>
+        string.Equals(eventType, "alarm", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(eventType, "warning", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record GatewayAlarmPage(long Total, IReadOnlyList<GatewayAlarmRecord> Items, long Snapshot = 0);
@@ -55,7 +69,7 @@ public sealed partial class GatewayAlarmJournal
     {
         _path = Path.GetFullPath(databasePath);
         _retention = retention;
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = _path, DefaultTimeout = 5 }.ToString();
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _path, DefaultTimeout = 5, ForeignKeys = true }.ToString();
     }
 
     private SqliteConnection Open()
@@ -86,6 +100,8 @@ public sealed partial class GatewayAlarmJournal
                         CREATE INDEX IF NOT EXISTS ix_alarm_ready ON alarm_event(order_key,ready_ticks) WHERE delivery=1;
                         CREATE INDEX IF NOT EXISTS ix_alarm_retention ON alarm_event(queued_ticks) WHERE delivery<>1;
                         """;
+                    create.ExecuteNonQuery();
+                    create.CommandText = ProcessingSchema;
                     create.ExecuteNonQuery();
                     _initialized = true;
                 }
@@ -203,9 +219,12 @@ public sealed partial class GatewayAlarmJournal
                 ? storage.ColdRetentionDays : storage.HotRetentionDays;
             using var connection = Open();
             using var command = connection.CreateCommand();
-            command.CommandText = """
+            command.CommandText = $"""
                 DELETE FROM alarm_event WHERE seq IN
-                (SELECT seq FROM alarm_event WHERE delivery<>1 AND queued_ticks < $cutoff ORDER BY queued_ticks LIMIT 2000)
+                (SELECT seq FROM alarm_event WHERE delivery<>1 AND queued_ticks < $cutoff
+                    AND (NOT ({ActiveEventSql}) OR EXISTS(SELECT 1 FROM alarm_operator_action
+                        WHERE event_id=alarm_event.event_id AND stage=2))
+                    ORDER BY queued_ticks LIMIT 2000)
                 """;
             command.Parameters.AddWithValue("$cutoff", DateTime.UtcNow.AddDays(-days).Ticks);
             if (command.ExecuteNonQuery() == 2000)
@@ -231,7 +250,8 @@ public sealed partial class GatewayAlarmJournal
         return ReadRows(reader, true);
     }
 
-    private static List<GatewayAlarmRecord> ReadRows(SqliteDataReader reader, bool withPayload, CancellationToken cancellationToken = default)
+    private static List<GatewayAlarmRecord> ReadRows(SqliteDataReader reader, bool withPayload, CancellationToken cancellationToken = default,
+        bool withProcessing = false)
     {
         var rows = new List<GatewayAlarmRecord>();
         while (reader.Read())
@@ -244,6 +264,13 @@ public sealed partial class GatewayAlarmJournal
                 row.Topic = reader.GetString(2);
                 row.Payload = reader.GetString(3);
                 row.Qos = reader.GetInt32(4);
+            }
+            if (withProcessing)
+            {
+                row.OccurrenceTracked = reader.GetBoolean(2);
+                if (!reader.IsDBNull(3)) row.RecoveredAtUtc = reader.GetDateTime(3).ToUniversalTime();
+                row.Acknowledged = ReadOperatorRecord(reader, 4);
+                row.Handled = ReadOperatorRecord(reader, 7);
             }
             rows.Add(row);
         }

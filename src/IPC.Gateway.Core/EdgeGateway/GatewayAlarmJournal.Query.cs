@@ -14,6 +14,7 @@ public sealed record GatewayAlarmQuery
     public string? GroupId { get; init; }
     public string? TagId { get; init; }
     public long? Snapshot { get; init; }
+    public string? ProcessingStatus { get; init; }
 }
 
 public sealed partial class GatewayAlarmJournal
@@ -45,11 +46,18 @@ public sealed partial class GatewayAlarmJournal
         command.CommandText = "SELECT COUNT(*) FROM alarm_event" + filter;
         long total = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         cancellationToken.ThrowIfCancellationRequested();
-        command.CommandText = "SELECT body,delivery FROM alarm_event" + filter + " ORDER BY seq DESC LIMIT $size OFFSET $offset";
+        command.CommandText = """
+            SELECT body,delivery,occ.event_id IS NOT NULL,occ.recovered_utc,
+                ack.operator_name,ack.timestamp_ticks,ack.note,handled.operator_name,handled.timestamp_ticks,handled.note
+            FROM alarm_event
+            LEFT JOIN alarm_occurrence occ ON occ.event_id=alarm_event.event_id
+            LEFT JOIN alarm_operator_action ack ON ack.event_id=alarm_event.event_id AND ack.stage=1
+            LEFT JOIN alarm_operator_action handled ON handled.event_id=alarm_event.event_id AND handled.stage=2
+            """ + filter + " ORDER BY seq DESC LIMIT $size OFFSET $offset";
         command.Parameters.AddWithValue("$size", size);
         command.Parameters.AddWithValue("$offset", offset);
         using var reader = command.ExecuteReader();
-        var rows = ReadRows(reader, false, cancellationToken);
+        var rows = ReadRows(reader, false, cancellationToken, withProcessing: true);
         cancellationToken.ThrowIfCancellationRequested();
         return new(total, rows, snapshot);
     }
@@ -96,7 +104,7 @@ public sealed partial class GatewayAlarmJournal
     private static void ValidateQuery(GatewayAlarmQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (query.From > query.To || query.Snapshot < 0 ||
+        if (query.From > query.To || query.Snapshot < 0 || query.ProcessingStatus is not (null or "Pending" or "Acknowledged" or "Handled") ||
             new[] { query.ChannelId, query.DeviceId, query.GroupId, query.TagId }.Any(id => id?.Length > 256))
             throw new ArgumentException("报警查询参数无效。");
     }
@@ -114,6 +122,12 @@ public sealed partial class GatewayAlarmJournal
         if (query.DeviceId != null) Add("device_id=$device COLLATE NOCASE", "$device", query.DeviceId);
         if (query.GroupId != null) Add("COALESCE(json_extract(body,'$.GroupId'),'')=$group COLLATE NOCASE", "$group", query.GroupId);
         if (query.TagId != null) Add("COALESCE(json_extract(body,'$.TagId'),'')=$tag COLLATE NOCASE", "$tag", query.TagId);
+        if (query.ProcessingStatus != null)
+        {
+            parts.Add("(" + ActiveEventSql + ")");
+            int stage = query.ProcessingStatus switch { "Pending" => 0, "Acknowledged" => 1, _ => 2 };
+            Add("COALESCE((SELECT MAX(stage) FROM alarm_operator_action oa WHERE oa.event_id=alarm_event.event_id),0)=$stage", "$stage", stage);
+        }
         return " WHERE " + string.Join(" AND ", parts);
     }
 }

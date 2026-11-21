@@ -126,9 +126,11 @@ internal sealed class ModbusUdpMasterAdapter : IModbusMasterAdapter
             request[6] = _unitId;
             pdu.CopyTo(request, 7);
             await _client.SendAsync(request, deadline.Token).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", request);
             while (true)
             {
                 byte[] frame = (await _client.ReceiveAsync(deadline.Token).ConfigureAwait(false)).Buffer;
+                PlcDiagnosticTrace.Record("RX", frame);
                 // Connected UDP filters the peer endpoint. Ignore delayed/duplicate replies
                 // from previous requests without extending the original deadline.
                 if (frame.Length < 2 || BinaryPrimitives.ReadUInt16BigEndian(frame) != _transactionId) continue;

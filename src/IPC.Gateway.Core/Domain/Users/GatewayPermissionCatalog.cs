@@ -78,12 +78,16 @@ public static class GatewayPermissions
     public const string DebugFlowRule = "flowRules.debug";
 
     public const string ViewMqtt = "mqtt.view";
+    public const string RunProtocolDiagnostics = "protocolDiagnostics.run";
+    public const string WriteProtocolDiagnostics = "protocolDiagnostics.write";
     public const string EditMqtt = "mqtt.edit";
     public const string ViewOpcUa = "opcUa.view";
     public const string EditOpcUa = "opcUa.edit";
     public const string ViewProject = "project.view";
     public const string EditProject = "project.edit";
     public const string ViewHistory = "history.view";
+    public const string AlarmAcknowledge = "alarm.acknowledge";
+    public const string AlarmHandle = "alarm.handle";
     public const string ExportHistory = "history.export";
     public const string EditHistory = "history.edit";
     public const string ViewScripts = "scripts.view";
@@ -139,12 +143,16 @@ public static class GatewayPermissions
         Action(DebugFlowRule, "流程调试", "规则引擎", "开启流程调试高亮、调试节点和调试辅助操作。"),
 
         Page(ViewMqtt, "MQTT", "MQTT", "查看 MQTT 配置和运行状态。"),
+        Page(RunProtocolDiagnostics, "协议诊断", "协议诊断", "测试设备连接并读取诊断点位。"),
+        Action(WriteProtocolDiagnostics, "协议诊断写入", "协议诊断", "通过诊断工作台向设备写入单个点位。"),
         Action(EditMqtt, "保存 MQTT 配置", "MQTT", "编辑并保存 MQTT 连接、主题、发布策略和离线缓存。"),
         Page(ViewOpcUa, "OPC UA Server", "OPC UA Server", "查看 OPC UA Server 配置和运行状态。"),
         Action(EditOpcUa, "保存 OPC UA Server 配置", "OPC UA Server", "编辑并保存 OPC UA Server 监听地址、命名空间、证书和采样参数。"),
         Page(ViewProject, "项目配置", "项目配置", "查看项目 JSON 配置。"),
         Action(EditProject, "保存项目配置", "项目配置", "保存项目 JSON 配置、应用配置和回滚配置。"),
         Page(ViewHistory, "历史库", "历史库", "查看历史库配置、状态和点位历史。"),
+        Action(AlarmAcknowledge, "确认报警", "历史库", "记录报警确认人、时间和备注。"),
+        Action(AlarmHandle, "处理报警", "历史库", "填写处理说明并完成已确认的报警。"),
         Action(ExportHistory, "导出历史记录", "历史库", "将点位历史或报警记录的查询结果当前页导出为 Excel。"),
         Action(EditHistory, "保存历史库配置", "历史库", "编辑历史库配置和健康阈值。"),
 

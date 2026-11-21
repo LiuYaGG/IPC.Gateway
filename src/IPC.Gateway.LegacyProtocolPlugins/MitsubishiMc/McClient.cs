@@ -710,6 +710,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             else
             {
                 _stream.Write(request, 0, request.Length);
+                PlcDiagnosticTrace.Record("TX", request);
                 byte[] header = ReadExact(_frameCodec.ResponseHeaderLength);
                 int dataLength = _frameCodec.GetResponseDataLength(header);
                 response = new byte[header.Length + dataLength];
@@ -717,6 +718,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 byte[] body = ReadExact(dataLength);
                 Buffer.BlockCopy(body, 0, response, header.Length, dataLength);
             }
+            PlcDiagnosticTrace.Record("RX", response);
             return _frameCodec.ParseResponse(response, request);
         }
 
@@ -736,6 +738,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 else
                 {
                     await _stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
+                    PlcDiagnosticTrace.Record("TX", request);
                     byte[] header = await ReadExactAsync(_frameCodec.ResponseHeaderLength, cancellationToken).ConfigureAwait(false);
                     int dataLength = _frameCodec.GetResponseDataLength(header);
                     response = new byte[header.Length + dataLength];
@@ -743,6 +746,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                     byte[] body = await ReadExactAsync(dataLength, cancellationToken).ConfigureAwait(false);
                     Buffer.BlockCopy(body, 0, response, header.Length, dataLength);
                 }
+            PlcDiagnosticTrace.Record("RX", response);
             return _frameCodec.ParseResponse(response, request);
         }
 
@@ -754,6 +758,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                 {
                     DrainPendingUdpResponses();
                     _udpClient.Send(request, request.Length);
+                    PlcDiagnosticTrace.Record("TX", request);
                     IPEndPoint remote = null;
                     byte[] response = _udpClient.Receive(ref remote);
                     ValidateUdpRemoteEndPoint(remote);
@@ -785,6 +790,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
                     DrainPendingUdpResponses();
                     using CancellationTokenSource udpTimeout = CreateUdpOperationCancellationTokenSource(cancellationToken);
                     await _udpClient.SendAsync(request, request.Length).WaitAsync(udpTimeout.Token).ConfigureAwait(false);
+                    PlcDiagnosticTrace.Record("TX", request);
                     UdpReceiveResult receiveResult = await _udpClient.ReceiveAsync(udpTimeout.Token).ConfigureAwait(false);
                     ValidateUdpRemoteEndPoint(receiveResult.RemoteEndPoint);
                     return receiveResult.Buffer;

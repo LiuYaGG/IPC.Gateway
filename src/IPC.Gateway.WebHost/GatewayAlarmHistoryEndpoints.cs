@@ -12,7 +12,7 @@ internal static partial class GatewayAlarmHistoryEndpoints
         group.MapGet("", (HttpContext ctx, GatewayHistoryQueries queries, GatewayCoreService gateway) =>
             queries.Run(ctx, queries.UiSlots, async ct =>
             {
-                CheckKeys(ctx, "from", "to", "channelId", "deviceId", "groupId", "tagId", "snapshot", "page", "pageSize");
+                CheckKeys(ctx, "from", "to", "channelId", "deviceId", "groupId", "tagId", "snapshot", "page", "pageSize", "processingStatus");
                 var filter = ParseFilter(ctx);
                 var (page, size) = ParsePagination(ctx);
                 var result = await Task.Run(() => gateway.AlarmJournal.ReadPage(page, size, query: filter, cancellationToken: ct), ct);
@@ -24,7 +24,9 @@ internal static partial class GatewayAlarmHistoryEndpoints
                         record.EventId, record.Timestamp, record.ChannelId, record.ChannelName, record.DeviceId, record.DeviceName,
                         record.GroupId, record.GroupName, record.TagName, record.TagId, record.Source, record.RuleName,
                         record.EventType, PreviousState = record.DisplayPreviousState, State = record.DisplayState,
-                        record.Value, record.Threshold, record.Message, record.DeliveryStatus
+                        record.Value, record.Threshold, record.Message, record.DeliveryStatus,
+                        record.CanProcess, record.AlarmStatus, record.ProcessingStatus, record.RecoveredAtUtc,
+                        record.Acknowledged, record.Handled
                     })
                 } });
             }));
@@ -45,6 +47,7 @@ internal static partial class GatewayAlarmHistoryEndpoints
                 return Results.Ok(new { success = true, data = result });
             }));
         MapExport(group);
+        MapProcessing(app.MapGroup("/api/history/alarms"));
     }
 
     internal static GatewayAlarmQuery ParseFilter(HttpContext ctx) => new()
@@ -52,7 +55,8 @@ internal static partial class GatewayAlarmHistoryEndpoints
         From = Timestamp(ctx, "from"), To = Timestamp(ctx, "to"),
         ChannelId = Id(ctx, "channelId"), DeviceId = Id(ctx, "deviceId"),
         GroupId = Id(ctx, "groupId", allowEmpty: true), TagId = Id(ctx, "tagId"),
-        Snapshot = Get(ctx, "snapshot") is null ? null : Integer(ctx, "snapshot", 0)
+        Snapshot = Get(ctx, "snapshot") is null ? null : Integer(ctx, "snapshot", 0),
+        ProcessingStatus = Get(ctx, "processingStatus")
     };
 
     internal static (int Page, int PageSize) ParsePagination(HttpContext ctx)

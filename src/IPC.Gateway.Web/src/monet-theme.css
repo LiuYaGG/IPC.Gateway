@@ -961,6 +961,11 @@ a:focus-visible {
   min-width: 14px;
   padding: 0;
 }
+.device-pane-selector {
+  align-self: flex-start;
+  flex: none;
+  margin-bottom: 8px;
+}
 .device-detail {
   gap: 8px;
 }

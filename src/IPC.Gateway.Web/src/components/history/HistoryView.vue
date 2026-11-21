@@ -22,6 +22,9 @@
       <a-tab-pane key="records" :tab="tx('点位历史')">
         <HistoryRecordsView :active="tab === 'records'" :enabled="history?.enabled" />
       </a-tab-pane>
+      <a-tab-pane key="trend" :tab="trendText('点位曲线')">
+        <HistoryTrendView :active="tab === 'trend'" :enabled="history?.enabled" />
+      </a-tab-pane>
       <a-tab-pane key="alarms" :tab="tx('报警记录')">
         <AlarmHistoryPanel :active="tab === 'alarms'" />
       </a-tab-pane>
@@ -38,6 +41,8 @@ import type { HistoryConfig, HistoryRuntimeStatus } from '../../api'
 import HistoryBaseForm from './HistoryBaseForm.vue'
 import AlarmHistoryPanel from './AlarmHistoryPanel.vue'
 import HistoryRecordsView from './HistoryRecordsView.vue'
+import HistoryTrendView from './HistoryTrendView.vue'
+import { trendText } from './historyTrendText'
 import HistoryProcessingTabs from './HistoryProcessingTabs.vue'
 import HistoryStoragePane from './HistoryStoragePane.vue'
 import HistoryStatusBar from './HistoryStatusBar.vue'

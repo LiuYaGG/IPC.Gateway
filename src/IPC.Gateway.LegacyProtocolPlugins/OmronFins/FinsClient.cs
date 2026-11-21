@@ -523,20 +523,8 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(request, 12, 0);
             WriteUInt32(request, 16, _driverOptions.SourceNode);
             _stream.Write(request, 0, request.Length);
-
-            byte[] header = ReadExact(16);
-            ValidateFinsTcpHeader(header);
-            uint length = ReadUInt32(header, 4);
-            uint command = ReadUInt32(header, 8);
-            uint error = ReadUInt32(header, 12);
-            if (command != 1)
-                throw new InvalidOperationException("FINS/TCP 握手响应命令不正确。");
-            if (error != 0)
-                throw new InvalidOperationException("FINS/TCP 握手失败: 0x" + error.ToString("X8"));
-            if (length < 16)
-                throw new InvalidOperationException("FINS/TCP 握手响应长度不足。");
-
-            byte[] payload = ReadExact(ValidateTcpPayloadLength(length));
+            PlcDiagnosticTrace.Record("TX", request);
+            byte[] payload = ReadTcpPayload(1);
             _clientNode = (byte)ReadUInt32(payload, 0);
             _serverNode = (byte)ReadUInt32(payload, 4);
             ApplyConfiguredNodes();
@@ -552,20 +540,8 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(request, 12, 0);
             WriteUInt32(request, 16, _driverOptions.SourceNode);
             await _stream.WriteAsync(request, 0, request.Length, cancellationToken).ConfigureAwait(false);
-
-            byte[] header = await ReadExactAsync(16, cancellationToken).ConfigureAwait(false);
-            ValidateFinsTcpHeader(header);
-            uint length = ReadUInt32(header, 4);
-            uint command = ReadUInt32(header, 8);
-            uint error = ReadUInt32(header, 12);
-            if (command != 1)
-                throw new InvalidOperationException("FINS/TCP handshake response command is invalid.");
-            if (error != 0)
-                throw new InvalidOperationException("FINS/TCP handshake failed: 0x" + error.ToString("X8"));
-            if (length < 16)
-                throw new InvalidOperationException("FINS/TCP handshake response is too short.");
-
-            byte[] payload = await ReadExactAsync(ValidateTcpPayloadLength(length), cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", request);
+            byte[] payload = await ReadTcpPayloadAsync(1, cancellationToken).ConfigureAwait(false);
             _clientNode = (byte)ReadUInt32(payload, 0);
             _serverNode = (byte)ReadUInt32(payload, 4);
             ApplyConfiguredNodes();
@@ -585,18 +561,8 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(packet, 12, 0);
             Buffer.BlockCopy(finsFrame, 0, packet, 16, finsFrame.Length);
             _stream.Write(packet, 0, packet.Length);
-
-            byte[] header = ReadExact(16);
-            ValidateFinsTcpHeader(header);
-            uint length = ReadUInt32(header, 4);
-            uint tcpCommand = ReadUInt32(header, 8);
-            uint error = ReadUInt32(header, 12);
-            if (tcpCommand != 2)
-                throw new InvalidOperationException("FINS/TCP 响应命令不正确。");
-            if (error != 0)
-                throw new InvalidOperationException("FINS/TCP 响应错误: 0x" + error.ToString("X8"));
-            int payloadLength = ValidateTcpPayloadLength(length);
-            return ValidateFinsResponseFrame(ReadExact(payloadLength), sid);
+            PlcDiagnosticTrace.Record("TX", packet);
+            return ValidateFinsResponseFrame(ReadTcpPayload(2), sid);
         }
 
         private async ValueTask<byte[]> SendFinsCommandAsync(
@@ -616,19 +582,52 @@ namespace IPC.Plc.Communication.OmronFins
             WriteUInt32(packet, 12, 0);
             Buffer.BlockCopy(finsFrame, 0, packet, 16, finsFrame.Length);
             await _stream.WriteAsync(packet, 0, packet.Length, cancellationToken).ConfigureAwait(false);
+            PlcDiagnosticTrace.Record("TX", packet);
+            byte[] response = await ReadTcpPayloadAsync(2, cancellationToken).ConfigureAwait(false);
+            return ValidateFinsResponseFrame(response, sid);
+        }
 
+        private byte[] ReadTcpPayload(uint expectedCommand)
+        {
+            byte[] header = ReadExact(16);
+            byte[] payload;
+            try { payload = ReadExact(GetReplyPayloadLength(header, expectedCommand, asynchronous: false)); }
+            catch { PlcDiagnosticTrace.Record("RX", header); throw; }
+            PlcDiagnosticTrace.Record("RX", header, payload);
+            return payload;
+        }
+
+        private async ValueTask<byte[]> ReadTcpPayloadAsync(uint expectedCommand, CancellationToken cancellationToken)
+        {
             byte[] header = await ReadExactAsync(16, cancellationToken).ConfigureAwait(false);
+            byte[] payload;
+            try { payload = await ReadExactAsync(GetReplyPayloadLength(header, expectedCommand, asynchronous: true), cancellationToken).ConfigureAwait(false); }
+            catch { PlcDiagnosticTrace.Record("RX", header); throw; }
+            PlcDiagnosticTrace.Record("RX", header, payload);
+            return payload;
+        }
+
+        private static int GetReplyPayloadLength(byte[] header, uint expectedCommand, bool asynchronous)
+        {
             ValidateFinsTcpHeader(header);
             uint length = ReadUInt32(header, 4);
             uint tcpCommand = ReadUInt32(header, 8);
             uint error = ReadUInt32(header, 12);
-            if (tcpCommand != 2)
-                throw new InvalidOperationException("FINS/TCP response command is invalid.");
+            bool handshake = expectedCommand == 1;
+            if (tcpCommand != expectedCommand)
+                throw new InvalidOperationException(handshake
+                    ? (asynchronous ? "FINS/TCP handshake response command is invalid." : "FINS/TCP 握手响应命令不正确。")
+                    : (asynchronous ? "FINS/TCP response command is invalid." : "FINS/TCP 响应命令不正确。"));
             if (error != 0)
-                throw new InvalidOperationException("FINS/TCP response error: 0x" + error.ToString("X8"));
-            int payloadLength = ValidateTcpPayloadLength(length);
-            byte[] response = await ReadExactAsync(payloadLength, cancellationToken).ConfigureAwait(false);
-            return ValidateFinsResponseFrame(response, sid);
+            {
+                string prefix = handshake
+                    ? (asynchronous ? "FINS/TCP handshake failed: 0x" : "FINS/TCP 握手失败: 0x")
+                    : (asynchronous ? "FINS/TCP response error: 0x" : "FINS/TCP 响应错误: 0x");
+                throw new InvalidOperationException(prefix + error.ToString("X8"));
+            }
+            if (handshake && length < 16)
+                throw new InvalidOperationException(asynchronous ? "FINS/TCP handshake response is too short." : "FINS/TCP 握手响应长度不足。");
+            return ValidateTcpPayloadLength(length);
         }
 
         private byte[] SendUdp(byte[] request, byte sid, bool allowReadRetry)
@@ -649,9 +648,11 @@ namespace IPC.Plc.Communication.OmronFins
                 {
                     using CancellationTokenSource timeout = CreateUdpTimeout(cancellationToken);
                     await _udpClient.SendAsync(request, request.Length).WaitAsync(timeout.Token).ConfigureAwait(false);
+                    PlcDiagnosticTrace.Record("TX", request);
                     while (true)
                     {
                         UdpReceiveResult result = await _udpClient.ReceiveAsync(timeout.Token).ConfigureAwait(false);
+                        PlcDiagnosticTrace.Record("RX", result.Buffer);
                         ValidateUdpRemoteEndPoint(result.RemoteEndPoint);
                         // A delayed datagram from an earlier request must not consume this attempt.
                         if (result.Buffer.Length >= 10 && result.Buffer[9] != sid) continue;

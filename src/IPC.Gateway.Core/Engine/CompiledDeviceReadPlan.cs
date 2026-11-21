@@ -432,6 +432,7 @@ namespace IPC.Runtime.Engine
         public int RecoveryIntervalMs { get; set; } = 1000;
         public int ConsecutiveDeferredReads { get; private set; }
         public bool HasSuccessfulRead { get; private set; }
+        public bool LastPeriodicSampleValid { get; set; }
         public DateTime HealthyReadBaselineUtc { get; set; }
         public string LastError { get; private set; }
 

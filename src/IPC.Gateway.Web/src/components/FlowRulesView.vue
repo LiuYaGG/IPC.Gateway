@@ -58,10 +58,10 @@
           },
           { key: 'column-7', title: tx('编译规则'), dataIndex: 'compiledRuleId', width: '160', ellipsis: true },
           { key: 'column-8', title: tx('更新时间'), dataIndex: 'updatedTime', width: '170' },
-          { key: 'column-9', title: tx('操作'), width: '170', fixed: 'right' }
+          { key: 'column-9', title: tx('操作'), width: canReplayFlowRule ? '260' : '170', fixed: 'right' }
         ])
       "
-      :scroll="{ x: 1330 }"
+      :scroll="{ x: canReplayFlowRule ? 1420 : 1330 }"
     >
       <template #bodyCell="tableCell">
         <template v-if="tableCell.column.key === 'column-1'">
@@ -86,6 +86,10 @@
         <template v-if="tableCell.column.key === 'column-9'">
           <template v-for="{ row } in [{ row: tableCell.record, $index: tableCell.index }]" :key="tableCell.index">
             <div class="table-actions">
+              <a-button v-if="canReplayFlowRule" @click="openReplay(row, false)" type="link">
+                <template #icon><HistoryOutlined /></template>
+                {{ locale === 'en-US' ? 'Replay' : '历史回放' }}
+              </a-button>
               <a-button v-if="canEditFlowRule" @click="openEdit(row)" type="link">
                 <template #icon>
                   <span class="ui-icon"><component :is="Edit" /></span>
@@ -256,11 +260,17 @@
       </template>
       <template #footer>
         <a-button @click="drawerVisible = false">{{ tx('取消') }}</a-button>
+        <a-button v-if="canReplayFlowRule && canEditCurrentFlowRule && form" :disabled="saving" @click="openReplay(form, true)">
+          <template #icon><HistoryOutlined /></template>
+          {{ locale === 'en-US' ? 'Replay draft' : '回放草稿' }}
+        </a-button>
         <a-button v-if="canSaveCurrentFlowRule" type="primary" :loading="saving" @click="save">
           {{ tx('保存') }}
         </a-button>
       </template>
     </a-modal>
+    <FlowRuleReplayModal v-if="replaySelection" :rule="replaySelection.rule" :draft="replaySelection.draft"
+      :saved-rule="replaySelection.savedRule" @close="replaySelection = undefined" />
   </section>
 </template>
 
@@ -278,6 +288,7 @@ import {
   SnippetsOutlined as DocumentCopy,
   EditOutlined as Edit,
   FullscreenOutlined as FullScreen,
+  HistoryOutlined,
   PlusOutlined as Plus,
   PartitionOutlined as Rank,
   ReloadOutlined as Refresh,
@@ -298,6 +309,7 @@ import {
 import { loadValueTransformCatalog, type ValueTransformCatalogItem } from '../scriptingApi'
 import FlowRuleCanvas from './FlowRuleCanvas.vue'
 import FlowRuleProperties from './FlowRuleProperties.vue'
+import FlowRuleReplayModal from './FlowRuleReplayModal.vue'
 import {
   cloneFlowRule,
   createEdge,
@@ -334,6 +346,7 @@ const flowSearch = ref('')
 const copiedNode = ref<FlowRuleNode | null>(null)
 const debugHighlight = ref(true)
 const valueScripts = ref<ValueTransformCatalogItem[]>([])
+const replaySelection = ref<{ rule: FlowRuleDefinition; draft: boolean; savedRule?: FlowRuleDefinition }>()
 
 type PaletteNode = { type: string; label: string; script?: ValueTransformCatalogItem }
 
@@ -359,6 +372,7 @@ const canCreateFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesCrea
 const canEditFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesEdit))
 const canDeleteFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesDelete))
 const canDebugFlowRule = computed(() => hasPermission(PERMISSIONS.flowRulesDebug))
+const canReplayFlowRule = computed(() => canDebugFlowRule.value && hasPermission(PERMISSIONS.historyView))
 const canEditCurrentFlowRule = computed(() =>
   form.value ? (form.value.id ? canEditFlowRule.value : canCreateFlowRule.value) : false
 )
@@ -425,10 +439,10 @@ watch(
 
 const pageActive = ref(true)
 onActivated(() => { pageActive.value = true })
-onDeactivated(() => { pageActive.value = false })
-watch([pageActive, drawerVisible, saving], ([active, open, busy], _, onCleanup) => {
-  emit('editing-state', active && (open || busy))
-  if (!active || !open) return
+onDeactivated(() => { pageActive.value = false; replaySelection.value = undefined })
+watch([pageActive, drawerVisible, saving, replaySelection], ([active, open, busy, replay], _, onCleanup) => {
+  emit('editing-state', active && (open || busy || !!replay))
+  if (!active || !open || replay) return
   window.addEventListener('keydown', handleEditorShortcut)
   onCleanup(() => window.removeEventListener('keydown', handleEditorShortcut))
 }, { immediate: true })
@@ -455,6 +469,11 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function openReplay(rule: FlowRuleDefinition, draft: boolean) {
+  const saved = draft ? rules.value.find(entry => entry.id === rule.id) : undefined
+  replaySelection.value = { rule: cloneFlowRule(rule), draft, savedRule: saved ? cloneFlowRule(saved) : undefined }
 }
 
 function openCreate() {

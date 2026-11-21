@@ -127,10 +127,15 @@ namespace IPC.Gateway.Core.Gateway
 
         public ProjectConfig CurrentProject
         {
-            get
+            get => GetProjectWithRevision(out _);
+        }
+
+        public ProjectConfig GetProjectWithRevision(out string revision)
+        {
+            lock (_syncRoot)
             {
-                lock (_syncRoot)
-                    return ProjectConfigCloner.Clone(_project);
+                revision = ProjectRevision;
+                return ProjectConfigCloner.Clone(_project);
             }
         }
 

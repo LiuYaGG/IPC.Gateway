@@ -34,7 +34,7 @@ namespace IPC.EdgeGateway
             {
                 breaker.RecordFailure(ex.Message);
                 RecordEvaluationFailure(rule, ex);
-                IpcLogService.WriteError("Edge rule evaluation failed: " + rule.Name, ex);
+                if (_replayOutput == null) IpcLogService.WriteError("Edge rule evaluation failed: " + rule.Name, ex);
             }
         }
 
@@ -59,7 +59,7 @@ namespace IPC.EdgeGateway
             lock (_syncRoot)
             {
                 EdgeRuleRuntimeRuleStatus status = GetOrCreateRuleStatus(rule);
-                status.LastErrorTime = DateTime.Now;
+                status.LastErrorTime = RuleTime;
                 status.LastError = "Rule circuit breaker is " + snapshot.State + "; evaluation skipped.";
                 _lastErrorTime = status.LastErrorTime;
                 _lastError = (rule == null ? string.Empty : rule.Name + ": ") + status.LastError;

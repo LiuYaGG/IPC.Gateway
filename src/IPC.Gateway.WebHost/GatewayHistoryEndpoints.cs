@@ -72,6 +72,7 @@ internal static class GatewayHistoryEndpoints
     internal static bool IsHistoryRead(HttpContext ctx) =>
         ctx.Request.Path.Value?.TrimEnd('/').ToLowerInvariant() is "/api/config/history/values" or "/api/config/history/records" or
             "/api/config/history/options" or "/api/config/history/export" or
+            "/api/config/history/trend" or "/api/config/history/trend/options" or
             "/api/config/history/alarms" or "/api/config/history/alarms/options" or "/api/config/history/alarms/export";
 
     internal static IResult Error(HttpContext ctx, int status, string code, string chinese, string english) =>
@@ -91,16 +92,16 @@ internal static class GatewayHistoryEndpoints
     internal static bool CanExport(ClaimsPrincipal user) => GatewayAuthEndpoints.IsAdmin(user) ||
         GatewayAuthEndpoints.HasPermission(user, GatewayPermissions.ExportHistory);
 
-    private static void CheckKeys(HttpContext ctx, params string[] allowed)
+    internal static void CheckKeys(HttpContext ctx, params string[] allowed)
     {
         if (ctx.Request.Query.Any(pair => !allowed.Contains(pair.Key, StringComparer.OrdinalIgnoreCase) || pair.Value.Count != 1))
             throw new ArgumentException();
     }
 
-    private static string? Get(HttpContext ctx, string key) =>
+    internal static string? Get(HttpContext ctx, string key) =>
         ctx.Request.Query.TryGetValue(key, out var value) ? value.ToString() : null;
 
-    private static string? SearchText(HttpContext ctx)
+    internal static string? SearchText(HttpContext ctx)
     {
         var text = Get(ctx,"search")?.Trim();
         return text?.Length > 256 ? throw new ArgumentException() : text;
@@ -134,7 +135,7 @@ internal static class GatewayHistoryEndpoints
         return new HistoryValueFilter(path ?? "", from, to, Get(ctx,"quality"), channel, device, groupId, tag);
     }
 
-    private static DateTimeOffset Timestamp(HttpContext ctx, string key)
+    internal static DateTimeOffset Timestamp(HttpContext ctx, string key)
     {
         var value = Get(ctx,key);
         if (value == null || (!value.EndsWith('Z') && !(value.Length >= 6 && (value[^6] == '-' || value[^6] == '+') && value[^3] == ':')) ||

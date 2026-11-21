@@ -934,7 +934,10 @@ namespace IPC.Plc.Communication.ModbusTcp
 
         private NModbusMasterAdapter CreateAdapter(TcpClient client)
         {
-            IModbusMaster master = new ModbusFactory().CreateMaster(client);
+            var factory = new ModbusFactory();
+            var capture = PlcDiagnosticTrace.Current;
+            IModbusMaster master = capture == null ? factory.CreateMaster(client) :
+                factory.CreateIpMaster(new ModbusDiagnosticStream(new NModbus.IO.TcpClientAdapter(client), capture));
             return new NModbusMasterAdapter(master, GetUnitId(), _options.TimeoutMilliseconds);
         }
 

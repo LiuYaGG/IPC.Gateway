@@ -322,6 +322,7 @@ export interface DeviceRuntimeStatus {
 }
 
 export interface TagValueSnapshot {
+  diagnosticPushQueueMs?: number;
   runtimeRevision?: number;
   channelId: string;
   channelName: string;
@@ -2856,6 +2857,8 @@ export async function deleteFlowRule(ruleId: string) {
   return result.data;
 }
 
+export type AlarmProcessingStatus = 'Pending' | 'Acknowledged' | 'Handled'
+export interface AlarmOperatorRecord { operator: string; timestampUtc: string; note: string }
 export interface AlarmHistoryRow {
   eventId: string;
   timestamp: string;
@@ -2873,6 +2876,12 @@ export interface AlarmHistoryRow {
   threshold: number | null;
   message: string;
   deliveryStatus: string;
+  alarmStatus?: 'Active' | 'Recovered' | 'Unknown'
+  canProcess?: boolean
+  processingStatus?: AlarmProcessingStatus | null
+  recoveredAtUtc?: string | null
+  acknowledged?: AlarmOperatorRecord | null
+  handled?: AlarmOperatorRecord | null
 }
 
 export type HistoryOptionLevel = 'channel' | 'device' | 'group' | 'tag'
@@ -2880,6 +2889,7 @@ export interface AlarmHistoryQuery extends HistoryRecordFilters {
   from?: string
   to?: string
   snapshot?: number
+  processingStatus?: AlarmProcessingStatus
 }
 export interface AlarmHistoryPage {
   total: number
@@ -2964,6 +2974,14 @@ export async function loadAlarmHistoryPage(page: number, pageSize: number, filte
   if (!result.success)
     throw new Error(localizeErrorMessage(result.errorMessage) || "读取报警记录失败");
   return result.data;
+}
+
+export async function recordAlarmOperatorAction(eventId: string, action: 'acknowledge' | 'handle', note: string, language: string) {
+  const result = await request<ApiResult<void>>(
+    '/api/history/alarms/' + encodeURIComponent(eventId) + '/' + action,
+    { method: 'POST', body: JSON.stringify({ note }), headers: { 'Content-Type': 'application/json', 'Accept-Language': language } }
+  )
+  if (!result.success) throw new Error(result.errorMessage || '保存报警记录失败')
 }
 
 export async function loadAlarmHistoryOptions(level: HistoryOptionLevel, filters: HistoryRecordFilters, search: string, language: string, signal: AbortSignal) {
