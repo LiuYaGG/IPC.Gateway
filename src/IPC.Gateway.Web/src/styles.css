@@ -54,7 +54,7 @@
 
 .flow-rule-meta {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 120px minmax(260px, 1.4fr);
+  grid-template-columns: minmax(160px, 1fr) max-content minmax(180px, 1.4fr);
   gap: 12px;
   align-items: end;
 }
@@ -2221,9 +2221,12 @@ h2 {
 }
 
 @media (max-width: 1180px) {
-  .flow-editor-shell,
-  .flow-rule-meta {
+  .flow-editor-shell {
     grid-template-columns: 1fr;
+  }
+
+  .flow-rule-meta {
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   }
 
   .flow-palette {

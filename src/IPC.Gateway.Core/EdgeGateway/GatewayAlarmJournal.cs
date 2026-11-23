@@ -32,12 +32,22 @@ public sealed class GatewayAlarmRecord
     public double? Threshold { get; set; }
     public string Message { get; set; } = string.Empty;
     public string DeliveryStatus { get; set; } = "Local";
+    [JsonIgnore] public string HistoryDeliveryStatus =>
+        AlarmCorrelationKey?.StartsWith("rule2:", StringComparison.Ordinal) == true ? "PerAction" : DeliveryStatus;
     // Used to track a matching activation/recovery without involving MQTT delivery.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AlarmCorrelationKey { get; set; }
-    [JsonIgnore] public bool CanProcess => IsActiveEvent(EventType);
+    public bool RequireManualHandling { get; set; }
+    public bool IsSingleOccurrence { get; set; }
+    [JsonIgnore] public bool DeliveryOnly { get; set; }
+    [JsonIgnore] public bool ClosePreviousOccurrence { get; set; }
+    [JsonIgnore] public double? RecoveryValue { get; set; }
+    [JsonIgnore] public bool RecoveryObservedAfterRestart { get; set; }
+    [JsonIgnore] public bool CanProcess => IsActiveEvent(EventType) && RequireManualHandling;
     [JsonIgnore] public string AlarmStatus => string.Equals(EventType, "recovery", StringComparison.OrdinalIgnoreCase)
-        ? "Recovered" : !CanProcess || !OccurrenceTracked ? "Unknown" : RecoveredAtUtc.HasValue ? "Recovered" : "Active";
-    [JsonIgnore] public string? ProcessingStatus => !CanProcess ? null : Handled != null ? "Handled" : Acknowledged != null ? "Acknowledged" : "Pending";
+        ? "Recovered" : IsSingleOccurrence ? "Occurred" : !IsActiveEvent(EventType) || !OccurrenceTracked ? "Unknown" : RecoveredAtUtc.HasValue ? "Recovered" : "Active";
+    [JsonIgnore] public string? ProcessingStatus => !IsActiveEvent(EventType) ? null :
+        RequireManualHandling ? Handled != null ? "Handled" : Acknowledged != null ? "Acknowledged" : "Pending" :
+        IsSingleOccurrence ? "Recorded" : RecoveredAtUtc.HasValue ? "AutoClosed" : "AutoMonitoring";
     [JsonIgnore] public bool OccurrenceTracked { get; set; }
     [JsonIgnore] public DateTime? RecoveredAtUtc { get; set; }
     [JsonIgnore] public GatewayAlarmOperatorRecord? Acknowledged { get; set; }
@@ -101,8 +111,7 @@ public sealed partial class GatewayAlarmJournal
                         CREATE INDEX IF NOT EXISTS ix_alarm_retention ON alarm_event(queued_ticks) WHERE delivery<>1;
                         """;
                     create.ExecuteNonQuery();
-                    create.CommandText = ProcessingSchema;
-                    create.ExecuteNonQuery();
+                    InitializeProcessing(schema);
                     _initialized = true;
                 }
             }
@@ -168,8 +177,10 @@ public sealed partial class GatewayAlarmJournal
         record.Source = "rule";
         record.Timestamp = record.Timestamp == default ? DateTime.UtcNow : record.Timestamp.ToUniversalTime();
         using var connection = Open();
-        using var insert = CreateInsert(connection, null);
+        using var tx = connection.BeginTransaction();
+        using var insert = CreateInsert(connection, tx);
         Insert(insert, record, publish);
+        tx.Commit();
         return record.EventId;
     }
 
@@ -205,7 +216,8 @@ public sealed partial class GatewayAlarmJournal
         p["$qos"].Value = Math.Clamp(record.Qos, 1, 2);
         // A changed recovery delay cannot overtake the same rule/tag's pending activation.
         p["$key"].Value = publish && record.Source == "rule" ? JsonSerializer.Serialize(new[] { record.RuleId, record.DeviceId, record.TagId }) : string.Empty;
-        command.ExecuteNonQuery();
+        if (command.ExecuteNonQuery() > 0)
+            TrackOccurrence(command.Connection!, command.Transaction!, record);
     }
 
     internal void CleanupIfDue()
@@ -222,8 +234,12 @@ public sealed partial class GatewayAlarmJournal
             command.CommandText = $"""
                 DELETE FROM alarm_event WHERE seq IN
                 (SELECT seq FROM alarm_event WHERE delivery<>1 AND queued_ticks < $cutoff
-                    AND (NOT ({ActiveEventSql}) OR EXISTS(SELECT 1 FROM alarm_operator_action
-                        WHERE event_id=alarm_event.event_id AND stage=2))
+                    AND (history_hidden=1 OR NOT ({ActiveEventSql}) OR
+                        (NOT EXISTS (SELECT 1 FROM alarm_occurrence o WHERE o.event_id=alarm_event.event_id
+                              AND (o.closed_ticks >= $cutoff OR (o.single_event=0 AND o.recovered_utc IS NULL)))
+                         AND (EXISTS(SELECT 1 FROM alarm_occurrence o WHERE o.event_id=alarm_event.event_id AND o.manual=0)
+                            OR EXISTS(SELECT 1 FROM alarm_operator_action a WHERE a.event_id=alarm_event.event_id
+                                AND a.stage=2 AND a.timestamp_ticks < $cutoff))))
                     ORDER BY queued_ticks LIMIT 2000)
                 """;
             command.Parameters.AddWithValue("$cutoff", DateTime.UtcNow.AddDays(-days).Ticks);
@@ -271,6 +287,10 @@ public sealed partial class GatewayAlarmJournal
                 if (!reader.IsDBNull(3)) row.RecoveredAtUtc = reader.GetDateTime(3).ToUniversalTime();
                 row.Acknowledged = ReadOperatorRecord(reader, 4);
                 row.Handled = ReadOperatorRecord(reader, 7);
+                row.RequireManualHandling = reader.GetBoolean(10);
+                row.IsSingleOccurrence = reader.GetBoolean(11);
+                row.RecoveryValue = reader.IsDBNull(12) ? null : reader.GetDouble(12);
+                row.RecoveryObservedAfterRestart = reader.GetBoolean(13);
             }
             rows.Add(row);
         }

@@ -31,9 +31,9 @@
             <div>{{ record.path }}</div><small>{{ record.address }}</small>
             <small v-if="record.row">CSV · {{ l('行', 'Row') }} {{ record.row }}</small>
           </template>
-          <template v-if="column.key === 'message'">
+          <div v-if="column.key === 'message'" class="preflight-finding">
             {{ issueText(record.code) }} <span v-if="record.detail">{{ tx(record.detail) }}</span>
-          </template>
+          </div>
           <template v-if="column.key === 'action'">
             <a-button v-if="record.tagId && csv === undefined" type="link" size="small" @click="emit('locate', record.tagId, record.groupId)">
               {{ l('定位', 'Locate') }}</a-button><span v-else>—</span>
@@ -188,6 +188,7 @@ onBeforeUnmount(() => { pending?.abort(); read?.abort() })
 .summary .ant-tag { margin:0; }
 .preflight small { display:block; color:#53657a; }
 .preflight :deep(td) { overflow-wrap:anywhere; }
+.preflight-finding { white-space:pre-line; overflow-wrap:anywhere; }
 .sample { display:grid; gap:10px; border-top:1px solid #dfE6ed; padding-top:12px; }
 .sample-row { overflow-wrap:anywhere; }
 @media (max-width:600px) { .scope label,.sample-controls label { flex-basis:100%; } }

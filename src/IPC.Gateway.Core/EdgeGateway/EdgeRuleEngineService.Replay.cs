@@ -40,14 +40,14 @@ public sealed partial class EdgeRuleEngineService
     private void CaptureReplayOutput(EdgeRuleConfig rule, EdgeRuleState state, EdgeRuleRuntimeEvent ruleEvent, bool publishCustomEvent)
     {
         var previews = new List<RuleReplayActionPreview>();
+        if (ruleEvent.EventType != "value" && GetAlarmHistoryPolicy(rule).Record)
+            previews.Add(new("AlarmRecord", null, null, 0));
         if (rule.Actions.Count > 0)
         {
             bool dispatch = CanDispatchActions(rule, state, ruleEvent.Timestamp, ruleEvent.EventType);
             foreach (var action in rule.Actions)
             {
-                bool alarm = IsAlarmOutput(action);
-                if (alarm && ruleEvent.EventType != "value") previews.Add(new("AlarmRecord", null, null, 0));
-                if (!dispatch || !ShouldExecuteAction(ruleEvent, action) || (ruleEvent.EventType == "value" && alarm)) continue;
+                if (!dispatch || !ShouldExecuteAction(ruleEvent, action)) continue;
                 string? topic = null;
                 string? payload = null;
                 if (string.Equals(action.ActionType, FlowRuleNodeTypes.MqttPublish, StringComparison.OrdinalIgnoreCase))

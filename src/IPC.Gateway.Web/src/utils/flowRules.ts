@@ -132,6 +132,10 @@ const CONDITION_NODE_TYPES = new Set([
 const BASIC_CONDITION_NODE_TYPES = new Set(['Condition', 'Threshold'])
 const ACTION_NODE_TYPES = new Set(['MqttPublish', 'EmailNotify', 'WebhookCall', 'DebugProbe'])
 
+export function isActionNode(node: FlowRuleNode) {
+  return ACTION_NODE_TYPES.has(node.nodeType)
+}
+
 export const LEGACY_FLOW_NODE_TYPES = [
   { type: 'TagInput', label: '标签输入' },
   { type: 'Condition', label: '条件' },
@@ -287,6 +291,7 @@ export function createFlowNode(nodeType: string, index = 0): FlowRuleNode {
     clearDurationSeconds: 0,
     logicalOperator: 'And',
     durationSeconds: 0,
+    ...(ACTION_NODE_TYPES.has(nodeType) && { recordAlarmHistory: false, requireManualHandling: false }),
     publishToMqtt: true,
     alarmMessage: false,
     publishOnClear: true,
@@ -342,7 +347,14 @@ export function createEdge(sourceNodeId: string, targetNodeId: string): FlowRule
 }
 
 export function cloneFlowRule(rule: FlowRuleDefinition): FlowRuleDefinition {
-  return JSON.parse(JSON.stringify(rule)) as FlowRuleDefinition
+  const copy = JSON.parse(JSON.stringify(rule)) as FlowRuleDefinition
+  for (const node of copy.nodes.filter(isActionNode)) {
+    node.recordAlarmHistory ??= copy.recordAlarmHistory ?? (node.nodeType === 'MqttPublish' && node.alarmMessage === true)
+    node.requireManualHandling ??= copy.requireManualHandling ?? false
+  }
+  delete copy.recordAlarmHistory
+  delete copy.requireManualHandling
+  return copy
 }
 
 export function applyTagSelectionToNode(node: FlowRuleNode, selection: TagSelection | null) {

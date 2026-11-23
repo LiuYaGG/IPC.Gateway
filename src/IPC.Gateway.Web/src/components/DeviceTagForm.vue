@@ -208,6 +208,12 @@
               </a-form-item>
             </div>
             <p class="form-help">{{ tx(scalingPreview) }}</p>
+            <template v-if="model.alarm.enabled">
+              <a-divider orientation="left">{{ tx('标签阈值报警') }}</a-divider>
+              <a-form-item :label="tx('需要人工处理')" :extra="tx('默认在报警恢复时自动办结。')">
+                <a-switch v-model:checked="model.alarm.requireManualHandling" />
+              </a-form-item>
+            </template>
             <template v-if="isMeter">
               <a-divider orientation="left">{{ tx('表计字段') }}</a-divider>
               <div class="form-grid tag-fields-grid">

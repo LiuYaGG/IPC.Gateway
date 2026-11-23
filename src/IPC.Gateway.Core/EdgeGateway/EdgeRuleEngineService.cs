@@ -329,13 +329,15 @@ namespace IPC.EdgeGateway
                     continue;
                 if (_seedingRuntimeSnapshots && _restoredRuleIds.Contains(GetRuleId(rule)))
                     continue;
-                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule) && rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout && !HasWindowCalculation(rule))
-                    continue;
-                if (RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
-                    continue;
-
                 if (!Matches(rule, snapshot))
                     continue;
+                if (snapshot.Quality != TagQuality.Good && !HasQualityPolicy(rule) && rule.ConditionType != EdgeRuleConditionType.NoChangeTimeout && !HasWindowCalculation(rule) ||
+                    RequiresNumericValue(rule) && !hasNumericValue && !(snapshot.Quality != TagQuality.Good && HasQualityPolicy(rule)))
+                {
+                    var state = GetState(rule);
+                    if (state.HasRecordedOpenAlarm) state.PendingClearState = string.Empty;
+                    continue;
+                }
 
                 if (rule.ConditionType == EdgeRuleConditionType.ModelInference)
                     QueueModelEvaluation(rule, snapshot, value);
@@ -364,6 +366,10 @@ namespace IPC.EdgeGateway
         private void EvaluateRule(EdgeRuleConfig rule, TagValueSnapshot snapshot, double value)
         {
             EdgeRuleState state = GetState(rule);
+            if (state.AwaitingFirstAlarmObservation && snapshot.Quality == TagQuality.Unknown)
+                return;
+            if (state.AwaitingFirstAlarmObservation && snapshot.Quality == TagQuality.Good && state.AlarmWarmupSince == DateTime.MinValue)
+                state.AlarmWarmupSince = snapshot.Timestamp;
             if (HasWindowCalculation(rule) && !TryCalculateWindowPipeline(rule, state, ref snapshot, ref value)) return;
             if (rule.ConditionType == EdgeRuleConditionType.NoChangeTimeout)
             {
@@ -374,7 +380,7 @@ namespace IPC.EdgeGateway
                 HasQualityPolicy(rule) &&
                 !EvaluateQuality(rule, snapshot))
             {
-                ApplyBooleanState(rule, snapshot, state, false, "QualityGate", value, 0D);
+                ApplyUnavailableInput(rule, snapshot, state, "QualityGate", value, 0D);
                 return;
             }
             if (rule.ConditionType != EdgeRuleConditionType.QualityGate && snapshot.Quality != TagQuality.Good)
@@ -760,14 +766,14 @@ namespace IPC.EdgeGateway
                 sourceSnapshot = triggerSnapshot;
             else if (!TryGetRuleSnapshot(rule, out sourceSnapshot))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "AggregationInputUnavailable", 0D, rule.CompareValue);
                 return;
             }
 
             eventSnapshot = sourceSnapshot;
             if (!TryAddAggregationValue(values, sources, sourceSnapshot, triggerSnapshot, raw => ApplyValueTransform(rule, sourceSnapshot, raw)))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "AggregationInputUnavailable", 0D, rule.CompareValue);
                 return;
             }
 
@@ -776,7 +782,7 @@ namespace IPC.EdgeGateway
                 if (!TryGetRelatedSnapshot(rule, out TagValueSnapshot relatedSnapshot) ||
                     !TryAddAggregationValue(values, sources, relatedSnapshot, triggerSnapshot, raw => raw * rule.RelationMultiplier + rule.RelationOffset))
                 {
-                    ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                    ApplyUnavailableInput(rule, eventSnapshot, state, "AggregationInputUnavailable", 0D, rule.CompareValue);
                     return;
                 }
             }
@@ -786,7 +792,7 @@ namespace IPC.EdgeGateway
                 if (!TryGetContextSnapshot(rule, triggerSnapshot, out TagValueSnapshot contextSnapshot) ||
                     !TryAddAggregationValue(values, sources, contextSnapshot, triggerSnapshot, raw => raw))
                 {
-                    ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                    ApplyUnavailableInput(rule, eventSnapshot, state, "AggregationInputUnavailable", 0D, rule.CompareValue);
                     return;
                 }
             }
@@ -801,7 +807,7 @@ namespace IPC.EdgeGateway
                     if (!TryGetConditionSnapshot(condition, out TagValueSnapshot conditionSnapshot) ||
                         !TryAddAggregationValue(values, sources, conditionSnapshot, triggerSnapshot, raw => ApplyValueTransform(condition, conditionSnapshot, raw)))
                     {
-                        ApplyBooleanState(rule, eventSnapshot, state, false, "AggregationInputUnavailable", 0D, rule.CompareValue);
+                        ApplyUnavailableInput(rule, eventSnapshot, state, "AggregationInputUnavailable", 0D, rule.CompareValue);
                         return;
                     }
                 }
@@ -908,6 +914,8 @@ namespace IPC.EdgeGateway
 
             int timeoutSeconds = Math.Max(0, rule.StateTimeoutSeconds);
             bool active = timeoutSeconds <= 0 || now - state.StateMachineEnteredTime >= TimeSpan.FromSeconds(timeoutSeconds);
+            if (state.AwaitingFirstAlarmObservation && expected && !active)
+                return; // A restarted timer reaching zero is not evidence the expected state ended.
             ApplyBooleanState(rule, snapshot, state, active, StateName(rule), value, timeoutSeconds);
         }
 
@@ -1197,24 +1205,24 @@ namespace IPC.EdgeGateway
                 : TryGetRuleSnapshot(rule, out TagValueSnapshot cachedSource) ? cachedSource : new TagValueSnapshot();
             if (string.IsNullOrWhiteSpace(sourceSnapshot.TagName) && string.IsNullOrWhiteSpace(GetPointCode(sourceSnapshot)))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
             }
             if (sourceSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(sourceSnapshot, triggerSnapshot))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "TagRelation", triggerValue, 0D);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "TagRelation", triggerValue, 0D);
                 return;
             }
 
             TagValueSnapshot relatedSnapshot;
             if (!TryGetRelatedSnapshot(rule, out relatedSnapshot))
             {
-                ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
+                ApplyUnavailableInput(rule, sourceSnapshot, state, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
             }
             if (relatedSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(relatedSnapshot, triggerSnapshot))
             {
-                ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelation", triggerValue, 0D);
+                ApplyUnavailableInput(rule, sourceSnapshot, state, "TagRelation", triggerValue, 0D);
                 return;
             }
 
@@ -1223,7 +1231,7 @@ namespace IPC.EdgeGateway
             if (!TryGetNumericValue(sourceSnapshot, out sourceValue) ||
                 !TryGetNumericValue(relatedSnapshot, out relatedValue))
             {
-                ApplyBooleanState(rule, sourceSnapshot, state, false, "TagRelationInputUnavailable", triggerValue, 0D);
+                ApplyUnavailableInput(rule, sourceSnapshot, state, "TagRelationInputUnavailable", triggerValue, 0D);
                 return;
             }
 
@@ -1238,12 +1246,12 @@ namespace IPC.EdgeGateway
             TagValueSnapshot contextSnapshot;
             if (!TryGetContextSnapshot(rule, triggerSnapshot, out contextSnapshot))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "ContextInputUnavailable", triggerValue, 0D);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "ContextInputUnavailable", triggerValue, 0D);
                 return;
             }
             if (contextSnapshot.Quality != TagQuality.Good || !IsSnapshotFresh(contextSnapshot, triggerSnapshot))
             {
-                ApplyBooleanState(rule, triggerSnapshot, state, false, "ContextInputUnavailable", triggerValue, 0D);
+                ApplyUnavailableInput(rule, triggerSnapshot, state, "ContextInputUnavailable", triggerValue, 0D);
                 return;
             }
 
@@ -1280,14 +1288,14 @@ namespace IPC.EdgeGateway
                     conditionSnapshot.Quality != TagQuality.Good ||
                     !IsSnapshotFresh(conditionSnapshot, triggerSnapshot))
                 {
-                    ApplyBooleanState(rule, triggerSnapshot, state, false, "CombinationInputUnavailable", triggerValue, 0D);
+                    ApplyUnavailableInput(rule, triggerSnapshot, state, "CombinationInputUnavailable", triggerValue, 0D);
                     return;
                 }
 
                 double conditionValue;
                 if (!TryGetNumericValue(conditionSnapshot, out conditionValue))
                 {
-                    ApplyBooleanState(rule, triggerSnapshot, state, false, "CombinationInputUnavailable", triggerValue, 0D);
+                    ApplyUnavailableInput(rule, triggerSnapshot, state, "CombinationInputUnavailable", triggerValue, 0D);
                     return;
                 }
 
@@ -1438,6 +1446,37 @@ namespace IPC.EdgeGateway
             state.SequenceLastStepTime = DateTime.MinValue;
         }
 
+        private void ApplyUnavailableInput(EdgeRuleConfig rule, TagValueSnapshot snapshot, EdgeRuleState state,
+            string reason, double value, double threshold)
+        {
+            if (state.HasRecordedOpenAlarm)
+            {
+                state.PendingClearState = string.Empty;
+                state.PendingClearSince = DateTime.MinValue;
+                return;
+            }
+            ApplyBooleanState(rule, snapshot, state, false, reason, value, threshold);
+        }
+
+        private static bool AlarmWindowsReady(EdgeRuleConfig rule, EdgeRuleState state, DateTime time)
+        {
+            bool Ready(int seconds, int limit, int count) =>
+                (limit > 0 && count >= limit) || time - state.AlarmWarmupSince >= TimeSpan.FromSeconds(Math.Max(1, seconds));
+            foreach (var node in rule.ValuePipeline)
+            {
+                if (node.NodeType == FlowRuleNodeTypes.WindowCalculation &&
+                    !Ready(node.WindowSeconds, node.WindowSampleCount,
+                        state.ValueWindows.TryGetValue(node.Id, out var samples) ? samples.Count : 0)) return false;
+            }
+            return rule.ConditionType switch
+            {
+                EdgeRuleConditionType.SlidingWindow => Ready(rule.WindowSeconds, rule.WindowSampleCount, state.WindowSamples.Count),
+                EdgeRuleConditionType.Trend => Ready(rule.TrendWindowSeconds, rule.TrendSampleCount, state.WindowSamples.Count),
+                EdgeRuleConditionType.AnomalyDetection => Ready(rule.AnomalyBaselineWindowSeconds, rule.AnomalyBaselineSampleCount, state.WindowSamples.Count),
+                _ => true
+            };
+        }
+
         private void ApplyBooleanState(
             EdgeRuleConfig rule,
             TagValueSnapshot snapshot,
@@ -1450,6 +1489,8 @@ namespace IPC.EdgeGateway
             string? severity = null)
         {
             DateTime now = RuleTime;
+            if (state.AwaitingFirstAlarmObservation && !AlarmWindowsReady(rule, state, snapshot.Timestamp))
+                return;
             state.LastEvaluationSnapshot = snapshot.Clone();
             state.LastEvaluationValue = value;
             state.LastEvaluationThreshold = threshold;
@@ -1479,6 +1520,7 @@ namespace IPC.EdgeGateway
                     state.PendingClearState = string.Empty;
                     state.PendingClearSince = DateTime.MinValue;
                     PublishEvent(rule, snapshot, "clear", oldState, value, threshold, BuildClearMessage(rule, snapshot, oldState), rule.PublishToMqtt && rule.PublishOnClear);
+                    state.AwaitingFirstAlarmObservation = false;
                     state.ActiveMessageOverride = string.Empty;
                     state.ActiveSeverity = string.Empty;
                 }
@@ -1495,6 +1537,8 @@ namespace IPC.EdgeGateway
             state.PendingClearState = string.Empty;
             state.PendingClearSince = DateTime.MinValue;
             string newState = string.IsNullOrWhiteSpace(activeState) ? "Active" : activeState;
+            if (string.Equals(state.ActiveState, newState, StringComparison.OrdinalIgnoreCase))
+                state.AwaitingFirstAlarmObservation = false;
             int durationSeconds = Math.Max(0, rule.DurationSeconds);
             if (!string.Equals(state.PendingState, newState, StringComparison.OrdinalIgnoreCase))
             {
@@ -1523,6 +1567,7 @@ namespace IPC.EdgeGateway
             state.ActiveSince = now;
             state.EscalationPublished = false;
             PublishEvent(rule, snapshot, "active", newState, value, threshold, BuildStateActiveMessage(rule, snapshot, newState, state), rule.PublishToMqtt, previousState);
+            state.AwaitingFirstAlarmObservation = false;
         }
 
         private EdgeRuleState GetState(EdgeRuleConfig? rule)
@@ -1586,14 +1631,40 @@ namespace IPC.EdgeGateway
             if (eventType != "value")
                 IpcLogService.WriteAudit("EdgeRule", rule.Name, eventType + ":" + state + " " + value.ToString("R", CultureInfo.InvariantCulture));
 
+            bool changesAlarmLevel = eventType == "active" && !string.IsNullOrEmpty(previousState) &&
+                !string.Equals(previousState, state, StringComparison.OrdinalIgnoreCase);
+            var history = eventType == "value" ? default : GetAlarmHistoryPolicy(rule);
+            bool endPreviousOnly = !history.Record && ruleState.HasRecordedOpenAlarm && (eventType == "clear" || changesAlarmLevel);
+            if (history.Record || endPreviousOnly)
+            {
+                try
+                {
+                    var record = BuildRuleAlarmRecord(ruleEvent, previousState);
+                    record.AlarmCorrelationKey = ruleState.OpenAlarmKey ?? RuleAlarmKey(rule);
+                    record.RequireManualHandling = history.Manual;
+                    record.IsSingleOccurrence = IsSingleOccurrence(rule);
+                    record.ClosePreviousOccurrence = changesAlarmLevel;
+                    if (endPreviousOnly) record.EventType = "recovery";
+                    record.RecoveryObservedAfterRestart = ruleState.AwaitingFirstAlarmObservation && ruleState.RestoredAfterRestart && (eventType == "clear" || record.ClosePreviousOccurrence);
+                    if (_recordAlarm == null) throw new InvalidOperationException("Rule alarm journal is unavailable.");
+                    _recordAlarm(record, false);
+                    ruleState.HasRecordedOpenAlarm = record.EventType != "recovery" && !record.IsSingleOccurrence;
+                    ruleState.OpenAlarmKey = ruleState.HasRecordedOpenAlarm ? record.AlarmCorrelationKey : null;
+                }
+                catch (Exception ex)
+                {
+                    RecordActionFailure(ruleEvent, new EdgeRuleActionConfig { ActionType = "AlarmHistory" }, ex);
+                    IpcLogService.WriteError("Failed to persist rule alarm: " + rule.Name, ex);
+                }
+            }
             if (rule.Actions != null && rule.Actions.Count > 0)
             {
                 bool dispatch = CanDispatchActions(rule, ruleState, now, eventType);
-                foreach (var action in rule.Actions.Where(action => eventType != "value" && IsAlarmOutput(action)))
+                foreach (var action in rule.Actions.Where(action => eventType != "value" && dispatch && IsAlarmOutput(action) && ShouldExecuteAction(ruleEvent, action)))
                 {
                     try
                     {
-                        RecordAlarmOutput(ruleEvent, action, previousState, dispatch && ShouldExecuteAction(ruleEvent, action), rule.ActionDelaySeconds);
+                        QueueAlarmNotification(ruleEvent, action, previousState, rule.ActionDelaySeconds);
                     }
                     catch (Exception ex)
                     {
@@ -1840,7 +1911,70 @@ namespace IPC.EdgeGateway
         private static bool IsAlarmOutput(EdgeRuleActionConfig action) =>
             action != null && action.AlarmMessage && string.Equals(action.ActionType, FlowRuleNodeTypes.MqttPublish, StringComparison.OrdinalIgnoreCase);
 
-        private void RecordAlarmOutput(EdgeRuleRuntimeEvent source, EdgeRuleActionConfig action, string? previousState, bool publish, int delaySeconds)
+        private static (bool Record, bool Manual) GetAlarmHistoryPolicy(EdgeRuleConfig rule)
+        {
+            if (rule.Actions is not { Count: > 0 })
+                return (rule.RecordAlarmHistory == true, rule.RequireManualHandling);
+
+            bool record = false;
+            foreach (var action in rule.Actions)
+            {
+                // Notification delivery and its trigger/recovery filters are independent of local history.
+                if (action == null || !(action.RecordAlarmHistory ?? rule.RecordAlarmHistory ?? IsAlarmOutput(action)))
+                    continue;
+
+                record = true;
+                if (action.RequireManualHandling ?? rule.RequireManualHandling)
+                    return (true, true);
+            }
+            return (record, false);
+        }
+
+        private static string RuleAlarmKey(EdgeRuleConfig rule)
+        {
+            static string[] Binding(string channel, string device, string group, string tag, string point) =>
+                [channel, device, group, FirstText(tag, point)];
+            var inputs = new List<string[]>
+            {
+                Binding(rule.SourceChannelId, rule.SourceDeviceId, rule.SourceGroupId, rule.SourceTagId, rule.SourcePointCode),
+                Binding(rule.RelatedChannelId, rule.RelatedDeviceId, rule.RelatedGroupId, rule.RelatedTagId, rule.RelatedPointCode),
+                Binding(rule.ContextChannelId, rule.ContextDeviceId, rule.ContextGroupId, rule.ContextTagId, rule.ContextPointCode)
+            };
+            foreach (var c in rule.Conditions)
+                inputs.Add(Binding(c.SourceChannelId, c.SourceDeviceId, c.SourceGroupId, c.SourceTagId, c.SourcePointCode));
+            if (rule.ConditionType == EdgeRuleConditionType.ModelInference)
+                inputs.Add(SplitModelInputTags(rule.ModelInputTags).ToArray());
+            // A changed predicate cannot establish recovery of the previous predicate.
+            // Output actions, delivery settings, labels, and the history policy are independent of it.
+            string serialized = JsonSerializer.Serialize(new
+            {
+                Inputs = inputs.Select(parts => parts.Select(id => (id ?? "").Trim().ToUpperInvariant())),
+                rule.LowLimit, rule.HighLimit, rule.Operator, rule.CompareValue, rule.Deadband, rule.RateLimitPerSecond,
+                rule.DurationSeconds, rule.ClearDurationSeconds, rule.Expression, rule.LogicalOperator,
+                Conditions = rule.Conditions.Select(c => new { c.Operator, c.CompareValue, c.TransformMultiplier, c.TransformOffset,
+                    c.TransformUseAbsolute, c.TransformExpression, c.ValueScriptId, c.ValueScriptVersion }),
+                Levels = rule.AlarmLevels.Select(l => new { l.Name, l.Operator, l.CompareValue }),
+                rule.HysteresisMode, rule.HysteresisOnValue, rule.HysteresisOffValue, rule.QualityOperator, rule.QualityValues,
+                rule.WindowStatistic, rule.WindowSeconds, rule.WindowSampleCount, rule.AggregationStatistic,
+                rule.TrendMode, rule.TrendWindowSeconds, rule.TrendSampleCount, rule.TrendMinSlopePerSecond, rule.TrendChangeThreshold, rule.TrendStableDeadband,
+                rule.StateExpectedValue, rule.StateClearValue, rule.StateTimeoutSeconds, rule.RelationOperator, rule.RelationMultiplier, rule.RelationOffset,
+                rule.ContextOperator, rule.ContextExpectedValue, rule.CycleStartValue, rule.CycleEndValue, rule.CycleMinSeconds, rule.CycleMaxSeconds,
+                rule.TaktTargetSeconds, rule.TaktTolerancePercent, rule.AnomalyMode, rule.AnomalyThreshold, rule.AnomalyBaselineWindowSeconds, rule.AnomalyBaselineSampleCount,
+                rule.ModelPath, rule.ModelInputName, rule.ModelInputNames, rule.ModelOutputName, rule.ModelOutputIndex, rule.ModelOperator, rule.ModelThreshold,
+                rule.TransformMultiplier, rule.TransformOffset, rule.TransformUseAbsolute, rule.TransformExpression, rule.ValueScriptId, rule.ValueScriptVersion,
+                rule.NoChangeTimeoutSeconds, rule.NoChangeDeadband, rule.NoChangeMaxAgeSeconds,
+                Pipeline = rule.ValuePipeline.Select(n => new { n.NodeType, n.WindowStatistic, n.WindowSeconds, n.WindowSampleCount,
+                    n.QualityOperator, n.QualityValues, n.TransformMultiplier, n.TransformOffset, n.TransformUseAbsolute, n.TransformExpression,
+                    n.ValueScriptId, n.ValueScriptVersion })
+            });
+            string signature = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(serialized)));
+            return "rule2:" + JsonSerializer.Serialize(new[] { rule.Id, rule.ConditionType.ToString(), signature });
+        }
+
+        private static bool IsSingleOccurrence(EdgeRuleConfig rule) =>
+            rule.ConditionType is EdgeRuleConditionType.Deadband or EdgeRuleConditionType.Sequence;
+
+        private void QueueAlarmNotification(EdgeRuleRuntimeEvent source, EdgeRuleActionConfig action, string? previousState, int delaySeconds)
         {
             if (_recordAlarm == null)
                 throw new InvalidOperationException("Rule alarm journal is unavailable.");
@@ -1852,13 +1986,24 @@ namespace IPC.EdgeGateway
             string template = clear ? action.ClearMessage : action.ActiveMessage;
             if (!string.IsNullOrWhiteSpace(template))
                 message.Message = RenderActionTemplate(template, source);
+            var item = BuildRuleAlarmRecord(source, previousState);
+            item.EventId = message.EventId;
+            item.Topic = message.Topic;
+            item.Message = BuildMqttMessageText(message, template);
+            item.Payload = BuildPayload(message, compactMqtt: true, messageTemplate: template);
+            item.Qos = ClampQos(action.Qos);
+            if (delaySeconds > 0) item.NotBeforeUtc = item.Timestamp.AddSeconds(Math.Min(3600, delaySeconds));
+            item.DeliveryOnly = true;
+            _recordAlarm(item, true);
+        }
+
+        private static GatewayAlarmRecord BuildRuleAlarmRecord(EdgeRuleRuntimeEvent source, string? previousState)
+        {
+            bool clear = source.EventType == "clear";
             var tag = source.Snapshot;
-            DateTime occurredUtc = source.Timestamp.ToUniversalTime();
-            _recordAlarm(new GatewayAlarmRecord
+            return new GatewayAlarmRecord
             {
-                Source = "rule", EventId = message.EventId, Timestamp = occurredUtc,
-                AlarmCorrelationKey = "rule:" + JsonSerializer.Serialize(new[] { source.RuleId, action.Id,
-                    tag.ChannelId, tag.DeviceId, tag.GroupId, tag.TagId }),
+                Source = "rule", EventId = source.EventId, Timestamp = source.Timestamp.ToUniversalTime(),
                 RuleId = source.RuleId, RuleName = source.RuleName,
                 ChannelId = tag.ChannelId, ChannelName = tag.ChannelName, DeviceId = tag.DeviceId, DeviceName = tag.DeviceName,
                 GroupId = tag.GroupId, GroupName = tag.GroupName, TagId = tag.TagId, TagName = tag.TagName,
@@ -1867,12 +2012,10 @@ namespace IPC.EdgeGateway
                 State = clear ? "Normal" : source.State,
                 PreviousStateText = RuleMessageText.Label(clear ? source.State : FirstText(previousState ?? string.Empty, "Normal"), source.MessageEnglish),
                 StateText = RuleMessageText.Label(clear ? "Normal" : source.State, source.MessageEnglish),
-                Message = BuildMqttMessageText(message, template),
+                Message = RuleMessageText.Message(source.Message, source.MessageEnglish),
                 Value = double.IsFinite(source.Value) ? source.Value : null,
                 Threshold = double.IsFinite(source.Threshold) ? source.Threshold : null,
-                Topic = message.Topic, Payload = BuildPayload(message, compactMqtt: true, messageTemplate: template), Qos = ClampQos(action.Qos),
-                NotBeforeUtc = publish && delaySeconds > 0 ? occurredUtc.AddSeconds(Math.Min(3600, delaySeconds)) : null
-            }, publish);
+            };
         }
 
         private void ExecuteActions(EdgeRuleRuntimeEvent ruleEvent, IList<EdgeRuleActionConfig> actions)
@@ -2269,6 +2412,9 @@ namespace IPC.EdgeGateway
                 ExecuteOnClear = source.ExecuteOnClear,
                 TopicTemplate = source.TopicTemplate,
                 Qos = source.Qos,
+                AlarmMessage = source.AlarmMessage,
+                RecordAlarmHistory = source.RecordAlarmHistory,
+                RequireManualHandling = source.RequireManualHandling,
                 ActiveMessage = source.ActiveMessage,
                 ClearMessage = source.ClearMessage,
                 EmailSmtpHost = source.EmailSmtpHost,
@@ -3543,6 +3689,11 @@ namespace IPC.EdgeGateway
             public Dictionary<string, List<FlowRuleWindowSampleState>> ValueWindows { get; set; } = new();
             public NoChangeTimeoutTracker? NoChangeTracker { get; set; }
             public bool NoChangeClearRequested { get; set; }
+            public bool HasRecordedOpenAlarm { get; set; }
+            public string? OpenAlarmKey { get; set; }
+            public bool AwaitingFirstAlarmObservation { get; set; }
+            public bool RestoredAfterRestart { get; set; }
+            public DateTime AlarmWarmupSince { get; set; }
             public EdgeRuleState()
             {
                 ActiveState = string.Empty;

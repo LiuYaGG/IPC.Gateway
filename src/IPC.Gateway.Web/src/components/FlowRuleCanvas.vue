@@ -467,7 +467,7 @@ function nodeFooter(node: FlowRuleNode) {
   if (node.nodeType === 'Sequence') return formatMessage('{0}s 窗口', [node.sequenceWindowSeconds || 60])
   if (node.nodeType === 'MqttPublish') {
     const delivery = node.publishToMqtt ? `QoS ${node.alarmMessage ? Math.max(1, node.publishQos) : node.publishQos}` : tx('未发布')
-    return node.alarmMessage ? `${tx('报警消息')} · ${delivery}` : delivery
+    return node.alarmMessage ? `${tx('使用报警队列')} · ${delivery}` : delivery
   }
   if (node.nodeType === 'EmailNotify') return node.emailTo || tx('未配置收件人')
   if (node.nodeType === 'WebhookCall') return node.webhookUrl || node.webhookMethod || 'POST'

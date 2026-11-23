@@ -15,6 +15,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
     private readonly object _gate = new();
     private readonly OverflowQueue<Transition> _queue = new(4096);
     private Dictionary<string, AlarmTagState> _states = new(StringComparer.Ordinal);
+    private HashSet<string> _awaitingFirstSample = new(StringComparer.Ordinal);
     private IReadOnlySet<string>? _configuredTags;
     private MqttGatewayOptions? _lastOptions, _publicRoute;
     private Thread? _writer;
@@ -34,6 +35,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         {
             if (_writer != null) return;
             _states = _journal.ReadStates();
+            _awaitingFirstSample = _states.Keys.ToHashSet(StringComparer.Ordinal);
             ForgetRemovedThresholds();
             _stopping = false;
             _writer = new Thread(WriteLoop) { Name = "IPC threshold alarm journal", IsBackground = true };
@@ -78,6 +80,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         {
             _queue.Enqueue(new Transition { Key = key });
             _states.Remove(key);
+            _awaitingFirstSample.Remove(key);
         }
         if (_queue.Count != 0) Monitor.Pulse(_gate);
     }
@@ -87,7 +90,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
     private void Observe(TagValueSnapshot snapshot)
     {
         TagAlarmConfig alarm = snapshot.Alarm;
-        if (!double.IsFinite(alarm.LowLimit) || !double.IsFinite(alarm.HighLimit) || alarm.LowLimit > alarm.HighLimit ||
+        if (snapshot.Quality != TagQuality.Good || !double.IsFinite(alarm.LowLimit) || !double.IsFinite(alarm.HighLimit) || alarm.LowLimit > alarm.HighLimit ||
             !TryNumber(snapshot, out double value)) return;
         var (state, threshold, message) = Evaluate(alarm, value);
         string key = TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
@@ -96,12 +99,14 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
             if (_stopping || (_configuredTags != null && !_configuredTags.Contains(key))) return;
             bool hadState = _states.TryGetValue(key, out var previous);
             string from = hadState ? previous.State : "Normal";
+            bool afterRestart = _awaitingFirstSample.Remove(key);
             if (state == from) return;
             if (state == "Normal") threshold = previous.Threshold;
             var transition = new Transition
             {
                 Key = key, Snapshot = snapshot, Previous = from, State = state, Value = value,
                 Threshold = threshold, Message = message, Route = GetPublishRoute(), English = _messageLanguage.English,
+                RecoveryObservedAfterRestart = afterRestart,
             };
             _queue.Enqueue(transition);
             if (state == "Normal") _states.Remove(key);
@@ -215,6 +220,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         public double Threshold { get; set; }
         public MqttGatewayOptions? Route { get; set; }
         public bool English { get; set; }
+        public bool RecoveryObservedAfterRestart { get; set; }
 
         public GatewayAlarmRecord ToRecord()
         {
@@ -226,6 +232,9 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
             {
                 EventId = EventId, Timestamp = s.Timestamp.ToUniversalTime(), Value = Value, Threshold = Threshold,
                 AlarmCorrelationKey = "threshold:" + Key,
+                RequireManualHandling = s.Alarm.RequireManualHandling,
+                RecoveryObservedAfterRestart = RecoveryObservedAfterRestart,
+                ClosePreviousOccurrence = !clear && Previous != "Normal",
                 ChannelId = s.ChannelId, ChannelName = s.ChannelName, DeviceId = s.DeviceId, DeviceName = s.DeviceName,
                 GroupId = s.GroupId, GroupName = s.GroupName, TagId = s.TagId, TagName = s.TagName,
                 PreviousState = Previous, State = State, EventType = clear ? "recovery" : severity,

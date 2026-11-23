@@ -1,6 +1,18 @@
 import { locale, tx } from './index'
 
 const labels: Record<string, string> = {
+  '发生时间': 'Start time',
+  '待自动恢复': 'Awaiting recovery',
+  '已记录': 'Recorded',
+  '已发生': 'Occurred',
+  '按动作配置': 'Per action settings',
+  '已自动恢复': 'Automatically closed',
+  '恢复值': 'Recovery value',
+  '持续时长': 'Duration',
+  '截至本次查询': 'As of this query',
+  '重启后首次观测': 'First observed after restart',
+  '恢复时间为重启后首次观测到恢复的时间，实际恢复时刻未知。': 'Recovery was first observed after restart. The exact recovery time is unknown.',
+  '报警详情': 'Alarm details',
   '报警状态': 'Alarm status',
   '处理状态': 'Processing status',
   '全部处理状态': 'All processing statuses',

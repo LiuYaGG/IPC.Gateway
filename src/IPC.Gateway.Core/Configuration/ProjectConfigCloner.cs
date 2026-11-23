@@ -113,6 +113,8 @@ namespace IPC.Runtime.Configuration
 
             FlowRuleDefinition target = new FlowRuleDefinition
             {
+                RecordAlarmHistory = source.RecordAlarmHistory,
+                RequireManualHandling = source.RequireManualHandling,
                 Id = source.Id,
                 Name = source.Name,
                 Description = source.Description,
@@ -163,6 +165,8 @@ namespace IPC.Runtime.Configuration
                 Id = source.Id,
                 NodeType = source.NodeType,
                 AlarmMessage = source.AlarmMessage,
+                RecordAlarmHistory = source.RecordAlarmHistory,
+                RequireManualHandling = source.RequireManualHandling,
                 Label = source.Label,
                 X = source.X,
                 Y = source.Y,
@@ -354,6 +358,8 @@ namespace IPC.Runtime.Configuration
 
             return new EdgeRuleConfig
             {
+                RecordAlarmHistory = source.RecordAlarmHistory,
+                RequireManualHandling = source.RequireManualHandling,
                 Id = source.Id,
                 Name = source.Name,
                 Enabled = source.Enabled,
@@ -508,6 +514,8 @@ namespace IPC.Runtime.Configuration
                 TopicTemplate = source.TopicTemplate,
                 Qos = source.Qos,
                 AlarmMessage = source.AlarmMessage,
+                RecordAlarmHistory = source.RecordAlarmHistory,
+                RequireManualHandling = source.RequireManualHandling,
                 ActiveMessage = source.ActiveMessage,
                 ClearMessage = source.ClearMessage,
                 EmailSmtpHost = source.EmailSmtpHost,
@@ -858,6 +866,7 @@ namespace IPC.Runtime.Configuration
                 LowAlarmMessage = source.LowAlarmMessage,
                 HighAlarmMessage = source.HighAlarmMessage,
                 WarningDeviation = source.WarningDeviation,
+                RequireManualHandling = source.RequireManualHandling,
                 LowWarningMessage = source.LowWarningMessage,
                 HighWarningMessage = source.HighWarningMessage
             };

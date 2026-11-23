@@ -45,6 +45,7 @@ namespace IPC.Runtime.Configuration
         public double HighLimit { get; set; }
         public string LowAlarmMessage { get; set; }
         public string HighAlarmMessage { get; set; }
+        public bool RequireManualHandling { get; set; }
         public double WarningDeviation { get; set; }
         public string LowWarningMessage { get; set; }
         public string HighWarningMessage { get; set; }

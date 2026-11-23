@@ -317,6 +317,7 @@ import {
   createFlowRuleTemplate,
   createValueScriptFlowNode,
   FLOW_NODE_GROUPS,
+  isActionNode,
   validateFlowRule
 } from '../utils/flowRules'
 import { PERMISSIONS, usePermissions } from '../utils/permissions'
@@ -811,10 +812,6 @@ function isConditionLikeNode(node: FlowRuleNode) {
     'ContextGate',
     'Sequence'
   ].includes(node.nodeType)
-}
-
-function isActionNode(node: FlowRuleNode) {
-  return ['MqttPublish', 'EmailNotify', 'WebhookCall', 'DebugProbe'].includes(node.nodeType)
 }
 
 function isTerminalActionNode(node: FlowRuleNode) {

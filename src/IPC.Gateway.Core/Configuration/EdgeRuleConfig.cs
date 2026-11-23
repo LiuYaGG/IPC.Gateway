@@ -156,6 +156,8 @@ namespace IPC.Runtime.Configuration
         public string Name { get; set; }
         public bool Enabled { get; set; }
         public EdgeRuleConditionType ConditionType { get; set; }
+        public bool? RecordAlarmHistory { get; set; }
+        public bool RequireManualHandling { get; set; }
         public string SourceChannelId { get; set; }
         public string SourceChannelName { get; set; }
         public string SourceDeviceId { get; set; }
@@ -315,6 +317,8 @@ namespace IPC.Runtime.Configuration
         public string TopicTemplate { get; set; }
         public int Qos { get; set; }
         public bool AlarmMessage { get; set; }
+        public bool? RecordAlarmHistory { get; set; }
+        public bool? RequireManualHandling { get; set; }
         public string ActiveMessage { get; set; }
         public string ClearMessage { get; set; }
         public string EmailSmtpHost { get; set; }

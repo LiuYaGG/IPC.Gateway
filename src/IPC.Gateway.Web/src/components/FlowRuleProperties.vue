@@ -11,6 +11,15 @@
         <a-form-item :label="tx('类型')">
           <gateway-input :model-value="tx(flowNodeTypeLabel(node.nodeType))" readonly />
         </a-form-item>
+        <template v-if="isActionNode(node)">
+          <a-form-item :label="tx('记录报警历史')">
+            <a-switch :checked="node.recordAlarmHistory === true" @update:checked="node.recordAlarmHistory = $event" />
+          </a-form-item>
+          <a-form-item :label="tx('需要人工处理')" :extra="tx('默认在报警恢复时自动办结。')">
+            <a-switch :checked="node.recordAlarmHistory === true && node.requireManualHandling === true"
+              :disabled="!node.recordAlarmHistory" @update:checked="node.requireManualHandling = $event" />
+          </a-form-item>
+        </template>
         <template v-if="needsTagSource">
           <a-form-item :label="tx('标签来源')">
             <TagSelector stacked name-only :model-value="tagKey" :project="project" @change="changeTag" />
@@ -483,7 +492,7 @@
         </template>
         <template v-if="node.nodeType === 'MqttPublish'">
           <a-form-item :label="tx('发布到 MQTT')"><a-switch v-model:checked="node.publishToMqtt" /></a-form-item>
-          <a-form-item :label="tx('报警消息')" :extra="tx('触发和恢复会写入报警历史，启用发布时使用报警队列。')">
+          <a-form-item :label="tx('使用报警队列')" :extra="tx('发布时按顺序保留每条报警消息。')">
             <a-switch v-model:checked="alarmMessage" />
           </a-form-item>
           <a-form-item :label="tx('Topic 模板')"><gateway-input v-model="node.topicTemplate" /></a-form-item>
@@ -562,7 +571,7 @@ import type { FlowRuleNode, ProjectConfig } from '../api'
 import type { ValueTransformCatalogItem } from '../scriptingApi'
 import { PlusOutlined as Plus } from '@ant-design/icons-vue'
 import TagSelector from './TagSelector.vue'
-import { applyTagSelectionToNode, flowNodeLabel, flowNodeTypeLabel, flowOptionLabel } from '../utils/flowRules'
+import { applyTagSelectionToNode, flowNodeLabel, flowNodeTypeLabel, flowOptionLabel, isActionNode } from '../utils/flowRules'
 import { qualityText, tagQualityValues } from '../utils/display'
 import { findTagSelectionKey, type TagSelection } from '../utils/tagSelection'
 

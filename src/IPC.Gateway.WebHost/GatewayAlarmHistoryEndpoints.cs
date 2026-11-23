@@ -18,14 +18,15 @@ internal static partial class GatewayAlarmHistoryEndpoints
                 var result = await Task.Run(() => gateway.AlarmJournal.ReadPage(page, size, query: filter, cancellationToken: ct), ct);
                 return Results.Ok(new { success = true, data = new
                 {
-                    result.Total, result.Snapshot,
+                    result.Total, result.Snapshot, QueriedAtUtc = DateTime.UtcNow,
                     Items = result.Items.Select(record => new
                     {
                         record.EventId, record.Timestamp, record.ChannelId, record.ChannelName, record.DeviceId, record.DeviceName,
                         record.GroupId, record.GroupName, record.TagName, record.TagId, record.Source, record.RuleName,
                         record.EventType, PreviousState = record.DisplayPreviousState, State = record.DisplayState,
-                        record.Value, record.Threshold, record.Message, record.DeliveryStatus,
+                        record.Value, record.Threshold, record.Message, DeliveryStatus = record.HistoryDeliveryStatus,
                         record.CanProcess, record.AlarmStatus, record.ProcessingStatus, record.RecoveredAtUtc,
+                        record.RecoveryValue, record.RecoveryObservedAfterRestart,
                         record.Acknowledged, record.Handled
                     })
                 } });

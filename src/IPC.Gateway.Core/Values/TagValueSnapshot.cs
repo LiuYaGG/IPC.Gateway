@@ -115,6 +115,7 @@ namespace IPC.Runtime.Values
                     LowAlarmMessage = Alarm.LowAlarmMessage,
                     HighAlarmMessage = Alarm.HighAlarmMessage,
                     WarningDeviation = Alarm.WarningDeviation,
+                    RequireManualHandling = Alarm.RequireManualHandling,
                     LowWarningMessage = Alarm.LowWarningMessage,
                     HighWarningMessage = Alarm.HighWarningMessage
                 };

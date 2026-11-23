@@ -52,6 +52,8 @@ internal static partial class GatewayAlarmHistoryEndpoints
                     "报警记录已不存在。", "The alarm record is no longer available."),
                 AlarmOperatorOutcome.AcknowledgeRequired => GatewayHistoryEndpoints.Error(context, 409, "ALARM_ACKNOWLEDGE_REQUIRED",
                     "请先确认报警。", "Acknowledge the alarm before recording its handling."),
+                AlarmOperatorOutcome.Automatic => GatewayHistoryEndpoints.Error(context, 409, "ALARM_AUTOMATIC",
+                    "此报警配置为恢复后自动办结。", "This alarm closes automatically on recovery."),
                 _ => GatewayHistoryEndpoints.Error(context, 409, "ALARM_ACTION_NOT_APPLICABLE",
                     "仅报警触发记录可办理。", "Only alarm activation records can be processed.")
             };

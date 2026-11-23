@@ -29,6 +29,7 @@ namespace IPC.Gateway.Core.Gateway
         EdgeRuleEngineStatus GetStatus();
         FlowRuleEngineRuntimeState CaptureRuntimeState();
         void RestoreRuntimeState(FlowRuleEngineRuntimeState state);
+        void RestoreOpenAlarms(IReadOnlyList<GatewayAlarmRecord> records, bool afterRestart) { }
     }
 
     public interface IFlowRuleEngineFactory

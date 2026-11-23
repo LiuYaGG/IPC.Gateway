@@ -39,7 +39,9 @@ public sealed partial class GatewayAlarmJournal
         using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT COALESCE(MAX(seq),0) FROM alarm_event";
+        // A cleanup may have removed the last raw recovery after folding it into
+        // its activation. Keep its sequence visible to new snapshots.
+        command.CommandText = "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='alarm_event'),0)";
         long latest = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         long snapshot = Math.Min(query.Snapshot ?? latest, latest);
         string filter = AddFilters(command, query with { Snapshot = snapshot }, allowedDeviceIds);
@@ -47,8 +49,12 @@ public sealed partial class GatewayAlarmJournal
         long total = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         cancellationToken.ThrowIfCancellationRequested();
         command.CommandText = """
-            SELECT body,delivery,occ.event_id IS NOT NULL,occ.recovered_utc,
-                ack.operator_name,ack.timestamp_ticks,ack.note,handled.operator_name,handled.timestamp_ticks,handled.note
+            SELECT body,delivery,occ.event_id IS NOT NULL,
+                CASE WHEN COALESCE(occ.recovered_seq,0)<=$snapshot THEN occ.recovered_utc END,
+                ack.operator_name,ack.timestamp_ticks,ack.note,handled.operator_name,handled.timestamp_ticks,handled.note,
+                COALESCE(occ.manual,1),COALESCE(occ.single_event,0),
+                CASE WHEN COALESCE(occ.recovered_seq,0)<=$snapshot THEN occ.recovery_value END,
+                CASE WHEN occ.recovered_seq>$snapshot THEN 0 ELSE COALESCE(occ.recovered_after_restart,0) END
             FROM alarm_event
             LEFT JOIN alarm_occurrence occ ON occ.event_id=alarm_event.event_id
             LEFT JOIN alarm_operator_action ack ON ack.event_id=alarm_event.event_id AND ack.stage=1
@@ -104,14 +110,14 @@ public sealed partial class GatewayAlarmJournal
     private static void ValidateQuery(GatewayAlarmQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (query.From > query.To || query.Snapshot < 0 || query.ProcessingStatus is not (null or "Pending" or "Acknowledged" or "Handled") ||
+        if (query.From > query.To || query.Snapshot < 0 || query.ProcessingStatus is not (null or "Pending" or "Acknowledged" or "Handled" or "AutoMonitoring" or "AutoClosed" or "Recorded") ||
             new[] { query.ChannelId, query.DeviceId, query.GroupId, query.TagId }.Any(id => id?.Length > 256))
             throw new ArgumentException("报警查询参数无效。");
     }
 
     private static string AddFilters(SqliteCommand command, GatewayAlarmQuery query, IReadOnlyCollection<string>? allowedDeviceIds)
     {
-        var parts = new List<string> { "1=1" };
+        var parts = new List<string> { "history_hidden=0" };
         void Add(string sql, string parameter, object value) { parts.Add(sql); command.Parameters.AddWithValue(parameter, value); }
         if (allowedDeviceIds != null)
             Add("device_id IN (SELECT value FROM json_each($devices))", "$devices", JsonSerializer.Serialize(allowedDeviceIds));
@@ -125,8 +131,25 @@ public sealed partial class GatewayAlarmJournal
         if (query.ProcessingStatus != null)
         {
             parts.Add("(" + ActiveEventSql + ")");
-            int stage = query.ProcessingStatus switch { "Pending" => 0, "Acknowledged" => 1, _ => 2 };
-            Add("COALESCE((SELECT MAX(stage) FROM alarm_operator_action oa WHERE oa.event_id=alarm_event.event_id),0)=$stage", "$stage", stage);
+            string? automatic = query.ProcessingStatus switch
+            {
+                "Recorded" => "single_event=1",
+                "AutoMonitoring" => query.Snapshot.HasValue
+                    ? "single_event=0 AND (recovered_utc IS NULL OR recovered_seq>$snapshot)"
+                    : "single_event=0 AND recovered_utc IS NULL",
+                "AutoClosed" => query.Snapshot.HasValue
+                    ? "single_event=0 AND recovered_utc IS NOT NULL AND COALESCE(recovered_seq,0)<=$snapshot"
+                    : "single_event=0 AND recovered_utc IS NOT NULL",
+                _ => null
+            };
+            if (automatic != null)
+                parts.Add("EXISTS(SELECT 1 FROM alarm_occurrence o WHERE o.event_id=alarm_event.event_id AND manual=0 AND " + automatic + ")");
+            else
+            {
+                parts.Add("NOT EXISTS(SELECT 1 FROM alarm_occurrence o WHERE o.event_id=alarm_event.event_id AND manual=0)");
+                int stage = query.ProcessingStatus switch { "Pending" => 0, "Acknowledged" => 1, _ => 2 };
+                Add("COALESCE((SELECT MAX(stage) FROM alarm_operator_action oa WHERE oa.event_id=alarm_event.event_id),0)=$stage", "$stage", stage);
+            }
         }
         return " WHERE " + string.Join(" AND ", parts);
     }

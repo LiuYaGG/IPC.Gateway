@@ -245,6 +245,7 @@ public sealed class TagAlarmConfigurationDto
     public double HighLimit { get; set; }
     public string LowAlarmMessage { get; set; } = string.Empty;
     public string HighAlarmMessage { get; set; } = string.Empty;
+    public bool RequireManualHandling { get; set; }
     public double WarningDeviation { get; set; }
     public string LowWarningMessage { get; set; } = string.Empty;
     public string HighWarningMessage { get; set; } = string.Empty;
@@ -252,6 +253,8 @@ public sealed class TagAlarmConfigurationDto
 
 public class EdgeRuleConfigurationDto
 {
+    public bool? RecordAlarmHistory { get; set; }
+    public bool RequireManualHandling { get; set; }
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
@@ -372,6 +375,8 @@ public class EdgeRuleConfigurationDto
 public sealed class EdgeRuleActionDto
 {
     public bool AlarmMessage { get; set; }
+    public bool? RecordAlarmHistory { get; set; }
+    public bool? RequireManualHandling { get; set; }
     public string Id { get; set; } = string.Empty;
     public string ActionType { get; set; } = "MqttPublish";
     public bool Enabled { get; set; } = true;
@@ -426,6 +431,8 @@ public sealed class EdgeRuleConditionDto
 
 public class FlowRuleDefinitionDto
 {
+    public bool? RecordAlarmHistory { get; set; }
+    public bool RequireManualHandling { get; set; }
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
@@ -446,6 +453,8 @@ public class FlowRuleDefinitionDto
 public sealed class FlowRuleNodeDto
 {
     public bool AlarmMessage { get; set; }
+    public bool? RecordAlarmHistory { get; set; }
+    public bool? RequireManualHandling { get; set; }
     public string Id { get; set; } = string.Empty;
     public string NodeType { get; set; } = "Condition";
     public string Label { get; set; } = string.Empty;

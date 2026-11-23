@@ -313,6 +313,7 @@ public static class GatewayConfigurationContractMapper
             LowAlarmMessage = alarm.LowAlarmMessage,
             HighAlarmMessage = alarm.HighAlarmMessage,
             WarningDeviation = alarm.WarningDeviation,
+            RequireManualHandling = alarm.RequireManualHandling,
             LowWarningMessage = alarm.LowWarningMessage,
             HighWarningMessage = alarm.HighWarningMessage
         };
@@ -322,6 +323,8 @@ public static class GatewayConfigurationContractMapper
     {
         return new EdgeRuleConfigurationDto
         {
+            RecordAlarmHistory = rule.RecordAlarmHistory,
+            RequireManualHandling = rule.RequireManualHandling,
             Id = rule.Id,
             Name = rule.Name,
             Enabled = rule.Enabled,
@@ -455,6 +458,8 @@ public static class GatewayConfigurationContractMapper
             TopicTemplate = action.TopicTemplate,
             Qos = action.Qos,
             AlarmMessage = action.AlarmMessage,
+            RecordAlarmHistory = action.RecordAlarmHistory,
+            RequireManualHandling = action.RequireManualHandling,
             ActiveMessage = action.ActiveMessage,
             ClearMessage = action.ClearMessage,
             EmailSmtpHost = action.EmailSmtpHost,
@@ -511,6 +516,8 @@ public static class GatewayConfigurationContractMapper
 
         return new FlowRuleDefinitionDto
         {
+            RecordAlarmHistory = rule.RecordAlarmHistory,
+            RequireManualHandling = rule.RequireManualHandling,
             Id = rule.Id,
             Name = rule.Name,
             Description = rule.Description,
@@ -562,6 +569,8 @@ public static class GatewayConfigurationContractMapper
             DurationSeconds = node.DurationSeconds,
             PublishToMqtt = node.PublishToMqtt,
             AlarmMessage = node.AlarmMessage,
+            RecordAlarmHistory = node.RecordAlarmHistory,
+            RequireManualHandling = node.RequireManualHandling,
             PublishOnClear = node.PublishOnClear,
             TopicTemplate = node.TopicTemplate,
             PublishQos = node.PublishQos,
@@ -1679,6 +1688,7 @@ public static class GatewayConfigurationContractMapper
             LowAlarmMessage = dto.LowAlarmMessage,
             HighAlarmMessage = dto.HighAlarmMessage,
             WarningDeviation = dto.WarningDeviation,
+            RequireManualHandling = dto.RequireManualHandling,
             LowWarningMessage = dto.LowWarningMessage,
             HighWarningMessage = dto.HighWarningMessage
         };
@@ -1688,6 +1698,8 @@ public static class GatewayConfigurationContractMapper
     {
         return new EdgeRuleConfig
         {
+            RecordAlarmHistory = dto.RecordAlarmHistory,
+            RequireManualHandling = dto.RequireManualHandling,
             Id = EmptyToNewId(dto.Id),
             Name = dto.Name,
             Enabled = dto.Enabled,
@@ -1818,6 +1830,8 @@ public static class GatewayConfigurationContractMapper
             TopicTemplate = dto.TopicTemplate,
             Qos = dto.Qos,
             AlarmMessage = dto.AlarmMessage,
+            RecordAlarmHistory = dto.RecordAlarmHistory,
+            RequireManualHandling = dto.RequireManualHandling,
             ActiveMessage = dto.ActiveMessage,
             ClearMessage = dto.ClearMessage,
             EmailSmtpHost = dto.EmailSmtpHost,
@@ -1871,6 +1885,8 @@ public static class GatewayConfigurationContractMapper
     {
         return new FlowRuleDefinition
         {
+            RecordAlarmHistory = dto.RecordAlarmHistory,
+            RequireManualHandling = dto.RequireManualHandling,
             Id = EmptyToNewId(dto.Id),
             Name = dto.Name,
             Description = dto.Description,
@@ -1896,6 +1912,8 @@ public static class GatewayConfigurationContractMapper
             Id = EmptyToNewId(dto.Id),
             NodeType = dto.NodeType,
             AlarmMessage = dto.AlarmMessage,
+            RecordAlarmHistory = dto.RecordAlarmHistory,
+            RequireManualHandling = dto.RequireManualHandling,
             Label = dto.Label,
             X = dto.X,
             Y = dto.Y,

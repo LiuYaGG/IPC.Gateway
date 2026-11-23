@@ -157,6 +157,8 @@ namespace IPC.EdgeGateway
                 Id = flowRule.Id,
                 Name = flowRule.Name,
                 Enabled = flowRule.Enabled,
+                RecordAlarmHistory = flowRule.RecordAlarmHistory,
+                RequireManualHandling = flowRule.RequireManualHandling,
                 Description = flowRule.Description,
                 ConditionType = sequenceNode != null
                     ? EdgeRuleConditionType.Sequence
@@ -407,6 +409,8 @@ namespace IPC.EdgeGateway
                 TopicTemplate = FirstText(node.TopicTemplate, "ipc/rule/{pointCode}/{ruleName}"),
                 Qos = node.PublishQos,
                 AlarmMessage = isMqtt && node.AlarmMessage,
+                RecordAlarmHistory = node.RecordAlarmHistory,
+                RequireManualHandling = node.RequireManualHandling,
                 ActiveMessage = node.ActiveMessage,
                 ClearMessage = node.ClearMessage,
                 EmailSmtpHost = node.EmailSmtpHost,

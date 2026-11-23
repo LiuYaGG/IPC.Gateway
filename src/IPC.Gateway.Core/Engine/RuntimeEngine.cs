@@ -3978,6 +3978,7 @@ namespace IPC.Runtime.Engine
                 LowAlarmMessage = source.LowAlarmMessage,
                 HighAlarmMessage = source.HighAlarmMessage,
                 WarningDeviation = source.WarningDeviation,
+                RequireManualHandling = source.RequireManualHandling,
                 LowWarningMessage = source.LowWarningMessage,
                 HighWarningMessage = source.HighWarningMessage
             };

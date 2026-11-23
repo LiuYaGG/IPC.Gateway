@@ -225,7 +225,7 @@ namespace IPC.Gateway.Core.Gateway
                 RunStep("启动历史库", _history.Start);
                 RunStep("启动MQTT", _mqtt.Start);
                 RunStep("初始化OPC-UA服务", _opcUa.Start);
-                RunStep("加载规则引擎", ReplaceFlowRuleEngine);
+                RunStep("加载规则引擎", () => ReplaceFlowRuleEngine(afterRestart: true));
                 RunStep("启动规则引擎", _flowRuleEngine.Start);
                 _startedTime = DateTime.Now;
                 _lastReloadTime = _startedTime;
@@ -1504,7 +1504,9 @@ namespace IPC.Gateway.Core.Gateway
             Runtime.Start(project);
         }
 
-        private void ReplaceFlowRuleEngine()
+        private void ReplaceFlowRuleEngine() => ReplaceFlowRuleEngine(afterRestart: false);
+
+        private void ReplaceFlowRuleEngine(bool afterRestart)
         {
             IFlowRuleEngineService oldFlowRuleEngine = _flowRuleEngine;
             FlowRuleEngineRuntimeState runtimeState;
@@ -1522,6 +1524,7 @@ namespace IPC.Gateway.Core.Gateway
             try
             {
                 _flowRuleEngine.RestoreRuntimeState(runtimeState);
+                _flowRuleEngine.RestoreOpenAlarms(AlarmJournal.ReadOpenRuleAlarms(), afterRestart);
             }
             catch (Exception ex)
             {
@@ -1539,7 +1542,8 @@ namespace IPC.Gateway.Core.Gateway
         private void RecordRuleAlarm(GatewayAlarmRecord alarm, bool publish)
         {
             MqttGatewayOptions options = Volatile.Read(ref _mqttOptions);
-            AlarmJournal.EnqueueRule(alarm, publish && options.Enabled && options.PublishEnabled);
+            bool deliver = publish && options.Enabled && options.PublishEnabled;
+            if (!alarm.DeliveryOnly || deliver) AlarmJournal.EnqueueRule(alarm, deliver);
         }
 
         private static LocalHistoryOptions NormalizeHistoryOptions(LocalHistoryOptions options)

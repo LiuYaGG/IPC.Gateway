@@ -246,6 +246,8 @@ internal static class ProjectProtobufContracts
             .Add(26, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.WebhookRetryCount))
             .Add(27, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.DebugLabel))
             .Add(28, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.AlarmMessage))
+            .Add(29, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.RecordAlarmHistory))
+            .Add(30, nameof(global::IPC.Runtime.Configuration.EdgeRuleActionConfig.RequireManualHandling))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.EdgeRuleAlarmLevelConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.EdgeRuleAlarmLevelConfig.Id))
@@ -397,6 +399,8 @@ internal static class ProjectProtobufContracts
             .Add(118, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeTimeoutSeconds))
             .Add(119, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeDeadband))
             .Add(120, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.NoChangeMaxAgeSeconds))
+            .Add(121, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.RecordAlarmHistory))
+            .Add(122, nameof(global::IPC.Runtime.Configuration.EdgeRuleConfig.RequireManualHandling))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.FlowRuleAlarmLevel), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.FlowRuleAlarmLevel.Id))
@@ -422,6 +426,8 @@ internal static class ProjectProtobufContracts
             .Add(13, nameof(global::IPC.Runtime.Configuration.FlowRuleDefinition.Edges))
             .Add(14, nameof(global::IPC.Runtime.Configuration.FlowRuleDefinition.CreatedTime))
             .Add(15, nameof(global::IPC.Runtime.Configuration.FlowRuleDefinition.UpdatedTime))
+            .Add(16, nameof(global::IPC.Runtime.Configuration.FlowRuleDefinition.RecordAlarmHistory))
+            .Add(17, nameof(global::IPC.Runtime.Configuration.FlowRuleDefinition.RequireManualHandling))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.FlowRuleEdge), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.FlowRuleEdge.Id))
@@ -575,6 +581,8 @@ internal static class ProjectProtobufContracts
             .Add(142, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeDeadband))
             .Add(143, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.NoChangeMaxAgeSeconds))
             .Add(144, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.AlarmMessage))
+            .Add(145, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.RecordAlarmHistory))
+            .Add(146, nameof(global::IPC.Runtime.Configuration.FlowRuleNode.RequireManualHandling))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.GroupConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.GroupConfig.Id))
@@ -610,6 +618,7 @@ internal static class ProjectProtobufContracts
             .Add(6, nameof(global::IPC.Runtime.Configuration.TagAlarmConfig.WarningDeviation))
             .Add(7, nameof(global::IPC.Runtime.Configuration.TagAlarmConfig.LowWarningMessage))
             .Add(8, nameof(global::IPC.Runtime.Configuration.TagAlarmConfig.HighWarningMessage))
+            .Add(9, nameof(global::IPC.Runtime.Configuration.TagAlarmConfig.RequireManualHandling))
             .UseConstructor = false;
         model.Add(typeof(global::IPC.Runtime.Configuration.TagConfig), false)
             .Add(1, nameof(global::IPC.Runtime.Configuration.TagConfig.Id))

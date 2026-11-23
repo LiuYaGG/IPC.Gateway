@@ -22,6 +22,9 @@ namespace IPC.EdgeGateway
 
     public sealed class FlowRuleRuntimeStateEntry
     {
+        public bool AwaitingFirstAlarmObservation { get; set; }
+        public bool RestoredAfterRestart { get; set; }
+        public DateTime AlarmWarmupSince { get; set; }
         internal DateTime LastValuePipelineTimestamp { get; set; }
         internal Dictionary<string, List<FlowRuleWindowSampleState>> ValueWindows { get; set; } = new();
         internal NoChangeTimeoutTracker? NoChangeTracker { get; set; }

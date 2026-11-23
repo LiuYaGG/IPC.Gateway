@@ -106,6 +106,56 @@ namespace IPC.EdgeGateway
             }
         }
 
+        public void RestoreOpenAlarms(IReadOnlyList<GatewayAlarmRecord> records, bool afterRestart)
+        {
+            if (records.Count == 0) return;
+            lock (_evaluationSyncRoot)
+            {
+                var byRule = records.ToLookup(r => r.RuleId, StringComparer.OrdinalIgnoreCase);
+                foreach (var rule in GetRules())
+                {
+                    if (!rule.Enabled || IsSingleOccurrence(rule)) continue;
+                    var key = RuleAlarmKey(rule);
+                    var open = byRule[rule.Id].LastOrDefault(r => r.AlarmCorrelationKey == key)
+                        ?? byRule[rule.Id].LastOrDefault(r => IsLegacyAlarmForSource(rule, r));
+                    if (open == null) continue;
+                    var state = GetState(rule);
+                    state.HasRecordedOpenAlarm = true;
+                    state.OpenAlarmKey = open.AlarmCorrelationKey;
+                    if (string.IsNullOrEmpty(state.ActiveState))
+                    {
+                        state.ActiveState = open.State;
+                        state.ActiveSince = open.Timestamp.ToLocalTime();
+                        state.AwaitingFirstAlarmObservation = true;
+                    }
+                    state.AwaitingFirstAlarmObservation |= afterRestart;
+                    state.RestoredAfterRestart |= afterRestart;
+                }
+            }
+        }
+
+        private static bool IsLegacyAlarmForSource(EdgeRuleConfig rule, GatewayAlarmRecord record)
+        {
+            // The old action-based records describe only their originating tag.
+            // They cannot establish that all dependencies of a multi-input rule are unchanged.
+            static bool Match(string expected, string value) => string.IsNullOrWhiteSpace(expected) ||
+                string.Equals(expected, value, StringComparison.OrdinalIgnoreCase);
+            if (rule.ConditionType is EdgeRuleConditionType.Combination or EdgeRuleConditionType.Aggregation or
+                EdgeRuleConditionType.TagRelation or EdgeRuleConditionType.ContextGate or EdgeRuleConditionType.ModelInference or
+                EdgeRuleConditionType.Expression) return false;
+            if (rule.ConditionType == EdgeRuleConditionType.Threshold &&
+                !((record.State == "High" && record.Threshold == rule.HighLimit) ||
+                  (record.State == "Low" && record.Threshold == rule.LowLimit))) return false;
+            string legacyKey = "rule2:" + JsonSerializer.Serialize(new[] { record.RuleId, "legacy", record.ChannelId,
+                record.DeviceId, record.GroupId, record.TagId });
+            return legacyKey == record.AlarmCorrelationKey && !string.IsNullOrWhiteSpace(rule.SourceTagId) &&
+                Match(rule.SourceTagId, record.TagId) && Match(rule.SourceChannelId, record.ChannelId) &&
+                Match(rule.SourceDeviceId, record.DeviceId) &&
+                (string.IsNullOrWhiteSpace(rule.SourceDeviceId)
+                    ? Match(rule.SourceGroupId, record.GroupId)
+                    : string.Equals(rule.SourceGroupId, record.GroupId, StringComparison.OrdinalIgnoreCase));
+        }
+
         private static string BuildRuleFingerprint(EdgeRuleConfig rule)
         {
             return JsonSerializer.Serialize(rule) + (rule.ValuePipeline.Count == 0 ? string.Empty : JsonSerializer.Serialize(rule.ValuePipeline));
@@ -118,6 +168,9 @@ namespace IPC.EdgeGateway
                 LastValuePipelineTimestamp = state.LastValuePipelineTimestamp,
                 ValueWindows = CloneValueWindows(state.ValueWindows),
                 RuleId = ruleId,
+                AwaitingFirstAlarmObservation = state.AwaitingFirstAlarmObservation,
+                RestoredAfterRestart = state.RestoredAfterRestart,
+                AlarmWarmupSince = state.AlarmWarmupSince,
                 NoChangeTracker = state.NoChangeTracker?.Clone(),
                 NoChangeClearRequested = state.NoChangeClearRequested,
                 Fingerprint = fingerprint,
@@ -170,6 +223,9 @@ namespace IPC.EdgeGateway
                 NoChangeTracker = source.NoChangeTracker?.Clone(),
                 NoChangeClearRequested = source.NoChangeClearRequested,
                 ActiveState = source.ActiveState ?? string.Empty,
+                AwaitingFirstAlarmObservation = source.AwaitingFirstAlarmObservation,
+                RestoredAfterRestart = source.RestoredAfterRestart,
+                AlarmWarmupSince = source.AlarmWarmupSince,
                 ActiveSeverity = source.ActiveSeverity ?? string.Empty,
                 ActiveMessageOverride = source.ActiveMessageOverride ?? string.Empty,
                 ActiveSince = source.ActiveSince,

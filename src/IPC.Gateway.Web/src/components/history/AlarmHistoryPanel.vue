@@ -35,14 +35,17 @@
     <a-alert v-if="error" type="error" show-icon :message="tx(error)" />
     <div class="alarm-history-results">
       <AutoHeightTable resize-key="alarm-history" :columns="columns" :data-source="rows" :loading="loading"
-        row-key="eventId" :paging="false" :scroll-x="1550">
+        row-key="eventId" :paging="false" :scroll-x="1950">
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'timestamp'">{{ new Date(record.timestamp).toLocaleString(locale) }}</template>
+          <template v-if="column.key === 'timestamp'">
+            <a-button type="link" size="small" :title="at('报警详情')" @click="showDetail(record)">{{ displayTime(record.timestamp) }}</a-button>
+          </template>
           <template v-else-if="column.key === 'path'">{{ path(record) }}</template>
           <template v-else-if="column.key === 'state'">{{ transition(record) }}</template>
           <template v-else-if="column.key === 'alarmStatus'">
             <a-tag v-if="record.alarmStatus === 'Active'" color="red">{{ at('报警中') }}</a-tag>
             <a-tag v-else-if="record.alarmStatus === 'Recovered'" color="green">{{ at('已恢复') }}</a-tag>
+            <a-tag v-else-if="record.alarmStatus === 'Occurred'">{{ at('已发生') }}</a-tag>
             <span v-else :title="record.canProcess ? at('恢复状态未知') : undefined">—</span>
           </template>
           <template v-else-if="column.key === 'processingStatus'">
@@ -51,12 +54,20 @@
             </a-tag>
             <template v-else>—</template>
           </template>
+          <template v-else-if="column.key === 'recoveredAtUtc'">
+            <span :title="record.recoveryObservedAfterRestart ? at('恢复时间为重启后首次观测到恢复的时间，实际恢复时刻未知。') : undefined">
+              {{ record.recoveredAtUtc ? displayTime(record.recoveredAtUtc) : '—' }}
+              <small v-if="record.recoveryObservedAfterRestart">{{ at('重启后首次观测') }}</small>
+            </span>
+          </template>
+          <template v-else-if="column.key === 'duration'">{{ duration(record) }}</template>
           <template v-else-if="column.key === 'deliveryStatus'">{{ label(record.deliveryStatus) }}</template>
           <template v-else-if="column.key === 'message'">{{ record.message || '—' }}</template>
-          <template v-else-if="column.key === 'value' || column.key === 'threshold'">{{ record[column.key] ?? '—' }}</template>
-          <a-button v-else-if="column.key === 'actions'" type="link" size="small" @click="showDetail(record)">
-            {{ at(rowActionLabel(record)) }}
-          </a-button>
+          <template v-else-if="['value','recoveryValue','threshold'].includes(column.key)">{{ record[column.key] ?? '—' }}</template>
+          <template v-else-if="column.key === 'actions'">
+            <a-button v-if="record.canProcess" type="link" size="small" @click="showDetail(record)">{{ at(rowActionLabel(record)) }}</a-button>
+            <span v-else>—</span>
+          </template>
         </template>
         <template #emptyText>
           <a-empty :description="tx(result ? '没有符合查询条件的报警记录' : '设置查询条件后点击查询')" />
@@ -67,15 +78,20 @@
     </div>
     <a-modal v-model:open="detailOpen" centered width="560px" destroy-on-close
       :closable="!savingAction" :keyboard="!savingAction" :mask-closable="false"
-      :title="at(actionMode === 'acknowledge' ? '确认报警' : actionMode === 'handle' ? '填写处理记录' : '报警处理记录')">
+      :title="at(actionMode === 'acknowledge' ? '确认报警' : actionMode === 'handle' ? '填写处理记录' : '报警详情')">
       <div v-if="detail" class="alarm-work-details">
         <dl class="alarm-work-context">
           <dt>{{ tx('报警来源') }}</dt><dd>{{ path(detail) }}</dd>
-          <dt>{{ tx('时间') }}</dt><dd>{{ displayTime(detail.timestamp) }}</dd>
+          <dt>{{ at('发生时间') }}</dt><dd>{{ displayTime(detail.timestamp) }}</dd>
           <dt>{{ tx('状态变化') }}</dt><dd>{{ transition(detail) }}</dd>
           <dt v-if="detail.recoveredAtUtc">{{ at('恢复时间') }}</dt><dd v-if="detail.recoveredAtUtc">{{ displayTime(detail.recoveredAtUtc) }}</dd>
+          <dt v-if="detail.value != null">{{ tx('触发值') }}</dt><dd v-if="detail.value != null">{{ detail.value }}</dd>
+          <dt v-if="detail.recoveryValue != null">{{ at('恢复值') }}</dt><dd v-if="detail.recoveryValue != null">{{ detail.recoveryValue }}</dd>
+          <dt v-if="detail.recoveredAtUtc || detail.alarmStatus === 'Active'">{{ at('持续时长') }}</dt>
+          <dd v-if="detail.recoveredAtUtc || detail.alarmStatus === 'Active'">{{ duration(detail) }}</dd>
           <dt v-if="detail.message">{{ tx('消息') }}</dt><dd v-if="detail.message" class="alarm-operator-note">{{ detail.message }}</dd>
         </dl>
+        <a-alert v-if="detail.recoveryObservedAfterRestart" type="info" show-icon :message="at('恢复时间为重启后首次观测到恢复的时间，实际恢复时刻未知。')" />
         <a-timeline v-if="detail.acknowledged || detail.handled">
           <a-timeline-item v-if="detail.acknowledged" color="blue">
             <strong>{{ at('已确认') }}</strong> · {{ detail.acknowledged.operator }} · {{ displayTime(detail.acknowledged.timestampUtc) }}
@@ -125,8 +141,8 @@ const canExport = computed(() => hasPermission(PERMISSIONS.historyView) && hasPe
 const canAcknowledge = computed(() => hasPermission(PERMISSIONS.alarmAcknowledge))
 const canHandle = computed(() => hasPermission(PERMISSIONS.alarmHandle))
 const processingStatus = ref<AlarmProcessingStatus>()
-const statusLabels: Record<AlarmProcessingStatus, string> = { Pending: '待确认', Acknowledged: '已确认', Handled: '已处理' }
-const statusColors: Record<AlarmProcessingStatus, string> = { Pending: 'orange', Acknowledged: 'blue', Handled: 'green' }
+const statusLabels: Record<AlarmProcessingStatus, string> = { AutoMonitoring: '待自动恢复', AutoClosed: '已自动恢复', Recorded: '已记录', Pending: '待确认', Acknowledged: '已确认', Handled: '已处理' }
+const statusColors: Record<AlarmProcessingStatus, string> = { AutoMonitoring: 'orange', AutoClosed: 'green', Recorded: 'default', Pending: 'orange', Acknowledged: 'blue', Handled: 'green' }
 const statusOptions = computed(() => Object.entries(statusLabels).map(([value, label]) => ({ value, label: at(label) })))
 const fields: { level: HistoryOptionLevel; label: string; parent?: HistoryOptionLevel }[] = [
   { level: 'channel', label: '通道' }, { level: 'device', label: '设备', parent: 'channel' },
@@ -168,18 +184,22 @@ const actionMode = computed(() => detail.value ? rowAction(detail.value) : undef
 let queryController: AbortController | undefined
 let exportController: AbortController | undefined
 const columns = computed(() => [
-  { title: tx('时间'), key: 'timestamp', width: 180 },
+  { title: at('发生时间'), key: 'timestamp', width: 185 },
   { title: tx('报警来源'), key: 'path', width: 250 },
   { title: tx('状态变化'), key: 'state', width: 180 },
   { title: at('报警状态'), key: 'alarmStatus', width: 120 },
   { title: at('处理状态'), key: 'processingStatus', width: 160 },
+  { title: at('恢复时间'), key: 'recoveredAtUtc', width: 185 },
+  { title: at('持续时长'), key: 'duration', width: 200 },
   { title: tx('触发值'), key: 'value', width: 100 },
+  { title: at('恢复值'), key: 'recoveryValue', width: 100 },
   { title: tx('阈值'), key: 'threshold', width: 90 },
   { title: tx('消息'), key: 'message', width: 230 },
   { title: tx('发送状态'), key: 'deliveryStatus', width: 120 },
   { title: tx('操作'), key: 'actions', width: 135, fixed: 'right' as const },
 ])
 function label(code: string) {
+  if (code === 'PerAction') return at('按动作配置')
   return ruleStateText(code, locale.value)
 }
 function path(record: AlarmHistoryRow) {
@@ -196,6 +216,17 @@ function processingLabel(status: AlarmProcessingStatus) {
 }
 function displayTime(timestamp: string) {
   return new Date(timestamp).toLocaleString(locale.value)
+}
+function duration(record: AlarmHistoryRow) {
+  const end = record.recoveredAtUtc || (record.alarmStatus === 'Active' ? result.value?.queriedAtUtc : null)
+  if (!end) return '—'
+  const ms = Date.parse(end) - Date.parse(record.timestamp)
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  const seconds = record.recoveryObservedAfterRestart ? Math.ceil(ms / 1000) : Math.floor(ms / 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const elapsed = ms < 1000 ? ms + ' ms' : [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(pad).join(':')
+  if (record.recoveryObservedAfterRestart) return '≤ ' + elapsed
+  return record.recoveredAtUtc ? elapsed : elapsed + ' · ' + at('截至本次查询')
 }
 function rowAction(record: AlarmHistoryRow) {
   if (record.canProcess && record.processingStatus === 'Pending' && canAcknowledge.value) return 'acknowledge'
@@ -276,6 +307,10 @@ async function load(current: number, size: number, filters: AlarmHistoryQuery) {
     if (controller.signal.aborted) return
     const lastPage = Math.max(1, Math.ceil(next.total / size))
     if (current > lastPage) { await load(lastPage, size, { ...filters, snapshot: next.snapshot }); return }
+    // A later page still represents the first page's snapshot, including alarms that
+    // were active at that time and may already have recovered in the live journal.
+    if (filters.snapshot != null && result.value?.snapshot === next.snapshot && result.value.queriedAtUtc)
+      next.queriedAtUtc = result.value.queriedAtUtc
     result.value = next
     applied.value = { ...filters, snapshot: next.snapshot }
     page.value = current
@@ -323,6 +358,7 @@ async function download() {
 .alarm-work-context dd { margin: 0; overflow-wrap: anywhere; }
 .alarm-work-note { display: grid; gap: 5px; }
 .alarm-operator-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.alarm-history-results small { display:block; }
 @container (max-width: 1320px) {
   .alarm-history-tools { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .alarm-history-time { grid-column: span 2; }

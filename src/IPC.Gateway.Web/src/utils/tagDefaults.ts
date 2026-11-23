@@ -524,6 +524,7 @@ function createDefaultAlarm(): TagAlarmConfig {
     lowAlarmMessage: '',
     highAlarmMessage: '',
     warningDeviation: 0,
+    requireManualHandling: false,
     lowWarningMessage: '',
     highWarningMessage: ''
   }

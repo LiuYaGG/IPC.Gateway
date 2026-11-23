@@ -135,6 +135,12 @@ namespace IPC.EdgeGateway
                 _engine.RestoreRuntimeState(state);
         }
 
+        public void RestoreOpenAlarms(IReadOnlyList<GatewayAlarmRecord> records, bool afterRestart)
+        {
+            lock (_syncRoot)
+                _engine.RestoreOpenAlarms(records, afterRestart);
+        }
+
         public void Dispose()
         {
             if (_disposed)

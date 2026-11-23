@@ -50,6 +50,8 @@ namespace IPC.Runtime.Configuration
         public string PublishedBy { get; set; }
         public string Mode { get; set; }
         public string CompiledRuleId { get; set; }
+        public bool? RecordAlarmHistory { get; set; }
+        public bool RequireManualHandling { get; set; }
         public List<FlowRuleNode> Nodes { get; set; }
         public List<FlowRuleEdge> Edges { get; set; }
         public DateTime CreatedTime { get; set; }
@@ -217,6 +219,8 @@ namespace IPC.Runtime.Configuration
         public int DurationSeconds { get; set; }
         public bool PublishToMqtt { get; set; }
         public bool AlarmMessage { get; set; }
+        public bool? RecordAlarmHistory { get; set; }
+        public bool? RequireManualHandling { get; set; }
         public bool PublishOnClear { get; set; }
         public string TopicTemplate { get; set; }
         public int PublishQos { get; set; }

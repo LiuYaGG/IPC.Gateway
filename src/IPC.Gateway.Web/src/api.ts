@@ -514,6 +514,8 @@ export interface ChannelConfig {
 }
 
 export interface EdgeRuleConfig {
+  recordAlarmHistory?: boolean | null;
+  requireManualHandling?: boolean;
   id: string;
   name: string;
   enabled: boolean;
@@ -633,6 +635,8 @@ export interface EdgeRuleConfig {
 
 export interface EdgeRuleActionConfig {
   alarmMessage?: boolean;
+  recordAlarmHistory?: boolean | null;
+  requireManualHandling?: boolean | null;
   id: string;
   actionType: string;
   enabled: boolean;
@@ -685,6 +689,8 @@ export interface EdgeRuleCondition {
 }
 
 export interface FlowRuleDefinition {
+  recordAlarmHistory?: boolean | null;
+  requireManualHandling?: boolean;
   id: string;
   name: string;
   description: string;
@@ -704,6 +710,8 @@ export interface FlowRuleDefinition {
 
 export interface FlowRuleNode {
   alarmMessage?: boolean;
+  recordAlarmHistory?: boolean | null;
+  requireManualHandling?: boolean | null;
   id: string;
   nodeType: string;
   label: string;
@@ -1058,6 +1066,7 @@ export interface DataCleaningEnumMapping {
 }
 
 export interface TagAlarmConfig {
+  requireManualHandling?: boolean;
   enabled: boolean;
   lowLimit: number;
   highLimit: number;
@@ -2857,7 +2866,7 @@ export async function deleteFlowRule(ruleId: string) {
   return result.data;
 }
 
-export type AlarmProcessingStatus = 'Pending' | 'Acknowledged' | 'Handled'
+export type AlarmProcessingStatus = 'AutoMonitoring' | 'AutoClosed' | 'Recorded' | 'Pending' | 'Acknowledged' | 'Handled'
 export interface AlarmOperatorRecord { operator: string; timestampUtc: string; note: string }
 export interface AlarmHistoryRow {
   eventId: string;
@@ -2876,10 +2885,12 @@ export interface AlarmHistoryRow {
   threshold: number | null;
   message: string;
   deliveryStatus: string;
-  alarmStatus?: 'Active' | 'Recovered' | 'Unknown'
+  alarmStatus?: 'Active' | 'Recovered' | 'Occurred' | 'Unknown'
   canProcess?: boolean
   processingStatus?: AlarmProcessingStatus | null
   recoveredAtUtc?: string | null
+  recoveryValue?: number | null
+  recoveryObservedAfterRestart?: boolean
   acknowledged?: AlarmOperatorRecord | null
   handled?: AlarmOperatorRecord | null
 }
@@ -2892,6 +2903,7 @@ export interface AlarmHistoryQuery extends HistoryRecordFilters {
   processingStatus?: AlarmProcessingStatus
 }
 export interface AlarmHistoryPage {
+  queriedAtUtc?: string
   total: number
   items: AlarmHistoryRow[]
   snapshot: number
