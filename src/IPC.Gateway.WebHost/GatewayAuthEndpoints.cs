@@ -30,8 +30,42 @@ public static class GatewayAuthEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/auth");
 
-        group.MapPost("/login", async (GatewayAuthService auth, HttpContext context, IGatewayAuditLogStore auditStore, GatewayLoginRequest request) =>
+        group.MapPost("/captcha/challenge", (GatewayLoginCaptchaService captcha, HttpContext context) =>
         {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!captcha.TryCreateChallenge(context.Connection.RemoteIpAddress, out var challenge, out string errorMessage))
+                return CaptchaFailure(context, errorMessage);
+            return Results.Ok(new
+            {
+                success = true,
+                challenge!.ChallengeId,
+                challenge.BackgroundImage,
+                challenge.PieceImage,
+                challenge.Width,
+                challenge.Height,
+                challenge.PieceWidth,
+                challenge.PieceHeight,
+                challenge.PieceY,
+                challenge.ExpiresAt
+            });
+        });
+
+        group.MapPost("/captcha/verify", (GatewayLoginCaptchaService captcha, HttpContext context, GatewayLoginCaptchaVerifyRequest request) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!captcha.TryVerify(context.Connection.RemoteIpAddress, request.ChallengeId, request.OffsetX, out var verification, out string errorMessage))
+                return CaptchaFailure(context, errorMessage);
+            return Results.Ok(new { success = true, verification!.VerificationToken, verification.ExpiresAt });
+        });
+
+        group.MapPost("/login", async (GatewayLoginCaptchaService captcha, HttpContext context, GatewayLoginRequest request) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!captcha.TryConsumeForLogin(context.Connection.RemoteIpAddress, request.CaptchaToken, out string captchaError))
+                return CaptchaFailure(context, captchaError);
+
+            GatewayAuthService auth = context.RequestServices.GetRequiredService<GatewayAuthService>();
+            IGatewayAuditLogStore auditStore = context.RequestServices.GetRequiredService<IGatewayAuditLogStore>();
             GatewayLoginResult result = await auth.LoginAsync(request.Username, request.Password);
             if (!result.Success)
             {
@@ -60,8 +94,9 @@ public static class GatewayAuthEndpoints
 
         group.MapPost("/logout", async (HttpContext context, IGatewayAuditLogStore auditStore) =>
         {
-            if (context.User?.FindFirst("jti") is { } session)
-                context.RequestServices.GetRequiredService<GatewayAuthService>().InvalidateRuntimeAccess("session:" + session.Value);
+            var auth = context.RequestServices.GetRequiredService<GatewayAuthService>();
+            var actual = await auth.ValidateTokenAsync(ReadToken(context.Request));
+            if (actual.Success) await auth.RevokeSessionAsync(actual.Principal);
             context.Response.Cookies.Delete(CookieName);
             await WriteSecurityAuditAsync(context, auditStore, "logout", "success", "auth:logout", context.User?.Identity?.Name ?? string.Empty, context.User?.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, string.Empty);
             return Results.Ok(new { success = true });
@@ -645,7 +680,22 @@ public static class GatewayAuthEndpoints
             path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        return path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase);
+        return path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
+            (HttpMethods.IsPost(request.Method) &&
+                (path.Equals("/api/maintenance/updates/stop-admission",StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/api/maintenance/updates/worker-ready",StringComparison.OrdinalIgnoreCase))) ||
+            (HttpMethods.IsPost(request.Method) &&
+                (path.Equals("/api/auth/captcha/challenge", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/api/auth/captcha/verify", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static IResult CaptchaFailure(HttpContext context, string errorMessage)
+    {
+        bool limited = errorMessage == GatewayLoginCaptchaService.RateLimitError ||
+            errorMessage == GatewayLoginCaptchaService.CapacityError;
+        if (limited) context.Response.Headers.RetryAfter = "60";
+        return Results.Json(new { success = false, errorMessage }, statusCode:
+            limited ? StatusCodes.Status429TooManyRequests : StatusCodes.Status400BadRequest);
     }
 
     private static bool IsHealthRequest(string path)

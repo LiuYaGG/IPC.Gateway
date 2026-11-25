@@ -1,6 +1,7 @@
 <template>
   <div class="protocol-bench">
     <section class="bench-panel">
+      <a-alert v-if="!haCanDispatch" type="info" show-icon :message="tx('本机当前禁止在线操作。')" />
       <div class="bench-heading"><h3>{{ t('诊断目标') }}</h3><a-tag>{{ t('临时连接') }}</a-tag></div>
       <a-alert v-if="catalogError" type="error" show-icon :message="t(catalogError)">
         <template #action><a-button size="small" @click="loadCatalog">{{ tx('重试') }}</a-button></template>
@@ -70,6 +71,7 @@
         <span v-else-if="readyTarget && !canWrite && operation !== 'write'" class="muted">{{ t('写入需要可写驱动及诊断写入权限。') }}</span>
       </div>
       <a-alert v-if="runError" show-icon type="error" :message="t(runError)" />
+      <a-alert v-if="result?.writeExecution" show-icon :type="result.writeExecution.outcome==='Confirmed'?'success':'warning'" :message="executionSummary(result.writeExecution)" />
     </section>
     <div class="bench-results" aria-live="polite">
       <section class="bench-panel">
@@ -133,6 +135,7 @@
 </template>
 
 <script setup lang="ts">
+import { haCanDispatch, haIdentity, haWriteHeaders, explainWriteFailure, executionSummary } from '../useHighAvailability'
 import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { ApiOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReadOutlined, UnorderedListOutlined } from '@ant-design/icons-vue'
 import type { DeviceConfig, GatewayProtocolCatalogItem, PlcConnection, ProjectConfig, TagConfig } from '../api'
@@ -147,7 +150,8 @@ import DeviceConnectionFields from './DeviceConnectionFields.vue'
 
 const props = defineProps<{ project: ProjectConfig | null }>()
 const { hasPermission } = usePermissions()
-const canRun = computed(() => hasPermission(PERMISSIONS.protocolDiagnosticsRun))
+const canRun = computed(() => hasPermission(PERMISSIONS.protocolDiagnosticsRun) && haCanDispatch.value)
+let preparedWriteIdentity=''
 const canCopyDevice = computed(() => hasPermission(PERMISSIONS.devicesView))
 const canWrite = computed(() => hasPermission(PERMISSIONS.protocolDiagnosticsWrite) && !!driver.value?.capabilities.supportsWrite)
 const operations: DiagnosticOperation[] = ['connect', 'read', 'batch', 'write']
@@ -389,6 +393,7 @@ function prepare() {
   }
   const input: DiagnosticRequest = { operation: operation.value, connection, items, readBack: operation.value === 'write' && readBack.value, confirmWrite: false }
   if (input.operation === 'write') {
+    preparedWriteIdentity=haIdentity.value
     pendingWrite.value = input
     confirmOpen.value = true
   } else void execute(input)
@@ -398,17 +403,21 @@ async function execute(input: DiagnosticRequest) {
   busy.value = true
   const request = new AbortController()
   activeRequest = request
+  const headers=input.operation==='write'?haWriteHeaders():{}
   result.value = null
   targetSummary.value = describeTarget(input.connection)
   try {
-    const response = await runDiagnostic(input, request.signal)
+    const response = await runDiagnostic(input, request.signal, headers)
     if (request.signal.aborted) return
     result.value = response
     const firstError = response.items.findIndex(row => row.status === 'Failed')
     selectedIndex.value = Math.max(0, firstError)
     showAllFrames.value = false
   } catch (err) {
-    if (!request.signal.aborted) runError.value = err instanceof Error ? err.message : String(err)
+    if (!request.signal.aborted) {
+      const failure=await explainWriteFailure(err,headers,hasPermission(PERMISSIONS.haWritesView))
+      if (!request.signal.aborted) runError.value=failure.message
+    }
   } finally {
     if (activeRequest === request) busy.value = false
   }
@@ -417,6 +426,7 @@ function confirmWrite() {
   const input = pendingWrite.value
   pendingWrite.value = null
   confirmOpen.value = false
+  if (input && preparedWriteIdentity!==haIdentity.value) {runError.value=tx('业务任期已变化，请重新确认写入。');return}
   if (input && canWrite.value) void execute({ ...input, confirmWrite: true })
 }
 function outcomeColor(status: string) {

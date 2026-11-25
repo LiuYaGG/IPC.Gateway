@@ -33,7 +33,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
     
     
     
-    public sealed class McClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class McClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
         private const int MaxWordPoints = 480;
         private const int MaxBitPoints = 960;
@@ -702,6 +702,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             if (!IsConnected)
                 Connect();
 
+            if (!allowUdpReadRetry) PlcHaWrite.BeforeSegment();
             byte[] response;
             if (_options.Transport == NetworkTransport.Udp)
             {
@@ -730,6 +731,7 @@ namespace IPC.Plc.Communication.MitsubishiMc
             if (!IsConnected)
                 await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
+            if (!allowUdpReadRetry) await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
                 byte[] response;
                 if (_options.Transport == NetworkTransport.Udp)
                 {

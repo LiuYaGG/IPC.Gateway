@@ -75,7 +75,7 @@ public sealed partial class HistoryValueIndex
     private Dictionary<string, FileInfo> ListSources()
     {
         var result = new Dictionary<string, FileInfo>(StringComparer.Ordinal);
-        foreach (string directory in new[] { _hot, _cold }.Distinct(StringComparer.Ordinal))
+        foreach (string directory in new[] { _hot, _cold, Path.Combine(_hot, ".ha-replica") }.Distinct(StringComparer.Ordinal))
         {
             if (!Directory.Exists(directory)) continue;
             foreach (string path in Directory.EnumerateFiles(directory, "values-*.jsonl*"))
@@ -124,7 +124,7 @@ public sealed partial class HistoryValueIndex
             {
                 string daily = name[..15] + ".jsonl"; // values-yyyyMMdd
                 bool renamed = UpdateFile(db, tx, name, file, size, modified, old,
-                    name != daily ? known.GetValueOrDefault(daily) : null, ct);
+                    name != daily && !name.Contains("-ha-",StringComparison.Ordinal) ? known.GetValueOrDefault(daily) : null, ct);
                 ct.ThrowIfCancellationRequested();
                 tx.Commit();
                 if (renamed) known.Remove(daily);

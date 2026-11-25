@@ -198,6 +198,8 @@ namespace IPC.EdgeGateway
                 status.Enabled = _options.Enabled;
                 status.ApplicationName = _options.ApplicationName;
                 status.EndpointUrl = _options.EndpointUrl;
+                status.ListenEndpointUrl = _options.ListenEndpointUrl;
+                status.AdvertisedEndpointUrl = _options.AdvertisedEndpointUrl;
                 status.NamespaceUri = _options.NamespaceUri;
                 return status;
             }
@@ -294,7 +296,11 @@ namespace IPC.EdgeGateway
                 },
                 ServerConfiguration = new ServerConfiguration
                 {
-                    BaseAddresses = new StringCollection { normalized.EndpointUrl },
+                    BaseAddresses = new StringCollection { normalized.ListenEndpointUrl },
+                    // Alternate addresses are used for certificate SAN validation/generation, not socket binding.
+                    AlternateBaseAddresses = new StringCollection(normalized.GetCertificateNames()
+                        .Select(name => new UriBuilder("opc.tcp", name, normalized.Port, "/" + normalized.EndpointPath).Uri.AbsoluteUri)
+                        .Append(normalized.EndpointUrl).Distinct(StringComparer.OrdinalIgnoreCase)),
                     SecurityPolicies = CreateSecurityPolicies(normalized),
                     UserTokenPolicies = CreateUserTokenPolicies(normalized),
                     DiagnosticsEnabled = normalized.PublishDiagnostics,
@@ -321,7 +327,7 @@ namespace IPC.EdgeGateway
         {
             try
             {
-                if (CheckApplicationCertificate(application))
+                if (CheckApplicationCertificate(application) && CertificateNamesMatch(configuration))
                     return false;
             }
             catch (Exception ex) when (IsApplicationCertificateFailure(ex))
@@ -329,14 +335,14 @@ namespace IPC.EdgeGateway
                 if (!ArchiveApplicationCertificate(configuration))
                     throw;
 
-                if (!CheckApplicationCertificate(application))
+                if (!CheckApplicationCertificate(application) || !CertificateNamesMatch(configuration))
                     throw new InvalidOperationException("OPC UA Server application certificate could not be recreated after archiving the invalid certificate.");
                 return true;
             }
 
             if (!ArchiveApplicationCertificate(configuration))
                 throw new InvalidOperationException("OPC UA Server application certificate could not be created or validated, and no existing certificate was available to archive.");
-            if (!CheckApplicationCertificate(application))
+            if (!CheckApplicationCertificate(application) || !CertificateNamesMatch(configuration))
                 throw new InvalidOperationException("OPC UA Server application certificate could not be recreated after archiving the invalid certificate.");
             return true;
         }
@@ -348,6 +354,14 @@ namespace IPC.EdgeGateway
                 .AsTask()
                 .GetAwaiter()
                 .GetResult();
+        }
+
+        private static bool CertificateNamesMatch(ApplicationConfiguration configuration)
+        {
+            var certificate = configuration.SecurityConfiguration.ApplicationCertificate.Certificate;
+            if (certificate == null) return false;
+            var names = X509Utils.GetDomainsFromCertificate(certificate);
+            return configuration.GetServerDomainNames().All(name => names.Contains(name, StringComparer.OrdinalIgnoreCase));
         }
 
         private static bool IsApplicationCertificateFailure(Exception exception)
@@ -412,6 +426,15 @@ namespace IPC.EdgeGateway
                 }
             }
 
+            if (archived)
+            {
+                var previous = configuration.SecurityConfiguration.ApplicationCertificate;
+                configuration.SecurityConfiguration.ApplicationCertificate = new CertificateIdentifier
+                {
+                    StoreType = previous.StoreType, StorePath = previous.StorePath,
+                    SubjectName = previous.SubjectName, CertificateType = previous.CertificateType
+                };
+            }
             return archived;
         }
 
@@ -488,6 +511,8 @@ namespace IPC.EdgeGateway
             status.Enabled = options.Enabled;
             status.ApplicationName = options.ApplicationName;
             status.EndpointUrl = options.EndpointUrl;
+            status.ListenEndpointUrl = options.ListenEndpointUrl;
+            status.AdvertisedEndpointUrl = options.AdvertisedEndpointUrl;
             status.NamespaceUri = options.NamespaceUri;
         }
 

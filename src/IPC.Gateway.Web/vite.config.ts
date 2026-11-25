@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      input: ['index.html', 'ha-setup.html'],
       output: {
         manualChunks: {
           vue: ['vue'],

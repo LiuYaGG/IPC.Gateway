@@ -36,6 +36,7 @@ export interface DiagnosticFrame {
   batch: number
 }
 export interface DiagnosticResult {
+  writeExecution?: import('./api').PlcWriteExecution
   operation: DiagnosticOperation
   elapsedMs: number
   mode: string
@@ -53,9 +54,9 @@ export async function diagnosticProtocols(signal?: AbortSignal) {
   return result.data
 }
 
-export async function runDiagnostic(input: DiagnosticRequest, signal?: AbortSignal) {
+export async function runDiagnostic(input: DiagnosticRequest, signal?: AbortSignal, headers?: Record<string,string>) {
   const result = await request<ApiResult<DiagnosticResult>>('/api/diagnostics/protocol/run', {
-    method: 'POST', body: JSON.stringify(input), signal
+    method: 'POST', body: JSON.stringify(input), signal, headers: {'Content-Type':'application/json', ...headers}
   })
   if (!result.success) throw new Error(result.errorMessage || '协议诊断失败')
   return result.data

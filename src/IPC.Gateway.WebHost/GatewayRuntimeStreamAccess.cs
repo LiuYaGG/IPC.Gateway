@@ -6,7 +6,7 @@ namespace IPC.Gateway.WebHost;
 // the next handshake obtains a new principal and an authoritative snapshot.
 internal sealed class GatewayRuntimeStreamAccess : IAsyncDisposable
 {
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(5);
     private readonly GatewayAuthService _auth;
     private readonly ClaimsPrincipal _principal;
     private readonly Func<Task<ClaimsPrincipal?>> _validate;

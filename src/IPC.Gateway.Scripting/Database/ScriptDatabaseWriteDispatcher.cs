@@ -1,3 +1,4 @@
+using IPC.Plc.Communication.Core;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -15,6 +16,7 @@ namespace IPC.Gateway.Scripting.Database;
 /// </summary>
 public sealed class ScriptDatabaseWriteDispatcher : BackgroundService, IScriptDatabaseQueue
 {
+    private readonly IPlcWriteAttemptAuthorizer? _authority;
     private readonly IScriptConfigurationStore _configurationStore;
     private readonly ScriptDatabaseWriteExecutor _executor;
     private readonly ScriptDatabaseCommandBuilder _commandBuilder;
@@ -40,8 +42,9 @@ public sealed class ScriptDatabaseWriteDispatcher : BackgroundService, IScriptDa
         ScriptDatabaseWriteExecutor executor,
         ScriptDatabaseCommandBuilder commandBuilder,
         GatewayScriptingOptions options,
-        ILogger<ScriptDatabaseWriteDispatcher> logger)
+        ILogger<ScriptDatabaseWriteDispatcher> logger, IPlcWriteAttemptAuthorizer? authority = null)
     {
+        _authority = authority;
         _configurationStore = configurationStore;
         _executor = executor;
         _commandBuilder = commandBuilder;
@@ -66,6 +69,12 @@ public sealed class ScriptDatabaseWriteDispatcher : BackgroundService, IScriptDa
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_authority is { IsCluster: true } ha)
+        {
+            var expected = PlcWriteRequestContext.Capture().ExpectedEpoch;
+            if (!ha.CanRunBusiness || expected.HasValue && expected != ha.Epoch) throw new PlcWriteDeniedException("HA_NOT_ACTIVE");
+            request.BusinessEpoch = ha.Epoch;
+        }
         ScriptConfigurationDocument configuration = await _configurationStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         (ScriptDatabaseConnectionDefinition connection, ScriptDatabaseWriteTarget target) = ResolveTarget(configuration, request.TargetId);
         _ = _commandBuilder.Build(connection.Provider, target, request);
@@ -183,6 +192,15 @@ public sealed class ScriptDatabaseWriteDispatcher : BackgroundService, IScriptDa
         {
             ScriptConfigurationDocument configuration = await _configurationStore.LoadAsync(cancellationToken).ConfigureAwait(false);
             (ScriptDatabaseConnectionDefinition connection, ScriptDatabaseWriteTarget target) = ResolveTarget(configuration, request.TargetId);
+            if (_authority is { IsCluster: true } ha && (!ha.CanRunBusiness || request.BusinessEpoch != ha.Epoch))
+            {
+                request.LastError = "HA_STALE_EPOCH";
+                await SaveRequestAsync(path, request, CancellationToken.None).ConfigureAwait(false);
+                MoveToFailed(path);
+                Interlocked.Decrement(ref _pendingCount);
+                Interlocked.Increment(ref _failedCount);
+                return;
+            }
             await _executor.ExecuteAsync(connection, target, request, cancellationToken).ConfigureAwait(false);
             File.Delete(path);
             Interlocked.Decrement(ref _pendingCount);

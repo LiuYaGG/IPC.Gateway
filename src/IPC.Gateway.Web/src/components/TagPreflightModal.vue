@@ -73,6 +73,7 @@ import { request, HttpRequestError, type ApiResult, type DeviceConfig } from '..
 import { locale, tx } from '../i18n'
 import { PERMISSIONS, usePermissions } from '../utils/permissions'
 import { notify } from '../utils/ui'
+import { haCanDispatch } from '../useHighAvailability'
 
 interface Issue { severity: string; code: string; path: string; address: string; detail: string; row: number; tagId: string; groupId: string }
 interface Report { errors: number; warnings: number; checked: number; added: number; updated: number; issues: Issue[] }
@@ -81,7 +82,7 @@ interface Sample { error: string; items: { index: number; address: string; statu
 const props = defineProps<{ device: DeviceConfig; groupId?: string; csv?: string; filename?: string }>()
 const emit = defineEmits<{ close: []; imported: []; locate: [tagId: string, groupId: string] }>()
 const { hasPermission } = usePermissions()
-const canSample = computed(() => hasPermission(PERMISSIONS.protocolDiagnosticsRun))
+const canSample = computed(() => hasPermission(PERMISSIONS.protocolDiagnosticsRun) && haCanDispatch.value)
 const l = (zh: string, en: string) => locale.value === 'en-US' ? en : zh
 const scope = ref(props.groupId ?? '')
 const scopes = computed(() => [{ value: '', label: props.device.name + ' · ' + l('全部点位', 'All tags') },

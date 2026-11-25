@@ -49,7 +49,11 @@ public sealed class JsonScriptConfigurationStore : IScriptConfigurationStore
                 ?? new ScriptConfigurationDocument();
             NormalizeCollections(document);
             foreach (ScriptDatabaseConnectionDefinition connection in document.Connections)
+            {
                 connection.ConnectionString = _secretProtector.Unprotect(connection.ConnectionString);
+                if (connection.ConnectionString.StartsWith(IPC.Gateway.Core.Gateway.GatewaySecretProtector.Prefix, StringComparison.Ordinal))
+                    throw new InvalidDataException("脚本数据库连接解密失败，请恢复原业务加密密钥。");
+            }
             return document.Clone();
         }
         finally
@@ -90,7 +94,7 @@ public sealed class JsonScriptConfigurationStore : IScriptConfigurationStore
     /// <summary>
     /// 补齐反序列化后可能为空的集合。
     /// </summary>
-    private static void NormalizeCollections(ScriptConfigurationDocument document)
+    internal static void NormalizeCollections(ScriptConfigurationDocument document)
     {
         document.Version = Math.Max(3, document.Version);
         document.Connections ??= [];

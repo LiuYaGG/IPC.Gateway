@@ -32,6 +32,7 @@ import { tx } from '../i18n'
 import { computed, ref, watch } from 'vue'
 import {
   ContainerOutlined as Box,
+  ClusterOutlined,
   ApartmentOutlined as Connection,
   DeploymentUnitOutlined as Cpu,
   LineChartOutlined as DataLine,
@@ -89,6 +90,7 @@ const groups = [
     items: [
       { key: 'audit', label: '审计日志', icon: Tickets },
       { key: 'security', label: '工业安全', icon: Lock },
+      { key: 'highAvailability', label: '高可用', icon: ClusterOutlined },
       { key: 'maintenance', label: '安装升级', icon: Box },
       { key: 'users', label: '人员管理', icon: User },
       { key: 'roles', label: '角色管理', icon: UserFilled },

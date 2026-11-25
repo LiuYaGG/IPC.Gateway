@@ -34,7 +34,7 @@ namespace IPC.Plc.Communication.SiemensS7
     
     
     
-    public sealed class S7Client : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public sealed class S7Client : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int DefaultPduSize = 240;
         private TcpClient _tcpClient;
@@ -652,6 +652,7 @@ namespace IPC.Plc.Communication.SiemensS7
                 throw new InvalidOperationException("PLC 尚未连接。");
 
             byte[] packet = WrapS7(s7Payload);
+            if (s7Payload.Length > 10 && s7Payload[10] == 5) PlcHaWrite.BeforeSegment();
             _stream.Write(packet, 0, packet.Length);
             PlcDiagnosticTrace.Record("TX", packet);
             return ReadTpkt();
@@ -665,6 +666,7 @@ namespace IPC.Plc.Communication.SiemensS7
                 throw new InvalidOperationException("PLC is not connected.");
 
             byte[] packet = WrapS7(s7Payload);
+            if (s7Payload.Length > 10 && s7Payload[10] == 5) await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
             await _stream.WriteAsync(packet, 0, packet.Length, cancellationToken).ConfigureAwait(false);
             PlcDiagnosticTrace.Record("TX", packet);
             return await ReadTpktAsync(cancellationToken).ConfigureAwait(false);

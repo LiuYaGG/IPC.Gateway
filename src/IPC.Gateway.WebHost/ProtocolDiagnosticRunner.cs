@@ -9,6 +9,8 @@ namespace IPC.Gateway.WebHost;
 
 internal sealed class ProtocolDiagnosticReport
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PlcWriteExecution? WriteExecution { get; set; }
     public string Operation { get; init; } = "";
     public long ElapsedMs { get; set; }
     public string Mode { get; set; } = "Connect";
@@ -42,7 +44,7 @@ internal static class ProtocolDiagnosticRunner
         c.Transport == NetworkTransport.Udp || c.Protocol is PlcProtocol.ModbusUdp or PlcProtocol.BacnetIp or PlcProtocol.Snmp;
 
     public static async Task<ProtocolDiagnosticReport> ExecuteAsync(ProtocolDiagnosticRequest request, Func<string?> checkBusAvailability,
-        CancellationToken cancellation)
+        CancellationToken cancellation, IPlcWriteAttemptAuthorizer? authority, long admissionEpoch)
     {
         var watch = Stopwatch.StartNew();
         var c = request.Connection!;
@@ -80,7 +82,10 @@ internal static class ProtocolDiagnosticRunner
         try
         {
             cancellation.ThrowIfCancellationRequested();
+            if (authority is { CanRunBusiness: false }) throw new PlcWriteDeniedException("HA_NOT_ACTIVE");
+            using var flight = request.Operation == "write" ? authority?.TrackWrite(admissionEpoch) : null;
             using var client = PlcClientFactory.Create(c);
+            if (authority is { IsCluster: true } && client is IHaConnectionAdmission admission) admission.CheckHaConnection();
             var capabilities = PlcClientInvoker.GetCapabilities(client);
             var asyncClient = client as IAsyncPlcClient;
             bool probe = request.Operation == "connect" && NeedsProbe(c);
@@ -119,16 +124,23 @@ internal static class ProtocolDiagnosticRunner
                 var item = request.Items[0];
                 var row = report.Items[0];
                 row.Batch = batch;
+                PlcHaWrite? frame = null;
                 try
                 {
                     using var deadline = OperationDeadline();
                     string? writeError = checkBusAvailability();
                     if (writeError != null) throw new InvalidOperationException(writeError);
+                    frame = authority is { RequiresWriteAuthorization: true }
+                        ? new PlcHaWrite(authority, admissionEpoch, PlcWriteRequestContext.Capture(), client, c,
+                            item.Address, item.DataType, item.ElementCount, item.ElementOffset, item.ValueText!, deadline.Token, source: "ProtocolDiagnostic")
+                        : null;
+                    using var fence = frame?.Enter();
                     if (item.DataType == PlcDataType.String && client is IPlcStringWriter stringWriter)
                         await stringWriter.WriteStringAsync(item.Address, item.ValueText!, item.ElementCount, item.ElementOffset, deadline.Token);
                     else if (asyncClient != null)
                         await asyncClient.WriteAsync(item.Address, item.DataType, item.ValueText!, item.ElementOffset, deadline.Token);
                     else client.Write(item.Address, item.DataType, item.ValueText!, item.ElementOffset);
+                    frame?.Confirm();
                     row.Value = item.ValueText!;
                     row.Status = "Success";
                 }
@@ -138,6 +150,7 @@ internal static class ProtocolDiagnosticRunner
                     if (e is OperationCanceledException or TimeoutException or IOException || row.Scope == "Transport")
                         row.Error += " The write outcome may be unknown. Read the address before retrying.";
                 }
+                report.WriteExecution = frame?.Result(row.Status == "Success");
                 if (row.Status == "Success" && request.ReadBack)
                 {
                     report.Stage = "ReadBack";

@@ -35,6 +35,8 @@ namespace IPC.Runtime.Api
             ValueText = string.Empty;
         }
 
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string Origin { get; set; } = "Runtime";
         public string DataType { get; set; }
         public object Value { get; set; }
         public string ValueText { get; set; }

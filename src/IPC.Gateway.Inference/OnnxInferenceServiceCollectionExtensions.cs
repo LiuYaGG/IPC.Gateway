@@ -27,6 +27,7 @@ public static class OnnxInferenceServiceCollectionExtensions
         OnnxModelCatalogOptions? options = null)
     {
         services.AddSingleton<IModelInferenceService, OnnxModelInferenceService>();
+        services.AddSingleton<SharedModelPathResolver>();
         services.AddSingleton(options ?? new OnnxModelCatalogOptions());
         services.AddSingleton<OnnxModelCatalogService>();
         return services;

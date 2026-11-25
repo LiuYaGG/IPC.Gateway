@@ -1,0 +1,22 @@
+export const haTransportEnglish: Record<string,string> = {
+  '组网迁移':'Network migration',
+  '组网迁移准备':'Prepare network migration',
+  '取消组网迁移':'Cancel network migration',
+  '完成组网迁移':'Complete network migration',
+  '迁移计划 ID':'Migration plan ID',
+  '阶段':'Phase',
+  '需要重启':'Restart required',
+  '未开始':'Not started',
+  '正在准备':'Preparing',
+  '已准备':'Prepared',
+  '已暂存':'Staged',
+  '已写入':'Written',
+  '等待重启':'Restart pending',
+  '已重启':'Restarted',
+  '已取消':'Cancelled',
+  '三个成员已准备同一迁移计划，确认后写入待生效配置。':'All three members prepared the same migration plan. Confirm to write the pending configuration.',
+  '正在提交同一组网迁移，失败时请重试原计划。':'Committing the same network migration plan. If it fails, retry the original plan.',
+  '三份配置已登记，尚未生效。请依次重启 B、C、A，再检查成员状态。':'All three configurations are registered but not yet active. Restart B, C and A in that order, then check member status.',
+  '组网配置已在三个成员生效。':'The network configuration is active on all three members.',
+  '修改关闭集群后的节点通信配置':'Change member communication settings while failover is disabled'
+}

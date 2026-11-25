@@ -40,7 +40,7 @@ namespace IPC.Plc.Communication.Cip
     
     
     
-    public sealed class CipClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class CipClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
         private const ushort CommandRegisterSession = 0x0065;
         private const ushort CommandUnregisterSession = 0x0066;
@@ -934,6 +934,7 @@ namespace IPC.Plc.Communication.Cip
             WriteUInt16(body, (ushort)unconnectedSend.Length);
             body.Write(unconnectedSend, 0, unconnectedSend.Length);
 
+            if (cipRequest[0] is not (0x4C or 0x0E)) PlcHaWrite.BeforeSegment();
             EncapsulationPacket packet = SendEncapsulation(CommandSendRRData, _sessionHandle, body.ToArray());
             byte[] itemData = ExtractUnconnectedData(packet.Body);
             return ExtractEmbeddedCipResponse(itemData);
@@ -957,6 +958,7 @@ namespace IPC.Plc.Communication.Cip
             WriteUInt16(body, (ushort)unconnectedSend.Length);
             body.Write(unconnectedSend, 0, unconnectedSend.Length);
 
+            if (cipRequest[0] is not (0x4C or 0x0E)) await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
             EncapsulationPacket packet = await SendEncapsulationAsync(CommandSendRRData, _sessionHandle, body.ToArray(), cancellationToken).ConfigureAwait(false);
             byte[] itemData = ExtractUnconnectedData(packet.Body);
             return ExtractEmbeddedCipResponse(itemData);

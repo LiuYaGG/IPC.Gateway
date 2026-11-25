@@ -5,6 +5,33 @@ namespace IPC.Gateway.WebHost;
 
 public sealed partial class GatewayUpdatePackageService
 {
+    internal static int PrepareOfflineDriverTrust(string package,string installedDirectory,string updatesDirectory)
+    {
+        string install=Path.GetFullPath(installedDirectory);
+        string updates=Path.GetFullPath(updatesDirectory);
+        using var settings=new ConfigurationBuilder().SetBasePath(install).AddJsonFile("appsettings.json")
+            .AddJsonFile("appsettings.Production.json",true).AddEnvironmentVariables().Build() as ConfigurationRoot
+            ?? throw new InvalidOperationException("未能加载原网关配置。");
+        var options=GatewayUpdateMaintenanceOptions.FromConfiguration(settings);
+        options.InstallDirectory=install;
+        options.UpdateDirectory=updates;
+        var validationService=new GatewayUpdatePackageService(options);
+        using var hold=File.OpenRead(package);
+        var validation=validationService.ReadAndValidatePackage(package);
+        if(!validation.Trust.ContentHashValid)throw new InvalidDataException("安装包缺少有效文件摘要。");
+        var manifest=validation.Manifest;
+        string prefix=NormalizeEntryDirectory(manifest.EntryDirectory).TrimEnd('/')+"/";
+        foreach(var file in manifest.Files.Where(f=>f.Path.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)))
+        {
+            var path=GetSafeExtractPath(AppContext.BaseDirectory,file.Path[prefix.Length..]);
+            if(!File.Exists(path)||!ComputeSha256(path).Equals(file.Sha256,StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("待发布文件与原 ZIP 不一致："+file.Path);
+        }
+        var section=settings.GetSection("Gateway:ProtocolDrivers");
+        var trust=Path.GetFullPath(section["TrustedPublicKeyPath"] ?? Path.Combine(updates,"DriverTrust","public-key.pem"),install);
+        PlcDriverPluginRegistry.ConfigureTrustPolicy(section.GetValue<bool>("RequireSignature"),section["TrustedPublicKeyPem"] ?? "",trust);
+        return PlcDriverPluginRegistry.PreserveUpgradeTrust(AppContext.BaseDirectory,install,manifest.PackageId,ComputeSha256(package),install);
+    }
     private sealed class CompletedDriverTrustRecovery
     {
         public string ActionId { get; set; } = string.Empty;

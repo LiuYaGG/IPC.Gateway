@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- The host pins the exact plugin binary shipped for its target runtime. -->
+    <IsRidAgnostic>false</IsRidAgnostic>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <GenerateDependencyFile>true</GenerateDependencyFile>

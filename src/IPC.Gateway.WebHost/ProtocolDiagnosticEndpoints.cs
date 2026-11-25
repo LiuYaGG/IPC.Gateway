@@ -65,9 +65,11 @@ internal static class ProtocolDiagnosticEndpoints
         var token = deadline.Token;
         // Some SDKs provide only blocking operations. Keep their slot and client until the
         // worker exits, even when the HTTP caller has disconnected or its deadline expired.
+        var authority = gateway.WriteAuthority;
+        long admissionEpoch = authority?.Epoch ?? 0;
         var worker = Task.Run(async () =>
         {
-            try { return await ProtocolDiagnosticRunner.ExecuteAsync(request, CheckBusAvailability, token); }
+            try { return await ProtocolDiagnosticRunner.ExecuteAsync(request, CheckBusAvailability, token, authority, admissionEpoch); }
             finally
             {
                 lock (ActiveTargets) ActiveTargets.Remove(key);
@@ -85,6 +87,14 @@ internal static class ProtocolDiagnosticEndpoints
             return Error(504, error);
         }
         await AuditAsync(audit, auditLog, report.Outcome, report.Error);
+        if (report.WriteExecution?.Outcome == "Unknown")
+            return Results.Json(new { success = false, errorCode = "HA_DEVICE_RESULT_UNKNOWN", errorMessage = report.Error, data = report }, statusCode: 502);
+        if (authority is { IsCluster: true } && report.Error.StartsWith("HA_", StringComparison.Ordinal))
+        {
+            string code = report.Error.Split(' ')[0];
+            int status = code is "HA_NO_QUORUM" or "HA_MEMBER_UNAVAILABLE" or "HA_WRITE_JOURNAL_UNAVAILABLE" ? 503 : 409;
+            return Results.Json(new { success = false, errorCode = code, errorMessage = report.Error, data = report }, statusCode: status);
+        }
         if (request.SampleOnly)
             return Results.Ok(new { success = true, data = new { report.Error, items = report.Items.Select(i => new { i.Index, i.Address, i.Status, i.Value, i.Error }) } });
         return Results.Ok(new { success = true, data = report });

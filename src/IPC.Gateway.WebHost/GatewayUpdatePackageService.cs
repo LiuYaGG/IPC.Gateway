@@ -40,7 +40,7 @@ public sealed partial class GatewayUpdatePackageService
     public GatewayUpdatePackageService(GatewayUpdateMaintenanceOptions options, IGatewayUpdateProcessLauncher? processLauncher = null)
     {
         _options = options ?? new GatewayUpdateMaintenanceOptions();
-        _processLauncher = processLauncher ?? new GatewayUpdateProcessLauncher();
+        _processLauncher = processLauncher ?? new GatewayUpdateProcessLauncher(_options);
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -83,6 +83,8 @@ public sealed partial class GatewayUpdatePackageService
         {
             Enabled = _options.Enabled,
             SupportsApply = _processLauncher.IsSupported,
+            ApplySupportMessage = _processLauncher.SupportMessage,
+            RuntimeCompatibility = CurrentCompatibility(),
             MaxPackageMegabytes = Math.Max(1, _options.MaxPackageMegabytes),
             ProductId = _options.ProductId,
             CurrentVersion = GatewayUpdateVersion.Current,
@@ -184,12 +186,14 @@ public sealed partial class GatewayUpdatePackageService
         GatewayUpdatePackageRecord record = FindPackage(packageId);
         GatewayUpdatePackageValidationResult validation = ValidateStoredPackage(record);
         GatewayUpdatePackageManifest manifest = validation.Manifest;
+        ValidateCompatibility(manifest.Compatibility);
         string actionId = "upgrade-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
         string stagingRoot = Path.Combine(GetStagingDirectory(), actionId);
         string sourceDirectory = Path.Combine(stagingRoot, "payload");
         Directory.CreateDirectory(sourceDirectory);
 
         ExtractPayload(record.StoredPath, manifest.EntryDirectory, sourceDirectory);
+        ValidateExtractedCompatibility(sourceDirectory, manifest.Compatibility);
         if (validation.Trust.ContentHashValid)
             PlcDriverPluginRegistry.PreserveUpgradeTrust(sourceDirectory, ResolveInstallDirectory(), record.PackageId, record.Sha256);
         GatewayRollbackPoint rollbackPoint = CreateRollbackPoint(record);
@@ -207,10 +211,12 @@ public sealed partial class GatewayUpdatePackageService
             RequiresServiceRestart = true,
             CreatedTime = DateTime.UtcNow,
             DriverTrustPrepared = validation.Trust.ContentHashValid,
+            PreservePaths = CreatePreserveSet().ToArray(),
             DriverTrustStateSha256 = PlcDriverPluginRegistry.GetUpgradeTrustStateSha256(),
             DriverTrustPackageSha256 = record.Sha256,
             Status = "Pending"
         };
+        action.PreservePaths = CreatePreserveSet().ToArray();
         action.ScriptPath = WriteOfflineScript(action);
         WriteJson(GetPendingActionPath(), action);
         return new GatewayPrepareUpdateResult
@@ -236,6 +242,7 @@ public sealed partial class GatewayUpdatePackageService
             throw new InvalidOperationException("升级维护功能未启用。");
 
         GatewayRollbackPoint rollback = FindRollback(rollbackId);
+        ValidateExtractedCompatibility(Path.Combine(rollback.Directory, "payload"), rollback.Compatibility);
         string actionId = "rollback-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
         GatewayPendingUpdateAction action = new GatewayPendingUpdateAction
         {
@@ -265,7 +272,7 @@ public sealed partial class GatewayUpdatePackageService
         lock (_actionLock)
         {
             if (!_options.Enabled) throw new InvalidOperationException("升级维护功能未启用。");
-            if (!_processLauncher.IsSupported) throw new InvalidOperationException("界面自动升级仅支持以 Windows 服务方式运行的网关。");
+            if (!_processLauncher.IsSupported) throw new InvalidOperationException(_processLauncher.SupportMessage);
             GatewayPendingUpdateAction action = ReadJson<GatewayPendingUpdateAction>(GetPendingActionPath())
                 ?? throw new InvalidOperationException("请先准备升级或回滚。");
             if (string.IsNullOrWhiteSpace(actionId) || !string.Equals(action.ActionId, actionId, StringComparison.Ordinal))
@@ -276,15 +283,18 @@ public sealed partial class GatewayUpdatePackageService
             if (!Path.TrimEndingDirectorySeparator(Path.GetFullPath(action.TargetDirectory)).Equals(ResolveInstallDirectory(), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("待执行动作的安装目录不匹配。");
             action.TargetDirectory = ResolveInstallDirectory();
+            action.PreservePaths = CreatePreserveSet().ToArray();
             if (action.ActionType == "Upgrade")
             {
                 // Revalidate the original ZIP and re-extract a fresh payload before stopping the host.
                 GatewayUpdatePackageRecord record = FindPackage(action.PackageId);
                 GatewayUpdatePackageValidationResult validated = ValidateStoredPackage(record);
                 GatewayUpdatePackageManifest manifest = validated.Manifest;
+                ValidateCompatibility(manifest.Compatibility);
                 action.SourceDirectory = Path.Combine(GetStagingDirectory(), "execute-" + Guid.NewGuid().ToString("N"), "payload");
                 Directory.CreateDirectory(action.SourceDirectory);
                 ExtractPayload(record.StoredPath, manifest.EntryDirectory, action.SourceDirectory);
+                ValidateExtractedCompatibility(action.SourceDirectory, manifest.Compatibility);
                 if (validated.Trust.ContentHashValid)
                     PlcDriverPluginRegistry.PreserveUpgradeTrust(action.SourceDirectory, action.TargetDirectory, record.PackageId, record.Sha256);
                 action.DriverTrustPrepared = validated.Trust.ContentHashValid;
@@ -296,6 +306,7 @@ public sealed partial class GatewayUpdatePackageService
                 GatewayRollbackPoint rollback = FindRollback(action.RollbackId);
                 action.SourceDirectory = Path.Combine(rollback.Directory, "payload");
                 if (!Directory.Exists(action.SourceDirectory)) throw new InvalidOperationException("回滚文件不存在。");
+                ValidateExtractedCompatibility(action.SourceDirectory, rollback.Compatibility);
             }
             else throw new InvalidOperationException("不支持的升级动作。");
             if (!File.Exists(Path.Combine(action.SourceDirectory, "IPC.Gateway.WebHost.dll")))
@@ -561,6 +572,18 @@ public sealed partial class GatewayUpdatePackageService
         AppendSigningLine(builder, "signedTime", manifest.SignedTime.HasValue
             ? manifest.SignedTime.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
             : string.Empty);
+        if (manifest.ManifestVersion >= 3)
+        {
+            var c = manifest.Compatibility ?? throw new ArgumentException("安装包缺少平台兼容信息。");
+            AppendSigningLine(builder, "operatingSystem", c.OperatingSystem);
+            AppendSigningLine(builder, "architecture", c.Architecture);
+            AppendSigningLine(builder, "runtimeIdentifier", c.RuntimeIdentifier);
+            AppendSigningLine(builder, "targetFramework", c.TargetFramework);
+            AppendSigningLine(builder, "requiredDotNetMajor", c.RequiredDotNetMajor.ToString(CultureInfo.InvariantCulture));
+            AppendSigningLine(builder, "minimumHaStateVersion", c.MinimumHaStateVersion.ToString(CultureInfo.InvariantCulture));
+            AppendSigningLine(builder, "maximumHaStateVersion", c.MaximumHaStateVersion.ToString(CultureInfo.InvariantCulture));
+            AppendSigningLine(builder, "minimumGlibcVersion", c.MinimumGlibcVersion);
+        }
         foreach (GatewayUpdatePackageFileDigest file in files)
         {
             AppendSigningLine(
@@ -681,13 +704,19 @@ public sealed partial class GatewayUpdatePackageService
         string rollbackId = "rollback-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
         string rollbackRoot = Path.Combine(GetRollbacksDirectory(), rollbackId);
         string payloadRoot = Path.Combine(rollbackRoot, "payload");
+        string installedDescriptor = Path.Combine(ResolveInstallDirectory(), RuntimeDescriptor);
+        if (!File.Exists(installedDescriptor)) throw new InvalidOperationException("当前程序缺少可验证的兼容描述，不能创建可靠回滚点。请先使用完整安装包更新程序。");
+        var compatibility = JsonSerializer.Deserialize<GatewayPackageCompatibility>(File.ReadAllBytes(installedDescriptor), _jsonOptions);
+        ValidateCompatibility(compatibility);
         Directory.CreateDirectory(payloadRoot);
         CopyDirectory(ResolveInstallDirectory(), payloadRoot, CreatePreserveSet());
+        WriteJson(Path.Combine(payloadRoot, RuntimeDescriptor), compatibility);
 
         (long sizeBytes, int fileCount) = CalculateDirectoryStats(payloadRoot);
         GatewayRollbackPoint point = new GatewayRollbackPoint
         {
             RollbackId = rollbackId,
+            Compatibility = compatibility,
             Version = GatewayUpdateVersion.Current,
             SourcePackageId = sourcePackage.PackageId,
             CreatedTime = DateTime.UtcNow,
@@ -735,7 +764,9 @@ public sealed partial class GatewayUpdatePackageService
     {
         string scriptPath = GetOfflineScriptPath();
         string pendingPath = GetPendingActionPath();
-        string serviceName = "IPCGateway";
+        if (OperatingSystem.IsLinux()) return WriteLinuxOfflineInstructions();
+        string serviceName = string.IsNullOrWhiteSpace(_options.ServiceName) ? "IPCGateway" : _options.ServiceName;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(serviceName, "^[A-Za-z0-9_-]+$")) throw new InvalidOperationException("服务名称格式无效。");
         string preserveNames = string.Join(", ", CreatePreserveSet().Select(path => "'" + EscapePowerShellPath(path) + "'"));
         string content = $$"""
             [CmdletBinding(SupportsShouldProcess = $true)]
@@ -807,6 +838,7 @@ public sealed partial class GatewayUpdatePackageService
             }
             if (-not $SkipServiceControl) {
                 $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+                if (-not $serviceInfo -or $serviceInfo.PathName.IndexOf((Join-Path $targetRoot 'IPC.Gateway.WebHost.dll'), [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'The registered service command does not match this gateway installation.' }
                 $oldPid = [int]$serviceInfo.ProcessId
                 if ($Automatic) {
                     # The web host which launched us may already be shutting down.
@@ -1003,14 +1035,37 @@ public sealed partial class GatewayUpdatePackageService
 
     private ISet<string> CreatePreserveSet()
     {
-        return (_options.PreservePaths ?? Array.Empty<string>())
+        var names = (_options.PreservePaths ?? Array.Empty<string>())
             .Select(item => item.Replace('\\', '/').Trim('/'))
-            .Where(item => !string.IsNullOrWhiteSpace(item) && !item.Contains('/'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (names.Any(name => string.IsNullOrWhiteSpace(name) || name.Contains('/') || name.Contains(':') || name is "." or ".."))
+            throw new InvalidOperationException("保留路径只支持安装目录下的一级目录或文件名，请将子目录配置改为其所属一级目录。");
+        if (names.Any(name => name.Equals("wwwroot", StringComparison.OrdinalIgnoreCase) || name.Equals("Drivers", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals(RuntimeDescriptor, StringComparison.OrdinalIgnoreCase) || name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("保留目录配置不能包含程序、驱动、前端或兼容描述文件。");
+        // Custom exclusions extend, rather than replace, persistent site state.
+        // Never copy a rollback payload into itself through an in-app update store.
+        names.UnionWith(["Data", "logs", "appsettings.json", "appsettings.Production.json", "appsettings.Development.json"]);
+        string install=ResolveInstallDirectory(), updates=Path.TrimEndingDirectorySeparator(ResolveUpdateDirectory());
+        var comparison=OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal;
+        if (string.Equals(install,updates,comparison) || install.StartsWith(updates+Path.DirectorySeparatorChar,comparison))
+            throw new InvalidOperationException("更新目录不能是程序目录本身或其上级目录，请使用独立数据目录或程序目录下的专属子目录。");
+        string relative=Path.GetRelativePath(install,updates);
+        if (!Path.IsPathRooted(relative) && relative!=".." && !relative.StartsWith(".."+Path.DirectorySeparatorChar,StringComparison.Ordinal))
+        {
+            string top=relative.Split(Path.DirectorySeparatorChar)[0];
+            if (top.Equals("wwwroot",StringComparison.OrdinalIgnoreCase) || top.Equals("Drivers",StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("更新目录不能位于前端或驱动目录中。");
+            names.Add(top);
+        }
+        return names;
     }
 
     private void EnsureDirectories()
     {
+        _ = CreatePreserveSet();
         Directory.CreateDirectory(ResolveUpdateDirectory());
         Directory.CreateDirectory(GetIncomingDirectory());
         Directory.CreateDirectory(GetPackagesDirectory());
@@ -1041,7 +1096,7 @@ public sealed partial class GatewayUpdatePackageService
     private string GetStagingDirectory() => Path.Combine(ResolveUpdateDirectory(), "staging");
     private string GetRollbacksDirectory() => Path.Combine(ResolveUpdateDirectory(), "rollbacks");
     private string GetPendingActionPath() => Path.Combine(ResolveUpdateDirectory(), PendingActionFileName);
-    private string GetOfflineScriptPath() => Path.Combine(ResolveUpdateDirectory(), OfflineScriptFileName);
+    private string GetOfflineScriptPath() => Path.Combine(ResolveUpdateDirectory(), OperatingSystem.IsLinux() ? "Linux升级说明.txt" : OfflineScriptFileName);
 
     private static (long SizeBytes, int FileCount) CalculateDirectoryStats(string directory)
     {

@@ -1,0 +1,18 @@
+export const sensitiveAuthMessages:Record<string,string>={
+  '账号状态已变化，请重新加载后保存。':'Your account has changed. Reload before saving.',
+  '高危操作二次验证':'Verify sensitive operation',
+  '验证并继续':'Verify and continue',
+  '此操作需要验证当前登录账号。':'Verify your current account before continuing.',
+  '当前密码':'Current password',
+  '请输入当前密码。':'Enter your current password.',
+  '已取消高危操作。':'Sensitive operation cancelled.',
+  '请先完成当前安全验证。':'Complete the current security verification first.',
+  '请重新打开网页后完成安全验证。':'Reopen the page to complete security verification.',
+  '账号验证过于频繁，请稍后重试。':'Too many account verification attempts. Try again later.',
+  '账号状态已变化，请重新登录。':'Your account has changed. Sign in again.',
+  '安全验证已失效，请重新执行操作。':'Security verification expired. Start the operation again.',
+  '安全验证繁忙，请稍后重试。':'Security verification is busy. Try again later.',
+  '请使用网页登录账号完成二次验证。':'Use a signed-in web account for additional verification.',
+  '此操作需要使用网页登录账号完成二次验证。':'This operation requires additional verification using a web account.',
+  '请验证当前密码后继续此高危操作。':'Verify your current password to continue this sensitive operation.',
+}

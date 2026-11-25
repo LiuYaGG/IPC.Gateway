@@ -2,8 +2,15 @@ import { ref, watch } from 'vue'
 import { english } from './en'
 import { extraEnglish } from './extra'
 import { helpEnglish } from './help'
+import { highAvailabilityEnglish } from './highAvailability'
+import { haDisasterEnglish } from './haDisaster'
+import { haTransportEnglish } from './haTransport'
+import { captchaEnglish } from './captcha'
+import { opcUaEntryEnglish } from './opcUaEntry'
+import { sensitiveAuthMessages } from './sensitiveAuth'
+import { updateCompatibilityEnglish } from './updateCompatibility'
 import { translateRuntimeMessage } from './runtime'
-Object.assign(english, extraEnglish, helpEnglish)
+Object.assign(english, extraEnglish, helpEnglish, highAvailabilityEnglish, haDisasterEnglish, haTransportEnglish, captchaEnglish, opcUaEntryEnglish, sensitiveAuthMessages, updateCompatibilityEnglish)
 
 export type UiLocale = 'zh-CN' | 'en-US'
 export const localeStorageKey = 'ipc.gateway.locale'

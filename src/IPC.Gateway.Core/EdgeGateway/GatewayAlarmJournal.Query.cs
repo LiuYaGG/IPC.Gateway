@@ -34,6 +34,7 @@ public sealed partial class GatewayAlarmJournal
         ValidateQuery(query);
         cancellationToken.ThrowIfCancellationRequested();
         if (allowedDeviceIds is { Count: 0 }) return new(0, [], query.Snapshot ?? 0);
+        if (Shared is { } shared) return shared.Page(query,allowedDeviceIds,size,offset,cancellationToken);
         using var connection = Open();
         using var interrupted = HistoryValueIndex.InterruptOnCancel(connection, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: true);
@@ -76,6 +77,7 @@ public sealed partial class GatewayAlarmJournal
         if (search?.Length > 256 || limit is < 1 or > 1000) throw new ArgumentException("报警筛选参数无效。");
         cancellationToken.ThrowIfCancellationRequested();
         if (allowedDeviceIds is { Count: 0 }) return [];
+        if (Shared is { } shared) return shared.Options(level,query,search,limit,allowedDeviceIds,cancellationToken);
         using var connection = Open();
         using var interrupted = HistoryValueIndex.InterruptOnCancel(connection, cancellationToken);
         using var command = connection.CreateCommand();

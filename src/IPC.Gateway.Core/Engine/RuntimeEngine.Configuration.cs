@@ -120,6 +120,10 @@ namespace IPC.Runtime.Engine
             if (request == null)
                 throw new ArgumentNullException("request");
 
+            var requestContext = PlcWriteRequestContext.Capture();
+            long writeEpoch = _writeAuthority?.Epoch ?? 0;
+            if (_writeAuthority is { CanRunBusiness: false })
+                return CreateWriteErrorResponse(request, "HA_NOT_ACTIVE");
             DeviceConfig? device;
             GroupConfig? group;
             TagConfig? tag;
@@ -179,10 +183,15 @@ namespace IPC.Runtime.Engine
                         GroupConfig? expectedGroup = currentGroup;
                         TagConfig expectedTag = currentTag;
                         bool dispatched = false;
+                        PlcHaWrite? frame = null;
+                        WriteTagResponse WithExecution(WriteTagResponse response)
+                        {
+                            response.WriteExecution = frame?.Result(response.Success);
+                            return response;
+                        }
                         try
                         {
-                            await WriteTagValueAsync(client, writeDeviceState, currentTag, valueText, actorToken,
-                            beforeDispatch: () =>
+                            void CheckTarget()
                             {
                                 // Physical buses and synchronous I/O workers
                                 // can add another wait after actor admission.
@@ -190,23 +199,38 @@ namespace IPC.Runtime.Engine
                                     out _, out _, out _, out string dispatchError))
                                     throw new InvalidOperationException(dispatchError);
                                 actorToken.ThrowIfCancellationRequested();
+                            }
+                            using var flight = _writeAuthority?.TrackWrite(writeEpoch);
+                            frame = _writeAuthority is { RequiresWriteAuthorization: true }
+                                ? new PlcHaWrite(_writeAuthority, writeEpoch, requestContext, client, currentDevice.Connection,
+                                    ResolveTagAddress(currentDevice, currentTag), currentTag.DataType, currentTag.ElementCount,
+                                    currentTag.ElementOffset, valueText, actorToken, CheckTarget, request.Origin, currentDevice.Name)
+                                : null;
+                            await WriteTagValueAsync(client, writeDeviceState, currentTag, valueText, actorToken, () =>
+                            {
+                                CheckTarget();
                                 dispatched = true;
-                            }).ConfigureAwait(false);
+                            }, frame).ConfigureAwait(false);
+                            frame?.Confirm();
                         }
-                        catch (Exception ex) when (dispatched && IsCommunicationException(ex))
+                        catch (Exception ex) when (dispatched && ex is not PlcWriteDeniedException && IsCommunicationException(ex) && (frame == null || frame.Result(false).Outcome == "Unknown"))
                         {
                             // Only a dispatched operation can implicate the connection.
                             // Finish cleanup in the same actor turn before the next command.
                             writeDeviceState.ProtocolCircuitBreaker.RecordFailure(ex.Message);
                             await DropDeviceConnectionAsync(writeDeviceState, ex.Message, CancellationToken.None).ConfigureAwait(false);
-                            return CreateWriteErrorResponse(request, ex.Message);
+                            return WithExecution(CreateWriteErrorResponse(request, ex.Message));
+                        }
+                        catch (Exception ex)
+                        {
+                            return WithExecution(CreateWriteErrorResponse(request, ex.Message));
                         }
                         writeDeviceState.ProtocolCircuitBreaker.RecordSuccess();
 
                         if (!IsCurrentGeneration(runtimeGeneration) ||
                             !TryResolveCurrentWriteTarget(writeDeviceState, currentDevice, currentGroup, currentTag,
                                 out currentDevice, out currentGroup, out currentTag, out _))
-                            return CreateWriteRefreshWarningResponse(device, group, tag, "Write succeeded, but the tag configuration changed before its current value could be refreshed.");
+                            return WithExecution(CreateWriteRefreshWarningResponse(device, group, tag, "Write succeeded, but the tag configuration changed before its current value could be refreshed."));
                         if (CanRead(currentTag))
                         {
                             (bool keepConnected, bool readSucceeded, _) = await ReadTagAsync(client, writeDeviceState, currentGroup, currentTag, runtimeGeneration, actorToken).ConfigureAwait(false);
@@ -215,7 +239,7 @@ namespace IPC.Runtime.Engine
                                 string refreshError = keepConnected
                                     ? "Write succeeded, but the current value could not be refreshed."
                                     : "Write succeeded, but device communication failed while refreshing the current value.";
-                                return CreateWriteRefreshWarningResponse(currentDevice, currentGroup, currentTag, refreshError);
+                                return WithExecution(CreateWriteRefreshWarningResponse(currentDevice, currentGroup, currentTag, refreshError));
                             }
                         }
 
@@ -226,6 +250,7 @@ namespace IPC.Runtime.Engine
 
                         return new WriteTagResponse
                         {
+                            WriteExecution = frame?.Result(true),
                             Success = true,
                             ChannelId = currentDevice.ChannelId,
                             ChannelName = GetChannelName(currentDevice.ChannelId),

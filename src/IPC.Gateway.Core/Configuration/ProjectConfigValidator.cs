@@ -18,6 +18,7 @@
 using System;
 using System.Collections.Generic;
 using IPC.Plc.Communication.Core;
+using IPC.Plc.Communication.Infrastructure;
 using IPC.Runtime.Engine;
 
 namespace IPC.Runtime.Configuration
@@ -154,11 +155,13 @@ namespace IPC.Runtime.Configuration
 
             HashSet<string> tagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> groupNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool validateAddresses = PlcDriverPluginRegistry.IsDriverAvailable(device.Connection, device.Protocol);
 
             if (device.Tags != null)
             {
                 for (int t = 0; t < device.Tags.Count; t++)
-                    ValidateTag(device, null, device.Tags[t], prefix + ".标签[" + (t + 1) + "]", tagNames, tagIds, result);
+                    ValidateTag(device, null, device.Tags[t], prefix + ".标签[" + (t + 1) + "]", tagNames, tagIds, result,
+                        validateProtocolAddress: validateAddresses);
             }
 
             if (device.Groups != null)
@@ -184,7 +187,8 @@ namespace IPC.Runtime.Configuration
                     if (group.Tags != null)
                     {
                         for (int t = 0; t < group.Tags.Count; t++)
-                            ValidateTag(device, group, group.Tags[t], groupPrefix + ".标签[" + (t + 1) + "]", groupTagNames, tagIds, result);
+                            ValidateTag(device, group, group.Tags[t], groupPrefix + ".标签[" + (t + 1) + "]", groupTagNames, tagIds, result,
+                                validateProtocolAddress: validateAddresses);
                     }
                 }
             }
@@ -247,7 +251,8 @@ namespace IPC.Runtime.Configuration
             HashSet<string> tagNames,
             HashSet<string> tagIds,
             ProjectConfigValidationResult result,
-            bool validateDisabled = false)
+            bool validateDisabled = false,
+            bool validateProtocolAddress = true)
         {
             if (tag == null)
             {
@@ -311,6 +316,9 @@ namespace IPC.Runtime.Configuration
                 result.AddError(prefix + "地址不能为空。");
             }
 
+            // The assigned plugin may only be installed on the peer. A local fallback parser
+            // cannot validate that plugin's address syntax on behalf of the whole project.
+            if (!validateProtocolAddress) return;
             string staticValidationError = CompiledDeviceReadPlan.ValidateTagDefinition(device, tag);
             if (!string.IsNullOrWhiteSpace(staticValidationError))
                 result.AddError(prefix + "静态地址校验失败：" + staticValidationError);

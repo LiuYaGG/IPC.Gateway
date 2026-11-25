@@ -2,10 +2,21 @@
 param(
     [ValidatePattern('^[A-Za-z0-9_-]+$')]
     [string]$ServiceName = "IPCGateway",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$All
 )
 
 $ErrorActionPreference = "Stop"
+if ($All) {
+    foreach ($name in @($ServiceName, 'IPCGatewayArbiter','IPCGatewayArbiterA','IPCGatewayArbiterB','IPCGatewayArbiterC') | Select-Object -Unique) {
+        $registered = Get-Service -Name $name -ErrorAction SilentlyContinue
+        if (!$registered) { continue }
+        $expected = if ($name -like 'IPCGatewayArbiter*') { 'IPC Gateway Arbiter' + ($name.Substring('IPCGatewayArbiter'.Length) -replace '^([ABC])$',' $1') } else { 'IPC Gateway Edge Service' }
+        if ($registered.DisplayName -ne $expected) { throw "Unexpected registered service: $name" }
+        & $PSCommandPath -ServiceName $name -Force:$Force -WhatIf:$WhatIfPreference
+    }
+    return
+}
 if (-not $WhatIfPreference) {
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

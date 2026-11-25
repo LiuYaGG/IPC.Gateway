@@ -34,7 +34,7 @@ namespace IPC.Plc.Communication.VirtualPlc
     
     
     
-    public sealed class VirtualPlcClient : IPlcClient, IAsyncPlcClient, IPlcBatchReadClient, IAsyncPlcBatchReadClient
+    public sealed class VirtualPlcClient : IHaGuardedWriteClient, IPlcClient, IAsyncPlcClient, IPlcBatchReadClient, IAsyncPlcBatchReadClient
     {
         private static readonly object StoreLock = new object();
         private static readonly Dictionary<string, Dictionary<string, object>> Stores = new Dictionary<string, Dictionary<string, object>>();
@@ -159,6 +159,7 @@ namespace IPC.Plc.Communication.VirtualPlc
             EnsureConnected();
             string key = NormalizeAddress(address);
             object value = ParseValue(dataType, valueText);
+            PlcHaWrite.BeforeSegment();
 
             lock (StoreLock)
             {

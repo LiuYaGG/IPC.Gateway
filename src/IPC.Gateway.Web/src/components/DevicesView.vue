@@ -1,5 +1,6 @@
 <template>
   <section class="device-workspace" @click="closeContextMenu">
+    <a-alert v-if="!haCanDispatch" type="info" show-icon :message="tx('本机当前不能执行 PLC 写入。')" />
     <a-card size="small" :bordered="false" class="device-command-panel">
       <div class="device-metrics">
         <div>
@@ -680,6 +681,7 @@
       destroy-on-close
       :mask-closable="false"
       v-model:open="writeDrawerVisible"
+      :closable="!writeSaving" :keyboard="!writeSaving"
       :title="tx('写入标签值')"
       width="460px"
     >
@@ -709,16 +711,16 @@
           :help="tx(writeError)"
           :validate-status="writeError ? 'error' : undefined"
         >
-          <gateway-input v-model="writeValueText" :placeholder="tx(writePlaceholder(writeTargetTag))" />
+          <gateway-input v-model="writeValueText" :disabled="writeSaving || writeUncertain" :placeholder="tx(writePlaceholder(writeTargetTag))" />
         </a-form-item>
       </a-form>
       <template #footer>
         <div class="drawer-footer">
-          <a-button @click="writeDrawerVisible = false">{{ tx('取消') }}</a-button>
+          <a-button :disabled="writeSaving" @click="writeDrawerVisible = false">{{ tx('取消') }}</a-button>
           <a-button
             v-if="writeTargetTag && canWriteTag(writeTargetTag)"
             type="primary"
-            :loading="writeSaving"
+            :loading="writeSaving" :disabled="writeUncertain"
             @click="submitWriteTag"
           >
             {{ tx('写入') }}
@@ -746,6 +748,7 @@
 
 <script setup lang="ts">
 import { beginConfigurationSave, endConfigurationSave } from '../utils/configurationSaveState'
+import { haCanDispatch, haIdentity, haWriteHeaders, explainWriteFailure, executionSummary } from '../useHighAvailability'
 import { formatMessage } from '../i18n'
 import { notify } from '../utils/ui'
 import { tx, localizeColumns } from '../i18n'
@@ -1013,6 +1016,7 @@ const tagForm = ref<TagConfig | null>(null)
 const tagFormComponent = ref<InstanceType<typeof DeviceTagForm> | null>(null)
 const writeDrawerVisible = ref(false)
 const writeSaving = ref(false)
+const writeUncertain = ref(false)
 const writeTargetDevice = ref<DeviceConfig | null>(null)
 const writeTargetGroup = ref<GroupConfig | null>(null)
 const writeTargetTag = ref<TagConfig | null>(null)
@@ -1872,8 +1876,9 @@ function tagScalingText(tag: TagConfig) {
 }
 
 function canWriteTag(tag: TagConfig) {
-  return hasTagWritePermission.value && normalizeKey(tag.accessMode) !== 'readonly'
+  return haCanDispatch.value && hasTagWritePermission.value && normalizeKey(tag.accessMode) !== 'readonly'
 }
+let openedWriteIdentity=''
 
 function openWriteTag(tag: TagConfig) {
   if (!selectedDevice.value || !canWriteTag(tag)) return
@@ -1882,7 +1887,9 @@ function openWriteTag(tag: TagConfig) {
   writeTargetTag.value = tag
   writeValueText.value = ''
   writeError.value = ''
+  writeUncertain.value = false
   writeDrawerVisible.value = true
+  openedWriteIdentity=haIdentity.value
 }
 
 function writePlaceholder(tag: TagConfig) {
@@ -1894,12 +1901,19 @@ function writePlaceholder(tag: TagConfig) {
 }
 
 async function submitWriteTag() {
-  if (!writeTargetDevice.value || !writeTargetTag.value) return
+  if (!writeTargetDevice.value || !writeTargetTag.value || writeSaving.value || writeUncertain.value) return
+  if (!haCanDispatch.value) {writeError.value=tx('本机当前不能执行 PLC 写入。');return}
+  if (openedWriteIdentity!==haIdentity.value) {
+    openedWriteIdentity=haIdentity.value
+    writeError.value=tx('业务任期已变化，请重新确认写入。')
+    return
+  }
   const validation = validateWriteValue(writeTargetTag.value, writeValueText.value)
   writeError.value = validation
   if (validation) return
 
   writeSaving.value = true
+  const headers=haWriteHeaders()
   try {
     const result = await writeTag({
       channelId: writeTargetDevice.value.channelId,
@@ -1912,9 +1926,11 @@ async function submitWriteTag() {
       dataType: writeTargetTag.value.dataType,
       valueText: normalizeKey(writeTargetTag.value.dataType) === 'string' ? writeValueText.value : writeValueText.value.trim(),
       timeoutMilliseconds: 10000
-    })
+    }, headers)
     if (!result.success) {
-      writeError.value = result.errorMessage || '写入失败'
+      const execution=result.writeExecution
+      writeUncertain.value=!!execution && ['Unknown','Partial'].includes(execution.outcome)
+      writeError.value=[result.errorMessage || tx('写入失败'),execution?executionSummary(execution):''].filter(Boolean).join(' · ')
       notify.error(writeError.value)
       return
     }
@@ -1928,7 +1944,9 @@ async function submitWriteTag() {
     writeDrawerVisible.value = false
     emit('changed')
   } catch (error) {
-    writeError.value = error instanceof Error ? error.message : '写入失败'
+    const failure=await explainWriteFailure(error,headers,hasPermission(PERMISSIONS.haWritesView))
+    writeUncertain.value=failure.uncertain
+    writeError.value=failure.message
     notify.error(writeError.value)
   } finally {
     writeSaving.value = false

@@ -14,7 +14,7 @@ namespace IPC.Plc.Communication.Cip
     /// 通用 EtherNet/IP 显式消息客户端。与 Rockwell 符号标签驱动分离，
     /// 面向任意实现 CIP Object Model 的设备。
     /// </summary>
-    public sealed class EtherNetIpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public sealed class EtherNetIpClient : IHaGuardedWriteClient, IHaConnectionAdmission, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private readonly PlcConnectionOptions _options;
         private readonly EtherNetIpDriverOptions _driverOptions;
@@ -32,6 +32,12 @@ namespace IPC.Plc.Communication.Cip
 
         public bool IsConnected => _driverOptions.UsesImplicitIo ? _implicitConnected && HasFreshInput(_ioClient) : _inner.IsConnected;
         public PlcProtocol Protocol => PlcProtocol.EtherNetIp;
+
+        public void CheckHaConnection()
+        {
+            // Implicit output assemblies are sent periodically inside the vendor SDK.
+            if (_driverOptions.UsesImplicitIo) throw new PlcWriteDeniedException("HA_AUTONOMOUS_OUTPUT_UNVERIFIED");
+        }
 
         public void Connect()
         {

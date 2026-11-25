@@ -1,3 +1,4 @@
+using IPC.Plc.Communication.Core;
 using NModbus;
 
 namespace IPC.Plc.Communication.ModbusTcp;
@@ -129,12 +130,14 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
                 ushort address = ToUInt16(startAddress + written);
                 if (segmentCount == 1)
                 {
+                    PlcHaWrite.BeforeSegment();
                     _master.WriteSingleCoil(_unitId, address, values[written]);
                 }
                 else
                 {
                     bool[] segment = new bool[segmentCount];
                     Array.Copy(values, written, segment, 0, segmentCount);
+                    PlcHaWrite.BeforeSegment();
                     _master.WriteMultipleCoils(_unitId, address, segment);
                 }
                 written += segmentCount;
@@ -246,12 +249,14 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
                 ushort address = ToUInt16(startAddress + written);
                 if (segmentCount == 1)
                 {
+                    await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
                     await _master.WriteSingleCoilAsync(_unitId, address, values[written]).ConfigureAwait(false);
                 }
                 else
                 {
                     bool[] segment = new bool[segmentCount];
                     Array.Copy(values, written, segment, 0, segmentCount);
+                    await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
                     await _master.WriteMultipleCoilsAsync(_unitId, address, segment).ConfigureAwait(false);
                 }
                 written += segmentCount;
@@ -283,12 +288,14 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
                 ushort address = ToUInt16(startAddress + written);
                 if (segmentCount == 1)
                 {
+                    await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
                     await _master.WriteSingleRegisterAsync(_unitId, address, values[written]).ConfigureAwait(false);
                 }
                 else
                 {
                     ushort[] segment = new ushort[segmentCount];
                     Array.Copy(values, written, segment, 0, segmentCount);
+                    await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
                     await _master.WriteMultipleRegistersAsync(_unitId, address, segment).ConfigureAwait(false);
                 }
                 written += segmentCount;
@@ -321,12 +328,14 @@ public sealed class NModbusMasterAdapter : IModbusMasterAdapter
             ushort address = ToUInt16(startAddress + written);
             if (segmentCount == 1)
             {
+                PlcHaWrite.BeforeSegment();
                 _master.WriteSingleRegister(_unitId, address, values[written]);
             }
             else
             {
                 ushort[] segment = new ushort[segmentCount];
                 Array.Copy(values, written, segment, 0, segmentCount);
+                PlcHaWrite.BeforeSegment();
                 _master.WriteMultipleRegisters(_unitId, address, segment);
             }
             written += segmentCount;

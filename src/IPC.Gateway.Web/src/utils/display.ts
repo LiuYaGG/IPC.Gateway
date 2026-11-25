@@ -171,6 +171,7 @@ const pages: Record<string, string> = {
   project: "项目配置",
   audit: "审计日志",
   security: "工业安全",
+  ha: "高可用",
   maintenance: "安装升级",
   users: "人员管理",
   roles: "角色管理",
@@ -193,6 +194,12 @@ const actions: Record<string, string> = {
   prepare: "准备",
 };
 const permissionOverrides: Record<string, string> = {
+  "ha.view": "查看高可用状态",
+  "ha.config.manage": "管理高可用配置",
+  "ha.disaster.manage": "管理人工灾难接管",
+  "ha.switchover": "计划切换",
+  "ha.maintenance": "设置节点维护状态",
+  "ha.writes.view": "查看 PLC 写授权",
   "history.export": "导出历史记录",
   "alarm.acknowledge": "确认报警",
   "alarm.handle": "处理报警",

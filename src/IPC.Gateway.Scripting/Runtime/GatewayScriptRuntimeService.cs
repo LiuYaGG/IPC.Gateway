@@ -1,7 +1,9 @@
+using IPC.Plc.Communication.Core;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using IPC.Gateway.Scripting.Abstractions;
 using IPC.Gateway.Scripting.Models;
+using IPC.Gateway.Scripting.Persistence;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +14,7 @@ namespace IPC.Gateway.Scripting.Runtime;
 /// </summary>
 public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRuntimeService
 {
+    private readonly IPlcWriteAttemptAuthorizer? _authority;
     private readonly IScriptConfigurationStore _configurationStore;
     private readonly IScriptTagAccessor _tagAccessor;
     private readonly IScriptDatabaseQueue _databaseQueue;
@@ -20,6 +23,8 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
     private readonly GatewayScriptingOptions _options;
     private readonly ILogger<GatewayScriptRuntimeService> _logger;
     private readonly object _scriptsSyncRoot = new();
+    private readonly SemaphoreSlim _reloadGate = new(1, 1);
+    private long _loadedRevision = -1;
     private readonly Dictionary<string, GatewayScriptDefinition> _scripts = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _executionGates = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ScriptRuntimeStatus> _statuses = new(StringComparer.OrdinalIgnoreCase);
@@ -37,8 +42,9 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         GatewayScriptCompiler compiler,
         ValueTransformScriptService valueTransformScripts,
         GatewayScriptingOptions options,
-        ILogger<GatewayScriptRuntimeService> logger)
+        ILogger<GatewayScriptRuntimeService> logger, IPlcWriteAttemptAuthorizer? authority = null)
     {
+        _authority = authority;
         _configurationStore = configurationStore;
         _tagAccessor = tagAccessor;
         _databaseQueue = databaseQueue;
@@ -53,7 +59,19 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
     /// </summary>
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        ScriptConfigurationDocument document = await _configurationStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        await _reloadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var document = _configurationStore is SharedScriptConfigurationStore shared
+                ? await shared.LoadLatestAsync(cancellationToken).ConfigureAwait(false)
+                : await _configurationStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            ApplyConfiguration(document);
+        }
+        finally { _reloadGate.Release(); }
+    }
+
+    private void ApplyConfiguration(ScriptConfigurationDocument document)
+    {
         lock (_scriptsSyncRoot)
         {
             _scripts.Clear();
@@ -62,6 +80,31 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         }
         _valueTransformScripts.Reload(document);
         _nextIntervalUtc.Clear();
+        _loadedRevision = document.PersistenceRevision;
+    }
+
+    private async Task RefreshSharedConfigurationAsync(CancellationToken token)
+    {
+        if (_configurationStore is not SharedScriptConfigurationStore shared) return;
+        await _reloadGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var document = await shared.LoadLatestAsync(token).ConfigureAwait(false);
+            if (document.PersistenceRevision != _loadedRevision) ApplyConfiguration(document);
+        }
+        catch (Exception ex) when (!token.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Shared script revision refresh failed; retaining the last loaded scripts.");
+        }
+        finally { _reloadGate.Release(); }
+    }
+
+    private async Task WatchSharedConfigurationAsync(CancellationToken token)
+    {
+        if (_configurationStore is not SharedScriptConfigurationStore) return;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+            await RefreshSharedConfigurationAsync(token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -116,6 +159,8 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
     {
         _stoppingToken = stoppingToken;
         await ReloadAsync(stoppingToken).ConfigureAwait(false);
+        using var refreshStop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        Task refresh = WatchSharedConfigurationAsync(refreshStop.Token);
         _tagAccessor.TagChanged += HandleTagChanged;
         try
         {
@@ -129,6 +174,9 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         finally
         {
             _tagAccessor.TagChanged -= HandleTagChanged;
+            await refreshStop.CancelAsync().ConfigureAwait(false);
+            try { await refresh.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (refreshStop.IsCancellationRequested) { }
         }
     }
 
@@ -231,6 +279,9 @@ public sealed class GatewayScriptRuntimeService : BackgroundService, IScriptRunt
         ScriptTriggerContext trigger,
         CancellationToken cancellationToken)
     {
+        if (_authority is { CanRunBusiness: false }) throw new PlcWriteDeniedException("HA_NOT_ACTIVE");
+        using var generation = _authority is { IsCluster: true } ha
+            ? PlcWriteRequestContext.BindChildWrites(ha.Epoch) : null;
         SemaphoreSlim gate = _executionGates.GetOrAdd(script.Id, _ => new SemaphoreSlim(1, 1));
         if (!await gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             return RecordSkipped(script.Id, "同一脚本仍在执行，本次触发已跳过。");

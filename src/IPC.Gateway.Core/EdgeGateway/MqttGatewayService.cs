@@ -63,6 +63,7 @@ namespace IPC.EdgeGateway
         private readonly TagValueChangedWorker _tagValueWorker;
         private readonly Dictionary<string, MqttPublishValueState> _lastPublishedValues;
         private readonly GatewayAlarmJournal? _alarmJournal;
+        private readonly Func<bool> _canPublish;
         private readonly object _alarmStatusLock = new();
         private DateTime _nextAlarmStatusRefreshUtc;
         private (long Count, DateTime? OldestUtc) _alarmPending;
@@ -100,7 +101,7 @@ namespace IPC.EdgeGateway
             LocalHistoryService history,
             Action<string, string>? remoteConfigurationHandler,
             CircuitBreakerOptions circuitBreakerOptions,
-            GatewayAlarmJournal? alarmJournal = null)
+            GatewayAlarmJournal? alarmJournal = null, Func<bool>? canPublish = null)
         {
             _runtime = runtime;
             _options = options == null ? new MqttGatewayOptions() : options.Clone();
@@ -111,6 +112,7 @@ namespace IPC.EdgeGateway
             _syncRoot = new object();
             _lastPublishedValues = new Dictionary<string, MqttPublishValueState>(StringComparer.Ordinal);
             _alarmJournal = alarmJournal;
+            _canPublish = canPublish ?? (() => true);
             _outboxStore = new MqttOutboxStore(ResolveOutboxDirectory(_options.OutboxDirectory));
             _tagValueWorker = new TagValueChangedWorker(
                 "IPC MQTT Tag Worker",
@@ -228,6 +230,7 @@ namespace IPC.EdgeGateway
 
         public void Start()
         {
+            if (!_canPublish()) return;
             if (!_options.Enabled)
                 return;
             if (_runtime == null)
@@ -282,7 +285,7 @@ namespace IPC.EdgeGateway
             }
             _tagValueWorker.Stop(TimeSpan.FromSeconds(3));
 
-            TryQueueSparkplugDeath();
+            if (_canPublish()) TryQueueSparkplugDeath();
 
             ManualResetEvent? stopEvent;
             Thread? thread;
@@ -346,7 +349,7 @@ namespace IPC.EdgeGateway
                         MqttWillMessage? willMessage = BuildSparkplugNodeDeathWill(birthSequence);
                         client.ConnectAndReadLoop(BuildSubscribeTopics(), stopEvent, OnClientIdle, willMessage, serviceQueueWhenBusy: true);
                         // Only the socket owner may read protocol acknowledgements.
-                        if (IsSparkplugMode() && client.IsConnected)
+                        if (_canPublish() && IsSparkplugMode() && client.IsConnected)
                             FlushOutbox(client, stopping: true);
                     }
                     catch (Exception ex)
@@ -458,6 +461,7 @@ namespace IPC.EdgeGateway
                     return;
                 }
 
+                request.Origin = "Mqtt";
                 WriteTagResponse response = _runtime.WriteTag(request);
                 if (response != null && response.Success)
                 {
@@ -671,6 +675,7 @@ namespace IPC.EdgeGateway
 
         private void FlushOutbox(SimpleMqttClient client, bool stopping = false)
         {
+            long? epoch = _alarmJournal?.CurrentEpoch;
             if (!client.IsConnected || DateTime.UtcNow < _nextFlushUtc)
                 return;
 
@@ -685,7 +690,7 @@ namespace IPC.EdgeGateway
             // retaining the alarm/ordinary fairness counter across flushes.
             int batchSize = MqttGatewayOptions.ClampPublishFlushBatchSize(_options.PublishFlushBatchSize);
             var turn = Stopwatch.StartNew();
-            while (client.IsConnected && (stopping || IsRunning))
+            while (_canPublish() && client.IsConnected && (stopping || IsRunning))
             {
                 int alarmQuota = AlarmBurst - _consecutiveAlarms;
                 if (alarmQuota > 0 && _alarmJournal != null && DateTime.UtcNow >= _retryAlarmStorageUtc)
@@ -704,8 +709,8 @@ namespace IPC.EdgeGateway
                     }
                     foreach (var alarm in alarms)
                     {
-                        if (!PublishAndConfirm(client, alarm.Topic, Encoding.UTF8.GetBytes(alarm.Payload),
-                            Math.Max(1, alarm.Qos), () => _alarmJournal.ConfirmSent(alarm.EventId)))
+                        if (!PublishAndConfirm(client, epoch, alarm.Topic, Encoding.UTF8.GetBytes(alarm.Payload),
+                            Math.Max(1, alarm.Qos), () => _alarmJournal.ConfirmSent(alarm.EventId, epoch)))
                             return;
                         _consecutiveAlarms++;
                         if (!stopping && (turn.ElapsedMilliseconds >= 250 || !IsRunning)) return;
@@ -724,7 +729,7 @@ namespace IPC.EdgeGateway
                 {
                     var entry = _outboxStore.ClaimForSend(candidate);
                     if (entry == null) continue;
-                    if (!PublishAndConfirm(client, entry.Message.Topic, entry.Message.GetPayloadBytes(),
+                    if (!PublishAndConfirm(client, epoch, entry.Message.Topic, entry.Message.GetPayloadBytes(),
                         entry.Message.Qos, () => _outboxStore.Delete(entry)))
                         return;
                     _consecutiveAlarms = 0;
@@ -733,12 +738,16 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private bool PublishAndConfirm(SimpleMqttClient client, string topic, byte[] payload, int qos, Action confirm)
+        private bool PublishAndConfirm(SimpleMqttClient client, long? epoch, string topic, byte[] payload, int qos, Action confirm)
         {
+            if (!_canPublish() || _alarmJournal?.CurrentEpoch != epoch) return false;
             var result = client.Publish(topic, payload, qos,
                 MqttGatewayOptions.ClampAckTimeoutMilliseconds(_options.PublishAckTimeoutMilliseconds));
             if (result.Success)
             {
+                // Keep an ACK which arrived across a handover eligible for delivery by the new owner.
+                // Its stable ID lets subscribers de-duplicate this at-least-once delivery.
+                if (!_canPublish() || _alarmJournal?.CurrentEpoch != epoch) return false;
                 confirm();
                 _circuitBreaker.RecordSuccess();
                 _flushFailureCount = 0;

@@ -28,6 +28,9 @@ public sealed class GatewayUpdateMaintenanceOptions
     public int MaxPackageMegabytes { get; set; } = 1024;
     public int KeepRollbackCount { get; set; } = 1;
     public int ServiceTransitionTimeoutSeconds { get; set; } = 300;
+    public string ServiceName { get; set; } = string.Empty;
+    public string LinuxWorkerConfiguration { get; set; } = string.Empty;
+    public string HaStateDirectory { get; set; } = string.Empty;
     public bool RequirePackageFileDigests { get; set; } = true;
     public bool RequirePackageSignature { get; set; }
     public string TrustedPackagePublicKeyPath { get; set; } = string.Empty;
@@ -53,6 +56,9 @@ public sealed class GatewayUpdateMaintenanceOptions
             MaxPackageMegabytes = GetInt(section, "MaxPackageMegabytes", defaults.MaxPackageMegabytes),
             KeepRollbackCount = GetInt(section, "KeepRollbackCount", defaults.KeepRollbackCount),
             ServiceTransitionTimeoutSeconds = Math.Clamp(GetInt(section, "ServiceTransitionTimeoutSeconds", defaults.ServiceTransitionTimeoutSeconds), 1, 86400),
+            ServiceName = section["ServiceName"] ?? string.Empty,
+            LinuxWorkerConfiguration = section["LinuxWorkerConfiguration"] ?? string.Empty,
+            HaStateDirectory = configuration["Gateway:HighAvailability:StateDirectory"] ?? string.Empty,
             RequirePackageFileDigests = GetBool(section, "RequirePackageFileDigests", defaults.RequirePackageFileDigests),
             RequirePackageSignature = GetBool(section, "RequirePackageSignature", defaults.RequirePackageSignature),
             TrustedPackagePublicKeyPath = section["TrustedPackagePublicKeyPath"] ?? defaults.TrustedPackagePublicKeyPath,
@@ -82,6 +88,7 @@ public sealed class GatewayUpdatePackageManifest
     public string PackageType { get; set; } = "Upgrade";
     public string Version { get; set; } = string.Empty;
     public string MinVersion { get; set; } = string.Empty;
+    public GatewayPackageCompatibility? Compatibility { get; set; }
     public DateTime CreatedTime { get; set; } = DateTime.UtcNow;
     public string BuildId { get; set; } = string.Empty;
     public string EntryDirectory { get; set; } = "payload";
@@ -127,6 +134,7 @@ public sealed class GatewayUpdatePackageRecord
 
 public sealed class GatewayRollbackPoint
 {
+    public GatewayPackageCompatibility? Compatibility { get; set; }
     public string RollbackId { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
     public string SourcePackageId { get; set; } = string.Empty;
@@ -138,6 +146,9 @@ public sealed class GatewayRollbackPoint
 
 public sealed class GatewayPendingUpdateAction
 {
+    public string[] PreservePaths { get; set; } = [];
+    public int ProgressPercent { get; set; }
+    public string ProgressMessage { get; set; } = string.Empty;
     public string ActionId { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
     public string PackageId { get; set; } = string.Empty;
@@ -172,6 +183,8 @@ public sealed class GatewayUpdateProgress
 
 public sealed class GatewayUpdateStatus
 {
+    public string ApplySupportMessage { get; set; } = string.Empty;
+    public GatewayPackageCompatibility? RuntimeCompatibility { get; set; }
     public bool Enabled { get; set; }
     public bool SupportsApply { get; set; }
     public int MaxPackageMegabytes { get; set; }

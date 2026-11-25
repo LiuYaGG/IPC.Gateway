@@ -1,3 +1,4 @@
+import { requestSensitiveApproval } from './utils/sensitiveOperation'
 import { beginConfigurationSave, endConfigurationSave } from './utils/configurationSaveState'
 import { sendMultipartFile, type FileUploadProgress } from './utils/multipartUpload'
 
@@ -381,6 +382,9 @@ export interface RuntimeErrorDetail {
 }
 
 export interface RuntimeEventEnvelope<T> {
+  clusterId?: string;
+  epoch?: string;
+  sourceInstanceId?: string;
   sequence: number;
   type: string;
   timestamp: string;
@@ -1155,6 +1159,8 @@ export interface MqttRuntimeStatus {
 }
 
 export interface OpcUaServerRuntimeStatus {
+  advertisedEndpointUrl?: string;
+  listenEndpointUrl?: string;
   enabled: boolean;
   isRunning: boolean;
   applicationName: string;
@@ -1173,6 +1179,9 @@ export interface OpcUaServerRuntimeStatus {
 }
 
 export interface OpcUaServerConfig {
+  advertisedEndpointUrl?: string;
+  listenEndpointUrl?: string;
+  certificateAlternativeNames?: string[];
   enabled: boolean;
   applicationName: string;
   applicationUri: string;
@@ -1380,6 +1389,7 @@ export interface WriteTagCommand {
 }
 
 export interface WriteTagResult {
+  writeExecution?: PlcWriteExecution
   success: boolean;
   channelId: string;
   channelName: string;
@@ -1395,8 +1405,25 @@ export interface WriteTagResult {
   errorMessage?: string;
   currentValueText: string;
 }
+export interface PlcWriteExecution {
+  commandId:string
+  lastAttemptId?:string
+  confirmedSegments:number
+  outcome:string
+}
 
+export interface GatewayPackageCompatibility {
+  minimumGlibcVersion?: string;
+  operatingSystem: string;
+  architecture: string;
+  runtimeIdentifier: string;
+  targetFramework: string;
+  requiredDotNetMajor: number;
+  minimumHaStateVersion: number;
+  maximumHaStateVersion: number;
+}
 export interface GatewayUpdatePackageManifest {
+  compatibility?: GatewayPackageCompatibility;
   manifestVersion: number;
   packageId: string;
   product: string;
@@ -1455,6 +1482,8 @@ export interface GatewayRollbackPoint {
 }
 
 export interface GatewayPendingUpdateAction {
+  progressPercent?: number;
+  progressMessage?: string;
   actionId: string;
   actionType: string;
   packageId: string;
@@ -1474,6 +1503,8 @@ export interface GatewayPendingUpdateAction {
 }
 
 export interface GatewayUpdateStatus {
+  applySupportMessage?: string;
+  runtimeCompatibility?: GatewayPackageCompatibility;
   enabled: boolean;
   supportsApply?: boolean;
   maxPackageMegabytes?: number;
@@ -1698,15 +1729,13 @@ export async function request<T>(url: string, init?: RequestInit, legacyFallback
   if (saving) beginConfigurationSave();
   try {
   let response: Response;
+  let approvalTicket:string|undefined;
+  for(let attempt=0;;attempt++){
   try {
-    response = await fetch(url, {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-      ...init,
-    });
+    const headers=new Headers(init?.headers);
+    if(!headers.has("Content-Type"))headers.set("Content-Type","application/json");
+    if(approvalTicket)headers.set("X-IPC-Reauth",approvalTicket);
+    response = await fetch(url, { ...init, credentials: "include", headers });
   } catch (error) {
     if (isAbortError(error)) throw error;
     throw new NetworkRequestError(
@@ -1722,7 +1751,16 @@ export async function request<T>(url: string, init?: RequestInit, legacyFallback
   }
   if (!response.ok) {
     const payload = (await response.json().catch(() => undefined)) as
-      { errorMessage?: string; errorCode?: string; state?: string } | undefined;
+      { errorMessage?: string; errorCode?: string; state?: string; reauthContext?:string } | undefined;
+    if(response.status===403 && payload?.errorCode==="REAUTH_REQUIRED" && payload.reauthContext && attempt===0 && typeof init?.body!=="object") {
+      try { approvalTicket=await requestSensitiveApproval(payload.reauthContext,init?.signal); }
+      catch (error) {
+        if(isAbortError(error))throw error;
+        throw new HttpRequestError(403,error instanceof Error?error.message:String(error),"REAUTH_NOT_COMPLETED");
+      }
+      if(init?.signal?.aborted)throw new DOMException("Aborted","AbortError");
+      continue;
+    }
     const message = localizeErrorMessage(payload?.errorMessage);
     if (response.status === 401) throw new SessionExpiredError(message || "登录已过期，请重新登录");
     if (response.status === 503 && (payload?.state === 'starting' || payload?.state === 'failed' || payload?.state === 'stopping'))
@@ -1731,6 +1769,7 @@ export async function request<T>(url: string, init?: RequestInit, legacyFallback
   }
 
   return (await response.json()) as T;
+  }
   } finally { if (saving) endConfigurationSave(); }
 }
 
@@ -1765,12 +1804,49 @@ async function requestHealth<T>(url: string, signal?: AbortSignal): Promise<T> {
   return payload as T;
 }
 
-export async function login(username: string, password: string) {
+export interface GatewayCaptchaChallenge {
+  success: boolean;
+  challengeId: string;
+  backgroundImage: string;
+  pieceImage: string;
+  width: number;
+  height: number;
+  pieceWidth: number;
+  pieceHeight: number;
+  pieceY: number;
+  expiresAt: string;
+}
+
+export interface GatewayCaptchaVerification {
+  success: boolean;
+  verificationToken: string;
+  expiresAt: string;
+}
+
+export async function createCaptchaChallenge(signal?: AbortSignal) {
+  const result = await request<GatewayCaptchaChallenge & { errorMessage?: string }>(
+    "/api/auth/captcha/challenge",
+    { method: "POST", signal, cache: "no-store" },
+  );
+  if (!result.success) throw new Error(result.errorMessage || "验证码加载失败，请刷新重试");
+  return result;
+}
+
+export async function verifyCaptcha(challengeId: string, offsetX: number, signal?: AbortSignal) {
+  const result = await request<GatewayCaptchaVerification & { errorMessage?: string }>(
+    "/api/auth/captcha/verify",
+    { method: "POST", body: JSON.stringify({ challengeId, offsetX }), signal, cache: "no-store" },
+  );
+  if (!result.success) throw new Error(result.errorMessage || "拼图验证失败，请重新验证");
+  return result;
+}
+
+export async function login(username: string, password: string, captchaToken: string) {
   return request<{ success: boolean; token: string; errorMessage?: string }>(
     "/api/auth/login",
     {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, captchaToken }),
     },
   );
 }
@@ -2640,10 +2716,11 @@ export async function deleteTag(tagId: string) {
   return result.data;
 }
 
-export async function writeTag(command: WriteTagCommand) {
+export async function writeTag(command: WriteTagCommand, headers?: Record<string,string>) {
   const result = await request<ApiResult<WriteTagResult>>(
     "/api/config/tags/write",
     {
+      headers: { 'Content-Type':'application/json', ...headers },
       method: "POST",
       body: JSON.stringify(command),
     },

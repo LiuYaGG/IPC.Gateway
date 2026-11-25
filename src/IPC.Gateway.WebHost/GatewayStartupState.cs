@@ -5,6 +5,7 @@ public sealed class GatewayStartupState
     private string _state = "starting";
     private readonly TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public Task Listening => _listening.Task;
+    public bool IsReady => Volatile.Read(ref _state) == "ready";
     public void MarkListening() => _listening.TrySetResult();
 
     public void MarkReady() => Interlocked.CompareExchange(ref _state, "ready", "starting");
@@ -23,7 +24,9 @@ public sealed class GatewayStartupState
             await context.Response.WriteAsJsonAsync(new { state }, context.RequestAborted);
             return true;
         }
-        if (state == "ready") return false;
+        if (state == "ready" || request.Path.StartsWithSegments("/api/ha") ||
+            request.Path.StartsWithSegments("/health/ha-active") || request.Path.StartsWithSegments("/health/ha-node") ||
+            request.Path.StartsWithSegments("/health/opcua-active")) return false;
         if (!(request.Path.StartsWithSegments("/api") || request.Path.StartsWithSegments("/health") ||
             path.Equals(metricsPath, StringComparison.OrdinalIgnoreCase))) return false;
 
@@ -34,6 +37,11 @@ public sealed class GatewayStartupState
             path.Equals("/api/maintenance/updates/progress", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase))) return false;
         if (HttpMethods.IsPost(request.Method) && (path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/auth/captcha/challenge", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/auth/captcha/verify", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/auth/reauth", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/maintenance/updates/stop-admission", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/maintenance/updates/worker-ready", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("/api/auth/logout", StringComparison.OrdinalIgnoreCase))) return false;
 
         string errorMessage = state switch

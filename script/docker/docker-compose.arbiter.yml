@@ -1,0 +1,26 @@
+services:
+  arbiter:
+    image: ${IPC_ARBITER_IMAGE:?Specify a versioned arbiter image}
+    build:
+      context: ../..
+      dockerfile: script/docker/仲裁.Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      - Arbiter__CertificatePassword
+      - IPC_ARBITER_CONFIG=${IPC_ARBITER_MOUNT:-/etc/ipc-arbiter}/member.json
+      - IPC_ARBITER_EXPECTED_NODE=${IPC_ARBITER_NODE:?Specify member A, B or C}
+      - Arbiter__StateDirectory=/var/lib/ipc-arbiter
+    ports:
+      - "${IPC_ARBITER_CLIENT_PORT:-7281}:${IPC_ARBITER_CLIENT_PORT:-7281}"
+      - "${IPC_ARBITER_PEER_PORT:-7282}:${IPC_ARBITER_PEER_PORT:-7282}"
+    volumes:
+      - type: bind
+        source: ${IPC_ARBITER_CONFIG_DIR:?Specify the local node configuration and certificate directory}
+        target: ${IPC_ARBITER_MOUNT:-/etc/ipc-arbiter}
+        # This dedicated identity volume also stores signed, pending transport changes.
+        read_only: false
+      - state:/var/lib/ipc-arbiter
+volumes:
+  state:
+    name: ${IPC_ARBITER_VOLUME:?Specify the persistent volume for this voter}

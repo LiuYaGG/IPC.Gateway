@@ -141,6 +141,9 @@ namespace IPC.Runtime.Engine
         private TagRuntimeIndex? _index;
         private Timer? _timer;
         private int _isScheduling;
+        private long _lastSchedulerTick;
+        public long LastSchedulerTick => Interlocked.Read(ref _lastSchedulerTick);
+        private readonly IPlcWriteAttemptAuthorizer? _writeAuthority;
         private int _runtimeGeneration;
         private bool _disposed;
 
@@ -159,8 +162,9 @@ namespace IPC.Runtime.Engine
         /// </summary>
         public RuntimeEngine(
             RuntimeSchedulerOptions schedulerOptions,
-            IValueTransformScriptRuntime? valueTransformScripts)
+            IValueTransformScriptRuntime? valueTransformScripts, IPlcWriteAttemptAuthorizer? writeAuthority = null)
         {
+            _writeAuthority = writeAuthority;
             RuntimeSchedulerOptions options = (schedulerOptions ?? new RuntimeSchedulerOptions()).Normalize();
             _syncRoot = new object();
             _deviceStatesById = new Dictionary<string, DeviceRuntimeState>();
@@ -241,6 +245,7 @@ namespace IPC.Runtime.Engine
 
         public void Start(ProjectConfig config)
         {
+            if (_writeAuthority is { CanRunBusiness: false }) throw new PlcWriteDeniedException("HA_NOT_ACTIVE");
             if (config == null)
                 throw new ArgumentNullException("config");
 
@@ -987,6 +992,7 @@ namespace IPC.Runtime.Engine
             if (Interlocked.Exchange(ref _isScheduling, 1) == 1)
                 return;
 
+            bool completed = true;
             try
             {
                 ProjectConfig? config;
@@ -1121,9 +1127,12 @@ namespace IPC.Runtime.Engine
             }
             catch
             {
+                completed = false;
             }
             finally
             {
+                if (completed && IsCurrentGeneration(runtimeGeneration))
+                    Interlocked.Exchange(ref _lastSchedulerTick, System.Diagnostics.Stopwatch.GetTimestamp());
                 Interlocked.Exchange(ref _isScheduling, 0);
             }
         }
@@ -1572,6 +1581,8 @@ namespace IPC.Runtime.Engine
                         deviceState,
                         token =>
                         {
+                            if (_writeAuthority is { IsCluster: true } && newClient is IHaConnectionAdmission admission)
+                                admission.CheckHaConnection();
                             RecordRecoveryOperationStart(deviceState);
                             return PlcClientInvoker.ConnectAsync(newClient, token);
                         },
@@ -2861,7 +2872,7 @@ namespace IPC.Runtime.Engine
             TagConfig tag,
             string valueText,
             CancellationToken cancellationToken,
-            Action? beforeDispatch = null)
+            Action? beforeDispatch = null, PlcHaWrite? writeFrame = null)
         {
             DeviceConfig device = deviceState.Config;
             int elementOffset = Math.Max(0, tag.ElementOffset);
@@ -2872,6 +2883,7 @@ namespace IPC.Runtime.Engine
                     await ExecutePlcOperationAsync(deviceState,
                         token =>
                         {
+                            using var haScope = writeFrame?.Enter();
                             beforeDispatch?.Invoke();
                             return stringWriter.WriteStringAsync(ResolveTagAddress(device, tag), valueText,
                                 tag.ElementCount, elementOffset, token);
@@ -2887,6 +2899,7 @@ namespace IPC.Runtime.Engine
                         deviceState,
                         token => PlcClientInvoker.InvokeSynchronousAsync(delegate
                         {
+                            using var haScope = writeFrame?.Enter();
                             beforeDispatch?.Invoke();
                             try
                             {
@@ -2910,11 +2923,13 @@ namespace IPC.Runtime.Engine
                 {
                     if (client is IAsyncPlcClient asyncClient && PlcClientInvoker.GetCapabilities(client).SupportsNativeAsync)
                     {
+                        using var haScope = writeFrame?.Enter();
                         beforeDispatch?.Invoke();
                         return asyncClient.WriteAsync(ResolveTagAddress(device, tag), tag.DataType, valueText, elementOffset, token);
                     }
                     return PlcClientInvoker.InvokeSynchronousAsync(() =>
                     {
+                        using var haScope = writeFrame?.Enter();
                         beforeDispatch?.Invoke();
                         client.Write(ResolveTagAddress(device, tag), tag.DataType, valueText, elementOffset);
                     }, token);

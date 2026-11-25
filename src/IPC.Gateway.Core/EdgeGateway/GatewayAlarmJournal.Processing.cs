@@ -151,6 +151,7 @@ public sealed partial class GatewayAlarmJournal
 
     public IReadOnlyList<GatewayAlarmRecord> ReadOpenRuleAlarms()
     {
+        if (Shared is { } shared) return shared.ReadOpenRules();
         using var db = Open();
         using var sql = db.CreateCommand();
         sql.CommandText = """
@@ -179,6 +180,7 @@ public sealed partial class GatewayAlarmJournal
             throw new ArgumentException("Invalid alarm action.");
 
         cancellationToken.ThrowIfCancellationRequested();
+        if (Shared is { } shared) return shared.ApplyAction(eventId,action,operatorId,operatorName,note,cancellationToken);
         using var connection = Open();
         using var interrupted = HistoryValueIndex.InterruptOnCancel(connection, cancellationToken);
         using var transaction = connection.BeginTransaction();

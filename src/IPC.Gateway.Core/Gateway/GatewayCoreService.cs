@@ -1,4 +1,4 @@
-/*----------------------------------------------------------------
+﻿/*----------------------------------------------------------------
 * 项目名称 ：IPC.Gateway.Core.Gateway
 * 项目描述 ：
 * 类 名 称 ：GatewayCoreService
@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using IPC;
 using IPC.EdgeGateway;
@@ -48,6 +49,7 @@ namespace IPC.Gateway.Core.Gateway
         private readonly object _syncRoot;
         private readonly SemaphoreSlim _configurationMutationSemaphore;
         private readonly IGatewayConfigurationRepository _configurationStore;
+        public IPlcWriteAttemptAuthorizer? WriteAuthority { get; }
         private readonly GatewayRuntimeStateCache _runtimeStateCache;
         private readonly GatewayRuntimeOptions _runtimeOptions;
         private readonly SystemResourceMonitor _systemResources;
@@ -83,21 +85,23 @@ namespace IPC.Gateway.Core.Gateway
             IFlowRuleEngineFactory? flowRuleEngineFactory = null,
             IModelInferenceService? modelInference = null,
             IValueTransformScriptRuntime? valueTransformScripts = null,
-            GatewayMessageLanguage? messageLanguage = null)
+            GatewayMessageLanguage? messageLanguage = null,
+            IPlcWriteAttemptAuthorizer? writeAuthority = null)
         {
+            WriteAuthority = writeAuthority;
             _syncRoot = new object();
             _configurationMutationSemaphore = new SemaphoreSlim(1, 1);
             _runtimeOptions = runtimeOptions == null ? new GatewayRuntimeOptions() : runtimeOptions;
             if (_runtimeOptions.Resilience == null)
                 _runtimeOptions.Resilience = new GatewayResilienceOptions();
             _configurationStore = GatewayStartupTiming.Measure("准备配置数据库", () =>
-                new SqlSugarGatewayConfigurationRepository(_runtimeOptions.Database, _runtimeOptions.SecretProtection));
+                new SqlSugarGatewayConfigurationRepository(_runtimeOptions.Database, _runtimeOptions.SecretProtection, writeAuthority as IGatewayDatabaseOwner));
             _runtimeStateCache = new GatewayRuntimeStateCache();
             _systemResources = new SystemResourceMonitor();
             _flowRuleEngineFactory = flowRuleEngineFactory ?? new NoopFlowRuleEngineFactory();
             _modelInference = modelInference ?? NoopModelInferenceService.Instance;
             _valueTransformScripts = valueTransformScripts ?? NoopValueTransformScriptRuntime.Instance;
-            Runtime = GatewayStartupTiming.Measure("创建采集引擎", () => new RuntimeEngine(_runtimeOptions.Scheduler, _valueTransformScripts));
+            Runtime = GatewayStartupTiming.Measure("创建采集引擎", () => new RuntimeEngine(_runtimeOptions.Scheduler, _valueTransformScripts, writeAuthority));
             _mqttOptions = GatewayStartupTiming.Measure("读取MQTT配置", () => _configurationStore.LoadOrCreateMqtt(mqttOptions));
             _opcUaOptions = GatewayStartupTiming.Measure("读取OPC-UA配置", () => _configurationStore.LoadOrCreateOpcUa(opcUaOptions));
             _historyOptions = GatewayStartupTiming.Measure("读取历史库配置", () => _configurationStore.LoadOrCreateHistory(historyOptions));
@@ -107,12 +111,12 @@ namespace IPC.Gateway.Core.Gateway
             string dataRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(
                 Path.GetFullPath(historyDirectory, AppContext.BaseDirectory))) ?? AppContext.BaseDirectory;
             AlarmJournal = new GatewayAlarmJournal(Path.Combine(dataRoot, "Alarms", "alarms.sqlite"),
-                () => Volatile.Read(ref _historyOptions));
+                () => Volatile.Read(ref _historyOptions), _runtimeOptions.Database, writeAuthority as IGatewayDatabaseOwner);
             _alarmConsumer = new ThresholdAlarmConsumer((RuntimeEngine)Runtime, AlarmJournal, () => Volatile.Read(ref _mqttOptions), messageLanguage);
             _storageHealthThresholds = GatewayStartupTiming.Measure("读取存储健康配置", () => _configurationStore.LoadOrCreateStorageHealth(storageHealthThresholds));
             SetCurrentProject(new ProjectConfig());
             _lastValidation = new ProjectConfigValidationResult();
-            _history = GatewayStartupTiming.Measure("准备本地历史库", () => new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History));
+            _history = GatewayStartupTiming.Measure("准备本地历史库", CreateHistoryService);
             _mqtt = GatewayStartupTiming.Measure("准备MQTT发件箱", CreateMqttService);
             _opcUa = CreateOpcUaService();
             _flowRuleEngine = CreateFlowRuleEngine();
@@ -175,6 +179,77 @@ namespace IPC.Gateway.Core.Gateway
             }
         }
 
+        private bool _standbyPrepared;
+        private string? _preparedConfiguration;
+        public string ReadActiveConfigurationVersions()
+        {
+            using var db = new SqlSugarConnectionFactory(_runtimeOptions.Database).Create();
+            return ReadActiveConfigurationVersions(db);
+        }
+
+        private static string ReadActiveConfigurationVersions(SqlSugar.ISqlSugarClient db)
+        {
+            var rows = db.Queryable<GatewayConfigurationEntity>().Where(r => r.Active)
+                .Select(r => new { r.ConfigType, r.Version }).ToList();
+            return string.Join("|", rows.OrderBy(r => r.ConfigType, StringComparer.Ordinal).Select(r => r.ConfigType + "=" + r.Version));
+        }
+        public TimeSpan HaProgressTimeout => TimeSpan.FromMilliseconds(Math.Max(5000, 3 * (_runtimeOptions.Scheduler?.SchedulerIntervalMs ?? 50)));
+
+        public string PrepareStandby(CancellationToken cancellationToken)
+        {
+            lock (_syncRoot)
+            {
+                if (Runtime.IsRunning) throw new InvalidOperationException("HA_BUSINESS_NOT_DRAINED");
+                var version = ReadActiveConfigurationVersions();
+                if (_standbyPrepared && version == _preparedConfiguration) return version;
+                _standbyPrepared = false;
+                ApplyHistoryOptions(_configurationStore.LoadOrCreateHistory(_historyOptions), false);
+                ApplyMqttOptions(_configurationStore.LoadOrCreateMqtt(_mqttOptions), false);
+                ApplyOpcUaOptions(_configurationStore.LoadOrCreateOpcUa(_opcUaOptions), false);
+                _storageHealthThresholds = _configurationStore.LoadOrCreateStorageHealth(_storageHealthThresholds);
+                PrepareRuntimeDependencies(cancellationToken, (name, step) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    GatewayStartupTiming.Measure(name, step);
+                });
+                if (version != ReadActiveConfigurationVersions()) throw new InvalidOperationException("HA_CONFIGURATION_CHANGED");
+                _standbyPrepared = true;
+                return _preparedConfiguration = version;
+            }
+        }
+
+        private void PrepareRuntimeDependencies(CancellationToken cancellationToken, Action<string, Action> RunStep)
+        {
+            RunStep("从数据库加载项目", () => SetCurrentProject(LoadProject()));
+            RunStep("并行准备运行依赖", () =>
+            {
+                using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                // At most two script compiler workers plus one certificate preparation worker.
+                // Neither job starts acquisition or exposes partially processed tag values.
+                Task scripts = Task.Run(() => GatewayStartupTiming.MeasureAsync("预编译项目引用脚本",
+                    () => _valueTransformScripts.PrepareProjectAsync(_project, preparation.Token)), preparation.Token);
+                Task certificates = Task.Run(() => GatewayStartupTiming.Measure("准备OPC-UA配置与证书", _opcUa.Prepare), preparation.Token);
+                Task dependencies = Task.WhenAll(scripts, certificates);
+                try
+                {
+                    RunStep("校验项目与协议驱动", () =>
+                    {
+                        _lastValidation = ProjectConfigValidator.Validate(_project);
+                        if (!_lastValidation.IsValid)
+                            throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
+                    });
+                    dependencies.GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    preparation.Cancel();
+                    // Join before the host can dispose services used by an initialization worker.
+                    try { dependencies.GetAwaiter().GetResult(); } catch { }
+                    throw;
+                }
+            });
+        }
+
         public void Start() => Start(CancellationToken.None);
 
         public void Start(CancellationToken cancellationToken)
@@ -182,6 +257,7 @@ namespace IPC.Gateway.Core.Gateway
             void RunStep(string name, Action start)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (WriteAuthority is { CanRunBusiness: false }) throw new PlcWriteDeniedException("HA_NOT_ACTIVE");
                 GatewayStartupTiming.Measure(name, start);
             }
 
@@ -190,35 +266,29 @@ namespace IPC.Gateway.Core.Gateway
                 if (Runtime.IsRunning)
                     return;
 
-                RunStep("从数据库加载项目", () => SetCurrentProject(LoadProject()));
-                RunStep("并行准备运行依赖", () =>
-                {
-                    using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    // At most two script compiler workers plus one certificate preparation worker.
-                    // Neither job starts acquisition or exposes partially processed tag values.
-                    Task scripts = Task.Run(() => GatewayStartupTiming.MeasureAsync("预编译项目引用脚本",
-                        () => _valueTransformScripts.PrepareProjectAsync(_project, preparation.Token)), preparation.Token);
-                    Task certificates = Task.Run(() => GatewayStartupTiming.Measure("准备OPC-UA配置与证书", _opcUa.Prepare), preparation.Token);
-                    Task dependencies = Task.WhenAll(scripts, certificates);
-                    try
+                if (WriteAuthority is IGatewayDatabaseOwner { IsCluster: true } owner)
+                    RunStep("在业务库登记仲裁任期", () =>
                     {
-                        RunStep("校验项目与协议驱动", () =>
+                        using var db = new SqlSugarConnectionFactory(_runtimeOptions.Database).Create();
+                        db.Ado.BeginTran();
+                        try
                         {
-                            _lastValidation = ProjectConfigValidator.Validate(_project);
-                            if (!_lastValidation.IsValid)
-                                throw new InvalidOperationException("项目配置校验失败：" + string.Join("；", _lastValidation.Errors.ToArray()));
-                        });
-                        RunStep("恢复报警状态", _alarmConsumer.Start);
-                        dependencies.GetAwaiter().GetResult();
-                    }
-                    catch
-                    {
-                        preparation.Cancel();
-                        // Join before the host can dispose services used by an initialization worker.
-                        try { dependencies.GetAwaiter().GetResult(); } catch { }
-                        throw;
-                    }
-                });
+                            GatewayDatabaseOwnership.Install(db,owner);
+                            if (_standbyPrepared && _preparedConfiguration != ReadActiveConfigurationVersions(db))
+                            {
+                                _standbyPrepared=false;
+                                throw new PlcWriteDeniedException("HA_CONFIG_CHANGED");
+                            }
+                            db.Ado.CommitTran();
+                        }
+                        catch { db.Ado.RollbackTran(); throw; }
+                    });
+                if (_standbyPrepared && _preparedConfiguration != ReadActiveConfigurationVersions())
+                    throw new PlcWriteDeniedException("HA_CONFIGURATION_CHANGED");
+                if (!_standbyPrepared) PrepareRuntimeDependencies(cancellationToken, RunStep);
+                _standbyPrepared = false;
+                cancellationToken.ThrowIfCancellationRequested();
+                RunStep("恢复报警状态", _alarmConsumer.Start);
 
                 RunStep("启动采集调度", () => Runtime.Start(_project));
                 RunStep("初始化设备与点位内存状态", () => _runtimeStateCache.Start(Runtime, _runtimeScope.Tags));
@@ -283,7 +353,7 @@ namespace IPC.Gateway.Core.Gateway
                 try
                 {
                     wasRunning = Runtime.IsRunning;
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                         MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(_project, project));
@@ -299,7 +369,7 @@ namespace IPC.Gateway.Core.Gateway
                     MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
                     MeasureReloadStep(reloadSteps, "SaveProject", () => _configurationStore.SaveProject(_project, "WebApi", "保存项目配置"));
 
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         MeasureReloadStep(reloadSteps, "StartRuntime", () => Runtime.Start(_project));
                         MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags));
@@ -386,7 +456,7 @@ namespace IPC.Gateway.Core.Gateway
                     try
                     {
                         wasRunning = Runtime.IsRunning;
-                        if (wasRunning)
+                        if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                         {
                             MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                             MeasureReloadStep(reloadSteps, "PrepareRuntimeStateCacheReload", () => _runtimeStateCache.PrepareRuntimeReload(_project, project));
@@ -401,7 +471,7 @@ namespace IPC.Gateway.Core.Gateway
                         });
                         MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
 
-                        if (wasRunning)
+                        if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                         {
                             MeasureReloadStep(reloadSteps, "StartRuntime", () => Runtime.Start(_project));
                             MeasureReloadStep(reloadSteps, "AttachRuntimeStateCache", () => _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags));
@@ -515,7 +585,7 @@ namespace IPC.Gateway.Core.Gateway
 
                     MeasureReloadStep(reloadSteps, "SaveProject", () => _configurationStore.SaveProject(normalizedProject, "WebApi", "Save project configuration"));
 
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         if (rebuildRules) MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                     }
@@ -527,7 +597,7 @@ namespace IPC.Gateway.Core.Gateway
                     });
                     if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
 
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
                         MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _runtimeScope.Tags));
@@ -620,7 +690,7 @@ namespace IPC.Gateway.Core.Gateway
                     {
                         wasRunning = Runtime.IsRunning;
 
-                        if (wasRunning)
+                        if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                         {
                             if (rebuildRules) MeasureReloadStep(reloadSteps, "StopFlowRuleEngine", () => _flowRuleEngine.Stop());
                         }
@@ -632,7 +702,7 @@ namespace IPC.Gateway.Core.Gateway
                         });
                         if (rebuildRules) MeasureReloadStep(reloadSteps, "ReplaceFlowRuleEngine", () => ReplaceFlowRuleEngine());
 
-                        if (wasRunning)
+                        if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                         {
                             MeasureReloadStep(reloadSteps, "ApplyRuntimeProject", () => ApplyRuntimeProject(_project));
                             MeasureReloadStep(reloadSteps, "ApplyRuntimeStateCacheProject", () => _runtimeStateCache.ApplyRuntimeProject(Runtime, _runtimeScope.Tags));
@@ -741,14 +811,14 @@ namespace IPC.Gateway.Core.Gateway
             ProjectConfigValidationResult validation)
         {
             bool wasRunning = Runtime.IsRunning;
-            if (wasRunning)
+            if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 _flowRuleEngine.Stop();
 
             SetCurrentProject(ProjectConfigCloner.Clone(project));
             _lastValidation = validation;
             ReplaceFlowRuleEngine();
 
-            if (wasRunning)
+            if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 _flowRuleEngine.Start();
 
             _lastReloadTime = DateTime.Now;
@@ -862,7 +932,7 @@ namespace IPC.Gateway.Core.Gateway
                     _configurationStore.SaveMqtt(_mqttOptions, "WebApi", "保存MQTT参数");
                 _mqtt = CreateMqttService();
                 ReplaceFlowRuleEngine();
-                if (wasRunning)
+                if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 {
                     _mqtt.Start();
                     _flowRuleEngine.Start();
@@ -890,7 +960,7 @@ namespace IPC.Gateway.Core.Gateway
                     _mqttOptions = normalized;
                     _mqtt = CreateMqttService();
                     ReplaceFlowRuleEngine();
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         _mqtt.Start();
                         _flowRuleEngine.Start();
@@ -970,10 +1040,10 @@ namespace IPC.Gateway.Core.Gateway
                 if (save)
                     _configurationStore.SaveHistory(_historyOptions, "WebApi", "Save local history options");
 
-                _history = new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History);
+                _history = CreateHistoryService();
                 _mqtt = CreateMqttService();
                 ReplaceFlowRuleEngine();
-                if (wasRunning)
+                if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 {
                     _history.Start();
                     _mqtt.Start();
@@ -1004,10 +1074,10 @@ namespace IPC.Gateway.Core.Gateway
                     _history.Dispose();
 
                     _historyOptions = normalized;
-                    _history = new LocalHistoryService(Runtime, _historyOptions, _runtimeOptions.Resilience.History);
+                    _history = CreateHistoryService();
                     _mqtt = CreateMqttService();
                     ReplaceFlowRuleEngine();
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         _history.Start();
                         _mqtt.Start();
@@ -1068,7 +1138,7 @@ namespace IPC.Gateway.Core.Gateway
             lock (_syncRoot)
             {
                 bool wasRunning = Runtime.IsRunning;
-                if (wasRunning)
+                if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 {
                     _flowRuleEngine.Stop();
                     _runtimeStateCache.PrepareRuntimeReload(_project, project);
@@ -1079,7 +1149,7 @@ namespace IPC.Gateway.Core.Gateway
                 SetCurrentProject(ProjectConfigCloner.Clone(project));
                 _lastValidation = ProjectConfigValidator.Validate(_project);
                 ReplaceFlowRuleEngine();
-                if (wasRunning)
+                if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                 {
                     Runtime.Start(_project);
                     _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags);
@@ -1137,7 +1207,7 @@ namespace IPC.Gateway.Core.Gateway
                 lock (_syncRoot)
                 {
                     bool wasRunning = Runtime.IsRunning;
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         _flowRuleEngine.Stop();
                         _runtimeStateCache.PrepareRuntimeReload(_project, project);
@@ -1148,7 +1218,7 @@ namespace IPC.Gateway.Core.Gateway
                     SetCurrentProject(ProjectConfigCloner.Clone(project));
                     _lastValidation = ProjectConfigValidator.Validate(_project);
                     ReplaceFlowRuleEngine();
-                    if (wasRunning)
+                    if (wasRunning && (WriteAuthority?.CanRunBusiness ?? true))
                     {
                         Runtime.Start(_project);
                         _runtimeStateCache.AttachReloadedRuntime(Runtime, _runtimeScope.Tags);
@@ -1452,6 +1522,8 @@ namespace IPC.Gateway.Core.Gateway
         }
 
         public HistoryValueIndex HistoryValueQueries => Volatile.Read(ref _history).ValueQueries;
+        private LocalHistoryService CreateHistoryService() =>
+            new(Runtime, _historyOptions, _runtimeOptions.Resilience.History, WriteAuthority as IGatewayDatabaseOwner);
 
         public void Dispose()
         {
@@ -1478,7 +1550,7 @@ namespace IPC.Gateway.Core.Gateway
 
         private MqttGatewayService CreateMqttService()
         {
-            return new MqttGatewayService(Runtime, _mqttOptions, _history, QueueRemoteConfiguration, _runtimeOptions.Resilience.Mqtt, AlarmJournal);
+            return new MqttGatewayService(Runtime, _mqttOptions, _history, QueueRemoteConfiguration, _runtimeOptions.Resilience.Mqtt, AlarmJournal, () => WriteAuthority?.CanRunBusiness ?? true);
         }
 
         private OpcUaServerService CreateOpcUaService()
@@ -1535,6 +1607,24 @@ namespace IPC.Gateway.Core.Gateway
 
         private bool QueueRuleEventPublish(string topic, string payload, int qos)
         {
+            if (WriteAuthority?.IsCluster == true)
+            {
+                if (!WriteAuthority.CanRunBusiness || string.IsNullOrWhiteSpace(topic)) return false;
+                // A rule may intentionally publish several actions for one event. Each delivery has
+                // its own ID, which stays in the stored bytes across retries and owner changes.
+                var document = JsonNode.Parse(payload)?.AsObject() ?? throw new JsonException("Invalid rule event.");
+                string deliveryId = Guid.NewGuid().ToString("N");
+                document["messageId"] = deliveryId;
+                AlarmJournal.EnqueueRule(new GatewayAlarmRecord
+                {
+                    EventId = deliveryId, DeliveryOnly = true, Topic = topic.Trim('/'), Qos = Math.Max(1, qos),
+                    RuleId = document["ruleId"]?.GetValue<string>() ?? "",
+                    DeviceId = document["deviceId"]?.GetValue<string>() ?? "",
+                    TagId = document["tagId"]?.GetValue<string>() ?? "",
+                    Payload = document.ToJsonString()
+                }, publish: true);
+                return true;
+            }
             MqttGatewayService mqtt = _mqtt;
             return mqtt != null && mqtt.QueueCustomPublish(topic, payload, qos);
         }
@@ -1559,10 +1649,12 @@ namespace IPC.Gateway.Core.Gateway
 
         private void QueueRemoteConfiguration(string topic, string payload)
         {
+            long? epoch = WriteAuthority?.Epoch;
             ThreadPool.QueueUserWorkItem(delegate
             {
                 try
                 {
+                    if (WriteAuthority is { IsCluster: true } ha && (!ha.CanRunBusiness || epoch != ha.Epoch)) return;
                     ApplyConfigurationCommand("MQTT:" + (topic ?? string.Empty), payload);
                 }
                 catch (Exception ex)

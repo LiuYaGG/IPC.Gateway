@@ -18,6 +18,14 @@ public sealed class OnnxModelCatalogDocument
 {
     public int SchemaVersion { get; set; } = 1;
     public List<OnnxModelDefinition> Models { get; set; } = [];
+    public List<OnnxExternalModelFile> ExternalFiles { get; set; } = [];
+}
+
+public sealed class OnnxExternalModelFile
+{
+    public string ModelPath { get; set; } = string.Empty;
+    public string Sha256 { get; set; } = string.Empty;
+    public long FileSize { get; set; }
 }
 
 /// <summary>

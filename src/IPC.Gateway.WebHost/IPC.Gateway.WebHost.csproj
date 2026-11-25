@@ -6,10 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IncludeCommercialDriverPlugin Condition="'$(IncludeCommercialDriverPlugin)' == '' and Exists('..\IPC.Gateway.LegacyProtocolPlugins\IPC.Gateway.LegacyProtocolPlugins.csproj')">true</IncludeCommercialDriverPlugin>
     <IncludeCommercialDriverPlugin Condition="'$(IncludeCommercialDriverPlugin)' == ''">false</IncludeCommercialDriverPlugin>
+    <ProtocolDriverBuildDir>$(MSBuildProjectDirectory)/../IPC.Gateway.LegacyProtocolPlugins/bin/$(Configuration)/net10.0/$(RuntimeIdentifier)</ProtocolDriverBuildDir>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\IPC.Gateway.Core\IPC.Gateway.Core.csproj" />
+    <ProjectReference Include="..\IPC.Gateway.HighAvailability\IPC.Gateway.HighAvailability.csproj" />
+    <ProjectReference Include="..\IPC.Gateway.Arbiter\IPC.Gateway.Arbiter.csproj" />
+    <ProjectReference Include="..\IPC.Gateway.HaSetup\Provisioning\IPC.Gateway.HaProvisioning.csproj" />
     <ProjectReference Include="..\IPC.Gateway.FlowRules\IPC.Gateway.FlowRules.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Inference\IPC.Gateway.Inference.csproj" />
     <ProjectReference Include="..\IPC.Gateway.Scripting\IPC.Gateway.Scripting.csproj" />
@@ -42,14 +46,34 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="PublishProtocolDrivers" AfterTargets="Publish" Condition="'$(IncludeCommercialDriverPlugin)' == 'true' and Exists('..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0')">
+  <Target Name="PinHaGuardedProtocolDriver" BeforeTargets="GetAssemblyAttributes" DependsOnTargets="ResolveProjectReferences" Condition="'$(IncludeCommercialDriverPlugin)' == 'true'">
+    <GetFileHash Files="$(ProtocolDriverBuildDir)/IPC.Gateway.LegacyProtocolPlugins.dll" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HaGuardedDriver" />
+    </GetFileHash>
     <ItemGroup>
-      <ProtocolDriverPublishFiles Include="..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\*.*" Exclude="..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.Core.*;..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.DataProcessing.*;..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\IPC.Gateway.Mqtt.*" />
-      <ProtocolDriverRuntimeFiles Include="..\IPC.Gateway.LegacyProtocolPlugins\bin\$(Configuration)\net10.0\runtimes\**\*.*" />
+      <AssemblyMetadata Include="HaGuardedProtocolPluginSha256" Value="%(_HaGuardedDriver.FileHash)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PublishProtocolDrivers" AfterTargets="Publish" Condition="'$(IncludeCommercialDriverPlugin)' == 'true'">
+    <ItemGroup>
+      <ProtocolDriverPublishFiles Include="$(ProtocolDriverBuildDir)/*.*" Exclude="$(ProtocolDriverBuildDir)/IPC.Gateway.Core.*;$(ProtocolDriverBuildDir)/IPC.Gateway.DataProcessing.*;$(ProtocolDriverBuildDir)/IPC.Gateway.Mqtt.*" />
+      <ProtocolDriverRuntimeFiles Include="$(ProtocolDriverBuildDir)/runtimes/**/*.*" />
     </ItemGroup>
     <MakeDir Directories="$(PublishDir)Drivers" />
     <Copy SourceFiles="@(ProtocolDriverPublishFiles)" DestinationFolder="$(PublishDir)Drivers" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(ProtocolDriverRuntimeFiles)" DestinationFolder="$(PublishDir)Drivers\runtimes\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- The standalone witness ships its own configuration example in components/. -->
+  <Target Name="ExcludeWitnessConfigurationExample" AfterTargets="ComputeFilesToPublish" BeforeTargets="_HandleFileConflictsForPublish">
+    <PropertyGroup>
+      <WitnessExamplePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../IPC.Gateway.Arbiter/appsettings.Production.example.json'))</WitnessExamplePath>
+    </PropertyGroup>
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.FullPath)' == '$(WitnessExamplePath)'" />
+    </ItemGroup>
   </Target>
 
 </Project>

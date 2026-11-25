@@ -46,6 +46,12 @@ public static class GatewayPermissions
     public const string ApplyUpdate = "maintenance.update.apply";
     public const string ApplyRollback = "maintenance.rollback.apply";
     public const string EditWatchdog = "maintenance.watchdog.edit";
+    public const string ViewHa = "ha.view";
+    public const string ManageHaConfig = "ha.config.manage";
+    public const string ManageHaDisaster = "ha.disaster.manage";
+    public const string SwitchHa = "ha.switchover";
+    public const string MaintainHa = "ha.maintenance";
+    public const string ViewHaWrites = "ha.writes.view";
     public const string ExportProjectBackup = "maintenance.projectBackup.export";
     public const string RestoreProjectBackup = "maintenance.projectBackup.restore";
 
@@ -172,6 +178,12 @@ public static class GatewayPermissions
         Page(ViewSecurity, "工业安全", "工业安全", "查看账号策略、TLS 和证书状态。"),
         Action(ManageCertificates, "查看证书状态", "工业安全", "查看 TLS 与 OPC UA 证书有效期、指纹和健康状态。"),
         Page(ViewMaintenance, "安装升级", "安装升级", "查看安装包、升级包、离线升级和版本回滚状态。"),
+        Page(ViewHa, "高可用", "高可用", "查看三节点集群和主备状态。"),
+        Action(ManageHaConfig, "管理高可用配置", "高可用", "保存、预检和应用组网及租约策略。"),
+        Action(ManageHaDisaster, "人工灾难接管", "高可用", "确认其他业务网关已停机或隔离后，临时接管本机业务。"),
+        Action(SwitchHa, "计划切换", "高可用", "交接网关业务主身份。"),
+        Action(MaintainHa, "节点维护", "高可用", "进入或退出节点维护。"),
+        Action(ViewHaWrites, "查看 PLC 写授权", "高可用", "查看 PLC 写入尝试和授权决定。"),
         Action(UploadUpdatePackage, "上传升级包", "安装升级", "上传离线安装包或升级包。"),
         Action(PrepareUpdate, "准备离线升级", "安装升级", "校验升级包、创建回滚点并生成离线升级动作。"),
         Action(RollbackUpdate, "准备版本回滚", "安装升级", "选择回滚点并生成离线回滚动作。"),

@@ -688,6 +688,9 @@ public class OpcUaServerConfigurationDto
     public string ApplicationUri { get; set; } = string.Empty;
     public string ProductUri { get; set; } = string.Empty;
     public string Host { get; set; } = string.Empty;
+    public string AdvertisedEndpointUrl { get; set; } = string.Empty;
+    public string ListenEndpointUrl { get; set; } = string.Empty;
+    public string[] CertificateAlternativeNames { get; set; } = Array.Empty<string>();
     public int Port { get; set; } = 4840;
     public string EndpointPath { get; set; } = string.Empty;
     public string EndpointUrl { get; set; } = string.Empty;
@@ -1075,6 +1078,8 @@ public sealed class OpcUaServerRuntimeStatusDto
     public bool IsRunning { get; set; }
     public string ApplicationName { get; set; } = string.Empty;
     public string EndpointUrl { get; set; } = string.Empty;
+    public string ListenEndpointUrl { get; set; } = string.Empty;
+    public string AdvertisedEndpointUrl { get; set; } = string.Empty;
     public string NamespaceUri { get; set; } = string.Empty;
     public int ChannelNodeCount { get; set; }
     public int DeviceNodeCount { get; set; }
@@ -1261,6 +1266,8 @@ public sealed class WriteTagCommand
 
 public sealed class WriteTagResultDto
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IPC.Plc.Communication.Core.PlcWriteExecution? WriteExecution { get; set; }
     public bool Success { get; set; }
     public string ChannelId { get; set; } = string.Empty;
     public string ChannelName { get; set; } = string.Empty;

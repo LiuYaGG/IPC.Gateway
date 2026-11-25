@@ -36,7 +36,7 @@ namespace IPC.Plc.Communication.OmronFins
     
     
     
-    public sealed class FinsClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public sealed class FinsClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int MaximumTcpPayloadLength = 1024 * 1024;
 
@@ -549,6 +549,7 @@ namespace IPC.Plc.Communication.OmronFins
 
         private byte[] SendFinsCommand(byte[] command, bool allowUdpReadRetry)
         {
+            if (!allowUdpReadRetry) PlcHaWrite.BeforeSegment();
             byte[] finsFrame = BuildFinsFrame(command, out byte sid);
             if (_options.Transport == NetworkTransport.Udp)
                 return SendUdp(finsFrame, sid, allowUdpReadRetry);
@@ -570,6 +571,7 @@ namespace IPC.Plc.Communication.OmronFins
             bool allowUdpReadRetry,
             CancellationToken cancellationToken)
         {
+            if (!allowUdpReadRetry) await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
             byte[] finsFrame = BuildFinsFrame(command, out byte sid);
             if (_options.Transport == NetworkTransport.Udp)
                 return await SendUdpAsync(finsFrame, sid, allowUdpReadRetry, cancellationToken).ConfigureAwait(false);

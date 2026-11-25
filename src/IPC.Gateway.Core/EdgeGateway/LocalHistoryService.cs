@@ -56,6 +56,9 @@ namespace IPC.EdgeGateway
         private bool _maintenanceRequested;
         private readonly IRuntimeService _runtime;
         private readonly LocalHistoryOptions _options;
+        private readonly IPC.Gateway.Core.Infrastructure.Persistence.IGatewayDatabaseOwner? _haOwner;
+        private string? _haVolume;
+        private string? _haPrefix;
         private readonly CircuitBreaker _circuitBreaker;
         private readonly EdgeDataProcessor _dataProcessor;
         private readonly TagValueChangedWorker _tagValueWorker;
@@ -75,10 +78,12 @@ namespace IPC.EdgeGateway
         {
         }
 
-        public LocalHistoryService(IRuntimeService runtime, LocalHistoryOptions options, CircuitBreakerOptions circuitBreakerOptions)
+        public LocalHistoryService(IRuntimeService runtime, LocalHistoryOptions options, CircuitBreakerOptions circuitBreakerOptions,
+            IPC.Gateway.Core.Infrastructure.Persistence.IGatewayDatabaseOwner? haOwner = null)
         {
             _runtime = runtime;
             _options = options == null ? new LocalHistoryOptions() : options.Clone();
+            _haOwner = haOwner;
             ValueQueries = new HistoryValueIndex(ResolveDirectory(), ResolveColdDirectory());
             _syncRoot = new object();
             _writeQueueSyncRoot = new object();
@@ -599,6 +604,19 @@ namespace IPC.EdgeGateway
             string name = category + "-" + now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             string path = Path.Combine(directory, name + ".jsonl");
             long segmentBytes = _options.Storage.ValueFileSegmentMegabytes * 1024L * 1024L;
+            if (category == "values" && _haOwner is { IsCluster: true, Epoch: > 0 } owner)
+            {
+                // Allocate an immutable name at the first append, so a replica can resume by byte offset after failover or rotation.
+                string prefix = $"{name}-ha-{owner.NodeId}-{owner.Epoch}-";
+                if (prefix != _haPrefix || _haVolume == null || (File.Exists(_haVolume) && new FileInfo(_haVolume).Length >= segmentBytes))
+                {
+                    _haVolume = Path.Combine(directory, prefix + Guid.NewGuid().ToString("N") + ".jsonl");
+                    _haPrefix = prefix;
+                    ScheduleMaintenance(sealedSegment: true);
+                }
+                AppendTextAsync(_haVolume, lines).GetAwaiter().GetResult();
+                return;
+            }
             if (category == "values" && File.Exists(path) && new FileInfo(path).Length >= segmentBytes)
             {
                 string suffix = now.ToString("HHmmssfffffff", CultureInfo.InvariantCulture);
@@ -724,8 +742,9 @@ namespace IPC.EdgeGateway
             }
         }
 
-        private static bool IsActiveDailyFile(string path)
+        private bool IsActiveDailyFile(string path)
         {
+            if (path == Volatile.Read(ref _haVolume)) return true;
             string name = Path.GetFileName(path);
             string day = DateTime.Today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             return name == "values-" + day + ".jsonl" || name == "publishes-" + day + ".jsonl" ||
@@ -1082,6 +1101,14 @@ namespace IPC.EdgeGateway
                 return false;
 
             var stamp = name[(dash + 1)..];
+            if (name[..dash] is "values" && stamp.Length > 14 && stamp[8..12].SequenceEqual("-ha-"))
+            {
+                var suffix = stamp[12..].ToString().Split('-');
+                return suffix.Length == 3 && suffix[0] is "A" or "B" &&
+                    long.TryParse(suffix[1],NumberStyles.None,CultureInfo.InvariantCulture,out long epoch) && epoch > 0 &&
+                    Guid.TryParseExact(suffix[2],"N",out _) &&
+                    DateTime.TryParseExact(stamp[..8],"yyyyMMdd",CultureInfo.InvariantCulture,DateTimeStyles.None,out timestamp);
+            }
             if (stamp.Length == 8)
                 return DateTime.TryParseExact(stamp, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out timestamp);
             const int segmentStampLength = 22; // yyyyMMdd-HHmmssfffffff

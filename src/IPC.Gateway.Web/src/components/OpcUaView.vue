@@ -43,57 +43,65 @@
       <a-tabs v-model:active-key="activeTab" class="mqtt-tabs">
         <a-tab-pane :tab="tx('连接')" key="connection">
           <a-form
-            :model="opcUa"
+            :model="form"
             :disabled="!canEditOpcUa"
             class="settings-form settings-form--wide"
             :label-col="{ style: { width: '170px' } }"
             :wrapper-col="{ style: { flex: 1 } }"
             label-align="left"
           >
-            <a-form-item :label="tx('启用')"><a-switch v-model:checked="opcUa.enabled" /></a-form-item>
-            <a-form-item :label="tx('应用名称')"><gateway-input v-model="opcUa.applicationName" /></a-form-item>
+            <a-form-item :label="tx('启用')"><a-switch v-model:checked="form.enabled" /></a-form-item>
+            <a-form-item :label="tx('应用名称')"><gateway-input v-model="form.applicationName" /></a-form-item>
             <a-form-item :label="tx('监听主机')">
-              <gateway-input v-model="opcUa.host" :placeholder="tx('0.0.0.0 或服务器 IP')" />
+              <gateway-input v-model="form.host" :placeholder="tx('0.0.0.0 或服务器 IP')" />
             </a-form-item>
             <a-form-item :label="tx('监听端口')">
-              <gateway-number-input v-model="opcUa.port" :min="1" :max="65535" />
+              <gateway-number-input v-model="form.port" :min="1" :max="65535" />
             </a-form-item>
-            <a-form-item :label="tx('端点路径')"><gateway-input v-model="opcUa.endpointPath" /></a-form-item>
-            <a-form-item :label="tx('端点预览')"><gateway-input :model-value="endpointPreview" disabled /></a-form-item>
+            <a-form-item :label="tx('端点路径')"><gateway-input v-model="form.endpointPath" /></a-form-item>
+            <a-form-item :label="tx('本地监听地址')"><gateway-input :model-value="listenPreview" disabled /></a-form-item>
+            <a-form-item :label="tx('对外公布端点')">
+              <gateway-input v-model="form.advertisedEndpointUrl" placeholder="opc.tcp://192.168.164.128:4840/IPC.Gateway" />
+            </a-form-item>
+            <a-form-item :label="tx('客户端连接地址')"><gateway-input :model-value="endpointPreview" disabled /></a-form-item>
           </a-form>
+          <a-alert class="opcua-entry-note" type="info" show-icon :message="tx('对外公布端点留空时使用本机地址；通过代理连接时填写统一入口，路径需与本地端点相同。修改公布地址后请重新信任更新的服务端证书。')" />
         </a-tab-pane>
         <a-tab-pane :tab="tx('命名空间')" key="namespace">
           <a-form
-            :model="opcUa"
+            :model="form"
             :disabled="!canEditOpcUa"
             class="settings-form settings-form--wide"
             :label-col="{ style: { width: '170px' } }"
             :wrapper-col="{ style: { flex: 1 } }"
             label-align="left"
           >
-            <a-form-item :label="tx('应用 URI')"><gateway-input v-model="opcUa.applicationUri" /></a-form-item>
-            <a-form-item :label="tx('产品 URI')"><gateway-input v-model="opcUa.productUri" /></a-form-item>
-            <a-form-item :label="tx('标签命名空间')"><gateway-input v-model="opcUa.namespaceUri" /></a-form-item>
+            <a-form-item :label="tx('应用 URI')"><gateway-input v-model="form.applicationUri" /></a-form-item>
+            <a-form-item :label="tx('产品 URI')"><gateway-input v-model="form.productUri" /></a-form-item>
+            <a-form-item :label="tx('标签命名空间')"><gateway-input v-model="form.namespaceUri" /></a-form-item>
           </a-form>
         </a-tab-pane>
         <a-tab-pane :tab="tx('证书')" key="certificate">
           <a-form
-            :model="opcUa"
+            :model="form"
             :disabled="!canEditOpcUa"
             class="settings-form settings-form--wide"
             :label-col="{ style: { width: '170px' } }"
             :wrapper-col="{ style: { flex: 1 } }"
             label-align="left"
           >
-            <a-form-item :label="tx('证书目录')"><gateway-input v-model="opcUa.certificateStorePath" /></a-form-item>
+            <a-form-item :label="tx('证书目录')"><gateway-input v-model="form.certificateStorePath" /></a-form-item>
+            <a-form-item :label="tx('证书附加 IP / DNS')">
+              <a-textarea v-model:value="certificateNamesText" :auto-size="{minRows:2,maxRows:5}" :placeholder="tx('每行一个 IP 或 DNS 名称；统一入口的名称自动加入证书。')" />
+            </a-form-item>
             <a-form-item :label="tx('自动信任客户端证书')">
-              <a-switch v-model:checked="opcUa.autoAcceptUntrustedCertificates" />
+              <a-switch v-model:checked="form.autoAcceptUntrustedCertificates" />
             </a-form-item>
           </a-form>
         </a-tab-pane>
         <a-tab-pane :tab="tx('安全')" key="security">
           <a-form
-            :model="opcUa"
+            :model="form"
             :disabled="!canEditOpcUa"
             class="settings-form settings-form--wide"
             :label-col="{ style: { width: '190px' } }"
@@ -101,31 +109,31 @@
             label-align="left"
           >
             <a-form-item :label="tx('允许匿名访问')">
-              <a-switch v-model:checked="opcUa.allowAnonymous" @change="handleAnonymousChange" />
+              <a-switch v-model:checked="form.allowAnonymous" @change="handleAnonymousChange" />
             </a-form-item>
             <a-form-item :label="tx('用户名密码登录')">
-              <a-switch v-model:checked="opcUa.usernamePasswordEnabled" @change="handleUsernamePasswordChange" />
+              <a-switch v-model:checked="form.usernamePasswordEnabled" @change="handleUsernamePasswordChange" />
             </a-form-item>
             <a-form-item :label="tx('用户名')">
               <gateway-input
-                v-model="opcUa.username"
-                :disabled="!canEditOpcUa || !opcUa.usernamePasswordEnabled"
+                v-model="form.username"
+                :disabled="!canEditOpcUa || !form.usernamePasswordEnabled"
                 autocomplete="username"
               />
             </a-form-item>
             <a-form-item :label="tx('密码')">
               <gateway-input
-                v-model="opcUa.password"
+                v-model="form.password"
                 type="password"
                 show-password
                 :placeholder="tx(passwordPlaceholder)"
-                :disabled="!canEditOpcUa || !opcUa.usernamePasswordEnabled"
+                :disabled="!canEditOpcUa || !form.usernamePasswordEnabled"
                 autocomplete="new-password"
               />
             </a-form-item>
             <a-form-item :label="tx('密码状态')">
-              <a-tag :color="tagColor(opcUa.passwordConfigured ? 'success' : 'info')">
-                {{ opcUa.passwordConfigured ? tx('已配置') : tx('未配置') }}
+              <a-tag :color="tagColor(form.passwordConfigured ? 'success' : 'info')">
+                {{ form.passwordConfigured ? tx('已配置') : tx('未配置') }}
               </a-tag>
             </a-form-item>
             <a-form-item :label="tx('消息安全模式')">
@@ -152,7 +160,7 @@
         <a-tab-pane :tab="tx('诊断')" key="diagnostics">
           <div class="runtime-grid mqtt-outbox-grid">
             <a-form
-              :model="opcUa"
+              :model="form"
               :disabled="!canEditOpcUa"
               class="settings-form settings-form--wide"
               :label-col="{ style: { width: '180px' } }"
@@ -160,10 +168,10 @@
               label-align="left"
             >
               <a-form-item :label="tx('最小采样间隔(ms)')">
-                <gateway-number-input v-model="opcUa.minimumSamplingIntervalMs" :min="100" :max="60000" />
+                <gateway-number-input v-model="form.minimumSamplingIntervalMs" :min="100" :max="60000" />
               </a-form-item>
               <a-form-item :label="tx('发布诊断节点')">
-                <a-switch v-model:checked="opcUa.publishDiagnostics" />
+                <a-switch v-model:checked="form.publishDiagnostics" />
               </a-form-item>
             </a-form>
             <div class="runtime-panel">
@@ -214,6 +222,8 @@ const { draft: opcUa, save } = useCommunicationConfigDraft(
   () => props.opcUa, () => props.resetRevision,
   (config, acceptSaved) => emit('persist-opcua', config, acceptSaved)
 )
+// The form is rendered only inside the opcUa guard; preserve its non-null type in Ant form slots.
+const form = computed(() => opcUa.value!)
 const { hasPermission } = usePermissions()
 const activeTab = ref('connection')
 const canEditOpcUa = computed(() => hasPermission(PERMISSIONS.opcUaEdit))
@@ -260,10 +270,21 @@ const securityPolicyValue = computed({
 
 const endpointPreview = computed(() => {
   if (!opcUa.value) return '-'
-  if (opcUa.value.endpointUrl) return opcUa.value.endpointUrl
-  const host = !opcUa.value.host || opcUa.value.host === '0.0.0.0' ? 'localhost' : opcUa.value.host
+  if (opcUa.value.advertisedEndpointUrl?.trim()) return opcUa.value.advertisedEndpointUrl.trim()
+  const saved=props.opcUa
+  if(saved?.endpointUrl && !saved.advertisedEndpointUrl && saved.host===opcUa.value.host &&
+    saved.port===opcUa.value.port && saved.endpointPath===opcUa.value.endpointPath)return saved.endpointUrl
+  const host = !opcUa.value.host || ['0.0.0.0','::','[::]'].includes(opcUa.value.host) ? window.location.hostname : opcUa.value.host
   const path = (opcUa.value.endpointPath || 'IPC.Gateway').replace(/^\/+|\/+$/g, '')
-  return `opc.tcp://${host}:${opcUa.value.port || 4840}/${path}`
+  return `opc.tcp://${host.includes(':') && !host.startsWith('[') ? '['+host+']' : host}:${opcUa.value.port || 4840}/${path}`
+})
+const listenPreview = computed(() => {
+  const host=opcUa.value?.host || '0.0.0.0'
+  return `opc.tcp://${host.includes(':') && !host.startsWith('[') ? '['+host+']' : host}:${opcUa.value?.port || 4840}/${(opcUa.value?.endpointPath || 'IPC.Gateway').replace(/^\/+|\/+$/g,'')}`
+})
+const certificateNamesText = computed({
+  get:()=> (opcUa.value?.certificateAlternativeNames || []).join('\n'),
+  set:(value:string)=>{ if(opcUa.value)opcUa.value.certificateAlternativeNames=value.split(/[\r\n,;]+/).map(v=>v.trim()).filter(Boolean) }
 })
 
 function handleAnonymousChange(value: string | number | boolean) {
@@ -303,3 +324,6 @@ function deriveSecurityPolicy() {
   return 'None'
 }
 </script>
+<style scoped>
+.opcua-entry-note{margin:4px 0 12px;overflow-wrap:anywhere}
+</style>

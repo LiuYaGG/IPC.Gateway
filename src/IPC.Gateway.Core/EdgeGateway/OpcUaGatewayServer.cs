@@ -59,6 +59,14 @@ namespace IPC.EdgeGateway
 
         protected override void OnServerStarted(IServerInternal server)
         {
+            // Service hosts and transport endpoints have already been created from the local
+            // listener address. From here onward BaseAddresses serves discovery/CreateSession
+            // responses only; never bind a proxy IP that belongs to a different computer.
+            var published = new Uri(_options.EndpointUrl);
+            BaseAddresses = new List<BaseAddress>
+            {
+                new BaseAddress { Url = published, DiscoveryUrl = published, ProfileUri = Profiles.UaTcpTransport }
+            };
             base.OnServerStarted(server);
             if (server?.SessionManager != null)
                 server.SessionManager.ImpersonateUser += OnImpersonateUser;

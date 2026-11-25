@@ -4,6 +4,7 @@ using IPC.Gateway.Scripting.Database;
 using IPC.Gateway.Scripting.Persistence;
 using IPC.Gateway.Scripting.Runtime;
 using IPC.Gateway.Core.Gateway;
+using IPC.Gateway.Core.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IPC.Gateway.Scripting;
@@ -24,7 +25,14 @@ public static class ScriptingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         GatewayScriptingOptions normalized = (options ?? new GatewayScriptingOptions()).Normalize();
         services.AddSingleton(normalized);
-        services.AddSingleton<IScriptConfigurationStore, JsonScriptConfigurationStore>();
+        services.AddSingleton<JsonScriptConfigurationStore>();
+        services.AddSingleton<IScriptConfigurationStore>(provider =>
+            provider.GetService<GatewaySharedArtifactRepository>() is { } repository
+                ? new SharedScriptConfigurationStore(repository,
+                    provider.GetRequiredService<JsonScriptConfigurationStore>(),
+                    provider.GetRequiredService<IScriptSecretProtector>(),
+                    provider.GetService<IGatewayDatabaseOwner>())
+                : provider.GetRequiredService<JsonScriptConfigurationStore>());
         services.AddSingleton<ScriptDatabaseConnectionFactory>();
         services.AddSingleton<ScriptDatabaseCommandBuilder>();
         services.AddSingleton<ScriptDatabaseWriteExecutor>();

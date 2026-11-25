@@ -6,6 +6,7 @@ namespace IPC.Gateway.Scripting.Models;
 public sealed class ScriptDatabaseWriteRequest
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public long? BusinessEpoch { get; set; }
     public string ScriptId { get; set; } = string.Empty;
     public string TargetId { get; set; } = string.Empty;
     public ScriptDatabaseOperation Operation { get; set; }

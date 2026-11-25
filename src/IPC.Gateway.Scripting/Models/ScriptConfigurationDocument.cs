@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace IPC.Gateway.Scripting.Models;
 
 /// <summary>
@@ -6,6 +8,8 @@ namespace IPC.Gateway.Scripting.Models;
 public sealed class ScriptConfigurationDocument
 {
     public int Version { get; set; } = 3;
+    [JsonIgnore]
+    public long PersistenceRevision { get; set; }
     public List<ScriptDatabaseConnectionDefinition> Connections { get; set; } = [];
     public List<ScriptDatabaseWriteTarget> Targets { get; set; } = [];
     public List<GatewayScriptDefinition> Scripts { get; set; } = [];
@@ -18,6 +22,7 @@ public sealed class ScriptConfigurationDocument
         return new ScriptConfigurationDocument
         {
             Version = Version,
+            PersistenceRevision = PersistenceRevision,
             Connections = Connections.Select(item => item.Clone()).ToList(),
             Targets = Targets.Select(item => item.Clone()).ToList(),
             Scripts = Scripts.Select(item => item.Clone()).ToList()

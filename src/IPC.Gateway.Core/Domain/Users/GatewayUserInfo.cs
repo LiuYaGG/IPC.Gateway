@@ -50,6 +50,8 @@ namespace IPC.Gateway.Core.Domain.Users
         public string DisplayName { get; set; }
         public string Role { get; set; }
         public bool Enabled { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string SecurityStamp { get; set; } = string.Empty;
         public string PasswordHash { get; set; }
         public string PasswordSalt { get; set; }
         public DateTime CreatedTime { get; set; }

@@ -35,7 +35,7 @@ namespace IPC.Plc.Communication.ModbusRtu
     
     
     
-    public class ModbusRtuClient : IPlcClient, IPlcBatchReadClient
+    public class ModbusRtuClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient
     {
         private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
         private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;

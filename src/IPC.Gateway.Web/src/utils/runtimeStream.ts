@@ -42,6 +42,7 @@ function newChanges() {
 export type RuntimeChanges = ReturnType<typeof newChanges>
 
 export function connectRuntimeEvents(handlers: {
+  expectedAuthority?: { clusterId?: string; epoch?: string; sourceInstanceId?: string }
   projectRevision(): string | undefined
   opened(): void
   snapshot(changes: RuntimeChanges): void
@@ -93,6 +94,13 @@ export function connectRuntimeEvents(handlers: {
         reconnect()
         return
       }
+      const expected = handlers.expectedAuthority
+      if (expected && (expected.epoch !== envelope.epoch || expected.sourceInstanceId !== envelope.sourceInstanceId ||
+          (expected.clusterId && expected.clusterId !== envelope.clusterId))) {
+        close()
+        handlers.resync()
+        return
+      }
       if (type !== 'hello') {
         const result = guard.check(envelope)
         if (result === 'resync') reconnect()
@@ -122,6 +130,10 @@ export function connectRuntimeEvents(handlers: {
   source.addEventListener('open', () => { if (!closed) handlers.opened() })
   source.addEventListener('error', reconnect)
   listen('hello', e => guard.reset(e.timestamp, e.sequence))
+  listen('haChanged', () => {
+    close()
+    handlers.resync()
+  })
   listen<{ projectRevision?: string }>('snapshot-start', e => {
     if (e.data?.projectRevision && e.data.projectRevision !== handlers.projectRevision()) {
       close()

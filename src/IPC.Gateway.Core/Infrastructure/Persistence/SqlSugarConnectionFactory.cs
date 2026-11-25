@@ -63,6 +63,11 @@ public sealed class SqlSugarConnectionFactory
         });
 
         string databaseName = NormalizeDatabaseName(_options.Database);
+        GatewayMigrationLock.Run(db, "IPC.Gateway/create/" + databaseName.ToUpperInvariant(), () => CreateDatabase(db, dbType, databaseName));
+    }
+
+    private static void CreateDatabase(ISqlSugarClient db, DbType dbType, string databaseName)
+    {
         switch (dbType)
         {
             case DbType.PostgreSQL:

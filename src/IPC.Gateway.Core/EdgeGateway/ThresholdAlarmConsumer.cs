@@ -10,6 +10,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
 {
     private readonly RuntimeEngine _runtime;
     private readonly GatewayAlarmJournal _journal;
+    private long? _workerEpoch;
     private readonly Func<MqttGatewayOptions> _mqttOptions;
     private readonly GatewayMessageLanguage _messageLanguage;
     private readonly object _gate = new();
@@ -38,7 +39,8 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
             _awaitingFirstSample = _states.Keys.ToHashSet(StringComparer.Ordinal);
             ForgetRemovedThresholds();
             _stopping = false;
-            _writer = new Thread(WriteLoop) { Name = "IPC threshold alarm journal", IsBackground = true };
+            long? epoch = _workerEpoch = _journal.CurrentEpoch;
+            _writer = new Thread(() => WriteLoop(epoch)) { Name = "IPC threshold alarm journal", IsBackground = true };
             _writer.Start();
             _runtime.AlarmSampleCommitted += Observe;
         }
@@ -96,7 +98,7 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         string key = TagPath.BuildIdentity(snapshot.ChannelId, snapshot.DeviceId, snapshot.GroupId, snapshot.TagId);
         lock (_gate)
         {
-            if (_stopping || (_configuredTags != null && !_configuredTags.Contains(key))) return;
+            if (_stopping || !_journal.MayPersist(_workerEpoch) || (_configuredTags != null && !_configuredTags.Contains(key))) return;
             bool hadState = _states.TryGetValue(key, out var previous);
             string from = hadState ? previous.State : "Normal";
             bool afterRestart = _awaitingFirstSample.Remove(key);
@@ -134,12 +136,21 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
         return _publicRoute;
     }
 
-    private void WriteLoop()
+    private void WriteLoop(long? epoch)
     {
         var batch = new List<Transition>(256);
         DateTime nextErrorLog = DateTime.MinValue;
         while (true)
         {
+            if (epoch.HasValue && !_journal.MayPersist(epoch))
+            {
+                lock (_gate)
+                {
+                    _stopping = true;
+                    _queue.Clear();
+                }
+                return;
+            }
             try
             {
                 lock (_gate)
@@ -161,9 +172,11 @@ internal sealed class ThresholdAlarmConsumer : IDisposable
                     events.Add(entry);
                     states[item.Key] = entry.State == "Normal" ? null : new(entry.State, item.Threshold);
                 }
-                _journal.SaveTransitions(events, states);
+                // An old standalone worker must finish writing already observed transitions to
+                // the standalone database before enrollment imports it into the shared journal.
+                _journal.SaveTransitions(events, states,epoch);
                 batch.Clear();
-                _journal.CleanupIfDue();
+                if (_journal.MayPersist(epoch)) _journal.CleanupIfDue();
             }
             catch (Exception ex)
             {

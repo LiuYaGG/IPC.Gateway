@@ -60,11 +60,15 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
 fi
 usermod -a -G "$SERVICE_GROUP" "$SERVICE_USER"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$INSTALL_DIR" "$DATA_DIR" "$INSTALL_DIR/logs"
-rsync -a --chown="$SERVICE_USER:$SERVICE_GROUP" --delete --exclude='/Data' --exclude='/logs' --exclude='/appsettings.Production.json' -- "$PUBLISH_DIR/" "$INSTALL_DIR/"
+if [[ ${REGISTER_EXISTING:-0} == 1 ]]; then
+  [[ -f $INSTALL_DIR/IPC.Gateway.WebHost.dll && -f $INSTALL_DIR/wwwroot/index.html ]] || fail 'Installed program files are missing.'
+else
+  rsync -a --chown="$SERVICE_USER:$SERVICE_GROUP" --delete --exclude='/Data' --exclude='/logs' --exclude='/appsettings.Production.json' -- "$PUBLISH_DIR/" "$INSTALL_DIR/"
+fi
 if [[ ! -e $INSTALL_DIR/appsettings.Production.json && -f $PUBLISH_DIR/appsettings.Production.json ]]; then
   install -m 640 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$PUBLISH_DIR/appsettings.Production.json" "$INSTALL_DIR/appsettings.Production.json"
 fi
-install -d -m 750 "$(dirname "$ENVIRONMENT_FILE")"
+install -d -m 750 -o root -g "$SERVICE_GROUP" "$(dirname "$ENVIRONMENT_FILE")"
 if [[ ! -e $ENVIRONMENT_FILE ]]; then
   (umask 077; printf '# Site overrides; see gateway.env.example. Existing appsettings.Production.json remains effective.\n' > "$ENVIRONMENT_FILE")
 fi
@@ -92,6 +96,9 @@ Environment=ASPNETCORE_URLS=$SERVICE_URL
 Environment=Gateway__History__Directory=$DATA_DIR/History
 Environment=Gateway__Mqtt__OutboxDirectory=$DATA_DIR/MqttOutbox
 Environment=Gateway__Maintenance__Updates__UpdateDirectory=$DATA_DIR/Updates
+Environment=Gateway__Maintenance__Updates__InstallDirectory=$INSTALL_DIR
+Environment=Gateway__Maintenance__Updates__ServiceName=$SERVICE_NAME
+Environment=Gateway__Maintenance__Updates__LinuxWorkerConfiguration=/etc/ipc-gateway/$SERVICE_NAME.update.json
 Environment=Gateway__OpcUa__CertificateStorePath=$DATA_DIR/OpcUa/pki
 Environment=Gateway__Watchdog__StateDirectory=$DATA_DIR/Watchdog
 Environment=Gateway__Inference__ModelDirectory=$DATA_DIR/Models
@@ -106,6 +113,70 @@ ReadWritePaths=$INSTALL_DIR $DATA_DIR
 [Install]
 WantedBy=multi-user.target
 UNIT
+# A root-owned controller only controls this fixed service. File replacement runs
+# as SERVICE_USER, in a separate systemd cgroup; the gateway keeps NoNewPrivileges.
+worker_source="$(dirname "$PUBLISH_DIR")/components/IPC.Gateway.UpdateWorker"
+if [[ -f $worker_source/IPC.Gateway.UpdateWorker.dll ]]; then
+  [[ $SERVICE_USER != root ]] || fail 'The update file worker requires a non-root gateway service account.'
+  case "$INSTALL_DIR/" in /tmp/*|/var/tmp/*) fail 'Use a persistent application directory for webpage updates.';; esac
+  case "$DATA_DIR/" in /tmp/*|/var/tmp/*) fail 'Use a persistent data directory for webpage updates.';; esac
+  command -v runuser >/dev/null || fail 'Missing runuser for the update helper.'
+  # The controller executes dotnet as root: neither it nor any parent may be
+  # writable by the gateway account or another unprivileged account.
+  trusted_dotnet=$(realpath -e -- "$DOTNET_PATH")
+  ancestor=$trusted_dotnet
+  while [[ $ancestor != / ]]; do
+    [[ $(stat -c %u -- "$ancestor") == 0 ]] || fail 'The update controller requires a root-owned .NET installation.'
+    mode=$(stat -c %a -- "$ancestor")
+    (( (8#$mode & 8#022) == 0 )) || fail 'The .NET executable and parents must not be group/world writable.'
+    ancestor=$(dirname -- "$ancestor")
+  done
+  worker_dir="/opt/ipc-gateway-update/$SERVICE_NAME"
+  install -d -m 755 -o root -g root "$worker_dir" /etc/ipc-gateway
+  rsync -a --delete --chown=root:root --chmod=D755,F644 -- "$worker_source/" "$worker_dir/"
+  install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$DATA_DIR/Updates"
+  ha_state="${HA_STATE_DIR:-$DATA_DIR/HighAvailability}"
+  [[ $ha_state =~ ^/[a-zA-Z0-9_./:@+-]+$ ]] || fail 'Invalid HA_STATE_DIR.'
+  if [[ -n ${UPDATE_HEALTH_URL:-} ]]; then health=$UPDATE_HEALTH_URL
+  elif [[ $SERVICE_URL =~ ^http://[^/:]+:([0-9]+)$ ]]; then health="http://127.0.0.1:${BASH_REMATCH[1]}/api/startup/status"
+  else fail 'Set UPDATE_HEALTH_URL to a loopback HTTP startup endpoint for this service.'; fi
+  [[ $health =~ ^http://127\.0\.0\.1:[0-9]+/api/startup/status$ ]] || fail 'UPDATE_HEALTH_URL must be a loopback startup endpoint.'
+  cat > "/etc/ipc-gateway/$SERVICE_NAME.update.json" <<CONFIG
+{"installDirectory":"$INSTALL_DIR","updateDirectory":"$DATA_DIR/Updates","haStateDirectory":"$ha_state","serviceName":"$SERVICE_NAME","serviceUser":"$SERVICE_USER","workerAssembly":"$worker_dir/IPC.Gateway.UpdateWorker.dll","dotNetPath":"$DOTNET_PATH","healthUrl":"$health","timeoutSeconds":300,"pathUnit":"/etc/systemd/system/$SERVICE_NAME-update.path"}
+CONFIG
+  chown root:root "/etc/ipc-gateway/$SERVICE_NAME.update.json"
+  chmod 644 "/etc/ipc-gateway/$SERVICE_NAME.update.json"
+  cat > "/etc/systemd/system/$SERVICE_NAME-update.service" <<UPDATE_UNIT
+[Unit]
+Description=IPC Gateway Restricted Update Worker
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+[Service]
+Type=oneshot
+User=root
+ExecStart=$DOTNET_PATH $worker_dir/IPC.Gateway.UpdateWorker.dll /etc/ipc-gateway/$SERVICE_NAME.update.json
+TimeoutStartSec=1800
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=$INSTALL_DIR $DATA_DIR
+UPDATE_UNIT
+  cat > "/etc/systemd/system/$SERVICE_NAME-update.path" <<PATH_UNIT
+[Unit]
+Description=IPC Gateway Update Request Watcher
+[Path]
+PathExists=$DATA_DIR/Updates/worker-request.json
+Unit=$SERVICE_NAME-update.service
+[Install]
+WantedBy=multi-user.target
+PATH_UNIT
+  systemctl daemon-reload
+  systemctl enable --now "$SERVICE_NAME-update.path"
+  echo "Installed isolated update helper: $SERVICE_NAME-update.path (no sudo permission granted to gateway)."
+else
+  echo 'Update worker component missing: webpage automatic execution remains unavailable. Use a complete new installation package.'
+fi
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME.service"
 if [[ $START_SERVICE == 1 || $was_active == 1 ]]; then

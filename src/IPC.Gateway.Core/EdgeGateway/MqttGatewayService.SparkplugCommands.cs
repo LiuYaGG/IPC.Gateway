@@ -107,6 +107,7 @@ namespace IPC.EdgeGateway
                     string valueText = FormatCommandValue(metric.Value);
                     WriteTagResponse response = _runtime.WriteTag(new WriteTagRequest
                     {
+                        Origin = "Sparkplug",
                         ChannelId = snapshot.ChannelId,
                         ChannelName = snapshot.ChannelName,
                         DeviceId = snapshot.DeviceId,

@@ -45,11 +45,12 @@ namespace IPC.Runtime.Engine
         {
             Dictionary<string, CompiledTagRead> entries =
                 new Dictionary<string, CompiledTagRead>(StringComparer.OrdinalIgnoreCase);
-            AddTags(device, null, device == null ? null : device.Tags, entries);
+            bool validateAddresses = device != null && PlcDriverPluginRegistry.IsDriverAvailable(device.Connection, device.Protocol);
+            AddTags(device, null, device?.Tags, entries, validateAddresses);
             if (device?.Groups != null)
             {
                 foreach (GroupConfig group in device.Groups)
-                    AddTags(device, group, group?.Tags, entries);
+                    AddTags(device, group, group?.Tags, entries, validateAddresses);
             }
             if (previous != null)
             {
@@ -125,7 +126,7 @@ namespace IPC.Runtime.Engine
             DeviceConfig? device,
             GroupConfig? group,
             IList<TagConfig>? tags,
-            Dictionary<string, CompiledTagRead> entries)
+            Dictionary<string, CompiledTagRead> entries, bool validateAddresses)
         {
             if (tags == null)
                 return;
@@ -136,7 +137,8 @@ namespace IPC.Runtime.Engine
                     continue;
 
                 string address = ResolveAddress(device, tag);
-                string error = ValidateTagDefinition(device, tag, address, out var validation);
+                PlcTagValidationResult? validation = null;
+                string error = validateAddresses ? ValidateTagDefinition(device, tag, address, out validation) : string.Empty;
                 var entry = string.IsNullOrEmpty(error)
                     ? CompiledTagRead.Valid(group, tag, address)
                     : CompiledTagRead.Invalid(tag, address, error, group);

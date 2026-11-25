@@ -529,6 +529,13 @@ namespace IPC.Plc.Communication.Infrastructure
             }
         }
 
+        internal static bool IsDriverAvailable(PlcConnectionOptions? options, PlcProtocol protocol)
+        {
+            if (options == null || !TryGetCapabilities(options, protocol, out _)) return false;
+            try { EnsureDriverAllowed(options, protocol); return true; }
+            catch (PlcProtocolException) { return false; }
+        }
+
         public static bool TryCreateClient(PlcConnectionOptions options, out IPlcClient? client)
         {
             client = null;

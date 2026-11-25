@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "DotNext.AspNetCore.Cluster": {
+        "type": "Direct",
+        "requested": "[6.13.0, )",
+        "resolved": "6.13.0",
+        "contentHash": "TkHE84aCMecF3sGYeRTl6f7kAIse2r/ZidndCArPBE9wxekXTIzTYrC+mCQOCbqGe5zFC2kExo8Mwvtm7ygQCw==",
+        "dependencies": {
+          "DotNext.Net.Cluster": "6.13.0",
+          "System.Runtime.Caching": "10.0.14"
+        }
+      },
+      "Microsoft.Extensions.Hosting.Systemd": {
+        "type": "Direct",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "7poW164VJBqphfdUI5pz/2h9L38zyJP8Gk7yHhnNBSgw5QWuBnpZ5RTDrsY3JiwKa4eXOEJKTVNnnBqE7cafRw=="
+      },
+      "Microsoft.Extensions.Hosting.WindowsServices": {
+        "type": "Direct",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "o4pwquIOdvTwj/VBq/KXmE4/JBVuuemmdy80PqAsnzeBmkWiukQ4YrtaTtqhP+BkdHsIYtmYyTrM6Q6RedfbQw==",
+        "dependencies": {
+          "System.ServiceProcess.ServiceController": "10.0.9"
+        }
+      },
+      "DotNext": {
+        "type": "Transitive",
+        "resolved": "6.13.0",
+        "contentHash": "x7UgW5MEbkXpYe3mOyhbr6q0xnUNuN3afjmVyQ4Wjtc3Xy6qsfowRJ7gyi/WERjkfZ236/N98C2m+SKNrqykiA==",
+        "dependencies": {
+          "System.IO.Hashing": "10.0.14"
+        }
+      },
+      "DotNext.IO": {
+        "type": "Transitive",
+        "resolved": "6.13.0",
+        "contentHash": "/xzRz0Pv1zreLoLUkVY4gTmzPK6Am+vPad263ZOq0EoqseWxgL3AR5ciWhTUNH2xZu57CGPnWTwj7NcyQS4pQw==",
+        "dependencies": {
+          "DotNext": "6.13.0"
+        }
+      },
+      "DotNext.Net.Cluster": {
+        "type": "Transitive",
+        "resolved": "6.13.0",
+        "contentHash": "PFeSUkdsZOCBwtxrWrwdr3TfxnMSbYnbpBirVAsj5r8QSTvKUwg/48Xt3uyIHMux6kb14dfkccfii+Xn6kF+ow==",
+        "dependencies": {
+          "DotNext.IO": "6.13.0",
+          "DotNext.Threading": "6.13.0",
+          "DotNext.Unsafe": "6.13.0"
+        }
+      },
+      "DotNext.Threading": {
+        "type": "Transitive",
+        "resolved": "6.13.0",
+        "contentHash": "UjvcGy8Eg+nhuBuhJfMd6xVWExrGBTNcQQq+ZypYLNMaOF0XzuqpohmjbJMcoW0EYNLkIDzcIrS+CXKRkCOv4A==",
+        "dependencies": {
+          "DotNext": "6.13.0"
+        }
+      },
+      "DotNext.Unsafe": {
+        "type": "Transitive",
+        "resolved": "6.13.0",
+        "contentHash": "S+lMrG5RcuiAL/uQGwpqOTBlv6VflDuQLpQ/U72+1ZCpWK6NFv3Zdd1+gwpRcYvhebWuoDl+LQLGY4KeUIDgAg==",
+        "dependencies": {
+          "DotNext": "6.13.0"
+        }
+      },
+      "System.Configuration.ConfigurationManager": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "F/bLtwG0JuJ2OnTCsvJbnulvN7hr+BIFJLtE3PzgmW3AWkV8LYO5XF0j+zB4tHn/b4yfR7PAO0dZmoYeaINtnQ==",
+        "dependencies": {
+          "System.Security.Cryptography.ProtectedData": "10.0.14"
+        }
+      },
+      "System.IO.Hashing": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "lVqovhCt3HlZe7ONG5ydaj6BYwYI004gldVfMMkJl/lR5ueeCtWNpW4nejOX75sPmzm8vXCxB69GqwHaYCnyUQ=="
+      },
+      "System.Runtime.Caching": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "qw0CId2GMgMonwyiaztgRhR64s4oXr3k/FOE8HagViLVQvsPXTjxnVJezWBgqaum6KOGCAJe3bnOD8C9T1wxgg==",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.14"
+        }
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "UuaBUHgmtc9h6CMxaQqFDDJxkS5JVy7XEB+DbtCvD68GFcVM9/AccuNwFpARx8nwCnvjaxzoOBjG3gPz32P1Eg=="
+      },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g=="
+      }
+    },
+    "net10.0/linux-arm64": {
+      "System.Runtime.Caching": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "qw0CId2GMgMonwyiaztgRhR64s4oXr3k/FOE8HagViLVQvsPXTjxnVJezWBgqaum6KOGCAJe3bnOD8C9T1wxgg==",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.14"
+        }
+      },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g=="
+      }
+    },
+    "net10.0/linux-x64": {
+      "System.Runtime.Caching": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "qw0CId2GMgMonwyiaztgRhR64s4oXr3k/FOE8HagViLVQvsPXTjxnVJezWBgqaum6KOGCAJe3bnOD8C9T1wxgg==",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.14"
+        }
+      },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g=="
+      }
+    },
+    "net10.0/win-x64": {
+      "System.Runtime.Caching": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "qw0CId2GMgMonwyiaztgRhR64s4oXr3k/FOE8HagViLVQvsPXTjxnVJezWBgqaum6KOGCAJe3bnOD8C9T1wxgg==",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.14"
+        }
+      },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g=="
+      }
+    }
+  }
+}

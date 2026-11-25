@@ -9,7 +9,7 @@ using IPC.Plc.Communication.Core;
 
 namespace IPC.Plc.Communication.Pccc
 {
-    public sealed class PcccClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
+    public sealed class PcccClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient
     {
         private const byte ExecutePcccService = 0x4B;
         private const byte TypedReadFunction = 0xA2;

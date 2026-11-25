@@ -74,11 +74,6 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         DateTime nowUtc = DateTime.UtcNow;
         if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value > nowUtc)
             return GatewayUserAuthenticationResult.LockedOut(ToLocalTime(entity.LockoutEndUtc.Value));
-        if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value <= nowUtc)
-        {
-            entity.FailedLoginCount = 0;
-            entity.LockoutEndUtc = null;
-        }
 
         if (!VerifyPassword(password, entity.PasswordSalt, entity.PasswordHash))
         {
@@ -89,14 +84,8 @@ public sealed class GatewayUserStore : IGatewayUserRepository
             return GatewayUserAuthenticationResult.Fail("账号或密码错误。");
         }
 
-        entity.LastLoginUtc = nowUtc;
-        if (options.ResetFailedCountOnSuccess)
-        {
-            entity.FailedLoginCount = 0;
-            entity.LockoutEndUtc = null;
-        }
-        db.Updateable(entity).ExecuteCommand();
-
+        int changed = SuccessfulLogin(db, entity, options, nowUtc).ExecuteCommand();
+        if (changed != 1) return GatewayUserAuthenticationResult.Fail("账号状态已变化，请重新登录。");
         GatewayUserInfo user = ToInfo(entity, includePassword: false);
         return GatewayUserAuthenticationResult.Ok(user);
     }
@@ -119,11 +108,6 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         DateTime nowUtc = DateTime.UtcNow;
         if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value > nowUtc)
             return GatewayUserAuthenticationResult.LockedOut(ToLocalTime(entity.LockoutEndUtc.Value));
-        if (options.Enabled && entity.LockoutEndUtc.HasValue && entity.LockoutEndUtc.Value <= nowUtc)
-        {
-            entity.FailedLoginCount = 0;
-            entity.LockoutEndUtc = null;
-        }
 
         if (!VerifyPassword(password, entity.PasswordSalt, entity.PasswordHash))
         {
@@ -134,14 +118,8 @@ public sealed class GatewayUserStore : IGatewayUserRepository
             return GatewayUserAuthenticationResult.Fail("账号或密码错误。");
         }
 
-        entity.LastLoginUtc = nowUtc;
-        if (options.ResetFailedCountOnSuccess)
-        {
-            entity.FailedLoginCount = 0;
-            entity.LockoutEndUtc = null;
-        }
-        await db.Updateable(entity).ExecuteCommandAsync();
-
+        int changed = await SuccessfulLogin(db, entity, options, nowUtc).ExecuteCommandAsync();
+        if (changed != 1) return GatewayUserAuthenticationResult.Fail("账号状态已变化，请重新登录。");
         GatewayUserInfo user = ToInfo(entity, includePassword: false);
         return GatewayUserAuthenticationResult.Ok(user);
     }
@@ -229,11 +207,15 @@ public sealed class GatewayUserStore : IGatewayUserRepository
                 PasswordSalt = salt,
                 PasswordChangedUtc = DateTime.UtcNow,
                 FailedLoginCount = 0,
+                SecurityStamp = Guid.NewGuid().ToString("N"),
                 CreatedUtc = DateTime.UtcNow
             }).ExecuteCommand();
         }
         else
         {
+            string previousStamp = existing.SecurityStamp;
+            bool invalidate = updatePassword || existing.Enabled != enabled || existing.Role != normalizedRole;
+            if (invalidate) existing.SecurityStamp = Guid.NewGuid().ToString("N");
             existing.DisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedUsername : displayName.Trim();
             existing.Role = normalizedRole;
             existing.Enabled = enabled;
@@ -246,7 +228,8 @@ public sealed class GatewayUserStore : IGatewayUserRepository
                 existing.LockoutEndUtc = null;
             }
 
-            db.Updateable(existing).ExecuteCommand();
+            if (UpdateProfile(db, existing, updatePassword, invalidate, previousStamp).ExecuteCommand() != 1)
+                throw new InvalidOperationException("账号状态已变化，请重新加载后保存。");
         }
 
         GatewayUserInfo? saved = FindByUsername(normalizedUsername);
@@ -295,11 +278,15 @@ public sealed class GatewayUserStore : IGatewayUserRepository
                 PasswordSalt = salt,
                 PasswordChangedUtc = DateTime.UtcNow,
                 FailedLoginCount = 0,
+                SecurityStamp = Guid.NewGuid().ToString("N"),
                 CreatedUtc = DateTime.UtcNow
             }).ExecuteCommandAsync();
         }
         else
         {
+            string previousStamp = existing.SecurityStamp;
+            bool invalidate = updatePassword || existing.Enabled != enabled || existing.Role != normalizedRole;
+            if (invalidate) existing.SecurityStamp = Guid.NewGuid().ToString("N");
             existing.DisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedUsername : displayName.Trim();
             existing.Role = normalizedRole;
             existing.Enabled = enabled;
@@ -312,7 +299,8 @@ public sealed class GatewayUserStore : IGatewayUserRepository
                 existing.LockoutEndUtc = null;
             }
 
-            await db.Updateable(existing).ExecuteCommandAsync();
+            if (await UpdateProfile(db, existing, updatePassword, invalidate, previousStamp).ExecuteCommandAsync() != 1)
+                throw new InvalidOperationException("账号状态已变化，请重新加载后保存。");
         }
 
         GatewayUserInfo? saved = await FindByUsernameAsync(normalizedUsername);
@@ -380,6 +368,7 @@ public sealed class GatewayUserStore : IGatewayUserRepository
             DisplayName = entity.DisplayName ?? string.Empty,
             Role = entity.Role,
             Enabled = entity.Enabled,
+            SecurityStamp = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(entity.Id + "|" + entity.PasswordHash + "|" + entity.PasswordSalt + "|" + entity.SecurityStamp))),
             PasswordHash = includePassword ? entity.PasswordHash : string.Empty,
             PasswordSalt = includePassword ? entity.PasswordSalt : string.Empty,
             CreatedTime = DateTime.SpecifyKind(entity.CreatedUtc, DateTimeKind.Utc).ToLocalTime(),
@@ -391,38 +380,90 @@ public sealed class GatewayUserStore : IGatewayUserRepository
         };
     }
 
-    private static void RegisterFailedLogin(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime nowUtc)
+    private static SqlSugar.IUpdateable<GatewayUserEntity> UpdateProfile(SqlSugar.ISqlSugarClient db,GatewayUserEntity entity,bool password,bool invalidate,string previousStamp)
     {
-        entity.LastFailedLoginUtc = nowUtc;
-        entity.FailedLoginCount++;
-        if (options.Enabled)
-        {
-            int maxAttempts = Math.Max(1, options.MaxFailedAttempts);
-            if (entity.FailedLoginCount >= maxAttempts)
-            {
-                int minutes = Math.Max(1, Math.Min(1440, options.LockoutMinutes));
-                entity.LockoutEndUtc = nowUtc.AddMinutes(minutes);
-            }
-        }
-
-        db.Updateable(entity).ExecuteCommand();
+        var columns = new List<string> {nameof(GatewayUserEntity.DisplayName),nameof(GatewayUserEntity.Role),nameof(GatewayUserEntity.Enabled)};
+        if(invalidate)columns.Add(nameof(GatewayUserEntity.SecurityStamp));
+        if(password)columns.AddRange([nameof(GatewayUserEntity.PasswordHash),nameof(GatewayUserEntity.PasswordSalt),nameof(GatewayUserEntity.PasswordChangedUtc),nameof(GatewayUserEntity.FailedLoginCount),nameof(GatewayUserEntity.LockoutEndUtc)]);
+        return db.Updateable(entity).UpdateColumns(columns.ToArray()).Where(x=>x.Id==entity.Id&&x.SecurityStamp==previousStamp);
     }
 
-    private static async Task RegisterFailedLoginAsync(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime nowUtc)
+    // Each update changes only authentication state and compares the verified credential.
+    // Concurrent A/B failures increment the database's current counter.
+    private static SqlSugar.IUpdateable<GatewayUserEntity> SuccessfulLogin(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime now)
     {
-        entity.LastFailedLoginUtc = nowUtc;
-        entity.FailedLoginCount++;
-        if (options.Enabled)
-        {
-            int maxAttempts = Math.Max(1, options.MaxFailedAttempts);
-            if (entity.FailedLoginCount >= maxAttempts)
-            {
-                int minutes = Math.Max(1, Math.Min(1440, options.LockoutMinutes));
-                entity.LockoutEndUtc = nowUtc.AddMinutes(minutes);
-            }
-        }
+        var update = db.Updateable<GatewayUserEntity>().SetColumns(x => x.LastLoginUtc == now)
+            .Where(x => x.Id == entity.Id && x.Enabled && x.PasswordHash == entity.PasswordHash && x.SecurityStamp == entity.SecurityStamp);
+        if (options.Enabled) update = update.Where(x => x.LockoutEndUtc == null || x.LockoutEndUtc <= now);
+        if (options.ResetFailedCountOnSuccess) update = update.SetColumns(x => new GatewayUserEntity { FailedLoginCount = 0, LockoutEndUtc = null });
+        return update;
+    }
 
-        await db.Updateable(entity).ExecuteCommandAsync();
+    private static SqlSugar.IUpdateable<GatewayUserEntity> FailedLogin(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime now)
+    {
+        int max = Math.Max(1, options.MaxFailedAttempts);
+        DateTime until = now.AddMinutes(Math.Clamp(options.LockoutMinutes, 1, 1440));
+        return db.Updateable<GatewayUserEntity>().SetColumns(x => new GatewayUserEntity {
+            LastFailedLoginUtc = now,
+            FailedLoginCount = x.LockoutEndUtc != null && x.LockoutEndUtc <= now ? 1 : x.FailedLoginCount + 1,
+            LockoutEndUtc = (x.LockoutEndUtc != null && x.LockoutEndUtc <= now ? 1 : x.FailedLoginCount + 1) >= max ? until : null
+        }).Where(x => x.Id == entity.Id && x.Enabled && x.PasswordHash == entity.PasswordHash && x.SecurityStamp == entity.SecurityStamp &&
+            (x.LockoutEndUtc == null || x.LockoutEndUtc <= now));
+    }
+    private static void RegisterFailedLogin(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime now)
+    {
+        FailedLogin(db,entity,options,now).ExecuteCommand();
+        var current = db.Queryable<GatewayUserEntity>().InSingle(entity.Id);
+        entity.LockoutEndUtc = current?.LockoutEndUtc;
+    }
+    private static async Task RegisterFailedLoginAsync(SqlSugar.ISqlSugarClient db, GatewayUserEntity entity, GatewayAccountLockoutOptions options, DateTime now)
+    {
+        await FailedLogin(db,entity,options,now).ExecuteCommandAsync();
+        var current = await db.Queryable<GatewayUserEntity>().InSingleAsync(entity.Id);
+        entity.LockoutEndUtc = current?.LockoutEndUtc;
+    }
+
+    private static SqlSugar.IUpdateable<GatewayUserEntity>? PasswordUpdate(SqlSugar.ISqlSugarClient db,GatewayUserEntity? entity,string expectedStamp,string password)
+    {
+        if(entity==null||!entity.Enabled||ToInfo(entity,false).SecurityStamp!=expectedStamp)return null;
+        CreatePasswordHash(password,out string salt,out string hash);
+        string stamp=Guid.NewGuid().ToString("N");DateTime now=DateTime.UtcNow;
+        return db.Updateable<GatewayUserEntity>().SetColumns(x=>new GatewayUserEntity {PasswordHash=hash,PasswordSalt=salt,
+            SecurityStamp=stamp,PasswordChangedUtc=now,FailedLoginCount=0,LockoutEndUtc=null})
+            .Where(x=>x.Id==entity.Id&&x.Enabled&&x.SecurityStamp==entity.SecurityStamp&&x.PasswordHash==entity.PasswordHash);
+    }
+    public bool ChangePasswordIfCurrent(string userId,string securityStamp,string newPassword)
+    {
+        using var db=_factory.Create();var entity=db.Queryable<GatewayUserEntity>().InSingle(userId);
+        var update=PasswordUpdate(db,entity,securityStamp,newPassword);
+        return update!=null&&update.ExecuteCommand()==1;
+    }
+    public async Task<bool> ChangePasswordIfCurrentAsync(string userId,string securityStamp,string newPassword)
+    {
+        using var db=_factory.Create();var entity=await db.Queryable<GatewayUserEntity>().InSingleAsync(userId);
+        var update=PasswordUpdate(db,entity,securityStamp,newPassword);
+        return update!=null&&await update.ExecuteCommandAsync()==1;
+    }
+
+    public bool IsSessionRevoked(string userId,string sessionId)
+    {
+        using var db = _factory.Create();
+        return db.Queryable<GatewayRevokedSessionEntity>().Any(x => x.SessionId == sessionId && x.UserId == userId);
+    }
+    public async Task<bool> IsSessionRevokedAsync(string userId,string sessionId)
+    {
+        using var db = _factory.Create();
+        return await db.Queryable<GatewayRevokedSessionEntity>().AnyAsync(x => x.SessionId == sessionId && x.UserId == userId);
+    }
+    public async Task RevokeSessionAsync(string userId,string sessionId,long expiresAt)
+    {
+        if (!Guid.TryParse(sessionId,out _) || string.IsNullOrEmpty(userId)) throw new ArgumentException("Invalid login session.");
+        using var db = _factory.Create();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        await db.Deleteable<GatewayRevokedSessionEntity>().Where(x => x.ExpiresAt < now).ExecuteCommandAsync();
+        if (await db.Queryable<GatewayRevokedSessionEntity>().AnyAsync(x => x.SessionId == sessionId)) return;
+        try { await db.Insertable(new GatewayRevokedSessionEntity {UserId=userId,SessionId=sessionId,ExpiresAt=expiresAt}).ExecuteCommandAsync(); }
+        catch { if (!await db.Queryable<GatewayRevokedSessionEntity>().AnyAsync(x => x.SessionId == sessionId && x.UserId == userId)) throw; }
     }
 
     private static DateTime ToLocalTime(DateTime? value)

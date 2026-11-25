@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using IPC.Gateway.Core.Gateway;
+using IPC.Gateway.Core.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 
 namespace IPC.EdgeGateway;
@@ -74,11 +76,28 @@ public sealed partial class GatewayAlarmJournal
     private readonly Func<LocalHistoryOptions>? _retention;
     private DateTime _nextCleanup;
     private volatile bool _initialized;
+    private readonly IGatewayDatabaseOwner? _owner;
+    private readonly SharedAlarmJournal? _shared;
+    private SharedAlarmJournal? Shared => _owner?.IsCluster == true || _owner?.ManagedStandalone == true ? _shared : null;
+    internal long? CurrentEpoch => Shared != null ? _owner!.Epoch : null;
+    internal bool MayPersist(long? expected) =>
+        expected==CurrentEpoch && (Shared == null || _owner!.CanRunBusiness);
 
-    public GatewayAlarmJournal(string databasePath, Func<LocalHistoryOptions>? retention = null)
+    public void ImportStandaloneBeforeEnrollment(string clusterId,string nodeId)
+    {
+        if (_shared==null || _owner?.ClusterId!=clusterId || _owner.NodeId!=nodeId || nodeId is not ("A" or "B"))
+            throw new InvalidOperationException("HA_ALARM_IMPORT_IDENTITY");
+        _shared.ImportStandalone(clusterId,nodeId,()=>File.Exists(_path)?Open():null);
+    }
+
+
+    public GatewayAlarmJournal(string databasePath, Func<LocalHistoryOptions>? retention = null,
+        GatewayDatabaseOptions? database = null, IGatewayDatabaseOwner? owner = null)
     {
         _path = Path.GetFullPath(databasePath);
         _retention = retention;
+        _owner = owner;
+        if (owner != null) _shared = new SharedAlarmJournal(new SqlSugarConnectionFactory(database ?? throw new ArgumentNullException(nameof(database))), owner);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = _path, DefaultTimeout = 5, ForeignKeys = true }.ToString();
     }
 
@@ -123,6 +142,7 @@ public sealed partial class GatewayAlarmJournal
 
     internal Dictionary<string, AlarmTagState> ReadStates()
     {
+        if (Shared is { } shared) return shared.ReadStates();
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT tag_key,state,threshold FROM alarm_state";
@@ -133,9 +153,16 @@ public sealed partial class GatewayAlarmJournal
         return result;
     }
 
-    internal void SaveTransitions(List<GatewayAlarmRecord> events, Dictionary<string, AlarmTagState?> states)
+    internal void SaveTransitions(List<GatewayAlarmRecord> events, Dictionary<string, AlarmTagState?> states, long? sourceEpoch)
     {
         if (states.Count == 0) return;
+        if (sourceEpoch.HasValue)
+        {
+            if (!MayPersist(sourceEpoch) || Shared is not { } shared)
+                throw new IPC.Plc.Communication.Core.PlcWriteDeniedException("HA_STALE_EPOCH");
+            shared.SaveTransitions(events, states,sourceEpoch.Value);
+            return;
+        }
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
         using var insert = CreateInsert(connection, transaction);
@@ -176,6 +203,7 @@ public sealed partial class GatewayAlarmJournal
         if (string.IsNullOrWhiteSpace(record.EventId)) record.EventId = Guid.NewGuid().ToString("N");
         record.Source = "rule";
         record.Timestamp = record.Timestamp == default ? DateTime.UtcNow : record.Timestamp.ToUniversalTime();
+        if (Shared is { } shared) { shared.Enqueue(record,publish); return record.EventId; }
         using var connection = Open();
         using var tx = connection.BeginTransaction();
         using var insert = CreateInsert(connection, tx);
@@ -229,6 +257,12 @@ public sealed partial class GatewayAlarmJournal
         {
             int days = storage.TieringEnabled && storage.RetentionPolicy == "MoveToColdThenDelete"
                 ? storage.ColdRetentionDays : storage.HotRetentionDays;
+            if (Shared is { } shared)
+            {
+                int removed = shared.Cleanup(DateTime.UtcNow.AddDays(-days).Ticks);
+                _nextCleanup = removed == 2000 ? DateTime.UtcNow.AddSeconds(10) : DateTime.UtcNow.AddHours(storage.CleanupIntervalHours);
+                return;
+            }
             using var connection = Open();
             using var command = connection.CreateCommand();
             command.CommandText = $"""
@@ -254,6 +288,7 @@ public sealed partial class GatewayAlarmJournal
 
     public IReadOnlyList<GatewayAlarmRecord> ReadPending(int count)
     {
+        if (Shared is { } shared) return shared.Pending(count);
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -297,8 +332,9 @@ public sealed partial class GatewayAlarmJournal
         return rows;
     }
 
-    public void ConfirmSent(string eventId)
+    public void ConfirmSent(string eventId,long? expectedEpoch = null)
     {
+        if (Shared is { } shared) { shared.ConfirmSent(eventId,expectedEpoch); return; }
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE alarm_event SET delivery=2,topic='',payload='' WHERE event_id=$id AND delivery=1";
@@ -308,6 +344,7 @@ public sealed partial class GatewayAlarmJournal
 
     public (long Count, DateTime? OldestUtc) GetPendingStats()
     {
+        if (Shared is { } shared) return shared.PendingStats();
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*), MIN(queued_ticks) FROM alarm_event WHERE delivery=1";

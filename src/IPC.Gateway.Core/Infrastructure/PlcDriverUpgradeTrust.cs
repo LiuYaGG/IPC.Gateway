@@ -55,9 +55,14 @@ public static partial class PlcDriverPluginRegistry
                 if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar)) continue;
                 string nextPath = Path.Combine(payload, relative);
                 if (!File.Exists(nextPath)) continue;
+                string target = Path.GetFullPath(Path.Combine(install, relative));
                 var oldManifest = LoadManifest(ResolveManifestPath(oldPath));
-                if (!ValidateSignature(oldPath, oldManifest, out _, out _, out string status) ||
-                    (status != "Trusted" && status != "UpgradeTrusted")) continue;
+                bool previousTrusted = ValidateSignature(oldPath, oldManifest, out _, out string previousDigest, out string status)
+                    && status is "Trusted" or "UpgradeTrusted";
+                // A rollback copy lives at a new path. Its existing receipt is bound
+                // to the original installation path, the old bytes and the trusted key.
+                if (!previousTrusted && (previousDirectory == null || !HasUpgradeTrust(target, oldManifest, previousDigest)))
+                    continue;
                 string nextManifestPath = ResolveManifestPath(nextPath);
                 if (string.IsNullOrEmpty(nextManifestPath)) continue;
                 var nextManifest = LoadManifest(nextManifestPath);
@@ -65,7 +70,6 @@ public static partial class PlcDriverPluginRegistry
                 string digest = ComputeSha256(nextPath);
                 if (!string.IsNullOrWhiteSpace(nextManifest.AssemblySha256) && NormalizeHex(nextManifest.AssemblySha256) != digest)
                     throw new InvalidOperationException("升级驱动摘要与清单不一致。");
-                string target = Path.GetFullPath(Path.Combine(install, relative));
                 string payloadHash = UpgradePayloadHash(nextManifest, digest);
                 string publicHash = PublicKeyHash();
                 receipts.RemoveAll(r => r.AssemblyPath == target && r.PayloadSha256 == payloadHash);

@@ -96,6 +96,7 @@
       <template #description>
         <div class="pending-body">
           <span>{{ tx(pendingText) }}</span>
+          <span v-if="haCapabilities?.mode==='Cluster'">{{ tx('本次升级节点') }} {{ haCapabilities.connectedNode }} · {{ haLabel(haCapabilities.localRole) }}</span>
           <a-button
             v-if="status?.pendingAction?.status === 'Pending'"
             type="primary"
@@ -123,7 +124,7 @@
           {{ tx(status.pendingAction.errorMessage) }}
         </p>
         <p v-if="!status?.supportsApply">
-          {{ tx("自动执行需要网关以 Windows 服务方式运行。") }}
+          {{ tx(status?.applySupportMessage || "自动执行需要 Windows 服务或已安装独立更新辅助器的 Linux systemd 服务。") }}
         </p>
         <p v-if="status?.pendingAction?.executionLogPath">
           {{ tx("执行日志") }}：{{ status.pendingAction.executionLogPath }}
@@ -553,6 +554,9 @@
           </div>
         </template>
         <a-descriptions :column="1" bordered size="small">
+          <a-descriptions-item :label="tx('运行平台')">
+            {{ status?.runtimeCompatibility?.operatingSystem || '-' }} / {{ status?.runtimeCompatibility?.architecture || '-' }}
+          </a-descriptions-item>
           <a-descriptions-item :label="tx('安装目录')">{{
             status?.installDirectory || "-"
           }}</a-descriptions-item>
@@ -870,7 +874,7 @@
       @cancel="closeRestartDialog"
     >
       <a-progress
-        :percent="Math.round(restartMilestones * 100 / 3)"
+        :percent="status?.pendingAction?.progressPercent || Math.round(restartMilestones * 100 / 3)"
         :status="restartOutcome === 'failed' ? 'exception' : applying ? 'active' : restartOutcome === 'completed' ? 'success' : 'normal'"
         :show-info="false"
         role="progressbar"
@@ -958,6 +962,8 @@ import DriverSigningModal from "./DriverSigningModal.vue";
 import WatchdogConfigPanel from "./watchdog/WatchdogConfigPanel.vue";
 import { formatDateTime } from "../utils/format";
 import { PERMISSIONS, usePermissions } from "../utils/permissions";
+import { haCapabilities } from "../useHighAvailability";
+import { haGet, haLabel, type HaStatus } from "../haApi";
 import { isSamePackageVersion } from "../utils/packageVersion";
 import { beginUpgradeUpload, updateUpgradeUpload, markUpgradeTransferred, finishUpgradeUpload } from '../utils/upgradeUploadState';
 import { beginConfigurationSave, endConfigurationSave } from '../utils/configurationSaveState';
@@ -1176,9 +1182,25 @@ onMounted(() => {
 async function executeUpdate() {
   const action = status.value?.pendingAction;
   if (!action || applying.value) return;
+  let detail = "";
+  if (haCapabilities.value?.mode === "Cluster" && hasPermission(PERMISSIONS.haView)) {
+    try {
+      const cluster = await haGet<HaStatus>("status");
+      const current = cluster.members.find(member => member.nodeId === cluster.connectedNode);
+      if (cluster.authority !== "Quorum" || (cluster.reachableMembers ?? 0) < 3 ||
+          !current?.maintenance || !cluster.owner || cluster.owner === cluster.connectedNode) {
+        notify.warning(tx("请先交接业务，确认其他成员健康，并将本节点置于维护状态。"));
+        return;
+      }
+      detail = tx("本次升级节点") + " " + cluster.connectedNode + " · " + tx("剩余可用票数") + " " + ((cluster.reachableMembers ?? 0) - 1) + ". ";
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : tx("无法核实集群状态。"));
+      return;
+    }
+  }
   try {
     await confirmAction(
-      "确认执行当前升级或回滚并重启服务？采集和推送将短暂暂停，请确保已备份数据库。",
+      detail + tx("确认执行当前升级或回滚并重启服务？采集和推送将短暂暂停，请确保已备份数据库。"),
       action.actionType === "Rollback" ? "执行回滚并重启" : "执行升级并重启",
       {
         confirmButtonText: "确认执行",
@@ -1198,6 +1220,15 @@ async function executeUpdate() {
     updateRestartStage(scheduled);
   } catch (error) {
     if (disposed || !applying.value || restartActionId !== action.actionId || restartMilestones.value > 0) return;
+    if (error instanceof HttpRequestError && error.code === "REAUTH_NOT_COMPLETED") {
+      clearTimeout(restartTimer);
+      restartController?.abort();
+      applying.value = false;
+      restartDialog.value = false;
+      rememberRestart();
+      notify.info(error.message);
+      return;
+    }
     // A dropped POST may already be running on the host. A 4xx rejection
     // (other than a timeout) plus a still-Pending action confirms it was declined.
     if (error instanceof SessionExpiredError || (error instanceof HttpRequestError &&
@@ -1216,6 +1247,7 @@ function updateRestartStage(action: GatewayPendingUpdateAction) {
     restartMilestones.value = 2;
     restartMessage.value = "正在替换程序并重启服务，请稍候…";
   }
+  if (action.progressMessage) restartMessage.value = action.progressMessage;
   rememberRestart();
 }
 async function pollRestart() {
@@ -1232,6 +1264,7 @@ async function pollRestart() {
       status.value.currentVersion = data.currentVersion;
     }
     const action = data.pendingAction;
+    if (action?.progressMessage) restartMessage.value = action.progressMessage;
     if (!action) {
       // The Windows helper can be updating the action file during this read.
       restartMessage.value = "正在等待离线动作的执行结果。";

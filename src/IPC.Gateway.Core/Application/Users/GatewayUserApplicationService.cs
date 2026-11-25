@@ -21,6 +21,9 @@ namespace IPC.Gateway.Core.Application.Users;
 
 public sealed class GatewayUserApplicationService : IGatewayUserApplicationService
 {
+    public bool IsSessionRevoked(string userId,string sessionId) => _users.IsSessionRevoked(userId,sessionId);
+    public Task<bool> IsSessionRevokedAsync(string userId,string sessionId) => _users.IsSessionRevokedAsync(userId,sessionId);
+    public Task RevokeSessionAsync(string userId,string sessionId,long expiresAt) => _users.RevokeSessionAsync(userId,sessionId,expiresAt);
     private readonly IGatewayUserRepository _users;
     private readonly GatewayAccountSecurityOptions _securityOptions;
 
@@ -114,13 +117,15 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         GatewayUserInfo? currentUser = _users.FindByUsername(normalizedUsername);
         if (currentUser == null || !currentUser.Enabled)
             throw new InvalidOperationException("当前登录账号无效。");
-        if (_users.ValidatePassword(normalizedUsername, currentPassword) == null)
-            throw new ArgumentException("当前密码不正确。", nameof(currentPassword));
+        var verified = _users.Authenticate(normalizedUsername,currentPassword,_securityOptions.Lockout);
+        if (!verified.Success || verified.User == null)
+            throw new ArgumentException(verified.ErrorMessage, nameof(currentPassword));
         if (_users.ValidatePassword(normalizedUsername, newPassword) != null)
             throw new ArgumentException("新密码不能与当前密码相同。", nameof(newPassword));
 
         GatewayPasswordPolicyValidator.Validate(normalizedUsername, newPassword, _securityOptions.Password);
-        _users.UpsertUser(currentUser.Username, currentUser.DisplayName, currentUser.Role, currentUser.Enabled, newPassword);
+        if (!_users.ChangePasswordIfCurrent(verified.User.Id,verified.User.SecurityStamp,newPassword))
+            throw new InvalidOperationException("账号状态已变化，请重新登录。");
     }
 
     public async Task ChangePasswordAsync(string username, string currentPassword, string newPassword)
@@ -136,13 +141,15 @@ public sealed class GatewayUserApplicationService : IGatewayUserApplicationServi
         GatewayUserInfo? currentUser = await _users.FindByUsernameAsync(normalizedUsername);
         if (currentUser == null || !currentUser.Enabled)
             throw new InvalidOperationException("当前登录账号无效。");
-        if (await _users.ValidatePasswordAsync(normalizedUsername, currentPassword) == null)
-            throw new ArgumentException("当前密码不正确。", nameof(currentPassword));
+        var verified = await _users.AuthenticateAsync(normalizedUsername,currentPassword,_securityOptions.Lockout);
+        if (!verified.Success || verified.User == null)
+            throw new ArgumentException(verified.ErrorMessage, nameof(currentPassword));
         if (await _users.ValidatePasswordAsync(normalizedUsername, newPassword) != null)
             throw new ArgumentException("新密码不能与当前密码相同。", nameof(newPassword));
 
         GatewayPasswordPolicyValidator.Validate(normalizedUsername, newPassword, _securityOptions.Password);
-        await _users.UpsertUserAsync(currentUser.Username, currentUser.DisplayName, currentUser.Role, currentUser.Enabled, newPassword);
+        if (!await _users.ChangePasswordIfCurrentAsync(verified.User.Id,verified.User.SecurityStamp,newPassword))
+            throw new InvalidOperationException("账号状态已变化，请重新登录。");
     }
 
     public GatewayUserInfo ResetPassword(string username, string newPassword)

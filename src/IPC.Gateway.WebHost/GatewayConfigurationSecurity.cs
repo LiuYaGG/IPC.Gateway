@@ -168,11 +168,15 @@ internal static class GatewayConfigurationSecurity
                 return new GatewayRuntimeEventEnvelope
                 {
                     Type = envelope.Type,
+                    ClusterId = envelope.ClusterId,
+                    Epoch = envelope.Epoch,
+                    SourceInstanceId = envelope.SourceInstanceId,
                     Sequence = envelope.Sequence,
                     Timestamp = envelope.Timestamp,
                     Data = new GatewayRuntimeStatusPatchEvent { Status = FilterStatus(patch.Status, user) }
                 };
             case "resync":
+            case "haChanged":
                 return envelope;
             default:
                 return null;

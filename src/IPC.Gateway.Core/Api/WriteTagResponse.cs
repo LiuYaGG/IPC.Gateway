@@ -48,6 +48,8 @@ namespace IPC.Runtime.Api
             CurrentValue = new ReadTagResponse();
         }
 
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IPC.Plc.Communication.Core.PlcWriteExecution? WriteExecution { get; set; }
         public bool Success { get; set; }
         public string ChannelId { get; set; }
         public string DeviceId { get; set; }

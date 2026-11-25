@@ -338,6 +338,7 @@ namespace IPC.EdgeGateway
                 // Do not hold _syncRoot here: the runtime dispatches value updates after writing/reading back.
                 WriteTagResponse response = _runtime.WriteTag(new WriteTagRequest
                 {
+                    Origin = "OpcUa",
                     ChannelId = channel.Id,
                     ChannelName = channel.Name,
                     DeviceId = device.Id,

@@ -92,8 +92,18 @@ public static class GatewayMigrations
             "alter table gateway_runtime_tag_snapshots add column last_read_error text null;",
             "alter table gateway_runtime_tag_snapshots add column last_read_error longtext null;",
             "alter table gateway_runtime_tag_snapshots add last_read_error nvarchar(max) null;",
-            "alter table gateway_runtime_tag_snapshots add column last_read_error text null;")
+            "alter table gateway_runtime_tag_snapshots add column last_read_error text null;"),
+        new DatabaseMigration("202611230001_business_ownership", "Persist the installed gateway business epoch.",
+            OwnershipSchema, OwnershipSchema, OwnershipSchema, OwnershipSchema),
+        SharedAlarmSchema.Migration,
+        SharedArtifactSchema.Migration,
+        GatewaySessionSchema.Migration
     };
+
+    private const string OwnershipSchema =
+        "create table gateway_ha_owner (slot integer not null primary key, cluster_id varchar(128) not null, " +
+        "instance_id varchar(128) not null, epoch bigint not null, revision bigint not null);" +
+        "insert into gateway_ha_owner(slot,cluster_id,instance_id,epoch,revision) values(1,'','',0,0);";
 
     private const string PostgreSqlInitialSchema = @"
 create table if not exists gateway_configurations (

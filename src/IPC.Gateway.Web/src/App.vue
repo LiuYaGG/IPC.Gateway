@@ -82,6 +82,8 @@
             </a-breadcrumb>
           </div>
           <div class="top-actions">
+            <a-button v-if="haCapabilities?.mode==='Cluster' && canAccessView('highAvailability')" type="link" @click="activeView='highAvailability'">{{ haCapabilities.connectedNode }} · {{ haLabel(haCapabilities.localRole) }}</a-button>
+            <span v-else-if="haCapabilities?.mode==='Cluster'">{{ haCapabilities.connectedNode }} · {{ haLabel(haCapabilities.localRole) }}</span>
             <LanguageSwitcher @change="handleLanguageSelection" />
             <div class="refresh-state">
               <span>{{ tx(autoRefresh ? streamState : '手动刷新') }}</span>
@@ -112,7 +114,7 @@
             :class="{
               'page-body--fill': activeView === 'devices' || activeView === 'audit',
               'page-body--big': activeView === 'bigScreen',
-              'page-body--tables-fill': ['flowRules', 'scripts', 'models', 'security', 'users', 'roles', 'permissions'].includes(
+              'page-body--tables-fill': ['flowRules', 'scripts', 'models', 'security', 'users', 'roles', 'permissions', 'highAvailability'].includes(
                 activeView
               )
             }"
@@ -195,6 +197,7 @@
               />
               <AuditView v-else-if="activeView === 'audit'" />
               <SecurityView v-else-if="activeView === 'security'" />
+              <HighAvailabilityView v-else-if="activeView === 'highAvailability'" :scope="currentUserIdentity" @reauthenticate="handleHaReauthenticate" />
               <MaintenanceView v-else-if="activeView === 'maintenance'" :account="currentUserIdentity" />
               <UsersView v-else-if="activeView === 'users'" />
               <RolesView v-else-if="activeView === 'roles'" />
@@ -204,6 +207,7 @@
         </a-layout-content>
       </a-layout>
     </a-layout>
+    <SensitiveOperationDialog @expired="handleHaReauthenticate('登录已过期，请重新登录。')" />
     <ChangePasswordDialog v-model="passwordDialogVisible" />
     <ErrorDetailDrawer v-model:visible="errorDrawerVisible" :error="selectedError" />
     <UpgradeUploadOverlay />
@@ -212,7 +216,11 @@
 </template>
 
 <script setup lang="ts">
+import SensitiveOperationDialog from './components/SensitiveOperationDialog.vue'
+import { cancelSensitiveApproval } from './utils/sensitiveOperation'
 import { notify } from './utils/ui'
+import { haCapabilities, haIdentity, refreshHaCapabilities } from './useHighAvailability'
+import { haGet, haLabel, newHaId, type HaOperation } from './haApi'
 import { tx } from './i18n'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 
@@ -239,6 +247,7 @@ import {
   loadReadyHealth,
   loadCurrentUser,
   GatewayStartupError,
+  HttpRequestError,
   SessionExpiredError,
   login,
   logout,
@@ -300,6 +309,7 @@ import { useGatewayStartup } from './utils/gatewayStartup'
 import { createPermissionSet, PermissionContextKey, PERMISSIONS, normalizePermission } from './utils/permissions'
 
 const ProtocolDiagnosticsView = defineAsyncComponent(() => import('./components/ProtocolDiagnosticsView.vue'))
+const HighAvailabilityView = defineAsyncComponent(() => import('./components/ha/HighAvailabilityView.vue'))
 const defaultStartupView = 'bigScreen'
 const authenticated = ref(localStorage.getItem('ipc.gateway.authenticated') === 'true')
 const { state: startupState, check: checkStartup, observe: observeStartup } = useGatewayStartup()
@@ -327,6 +337,8 @@ const autoRefresh = ref(true)
 const lastRefreshTime = ref('')
 const sync = ref<SyncPayload | null>(null)
 const showStartupPanel = computed(() => {
+  if (activeView.value === 'highAvailability' && canAccessView('highAvailability')) return false
+  if (haCapabilities.value?.mode === 'Cluster' && activeView.value === 'maintenance' && canAccessView('maintenance')) return false
   if (startupState.value === 'ready') return false
   if (!sync.value) return true
   // Keep the upgrade progress view mounted across the automatic service restart.
@@ -393,6 +405,7 @@ const pageTitle = computed(
       models: '模型中心',
       audit: '审计日志',
       security: '工业安全',
+      highAvailability: '高可用',
       maintenance: '安装升级',
       users: '人员管理',
       roles: '角色管理',
@@ -421,6 +434,7 @@ const viewPermissions: Record<string, string[]> = {
   models: [PERMISSIONS.modelsView],
   audit: [PERMISSIONS.auditView],
   security: [PERMISSIONS.securityView],
+  highAvailability: [PERMISSIONS.haView],
   maintenance: [PERMISSIONS.maintenanceView],
   users: [PERMISSIONS.usersView],
   roles: [PERMISSIONS.rolesView],
@@ -440,6 +454,7 @@ const viewOrder = [
   'protocolDiagnostics',
   'audit',
   'security',
+  'highAvailability',
   'maintenance',
   'users',
   'roles',
@@ -456,6 +471,63 @@ provide(PermissionContextKey, {
 const languageSelectionRevision = ref(0)
 let languageSyncVersion = 0
 let languageSyncQueue = Promise.resolve()
+let haTimer: number | undefined
+let haRequest: AbortController | undefined
+let pendingSwitchoverRequest: AbortController | undefined
+async function pollPendingSwitchover() {
+  if (!authenticated.value || !currentUserIdentity.value || document.hidden || pendingSwitchoverRequest) return
+  const scope = currentUserIdentity.value
+  const key = 'ipc.ha.switchover.' + scope
+  const sessionKey = key + '.auth-session'
+  const operation = sessionStorage.getItem(key)
+  const submittedSession = sessionStorage.getItem(sessionKey)
+  if (!operation || submittedSession === null || submittedSession !== (sessionStorage.getItem('ipc.gateway.auth-session') || '')) return
+  const controller = new AbortController()
+  pendingSwitchoverRequest = controller
+  const stillCurrent = () => !controller.signal.aborted && authenticated.value && currentUserIdentity.value === scope &&
+    sessionStorage.getItem(key) === operation && sessionStorage.getItem(sessionKey) === submittedSession &&
+    (sessionStorage.getItem('ipc.gateway.auth-session') || '') === submittedSession
+  const clearPending = () => { sessionStorage.removeItem(key); sessionStorage.removeItem(sessionKey) }
+  try {
+    const result = await haGet<HaOperation>('switchovers/' + encodeURIComponent(operation), controller.signal)
+    if (!stillCurrent()) return
+    if (['Completed', 'Succeeded'].includes(result.status)) {
+      clearPending()
+      handleHaReauthenticate('计划切换已完成，请重新登录。')
+    } else if (['Failed', 'Rejected', 'Cancelled', 'Canceled', 'NotFound', 'Applied'].includes(result.status)) clearPending()
+  } catch (error) {
+    if (!stillCurrent()) return
+    if (error instanceof SessionExpiredError) handleHaReauthenticate('节点连接已变化，请重新登录后核对切换结果。')
+    else if (error instanceof HttpRequestError && error.status === 404) clearPending()
+  } finally {
+    if (pendingSwitchoverRequest === controller) pendingSwitchoverRequest = undefined
+  }
+}
+async function pollRole() {
+  void pollPendingSwitchover()
+  if (!authenticated.value || !currentUserIdentity.value || document.hidden || haRequest ||
+      (closeStream && streamState.value === '实时推送')) return
+  const controller = new AbortController()
+  haRequest = controller
+  try { await refreshHaCapabilities(controller.signal) }
+  finally { if (haRequest === controller) haRequest = undefined }
+}
+watch(haIdentity, (next, previous) => {
+  if (!previous || !next || next === previous || !authenticated.value) return
+  stopRuntimeEvents()
+  replaceTags(new Map())
+  runtimeDevices.value = shallowReactive(new Map())
+  sync.value = null
+  health.value = null
+  trend.value = []
+  lastRefreshTime.value = ''
+  selectedError.value = null
+  errorDrawerVisible.value = false
+  if (haCapabilities.value?.mode === 'Cluster' && haCapabilities.value.localRole !== 'Active') {
+    streamState.value = '已暂停'
+    showLocalManagement()
+  } else void refresh({silent:true})
+})
 function handleLanguageSelection() {
   languageSelectionRevision.value++ // Also permits retrying a failed save by selecting the same language.
   if (currentUserIdentity.value && !hasPermission(PERMISSIONS.mqttEdit))
@@ -477,11 +549,17 @@ watch([locale, currentUserIdentity, () => hasPermission(PERMISSIONS.mqttEdit), s
   })
 
 onMounted(() => {
+  haTimer=window.setInterval(pollRole,4000)
+  document.addEventListener('visibilitychange',pollRole)
   window.addEventListener('keydown', handleLoginEnter, true)
   document.addEventListener('visibilitychange', onVisibilityChanged)
 })
 
 onBeforeUnmount(() => {
+  window.clearInterval(haTimer)
+  document.removeEventListener('visibilitychange',pollRole)
+  haRequest?.abort()
+  pendingSwitchoverRequest?.abort()
   unmounted = true
   document.removeEventListener('visibilitychange', onVisibilityChanged)
   window.removeEventListener('keydown', handleLoginEnter, true)
@@ -493,11 +571,21 @@ watch([authenticated, autoRefresh], syncAutoRefresh)
 watch(startupState, async (state, _, onCleanup) => {
   if (state === 'ready' && authenticated.value) void refresh({ silent: false })
   else if (state !== 'ready') stopRuntimeEvents()
-  if (state !== 'starting' || !authenticated.value || currentUserIdentity.value) return
+  if (!['starting','failed'].includes(state) || !authenticated.value || currentUserIdentity.value) return
   const controller = new AbortController()
   onCleanup(() => controller.abort())
   try {
-    await loadCurrentUser(controller.signal)
+    const session=await loadCurrentUser(controller.signal)
+    if (controller.signal.aborted || !session.user) return
+    const localPermissions=createPermissionSet(session.permissions ?? [])
+    if (!localPermissions.has(PERMISSIONS.haView) && !localPermissions.has(PERMISSIONS.maintenanceView)) return
+    await refreshHaCapabilities(controller.signal)
+    if (controller.signal.aborted || haCapabilities.value?.mode !== 'Cluster') return
+    currentUserIdentity.value=session.user.id || session.user.username
+    currentUserName.value=session.user.displayName || session.user.username
+    currentLoginName.value=session.user.username
+    currentPermissions.value=session.permissions || []
+    showLocalManagement()
   } catch (error) {
     if (!controller.signal.aborted && error instanceof SessionExpiredError) {
       localStorage.removeItem('ipc.gateway.authenticated')
@@ -517,6 +605,7 @@ watch(authenticated, async (value) => {
 })
 watch(currentPermissions, ensureActiveViewAllowed)
 watch([activeView, sessionScopeRevision], async ([view, scope], [previous, previousScope]) => {
+  void pollPendingSwitchover()
   const body = pageBody.value
   if (!body || scope !== previousScope) return
   pageScroll.set(previous, { top: body.scrollTop, left: body.scrollLeft })
@@ -528,6 +617,8 @@ watch([activeView, sessionScopeRevision], async ([view, scope], [previous, previ
 
 function handleLoginEnter(event: KeyboardEvent) {
   if (authenticated.value || event.key !== 'Enter' || event.isComposing) return
+  if (captchaRef.value?.isOpen() || (event.target instanceof Element &&
+    event.target.closest('.login-captcha-item, .ant-modal-root, [role="dialog"]'))) return
 
   event.preventDefault()
   event.stopPropagation()
@@ -537,13 +628,19 @@ function handleLoginEnter(event: KeyboardEvent) {
 async function handleLogin() {
   if (loading.value) return
   if (!captchaRef.value?.validate()) return
+  const captchaToken = captchaRef.value.getToken()
+  if (!captchaToken) {
+    captchaRef.value.validate()
+    return
+  }
 
   loading.value = true
   try {
-    await login(loginForm.username, loginForm.password)
+    await login(loginForm.username, loginForm.password, captchaToken)
+    sessionStorage.setItem('ipc.gateway.auth-session',newHaId())
     localStorage.setItem('ipc.gateway.authenticated', 'true')
     authenticated.value = true
-    if (startupState.value === 'ready') await refresh({ silent: false })
+    await refresh({ silent: false })
   } catch (error) {
     captchaRef.value?.refresh()
     notify.error(error instanceof Error ? error.message : '登录失败')
@@ -561,8 +658,25 @@ async function handleLogout() {
   authenticated.value = false
 }
 
+function handleHaReauthenticate(message:string) {
+  if (!authenticated.value) return
+  stopRuntimeEvents()
+  refreshController?.abort()
+  refreshController = undefined
+  haRequest?.abort()
+  haRequest = undefined
+  pendingSwitchoverRequest?.abort()
+  pendingSwitchoverRequest = undefined
+  localStorage.removeItem('ipc.gateway.authenticated')
+  currentPermissions.value = []
+  authenticated.value = false
+  loginForm.password = ''
+  loading.value = false
+  void nextTick(() => captchaRef.value?.refresh())
+  notify.info(message || '计划切换已完成，请重新登录。')
+}
+
 async function refresh(options: { silent: boolean; reconnectOnly?: boolean; resetView?: string }) {
-  if (startupState.value !== 'ready') return
   stopRuntimeEvents()
   refreshController?.abort()
   const controller = new AbortController()
@@ -585,6 +699,17 @@ async function refresh(options: { silent: boolean; reconnectOnly?: boolean; rese
     currentLoginName.value = session.user.username || ''
     currentPermissions.value = permissions
     ensureActiveViewAllowed()
+    await refreshHaCapabilities(controller.signal)
+    if (controller.signal.aborted || !authenticated.value) return
+    if (haCapabilities.value?.mode === 'Cluster' && haCapabilities.value.localRole !== 'Active') {
+      if (!sync.value) showLocalManagement()
+      completed = true
+      return
+    }
+    if (startupState.value !== 'ready' || (activeView.value==='highAvailability' && !canStream.value)) {
+      completed = true
+      return
+    }
     if (options.reconnectOnly && sync.value && !scopeChanged) {
       completed = true
       return
@@ -633,6 +758,11 @@ watch([deviceEditing, flowRulesEditing], ([device, rules]) => {
 })
 
 function clearSessionData() {
+  cancelSensitiveApproval()
+  haRequest?.abort()
+  pendingSwitchoverRequest?.abort()
+  pendingSwitchoverRequest = undefined
+  haCapabilities.value=null
   deferredProject = undefined
   pageScroll.clear()
   sessionScopeRevision.value++
@@ -663,6 +793,11 @@ function hasAnyPermission(permissions: string[]) {
 
 function canAccessView(view: string) {
   return hasAnyPermission(viewPermissions[view] ?? [])
+}
+function showLocalManagement() {
+  if (['highAvailability','maintenance'].includes(activeView.value) && canAccessView(activeView.value)) return
+  const view=['highAvailability','maintenance'].find(canAccessView)
+  if(view)activeView.value=view
 }
 
 function ensureActiveViewAllowed() {
@@ -697,6 +832,7 @@ function applySync(data: SyncPayload, options: { silent: boolean }, healthData: 
 }
 
 function startRuntimeEvents() {
+  if (haCapabilities.value?.mode === 'Cluster' && haCapabilities.value.localRole !== 'Active') return
   if (startupState.value !== 'ready' || !authenticated.value || !autoRefresh.value || refreshController || document.hidden || unmounted || closeStream) return
   if (!canStream.value || typeof EventSource === 'undefined') {
     streamState.value = '推送不可用'
@@ -705,6 +841,7 @@ function startRuntimeEvents() {
   if (!sync.value) return
   streamState.value = retries ? '重连中' : '连接中'
   closeStream = connectRuntimeEvents({
+    expectedAuthority: haCapabilities.value?.mode === 'Cluster' ? haCapabilities.value : undefined,
     projectRevision: () => httpProjectRevision,
     opened: () => { streamState.value = '正在同步' },
     snapshot: changes => {

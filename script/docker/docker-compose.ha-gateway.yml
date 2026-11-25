@@ -1,0 +1,40 @@
+services:
+  gateway:
+    image: ${IPC_HA_GATEWAY_IMAGE:?Specify the business gateway image}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "${IPC_GATEWAY_HTTP_PORT:-5184}:5184"
+      - "${IPC_ARBITER_CLIENT_PORT:-7281}:${IPC_ARBITER_CLIENT_PORT:-7281}"
+      - "${IPC_ARBITER_PEER_PORT:-7282}:${IPC_ARBITER_PEER_PORT:-7282}"
+      - "${IPC_HA_PAIR_PORT:-7381}:7381"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://0.0.0.0:5184
+      - Gateway__EmbeddedArbiter__Role=${IPC_HA_NODE:?Specify A or B}
+      - Gateway__EmbeddedArbiter__ConfigRoot=/app/Data/embedded-ha
+      - Gateway__HighAvailability__PeerHistoryDirectories__0=/mnt/peer/history
+      - Gateway__HighAvailability__PeerHistoryDirectories__1=/mnt/peer/history-cold
+      - Gateway__HighAvailability__CertificatePassword
+    volumes:
+      - type: bind
+        source: ${IPC_HA_GATEWAY_CONFIG_DIR:?Specify the production configuration directory}
+        target: ${IPC_HA_CONFIG_MOUNT:-/etc/ipc-gateway}
+        read_only: true
+      - type: bind
+        source: ${IPC_HA_GATEWAY_CONFIG_DIR}/appsettings.Production.json
+        target: /app/appsettings.Production.json
+        read_only: true
+      - type: bind
+        source: ${IPC_HA_GATEWAY_DATA:?Specify the local business node data directory}
+        target: /app/Data
+      - type: bind
+        source: ${IPC_HA_PEER_HISTORY:?Specify the other business node's hot history directory}
+        target: /mnt/peer/history
+        read_only: true
+      - type: bind
+        source: ${IPC_HA_PEER_COLD:?Specify the other business node's cold history directory}
+        target: /mnt/peer/history-cold
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

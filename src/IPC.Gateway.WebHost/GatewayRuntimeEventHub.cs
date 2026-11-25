@@ -2,7 +2,7 @@ using System.Threading.Channels;
 
 namespace IPC.Gateway.WebHost;
 
-public sealed class GatewayRuntimeEventHub
+public sealed class GatewayRuntimeEventHub(IPC.Gateway.HighAvailability.GatewayHaClient? ha = null)
 {
     private readonly object _subscriptionsLock = new();
     private readonly object _publishLock = new();
@@ -13,6 +13,9 @@ public sealed class GatewayRuntimeEventHub
     public int SubscriberCount => Volatile.Read(ref _subscribers).Length;
     public bool HasDeviceSubscribers => Volatile.Read(ref _deviceSubscribers) != 0;
     public long CurrentSequence => Interlocked.Read(ref _sequence);
+    internal bool CanStream => ha?.BusinessReady != false;
+    internal bool MatchesBusinessEpoch(string? epoch) => CanStream &&
+        (ha?.IsCluster != true ? epoch == null : epoch == ha.Epoch.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     // Register and capture the watermark atomically. New connections always receive
     // an authoritative snapshot, so events from before registration need no replay log.
@@ -32,6 +35,9 @@ public sealed class GatewayRuntimeEventHub
     {
         Sequence = sequence,
         Type = type,
+        ClusterId = ha?.IsCluster == true ? ha.ClusterId : null,
+        Epoch = ha?.IsCluster == true ? ha.Epoch.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+        SourceInstanceId = ha?.IsCluster == true ? ha.InstanceId : null,
         Timestamp = DateTime.UtcNow,
         Data = data
     };
@@ -101,6 +107,9 @@ public sealed class GatewayRuntimeEventSubscription : IDisposable
 
 public sealed class GatewayRuntimeEventEnvelope
 {
+    public string? ClusterId { get; set; }
+    public string? Epoch { get; set; }
+    public string? SourceInstanceId { get; set; }
     public long Sequence { get; set; }
     public string Type { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }

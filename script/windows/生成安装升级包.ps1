@@ -7,15 +7,18 @@ param(
     [string]$RepositoryRoot = "",
     [ValidateSet('', 'win-x64', 'linux-x64', 'linux-arm64')]
     [string]$RuntimeIdentifier = "",
+    [string]$UosSqlitePackage = "",
     [string]$OutputDirectory = "",
     [string]$BuildId = "",
     [string]$SigningPrivateKeyPath = "",
     [string]$Signer = "",
     [switch]$SkipFrontendBuild,
+    [switch]$LegacyUpgradeManifest,
     [switch]$NoRestore
 )
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($RuntimeIdentifier)) { $RuntimeIdentifier = 'win-x64' }
 
 function Invoke-BuildTool {
     param(
@@ -61,6 +64,43 @@ function Get-RelativeZipPath {
     return $relative.Replace("\", "/")
 }
 
+function New-GatewayPackageZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceDirectory,
+        [Parameter(Mandatory = $true)][string]$DestinationPath
+    )
+
+    # Windows PowerShell 5.1 uses .NET Framework, whose CreateFromDirectory
+    # can retain Windows separators. ZIP entry paths must always use '/'.
+    # Explicit UTF-8 also sets the Unicode filename flag for Linux readers.
+    Add-Type -AssemblyName System.IO.Compression
+    $stream = [IO.FileStream]::new($DestinationPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        # Use the shared UTF8 instance: .NET Framework only sets the EFS flag
+        # reliably for Encoding.UTF8, not a separate UTF8Encoding instance.
+        $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true, [Text.Encoding]::UTF8)
+        try {
+            foreach ($file in Get-ChildItem -LiteralPath $SourceDirectory -Recurse -File | Sort-Object FullName) {
+                $entryName = Get-RelativeZipPath -Root $SourceDirectory -Path $file.FullName
+                if ([string]::IsNullOrWhiteSpace($entryName) -or $entryName.Contains('\') -or $entryName.StartsWith('/') -or
+                    $entryName.Split('/') -contains '..') { throw "Invalid package entry path: $entryName" }
+                $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
+                if ($file.LastWriteTime.Year -ge 1980 -and $file.LastWriteTime.Year -le 2107) {
+                    $entry.LastWriteTime = [DateTimeOffset]$file.LastWriteTime
+                }
+                $inputStream = $file.OpenRead()
+                try {
+                    $outputStream = $entry.Open()
+                    try { $inputStream.CopyTo($outputStream) } finally { $outputStream.Dispose() }
+                }
+                finally { $inputStream.Dispose() }
+            }
+        }
+        finally { $archive.Dispose() }
+    }
+    finally { $stream.Dispose() }
+}
+
 function Add-SigningLine {
     param(
         [System.Text.StringBuilder]$Builder,
@@ -95,6 +135,11 @@ function Get-PackageSigningPayload {
     Add-SigningLine -Builder $builder -Key "signatureAlgorithm" -Value $Manifest.signatureAlgorithm
     Add-SigningLine -Builder $builder -Key "signer" -Value $Manifest.signer
     Add-SigningLine -Builder $builder -Key "signedTime" -Value $Manifest.signedTime
+    if ($Manifest.manifestVersion -ge 3) {
+        foreach ($field in 'operatingSystem','architecture','runtimeIdentifier','targetFramework','requiredDotNetMajor','minimumHaStateVersion','maximumHaStateVersion','minimumGlibcVersion') {
+            Add-SigningLine -Builder $builder -Key $field -Value $Manifest.compatibility.$field
+        }
+    }
 
     # Match the server's ordinal ordering, including Chinese tool filenames.
     $orderedFiles = [Collections.Generic.SortedDictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -137,6 +182,11 @@ if ([string]::IsNullOrWhiteSpace($BuildId)) {
 }
 
 $platformSuffix = if ($RuntimeIdentifier) { "-$RuntimeIdentifier" } else { '' }
+if ($UosSqlitePackage) {
+    if ($RuntimeIdentifier -ne 'linux-x64') { throw 'UOS glibc 2.28 requires -RuntimeIdentifier linux-x64.' }
+    $UosSqlitePackage = (Resolve-Path -LiteralPath $UosSqlitePackage).Path
+    $platformSuffix += '-uos-glibc2.28'
+}
 $workRoot = Join-Path $repoRoot "artifacts/package-work/$PackageType-$Version$platformSuffix"
 $workRoot = [IO.Path]::GetFullPath($workRoot)
 $allowedWorkRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts/package-work')).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
@@ -173,6 +223,11 @@ $publishArgs = @(
     "/p:UseAppHost=false",
     "--self-contained", "false"
 )
+foreach ($page in 'index.html','ha-setup.html') {
+    if (!(Test-Path -LiteralPath (Join-Path $repoRoot "src/IPC.Gateway.Web/dist/$page") -PathType Leaf)) {
+        throw "Missing frontend entry $page. Rebuild the frontend before packaging."
+    }
+}
 if ($RuntimeIdentifier) { $publishArgs += @('--runtime', $RuntimeIdentifier) }
 if ($NoRestore) {
     $publishArgs += "--no-restore"
@@ -200,6 +255,16 @@ $driversDir = Join-Path $publishDir "Drivers"
 New-Item -ItemType Directory -Path $driversDir -Force | Out-Null
 Copy-Item -Path (Join-Path $pluginPublishDir "*") -Destination $driversDir -Recurse -Force
 
+# The voter and the setup wizard ship alongside the gateway. An online gateway
+# update must never overwrite a DLL that a live voter is using.
+foreach ($component in @('IPC.Gateway.Arbiter','IPC.Gateway.HaSetup','IPC.Gateway.UpdateWorker')) {
+    $componentArgs = @('publish',(Join-Path $repoRoot "src/$component/$component.csproj"),'-c',$Configuration,
+        '-o',(Join-Path $packageRoot "components/$component"),"/p:Version=$Version",'/p:UseAppHost=false','--self-contained','false')
+    if ($RuntimeIdentifier) { $componentArgs += @('-r',$RuntimeIdentifier) }
+    if ($NoRestore) { $componentArgs += '--no-restore' }
+    Invoke-BuildTool -FilePath $dotnetPath -ArgumentList $componentArgs -FailureMessage "$component publish failed."
+}
+
 foreach ($file in Get-ChildItem -LiteralPath $publishDir -Recurse -File) {
     $relative = Get-RelativeZipPath -Root $publishDir -Path $file.FullName
     if ($relative -like 'Data/*' -or $file.Name -in @('appsettings.Production.json', 'appsettings.Development.json')) { continue }
@@ -208,21 +273,87 @@ foreach ($file in Get-ChildItem -LiteralPath $publishDir -Recurse -File) {
     Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
 }
 
+if ($UosSqlitePackage) {
+    # Accept only the SQLite binaries verified on UOS and the original dependencies they replace.
+    # A NuGet upgrade requires revalidating the UOS build before changing these digests.
+    $sqliteFiles = @(
+        @{ Path='libe_sqlite3.so'; Original='b0f5c48026fedcf9f05cf31c6fadf9e1e001ca59cd85aa68b8b6814e52c18a07'; Compat='097fc23211bb8a99cdbdb97c3b9679187fc8f28bb23557bf0a4d1bf835000ed4' }
+        @{ Path='Drivers/libe_sqlite3.so'; Original='a5e8aed525023e6c209d37d3e762e2e76ed3a830464569a419abfc3cf12d7a6c'; Compat='967020205508018ec89081fc36cfe3384acd500deedcfb9be17db3b42beb4bbd' }
+        @{ Path='Drivers/runtimes/linux-x64/native/libe_sqlite3.so'; Original='a5e8aed525023e6c209d37d3e762e2e76ed3a830464569a419abfc3cf12d7a6c'; Compat='967020205508018ec89081fc36cfe3384acd500deedcfb9be17db3b42beb4bbd' }
+    )
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($UosSqlitePackage)
+    try {
+        foreach ($library in $sqliteFiles) {
+            $destination = Join-Path $payloadDir $library.Path
+            if ((Test-Path -LiteralPath $destination) -and (Get-FileHash -LiteralPath $destination).Hash -ne $library.Original) {
+                throw "Unexpected SQLite dependency for $($library.Path). Validate its UOS compatibility before packaging."
+            }
+            $entry = $archive.GetEntry('payload/' + $library.Path)
+            if (!$entry -or $entry.Length -gt 4MB) { throw "Invalid UOS SQLite entry: $($library.Path)" }
+            $stream = $entry.Open()
+            try { $digest = (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash } finally { $stream.Dispose() }
+            if ($digest -ne $library.Compat) { throw "UOS compatibility digest mismatch: $($library.Path)" }
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination, $true)
+        }
+    }
+    finally { $archive.Dispose() }
+}
+
+$minimumGlibc = ''
+if ($RuntimeIdentifier.StartsWith('linux-')) {
+    $minimum = [Version]'2.28'
+    $machine = if ($RuntimeIdentifier -eq 'linux-arm64') { 183 } else { 62 }
+    foreach ($native in Get-ChildItem -LiteralPath $payloadDir -Recurse -File) {
+        if ($native.Name -notmatch '\.so($|\.)') { continue }
+        $bytes = [IO.File]::ReadAllBytes($native.FullName)
+        if ($bytes.Length -lt 20 -or $bytes[0] -ne 127 -or $bytes[1] -ne 69 -or $bytes[2] -ne 76 -or $bytes[3] -ne 70) { continue }
+        # Include only the selected architecture. Opposite-architecture runtime assets do not load.
+        if ([BitConverter]::ToUInt16($bytes,18) -ne $machine) { continue }
+        $binary = [Text.Encoding]::ASCII.GetString($bytes)
+        foreach ($match in [regex]::Matches($binary,'GLIBC_([0-9]+\.[0-9]+(?:\.[0-9]+)?)')) {
+            $required = [Version]$match.Groups[1].Value
+            if ($required -gt $minimum) { $minimum = $required }
+        }
+    }
+    $minimumGlibc = $minimum.ToString()
+}
+$compatibility = [ordered]@{
+    operatingSystem = if ($RuntimeIdentifier.StartsWith('win-')) { 'windows' } else { 'linux' }
+    architecture = $RuntimeIdentifier.Split('-')[-1]
+    runtimeIdentifier = $RuntimeIdentifier
+    targetFramework = 'net10.0'
+    requiredDotNetMajor = 10
+    minimumHaStateVersion = 2
+    maximumHaStateVersion = 3
+    minimumGlibcVersion = $minimumGlibc
+}
+[IO.File]::WriteAllText((Join-Path $payloadDir 'ipc-gateway-runtime.json'), ($compatibility | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+
 $scriptCandidates = @(
     "script\windows\安装Windows服务.ps1",
+    "script\windows\发布仲裁客户端.ps1",
+    "script\windows\安装热备服务.ps1",
+    "script\windows\打开热备配置.ps1",
+    "script\windows\打开热备配置.cmd",
     "script\windows\卸载Windows服务.ps1",
     "script\windows\执行离线升级.ps1",
     "script\linux\发布Linux服务.sh",
+    "script\linux\发布仲裁客户端.sh",
+    "script\linux\安装热备服务.sh",
+    "script\linux\打开热备配置.sh",
     "script\linux\卸载Linux服务.sh",
+    "script\linux\解压安装升级包.py",
     "script\linux\gateway.env.example",
     "docs\发布部署指南.md",
+    "docs\双机热备卸载与重新发布.md",
     "script\linux\ipc-gateway.service"
 )
 foreach ($relative in $scriptCandidates) {
     $path = Join-Path $repoRoot $relative
-    if (Test-Path -LiteralPath $path -PathType Leaf) {
-        Copy-Item -LiteralPath $path -Destination $toolsDir -Force
-    }
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing package tool: $relative" }
+    Copy-Item -LiteralPath $path -Destination $toolsDir -Force
 }
 # Keep the Docker directory layout; building an image still requires the source
 # checkout, or use -NoBuild / NO_BUILD=1 with an already loaded release image.
@@ -246,12 +377,13 @@ $packageFiles = @(
 )
 
 $manifest = [ordered]@{
-    manifestVersion = 2
+    manifestVersion = if ($LegacyUpgradeManifest) { 2 } else { 3 }
     packageId = "ipc-gateway-$PackageType-$Version$platformSuffix"
     product = "IPC.Gateway"
     packageType = $PackageType
     version = $Version
     minVersion = ""
+    compatibility = $compatibility
     createdTime = (Get-Date).ToUniversalTime().ToString("O")
     buildId = $BuildId
     entryDirectory = "payload"
@@ -299,11 +431,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $created = $false
 for ($attempt = 1; $attempt -le 3 -and -not $created; $attempt++) {
     try {
-        [System.IO.Compression.ZipFile]::CreateFromDirectory(
-            $packageRoot,
-            $packagePath,
-            [System.IO.Compression.CompressionLevel]::Optimal,
-            $false)
+        New-GatewayPackageZip -SourceDirectory $packageRoot -DestinationPath $packagePath
         $created = $true
     }
     catch {

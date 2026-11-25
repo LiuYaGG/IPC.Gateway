@@ -20,6 +20,7 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
     private readonly object _syncRoot = new();
     private readonly GatewayCoreService _gateway;
     private readonly GatewayRuntimeEventHub _events;
+    private readonly IPC.Gateway.HighAvailability.GatewayHaClient? _ha;
     private readonly ILogger<GatewayRuntimePushHostedService> _logger;
     private readonly Dictionary<string, TagIdentity> _pendingTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _deviceFingerprints = new(StringComparer.OrdinalIgnoreCase);
@@ -30,9 +31,10 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
     public GatewayRuntimePushHostedService(
         GatewayCoreService gateway,
         GatewayRuntimeEventHub events,
-        ILogger<GatewayRuntimePushHostedService> logger)
+        ILogger<GatewayRuntimePushHostedService> logger, IPC.Gateway.HighAvailability.GatewayHaClient? ha = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
+        _ha = ha;
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -62,6 +64,15 @@ public sealed class GatewayRuntimePushHostedService : BackgroundService
             try
             {
                 await Task.Delay(TagFlushInterval, stoppingToken);
+                if (_ha?.IsCluster == true)
+                {
+                    if (!_ha.BusinessReady)
+                    {
+                        lock (_syncRoot) { _pendingTags.Clear(); _snapshotRequired = false; }
+                        _deviceFingerprints.Clear();
+                        continue;
+                    }
+                }
                 string currentRevision = _gateway.ProjectRevision;
                 bool isRunning = _gateway.Runtime.IsRunning;
                 if (revision != currentRevision || running != isRunning)

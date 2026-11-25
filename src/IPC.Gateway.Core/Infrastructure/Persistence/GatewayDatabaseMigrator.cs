@@ -33,7 +33,6 @@ public sealed class GatewayDatabaseMigrator
 
     public void Migrate()
     {
-        _factory.EnsureDatabase();
         using ISqlSugarClient db = _factory.Create();
         string key = db.CurrentConnectionConfig.DbType + "|" + db.CurrentConnectionConfig.ConnectionString;
 
@@ -42,32 +41,46 @@ public sealed class GatewayDatabaseMigrator
             if (MigratedConnectionKeys.Contains(key))
                 return;
 
-            EnsureMigrationTable(db);
-            foreach (DatabaseMigration migration in GatewayMigrations.All)
-            {
-                if (HasMigration(db, migration.Id))
-                    continue;
-
-                db.Ado.BeginTran();
-                try
-                {
-                    ExecuteMigration(db, migration);
-                    InsertMigration(db, migration);
-                    db.Ado.CommitTran();
-                }
-                catch
-                {
-                    db.Ado.RollbackTran();
-                    throw;
-                }
-            }
-
+            _factory.EnsureDatabase();
+            GatewayMigrationLock.Run(db, "IPC.Gateway/schema/" + db.Ado.Connection.Database.ToUpperInvariant(), () => ApplyPending(db));
             MigratedConnectionKeys.Add(key);
+        }
+    }
+
+    private static void ApplyPending(ISqlSugarClient db)
+    {
+        EnsureMigrationTable(db);
+        foreach (var migration in GatewayMigrations.All)
+        {
+            if (HasMigration(db, migration.Id)) continue;
+            db.Ado.BeginTran();
+            try
+            {
+                ExecuteMigration(db, migration);
+                InsertMigration(db, migration);
+                db.Ado.CommitTran();
+            }
+            catch
+            {
+                db.Ado.RollbackTran();
+                throw;
+            }
         }
     }
 
     private static void ExecuteMigration(ISqlSugarClient db, DatabaseMigration migration)
     {
+        if (migration.Id == "202611250001_session_revocation")
+        {
+            if (db.CurrentConnectionConfig.DbType == DbType.Sqlite)
+                AddSqliteColumnIfMissing(db,"gateway_users","security_stamp","security_stamp text not null default ''");
+            else if (!db.DbMaintenance.IsAnyColumn("gateway_users","security_stamp",false))
+                db.Ado.ExecuteCommand("alter table gateway_users add security_stamp varchar(64) not null default '';");
+            if (!db.DbMaintenance.IsAnyTable("gateway_revoked_sessions",false))
+                db.Ado.ExecuteCommand("create table gateway_revoked_sessions (session_id varchar(64) not null primary key,user_id varchar(64) not null,expires_at bigint not null);");
+            if (db.CurrentConnectionConfig.DbType == DbType.MySql) db.Ado.BeginTran();
+            return;
+        }
         if (string.Equals(migration.Id, "202611110001_runtime_last_read_error", StringComparison.Ordinal))
         {
             if (db.CurrentConnectionConfig.DbType == DbType.Sqlite)

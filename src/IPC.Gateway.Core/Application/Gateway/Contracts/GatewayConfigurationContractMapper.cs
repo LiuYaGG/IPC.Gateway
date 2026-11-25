@@ -798,6 +798,9 @@ public static class GatewayConfigurationContractMapper
             ApplicationUri = normalized.ApplicationUri,
             ProductUri = normalized.ProductUri,
             Host = normalized.Host,
+            AdvertisedEndpointUrl = normalized.AdvertisedEndpointUrl,
+            ListenEndpointUrl = normalized.ListenEndpointUrl,
+            CertificateAlternativeNames = normalized.CertificateAlternativeNames.ToArray(),
             Port = normalized.Port,
             EndpointPath = normalized.EndpointPath,
             EndpointUrl = normalized.EndpointUrl,
@@ -1306,6 +1309,8 @@ public static class GatewayConfigurationContractMapper
             IsRunning = status.IsRunning,
             ApplicationName = status.ApplicationName,
             EndpointUrl = status.EndpointUrl,
+            ListenEndpointUrl = status.ListenEndpointUrl,
+            AdvertisedEndpointUrl = status.AdvertisedEndpointUrl,
             NamespaceUri = status.NamespaceUri,
             ChannelNodeCount = status.ChannelNodeCount,
             DeviceNodeCount = status.DeviceNodeCount,
@@ -1445,6 +1450,7 @@ public static class GatewayConfigurationContractMapper
 
         return new WriteTagResultDto
         {
+            WriteExecution = response.WriteExecution,
             Success = response.Success,
             ChannelId = response.ChannelId,
             ChannelName = response.ChannelName,
@@ -2158,6 +2164,8 @@ public static class GatewayConfigurationContractMapper
             ApplicationUri = dto.ApplicationUri,
             ProductUri = dto.ProductUri,
             Host = dto.Host,
+            AdvertisedEndpointUrl = dto.AdvertisedEndpointUrl,
+            CertificateAlternativeNames = dto.CertificateAlternativeNames,
             Port = dto.Port,
             EndpointPath = dto.EndpointPath,
             NamespaceUri = dto.NamespaceUri,

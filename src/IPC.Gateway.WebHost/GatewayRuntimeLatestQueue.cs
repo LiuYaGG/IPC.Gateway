@@ -27,7 +27,12 @@ internal sealed class GatewayRuntimeLatestQueue
         lock (_sync)
         {
             if (_completed) return;
-            if (envelope.Type == "tags" && envelope.Data is GatewayRuntimeTagsChangedEvent tags)
+            if (envelope.Type == "haChanged")
+            {
+                Clear();
+                _other.Add(envelope);
+            }
+            else if (envelope.Type == "tags" && envelope.Data is GatewayRuntimeTagsChangedEvent tags)
             {
                 foreach (var tag in tags.Tags)
                 {
@@ -126,6 +131,7 @@ internal sealed class GatewayRuntimeLatestQueue
 
     private static GatewayRuntimeEventEnvelope Copy(GatewayRuntimeEventEnvelope source, object data) => new()
     {
-        Sequence = source.Sequence, Timestamp = source.Timestamp, Type = source.Type, Data = data
+        Sequence = source.Sequence, Timestamp = source.Timestamp, Type = source.Type, Data = data,
+        ClusterId = source.ClusterId, Epoch = source.Epoch, SourceInstanceId = source.SourceInstanceId
     };
 }

@@ -27,9 +27,11 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
 {
     private readonly ConcurrentDictionary<string, Lazy<InferenceSession>> _sessions;
     private bool _disposed;
+    private readonly SharedModelPathResolver? _modelPaths;
 
-    public OnnxModelInferenceService()
+    public OnnxModelInferenceService(SharedModelPathResolver? modelPaths = null)
     {
+        _modelPaths = modelPaths;
         _sessions = new ConcurrentDictionary<string, Lazy<InferenceSession>>(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -302,8 +304,9 @@ public sealed class OnnxModelInferenceService : IModelInferenceService
             .ToList();
     }
 
-    private static string ResolveModelPath(string modelPath)
+    private string ResolveModelPath(string modelPath)
     {
+        if (_modelPaths?.Resolve(modelPath) is { } sharedPath) return sharedPath;
         string trimmed = modelPath.Trim();
         if (Path.IsPathRooted(trimmed))
             return Path.GetFullPath(trimmed);

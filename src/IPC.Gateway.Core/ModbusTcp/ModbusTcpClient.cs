@@ -36,7 +36,7 @@ namespace IPC.Plc.Communication.ModbusTcp
     
     
     
-    public class ModbusTcpClient : IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
+    public class ModbusTcpClient : IHaGuardedWriteClient, IPlcClient, IPlcBatchReadClient, IAsyncPlcClient, IAsyncPlcBatchReadClient, IPlcStringWriter
     {
         private const int MaxReadCoils = NModbusMasterAdapter.MaxReadBits;
         private const int MaxWriteCoils = NModbusMasterAdapter.MaxWriteBits;

@@ -31,15 +31,18 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
     private readonly SqlSugarConnectionFactory _factory;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly GatewaySecretProtector _secretProtector;
+    private readonly IGatewayDatabaseOwner? _owner;
 
     public SqlSugarGatewayConfigurationRepository(GatewayDatabaseOptions options)
         : this(options, new GatewaySecretProtectionOptions())
     {
     }
 
-    public SqlSugarGatewayConfigurationRepository(GatewayDatabaseOptions options, GatewaySecretProtectionOptions? secretProtectionOptions)
+    public SqlSugarGatewayConfigurationRepository(GatewayDatabaseOptions options, GatewaySecretProtectionOptions? secretProtectionOptions,
+        IGatewayDatabaseOwner? owner = null)
     {
         _factory = new SqlSugarConnectionFactory(options);
+        _owner = owner;
         _secretProtector = new GatewaySecretProtector(secretProtectionOptions);
         _jsonOptions = new JsonSerializerOptions
         {
@@ -439,10 +442,12 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     private int Save(string configType, string payload, string source, string description, byte[]? binaryPayload = null)
     {
+        if (_owner is { IsCluster: true, CanRunBusiness: false } && source == "System") return 0;
         using SqlSugar.ISqlSugarClient db = _factory.Create();
         db.Ado.BeginTran();
         try
         {
+            GatewayDatabaseOwnership.GuardTransaction(db, _owner);
             int nextVersion = db.Queryable<GatewayConfigurationEntity>()
                 .Where(item => item.ConfigType == configType)
                 .Max(item => item.Version) + 1;
@@ -479,6 +484,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
 
     private async Task<int> SaveAsync(string configType, string payload, string source, string description, byte[]? binaryPayload = null)
     {
+        if (_owner is { IsCluster: true, CanRunBusiness: false } && source == "System") return 0;
         using var timings = new ConfigurationSaveTimings(configType, payload);
         if (binaryPayload != null) timings.SetPayload(binaryPayload);
         using SqlSugar.ISqlSugarClient db = _factory.Create();
@@ -489,6 +495,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         timings.Mark("BeginTransaction");
         try
         {
+            GatewayDatabaseOwnership.GuardTransaction(db, _owner);
             int nextVersion = await db.Queryable<GatewayConfigurationEntity>()
                 .Where(item => item.ConfigType == configType)
                 .MaxAsync(item => item.Version) + 1;
@@ -536,6 +543,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         db.Ado.BeginTran();
         try
         {
+            GatewayDatabaseOwnership.GuardTransaction(db, _owner);
             GatewayConfigurationEntity row = db.Queryable<GatewayConfigurationEntity>()
                 .Where(item => item.ConfigType == configType && item.Version == version)
                 .First();
@@ -573,6 +581,7 @@ public class SqlSugarGatewayConfigurationRepository : IGatewayConfigurationRepos
         await db.Ado.BeginTranAsync();
         try
         {
+            GatewayDatabaseOwnership.GuardTransaction(db, _owner);
             GatewayConfigurationEntity row = await db.Queryable<GatewayConfigurationEntity>()
                 .Where(item => item.ConfigType == configType && item.Version == version)
                 .FirstAsync();

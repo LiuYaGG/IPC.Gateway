@@ -1,0 +1,32 @@
+# Append after the existing HTTP configuration. HAProxy community >= 2.6.
+# This section forwards UA TCP bytes; it does not terminate UA message security.
+defaults ipc_opcua_defaults
+    log global
+    mode tcp
+    option tcplog
+    option dontlognull
+    retries 0
+    timeout connect 2s
+    timeout client 10m
+    timeout server 10m
+    timeout check 1s
+
+frontend ipc_opcua_entry from ipc_opcua_defaults
+    bind 0.0.0.0:4840
+    acl exactly_one_opc_active nbsrv(ipc_opcua_gateways) eq 1
+    tcp-request connection reject unless exactly_one_opc_active
+    default_backend ipc_opcua_gateways
+
+backend ipc_opcua_gateways from ipc_opcua_defaults
+    option httpchk
+    http-check connect port 5184
+    http-check send meth GET uri /health/opcua-active ver HTTP/1.1 hdr Host 192.168.164.128:8080
+    http-check expect status 200
+    default-server inter 1s fall 2 rise 2 on-marked-down shutdown-sessions
+    server opcua_a 192.168.110.154:4840 check
+    server opcua_b 192.168.164.131:4840 check
+# When health probes require an API Token, append its configured header/token to
+# the http-check send line, exactly as for the HTTP entry. Keep tokens out of Git.
+# If the management endpoint requires HTTPS, use its actual TLS port, trusted CA,
+# hostname verification and SNI for http-check connect; do not use verify none.
+# Do not add "ssl" or "send-proxy" to the OPC UA bind/server lines.

@@ -48,7 +48,9 @@ if ($existingService) {
 }
 else {
     if ($PSCmdlet.ShouldProcess($ServiceName, "Create Windows service")) {
-        New-Service -Name $ServiceName -DisplayName $DisplayName -BinaryPathName $binaryPath -StartupType Automatic | Out-Null
+        # A newly installed standby must see its role on its first start, even
+        # if the machine reboots between registration and environment setup.
+        New-Service -Name $ServiceName -DisplayName $DisplayName -BinaryPathName $binaryPath -StartupType Manual | Out-Null
     }
 }
 
@@ -57,6 +59,7 @@ $serviceEnvironment = @(
     "ASPNETCORE_ENVIRONMENT=Production",
     "DOTNET_ENVIRONMENT=Production",
     "ASPNETCORE_URLS=$Url"
+    "Gateway__Maintenance__Updates__ServiceName=$ServiceName"
 )
 if ($EnableServiceRecovery) {
     $serviceEnvironment += "Gateway__Watchdog__RequestHostStopOnUnrecoverable=true"
@@ -114,6 +117,9 @@ if ($EnableServiceRecovery) {
     }
 }
 
+if (!$existingService -and $PSCmdlet.ShouldProcess($ServiceName, "Enable automatic startup after configuration")) {
+    Set-Service -Name $ServiceName -StartupType Automatic
+}
 if ($Start) {
     if ($PSCmdlet.ShouldProcess($ServiceName, "Start Windows service")) {
         Start-Service -Name $ServiceName

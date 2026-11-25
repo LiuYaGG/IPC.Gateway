@@ -19,6 +19,11 @@ namespace IPC.Gateway.Core.Domain.Users;
 
 public interface IGatewayUserRepository
 {
+    bool IsSessionRevoked(string userId, string sessionId);
+    Task<bool> IsSessionRevokedAsync(string userId, string sessionId) => Task.FromResult(IsSessionRevoked(userId, sessionId));
+    Task RevokeSessionAsync(string userId, string sessionId, long expiresAt);
+    bool ChangePasswordIfCurrent(string userId, string securityStamp, string newPassword);
+    Task<bool> ChangePasswordIfCurrentAsync(string userId, string securityStamp, string newPassword) => Task.FromResult(ChangePasswordIfCurrent(userId,securityStamp,newPassword));
     GatewayUserInfo? ValidatePassword(string username, string password);
     Task<GatewayUserInfo?> ValidatePasswordAsync(string username, string password) => Task.FromResult(ValidatePassword(username, password));
     GatewayUserAuthenticationResult Authenticate(string username, string password, GatewayAccountLockoutOptions? lockoutOptions);

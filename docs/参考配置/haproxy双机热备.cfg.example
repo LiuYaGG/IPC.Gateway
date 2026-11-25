@@ -1,0 +1,53 @@
+# Community HAProxy >= 2.6. Install on node C's native Linux system.
+# HTTP test entry: http://192.168.164.128:8080
+# Local statistics: http://127.0.0.1:8404/
+global
+    log stdout format raw local0
+    maxconn 2048
+    user haproxy
+    group haproxy
+
+defaults
+    log global
+    mode http
+    option httplog
+    option dontlognull
+    option http-server-close
+    retries 0
+    retry-on none
+    timeout connect 2s
+    timeout client 5m
+    timeout server 5m
+    timeout http-request 30s
+    timeout http-keep-alive 10s
+    timeout check 1s
+
+frontend ipc_gateway_entry
+    bind 0.0.0.0:8080
+    # Both servers are regular servers: zero or two healthy nodes reject traffic.
+    acl exactly_one_active nbsrv(ipc_gateways) eq 1
+    http-request deny deny_status 503 unless exactly_one_active
+    # This proxy is the only trusted external entry in this configuration.
+    http-request del-header Forwarded
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-header X-Forwarded-Proto http
+    default_backend ipc_gateways
+
+backend ipc_gateways
+    option httpchk
+    http-check send meth GET uri /health/ha-active ver HTTP/1.1 hdr Host 192.168.164.128:8080
+    http-check expect status 200
+    # Marking a node down also disconnects its old SSE and other active sessions.
+    default-server inter 1s fall 2 rise 2 on-marked-down shutdown-sessions
+    server gateway_a 192.168.110.154:5184 check
+    server gateway_b 192.168.164.131:5184 check
+    # On HAProxy >= 3.2 only, append "init-state fully-down" to each server above
+    # to require successful checks before it first becomes available.
+
+listen ipc_gateway_stats
+    bind 127.0.0.1:8404
+    mode http
+    stats enable
+    stats uri /
+    stats refresh 2s
+    stats show-legends

@@ -60,7 +60,8 @@ public static class GatewayCoreServiceCollectionExtensions
             sp.GetService<IFlowRuleEngineFactory>(),
             sp.GetService<IModelInferenceService>(),
             sp.GetService<IValueTransformScriptRuntime>(),
-            sp.GetRequiredService<GatewayMessageLanguage>()));
+            sp.GetRequiredService<GatewayMessageLanguage>(),
+            sp.GetService<IPC.Plc.Communication.Core.IPlcWriteAttemptAuthorizer>()));
 
         services.AddSingleton<IGatewayProjectApplicationService, GatewayProjectApplicationService>();
         services.AddSingleton<IGatewayDeviceConfigurationApplicationService, GatewayDeviceConfigurationApplicationService>();
@@ -80,6 +81,10 @@ public static class GatewayCoreServiceCollectionExtensions
                 auditOptions));
         services.AddSingleton(accountSecurityOptions);
         services.AddSingleton(secretProtectionOptions);
+        services.AddSingleton(_ => new SqlSugarConnectionFactory(CreateDatabaseOptions(configuration)));
+        services.AddSingleton(sp => new GatewaySharedArtifactRepository(
+            sp.GetRequiredService<SqlSugarConnectionFactory>(),
+            sp.GetService<IPC.Plc.Communication.Core.IPlcWriteAttemptAuthorizer>() as IGatewayDatabaseOwner));
         services.AddSingleton<IGatewayUserApplicationService, GatewayUserApplicationService>();
         services.AddSingleton<IGatewayRoleApplicationService, GatewayRoleApplicationService>();
         return services;
@@ -227,6 +232,9 @@ public static class GatewayCoreServiceCollectionExtensions
             ApplicationUri = section["ApplicationUri"] ?? "urn:ipc-gateway:opcua",
             ProductUri = section["ProductUri"] ?? "urn:ipc-gateway",
             Host = section["Host"] ?? "0.0.0.0",
+            AdvertisedEndpointUrl = section["AdvertisedEndpointUrl"] ?? string.Empty,
+            CertificateAlternativeNames = section.GetSection("CertificateAlternativeNames").GetChildren()
+                .Select(child => child.Value).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!).ToArray(),
             Port = GetInt(section, "Port", 4840),
             EndpointPath = section["EndpointPath"] ?? "IPC.Gateway",
             NamespaceUri = section["NamespaceUri"] ?? "urn:ipc-gateway:tags",

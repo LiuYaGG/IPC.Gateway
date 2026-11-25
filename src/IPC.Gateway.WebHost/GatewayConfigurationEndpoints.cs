@@ -289,6 +289,11 @@ public static class GatewayConfigurationEndpoints
             return;
         }
 
+        if (!events.CanStream)
+        {
+            await HighAvailability.HaManagementEndpoints.Error(409,"HA_NOT_ACTIVE","当前网关正在待命。").ExecuteAsync(context);
+            return;
+        }
         context.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
@@ -309,7 +314,7 @@ public static class GatewayConfigurationEndpoints
                     snapshotSequence
                 }, snapshotSequence),
                 access.Token);
-            await WriteRuntimeSnapshotEvents(context.Response, events, gateway, user, snapshotSequence, access.Token);
+            if (!await WriteRuntimeSnapshotEvents(context.Response, events, gateway, user, snapshotSequence, access.Token)) return;
 
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
             Task<bool>? waitForEvent = null, heartbeat = null;
@@ -331,8 +336,9 @@ public static class GatewayConfigurationEndpoints
                     foreach (var envelope in subscription.DrainPendingEvents())
                     {
                         var permitted = GatewayConfigurationSecurity.FilterRuntimeEvent(envelope, user);
-                        if (permitted != null)
+                        if (permitted != null && (envelope.Type == "haChanged" || events.MatchesBusinessEpoch(envelope.Epoch)))
                             await WriteRuntimeEvent(context.Response, permitted, access.Token);
+                        if (envelope.Type == "haChanged") return;
                     }
             }
         }
@@ -342,7 +348,7 @@ public static class GatewayConfigurationEndpoints
         }
     }
 
-    private static async Task WriteRuntimeSnapshotEvents(
+    private static async Task<bool> WriteRuntimeSnapshotEvents(
         HttpResponse response,
         GatewayRuntimeEventHub events,
         IGatewayApplicationService gateway,
@@ -350,36 +356,47 @@ public static class GatewayConfigurationEndpoints
         long snapshotSequence,
         CancellationToken cancellationToken)
     {
+        var first = events.Create("snapshot-start", null, snapshotSequence);
         GatewayRuntimeStatusDto status = GatewayConfigurationSecurity.FilterStatus(
             GatewayConfigurationSecurity.CanViewRuntimeOverview(user)
                 ? gateway.GetRuntimeStreamSnapshot() : gateway.GetStatusSummary(), user);
         var tags = status.Tags;
         var devices = status.Devices;
-        await WriteRuntimeEvent(response, events.Create("snapshot-start", new { status.ProjectRevision }, snapshotSequence), cancellationToken);
+        if (!events.MatchesBusinessEpoch(first.Epoch)) return false;
+        first.Data = new {status.ProjectRevision};
+        await WriteRuntimeEvent(response, first, cancellationToken);
+        GatewayRuntimeEventEnvelope Snapshot(string type,object? data) => new()
+        {
+            Type=type, Data=data, Sequence=snapshotSequence, Timestamp=first.Timestamp,
+            ClusterId=first.ClusterId, Epoch=first.Epoch, SourceInstanceId=first.SourceInstanceId
+        };
         // This DTO belongs to this request. The summary and detail pages all
         // describe the same capture and share a watermark, including empty captures.
         status.Tags = [];
         status.Devices = [];
-        await WriteRuntimeEvent(response, events.Create("status", new GatewayRuntimeStatusPatchEvent { Status = status }, snapshotSequence), cancellationToken);
+        await WriteRuntimeEvent(response, Snapshot("status", new GatewayRuntimeStatusPatchEvent { Status = status }), cancellationToken);
         if (devices.Count > 0)
         {
-            await WriteRuntimeEvent(response, events.Create("devices", new GatewayRuntimeDevicesChangedEvent
+            await WriteRuntimeEvent(response, Snapshot("devices", new GatewayRuntimeDevicesChangedEvent
             {
                 Devices = devices
-            }, snapshotSequence), cancellationToken);
+            }), cancellationToken);
         }
         for (int offset = 0; offset < tags.Count; offset += RuntimeSnapshotTagBatchSize)
         {
             int count = Math.Min(RuntimeSnapshotTagBatchSize, tags.Count - offset);
             var page = new List<TagValueSnapshotDto>(count);
             for (int i = 0; i < count; i++) page.Add(tags[offset + i]);
-            await WriteRuntimeEvent(response, events.Create("tags", new GatewayRuntimeTagsChangedEvent
+            if (!events.MatchesBusinessEpoch(first.Epoch)) return false;
+            await WriteRuntimeEvent(response, Snapshot("tags", new GatewayRuntimeTagsChangedEvent
             {
                 Tags = page,
                 PendingCount = tags.Count - offset - count
-            }, snapshotSequence), cancellationToken);
+            }), cancellationToken);
         }
-        await WriteRuntimeEvent(response, events.Create("snapshot-end", new { status.ProjectRevision }, snapshotSequence), cancellationToken);
+        if (!events.MatchesBusinessEpoch(first.Epoch)) return false;
+        await WriteRuntimeEvent(response, Snapshot("snapshot-end", new { status.ProjectRevision }), cancellationToken);
+        return true;
     }
 
     private static long ReadLastEventId(HttpRequest request)
@@ -512,6 +529,17 @@ public static class GatewayConfigurationEndpoints
         try
         {
             T data = await action();
+            if (data is WriteTagResultDto { Success: false, WriteExecution.Outcome: "Unknown" } uncertain)
+            {
+                await WriteConfigurationAuditAsync(context, "unknown", uncertain.ErrorMessage);
+                return Results.Json(new { success = false, errorCode = "HA_DEVICE_RESULT_UNKNOWN", errorMessage = uncertain.ErrorMessage, data = uncertain }, statusCode: 502);
+            }
+            if (data is WriteTagResultDto { Success: false } failed && failed.ErrorMessage.StartsWith("HA_", StringComparison.Ordinal))
+            {
+                await WriteConfigurationAuditAsync(context, "denied", failed.ErrorMessage);
+                int status = failed.ErrorMessage is "HA_NO_QUORUM" or "HA_MEMBER_UNAVAILABLE" or "HA_WRITE_JOURNAL_UNAVAILABLE" ? 503 : 409;
+                return Results.Json(new { success = false, errorCode = failed.ErrorMessage, errorMessage = failed.ErrorMessage, data = failed }, statusCode: status);
+            }
             await WriteConfigurationAuditAsync(context, "success", string.Empty);
             return Ok(data);
         }

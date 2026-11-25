@@ -40,6 +40,8 @@ namespace IPC.EdgeGateway
         public bool IsRunning { get; set; }
         public string ApplicationName { get; set; }
         public string EndpointUrl { get; set; }
+        public string ListenEndpointUrl { get; set; } = string.Empty;
+        public string AdvertisedEndpointUrl { get; set; } = string.Empty;
         public string NamespaceUri { get; set; }
         public int ChannelNodeCount { get; set; }
         public int DeviceNodeCount { get; set; }

@@ -37,6 +37,9 @@ public sealed class GatewayUserEntity
     [SugarColumn(ColumnName = "enabled")]
     public bool Enabled { get; set; }
 
+    [SugarColumn(ColumnName = "security_stamp", Length = 64, IsNullable = false)]
+    public string SecurityStamp { get; set; } = string.Empty;
+
     [SugarColumn(ColumnName = "password_hash", Length = 256, IsNullable = false)]
     public string PasswordHash { get; set; } = string.Empty;
 

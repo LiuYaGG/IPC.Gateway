@@ -17,6 +17,7 @@
 //----------------------------------------------------------------*/
 using System;
 using System.Globalization;
+using System.Net;
 
 namespace IPC.EdgeGateway
 {
@@ -67,6 +68,8 @@ namespace IPC.EdgeGateway
         public string ApplicationUri { get; set; }
         public string ProductUri { get; set; }
         public string Host { get; set; }
+        public string AdvertisedEndpointUrl { get; set; } = string.Empty;
+        public string[] CertificateAlternativeNames { get; set; } = Array.Empty<string>();
         public int Port { get; set; }
         public string EndpointPath { get; set; }
         public string NamespaceUri { get; set; }
@@ -91,11 +94,21 @@ namespace IPC.EdgeGateway
         {
             get
             {
-                string host = string.IsNullOrWhiteSpace(Host) || Host.Trim() == "0.0.0.0" ? "localhost" : Host.Trim();
-                string path = string.IsNullOrWhiteSpace(EndpointPath) ? "IPC.Gateway" : EndpointPath.Trim().Trim('/');
-                return "opc.tcp://" + host + ":" + ClampPort(Port).ToString(CultureInfo.InvariantCulture) + "/" + path;
+                return !string.IsNullOrWhiteSpace(AdvertisedEndpointUrl) ? AdvertisedEndpointUrl :
+                    BuildEndpoint(IsWildcardHost(Host) ? Dns.GetHostName() : Host, Port, EndpointPath);
             }
         }
+
+        public string ListenEndpointUrl => BuildEndpoint(Host, Port, EndpointPath);
+
+        private static string BuildEndpoint(string host, int port, string path) =>
+            new UriBuilder("opc.tcp", host.Trim('[', ']'), ClampPort(port), "/" + path.Trim('/')).Uri.AbsoluteUri;
+
+        private static bool IsWildcardHost(string host) => host is "0.0.0.0" or "::" or "[::]";
+
+        public string[] GetCertificateNames() => new[] { Dns.GetHostName(), new Uri(EndpointUrl).DnsSafeHost }
+            .Concat(IsWildcardHost(Host) ? Array.Empty<string>() : new[] { Host.Trim('[', ']') })
+            .Concat(CertificateAlternativeNames).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         public OpcUaServerOptions Clone()
         {
@@ -106,6 +119,8 @@ namespace IPC.EdgeGateway
                 ApplicationUri = ApplicationUri,
                 ProductUri = ProductUri,
                 Host = Host,
+                AdvertisedEndpointUrl = AdvertisedEndpointUrl,
+                CertificateAlternativeNames = (CertificateAlternativeNames ?? Array.Empty<string>()).ToArray(),
                 Port = Port,
                 EndpointPath = EndpointPath,
                 NamespaceUri = NamespaceUri,
@@ -134,8 +149,29 @@ namespace IPC.EdgeGateway
             value.ApplicationUri = string.IsNullOrWhiteSpace(value.ApplicationUri) ? "urn:ipc-gateway:opcua" : value.ApplicationUri.Trim();
             value.ProductUri = string.IsNullOrWhiteSpace(value.ProductUri) ? "urn:ipc-gateway" : value.ProductUri.Trim();
             value.Host = string.IsNullOrWhiteSpace(value.Host) ? "0.0.0.0" : value.Host.Trim();
+            if (Uri.CheckHostName(value.Host.Trim('[', ']')) == UriHostNameType.Unknown)
+                throw new ArgumentException("OPC UA 监听主机必须是有效的 IP 地址或主机名。");
             value.Port = ClampPort(value.Port);
             value.EndpointPath = string.IsNullOrWhiteSpace(value.EndpointPath) ? "IPC.Gateway" : value.EndpointPath.Trim().Trim('/');
+            if (value.EndpointPath.IndexOfAny(new[] { '?', '#', '\\' }) >= 0)
+                throw new ArgumentException("OPC UA 端点路径不能包含查询参数、片段或反斜杠。");
+            value.AdvertisedEndpointUrl = value.AdvertisedEndpointUrl?.Trim() ?? string.Empty;
+            if (value.AdvertisedEndpointUrl.Length > 0)
+            {
+                if (!Uri.TryCreate(value.AdvertisedEndpointUrl, UriKind.Absolute, out Uri? advertised) ||
+                    advertised.Scheme != "opc.tcp" || advertised.Port is < 1 or > 65535 ||
+                    advertised.UserInfo.Length != 0 || advertised.Query.Length != 0 || advertised.Fragment.Length != 0 ||
+                    IsWildcardHost(advertised.DnsSafeHost) || Uri.CheckHostName(advertised.DnsSafeHost) == UriHostNameType.Unknown ||
+                    Uri.UnescapeDataString(advertised.AbsolutePath).Trim('/') != value.EndpointPath)
+                    throw new ArgumentException("OPC UA 对外公布端点必须是有效的 opc.tcp 地址，路径须与本地端点相同，且不能使用通配监听地址。");
+                value.AdvertisedEndpointUrl = advertised.AbsoluteUri;
+            }
+            value.CertificateAlternativeNames = (value.CertificateAlternativeNames ?? Array.Empty<string>())
+                .Select(name => name?.Trim().Trim('[', ']') ?? string.Empty).Where(name => name.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (value.CertificateAlternativeNames.Length > 32 || value.CertificateAlternativeNames.Any(name =>
+                name.Length > 253 || Uri.CheckHostName(name) == UriHostNameType.Unknown || IsWildcardHost(name)))
+                throw new ArgumentException("OPC UA 证书附加名称最多 32 个，只能填写有效的 IP 地址或 DNS 名称。");
             value.NamespaceUri = string.IsNullOrWhiteSpace(value.NamespaceUri) ? "urn:ipc-gateway:tags" : value.NamespaceUri.Trim();
             value.CertificateStorePath = string.IsNullOrWhiteSpace(value.CertificateStorePath) ? "Data/OpcUa/pki" : value.CertificateStorePath.Trim();
             value.Username = value.Username == null ? string.Empty : value.Username.Trim();

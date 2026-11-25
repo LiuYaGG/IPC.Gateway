@@ -1,4 +1,8 @@
 <Solution>
+  <Project Path="src/IPC.Gateway.Arbiter/IPC.Gateway.Arbiter.csproj" />
+  <Project Path="src/IPC.Gateway.HaSetup/IPC.Gateway.HaSetup.csproj" />
+  <Project Path="src/IPC.Gateway.HaSetup/Provisioning/IPC.Gateway.HaProvisioning.csproj" />
+  <Project Path="src/IPC.Gateway.HighAvailability/IPC.Gateway.HighAvailability.csproj" />
   <Project Path="src/IPC.Gateway.Core/IPC.Gateway.Core.csproj" />
   <Project Path="src/IPC.Gateway.DataProcessing/IPC.Gateway.DataProcessing.csproj" />
   <Project Path="src/IPC.Gateway.FlowRules/IPC.Gateway.FlowRules.csproj" />
@@ -9,4 +13,5 @@
   <Project Path="src/IPC.Gateway.Scripting/IPC.Gateway.Scripting.csproj" />
   <Project Path="src/IPC.Gateway.Watchdog/IPC.Gateway.Watchdog.csproj" />
   <Project Path="src/IPC.Gateway.WebHost/IPC.Gateway.WebHost.csproj" />
+  <Project Path="src/IPC.Gateway.UpdateWorker/IPC.Gateway.UpdateWorker.csproj" />
 </Solution>

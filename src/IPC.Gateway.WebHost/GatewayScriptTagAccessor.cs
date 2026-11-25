@@ -85,6 +85,7 @@ public sealed class GatewayScriptTagAccessor : IScriptTagAccessor, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             response = await _gateway.Runtime.WriteTagAsync(new WriteTagRequest
             {
+                Origin = "Script",
                 ChannelId = runtimeSnapshot.ChannelId,
                 DeviceId = runtimeSnapshot.DeviceId,
                 GroupId = runtimeSnapshot.GroupId,

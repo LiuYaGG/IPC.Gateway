@@ -42,6 +42,7 @@ public sealed class GatewayAuthService
 
     public GatewayLoginResult Login(string username, string password)
     {
+        if (!AllowAccountAttempt(username)) return GatewayLoginResult.Fail("账号验证过于频繁，请稍后重试。");
         GatewayUserAuthenticationResult authentication = _users.Authenticate(username, password);
         if (!authentication.Success || authentication.User == null)
             return GatewayLoginResult.Fail(authentication.ErrorMessage, authentication.Locked, authentication.LockoutEndTime);
@@ -55,6 +56,7 @@ public sealed class GatewayAuthService
 
     public async Task<GatewayLoginResult> LoginAsync(string username, string password)
     {
+        if (!AllowAccountAttempt(username)) return GatewayLoginResult.Fail("账号验证过于频繁，请稍后重试。");
         GatewayUserAuthenticationResult authentication = await _users.AuthenticateAsync(username, password);
         if (!authentication.Success || authentication.User == null)
             return GatewayLoginResult.Fail(authentication.ErrorMessage, authentication.Locked, authentication.LockoutEndTime);
@@ -88,7 +90,7 @@ public sealed class GatewayAuthService
         principal = new ClaimsPrincipal(new ClaimsIdentity());
         if (!TryReadClaims(token, out var fields)) return false;
         var user = _users.FindByUsername(fields[0]);
-        if (user?.Enabled != true) return false;
+        if (user?.Enabled != true || user.Id != fields[4] || user.SecurityStamp != fields[5] || _users.IsSessionRevoked(user.Id, fields[3])) return false;
         var role = _roles.FindByName(user.Role);
         if (role?.Enabled != true) return false;
 
@@ -101,7 +103,8 @@ public sealed class GatewayAuthService
         var empty = new ClaimsPrincipal(new ClaimsIdentity());
         if (!TryReadClaims(token, out var fields)) return GatewayTokenValidationResult.Fail(empty);
         var user = await _users.FindByUsernameAsync(fields[0]);
-        if (user?.Enabled != true) return GatewayTokenValidationResult.Fail(empty);
+        if (user?.Enabled != true || user.Id != fields[4] || user.SecurityStamp != fields[5] ||
+            await _users.IsSessionRevokedAsync(user.Id, fields[3])) return GatewayTokenValidationResult.Fail(empty);
         var role = await _roles.FindByNameAsync(user.Role);
         if (role?.Enabled != true) return GatewayTokenValidationResult.Fail(empty);
 
@@ -120,7 +123,7 @@ public sealed class GatewayAuthService
             fields = Encoding.UTF8.GetString(Base64UrlDecode(parts[0])).Split('|');
         }
         catch (FormatException) { return false; }
-        return fields.Length == 4 && long.TryParse(fields[2], out long expiry) &&
+        return fields.Length == 6 && Guid.TryParse(fields[3], out _) && long.TryParse(fields[2], out long expiry) &&
                DateTimeOffset.UtcNow.ToUnixTimeSeconds() < expiry;
     }
 
@@ -133,6 +136,7 @@ public sealed class GatewayAuthService
         identity.AddClaim(new Claim("displayName", user.DisplayName));
         identity.AddClaim(new Claim("exp", fields[2]));
         identity.AddClaim(new Claim("jti", fields[3]));
+        identity.AddClaim(new Claim("security_stamp", fields[5]));
         foreach (string permission in GatewayPermissions.ExpandForRuntime(role.Name, role.Permissions))
             identity.AddClaim(new Claim("permission", permission));
         return new ClaimsPrincipal(identity);
@@ -167,10 +171,43 @@ public sealed class GatewayAuthService
             user.Username,
             user.Role,
             DateTimeOffset.UtcNow.Add(_tokenLifetime).ToUnixTimeSeconds().ToString(),
-            Guid.NewGuid().ToString("N")
+            Guid.NewGuid().ToString("N"),
+            user.Id,
+            user.SecurityStamp
         });
         string encodedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(payload));
         return encodedPayload + "." + Sign(encodedPayload);
+    }
+
+    private readonly object _attemptLock = new();
+    private readonly Dictionary<string,(long Window,int Count)> _attempts = new(StringComparer.OrdinalIgnoreCase);
+    private bool AllowAccountAttempt(string username)
+    {
+        string account = (username ?? "").Trim();
+        if (account.Length == 0 || account.Length > 64) return false;
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        lock (_attemptLock)
+        {
+            foreach (var stale in _attempts.Where(x => now - x.Value.Window >= 60).Select(x => x.Key).ToArray()) _attempts.Remove(stale);
+            if (!_attempts.TryGetValue(account,out var current))
+            {
+                if (_attempts.Count >= 4096) return false;
+                current = (now,0);
+            }
+            if (current.Count >= 12) return false;
+            _attempts[account] = (current.Window,current.Count+1);
+            return true;
+        }
+    }
+
+    public async Task RevokeSessionAsync(ClaimsPrincipal principal)
+    {
+        string userId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        string session = principal.FindFirstValue("jti") ?? "";
+        if (string.IsNullOrEmpty(userId) || !Guid.TryParse(session,out _) ||
+            !long.TryParse(principal.FindFirstValue("exp"),out long expires)) return;
+        await _users.RevokeSessionAsync(userId,session,expires);
+        InvalidateRuntimeAccess("session:"+session);
     }
 
     private string Sign(string encodedPayload)
@@ -222,6 +259,7 @@ public sealed class GatewayLoginRequest
 {
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public string CaptchaToken { get; set; } = string.Empty;
 }
 
 public sealed class GatewayLoginResult

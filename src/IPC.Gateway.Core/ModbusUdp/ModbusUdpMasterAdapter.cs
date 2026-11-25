@@ -125,6 +125,7 @@ internal sealed class ModbusUdpMasterAdapter : IModbusMasterAdapter
             BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(4), (ushort)(pdu.Length + 1));
             request[6] = _unitId;
             pdu.CopyTo(request, 7);
+            if (pdu[0] is 5 or 6 or 15 or 16) await PlcHaWrite.BeforeSegmentAsync().ConfigureAwait(false);
             await _client.SendAsync(request, deadline.Token).ConfigureAwait(false);
             PlcDiagnosticTrace.Record("TX", request);
             while (true)

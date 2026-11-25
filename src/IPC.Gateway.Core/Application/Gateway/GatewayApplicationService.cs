@@ -235,6 +235,7 @@ public sealed class GatewayApplicationService : IGatewayApplicationService
         command ??= new WriteTagCommand();
         WriteTagRequest request = new WriteTagRequest
         {
+            Origin = "WebApi",
             ChannelId = command.ChannelId ?? string.Empty,
             DeviceId = command.DeviceId ?? string.Empty,
             GroupId = command.GroupId ?? string.Empty,

@@ -18,6 +18,8 @@
 using IPC.Gateway.Core.Gateway;
 using IPC.Gateway.Core.Infrastructure;
 using IPC.Gateway.FlowRules;
+using IPC.Gateway.HighAvailability;
+using IPC.Gateway.WebHost.HighAvailability;
 using IPC.Gateway.Inference;
 using IPC.Gateway.Scripting;
 using IPC.Gateway.Scripting.Abstractions;
@@ -29,7 +31,15 @@ using System.Security.Claims;
 using System.Diagnostics;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
+if (args.FirstOrDefault()=="--prepare-driver-trust")
+{
+    if (args.Length!=4) throw new ArgumentException("需要传入原始 ZIP、旧程序目录及原更新数据目录。");
+    int count=GatewayUpdatePackageService.PrepareOfflineDriverTrust(args[1],args[2],args[3]);
+    Console.WriteLine($"已校验安装包及待发布文件，继承 {count} 项已有驱动信任。");
+    return;
+}
 long hostStartupTimestamp = Stopwatch.GetTimestamp();
 string startupContentRoot = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : Directory.GetCurrentDirectory();
 string startupWebRoot = GatewayWebRoot.PrepareBeforeBuilder(startupContentRoot, AppContext.BaseDirectory);
@@ -38,8 +48,21 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args,
     WebRootPath = startupWebRoot
 });
-builder.Host.UseWindowsService(options => options.ServiceName = "IPCGateway");
+builder.Host.UseWindowsService(options => options.ServiceName =
+    string.IsNullOrWhiteSpace(builder.Configuration["Gateway:Maintenance:Updates:ServiceName"])
+        ? "IPCGateway" : builder.Configuration["Gateway:Maintenance:Updates:ServiceName"]!);
 builder.Host.UseSystemd();
+var embeddedMember = EmbeddedGatewayMember.Configure(builder.Configuration);
+builder.Services.AddSingleton(_ => embeddedMember);
+if (embeddedMember.Enabled)
+    builder.Services.AddHostedService<EmbeddedMemberWorker>();
+else if (Environment.GetEnvironmentVariable("IPC_GATEWAY_HA_CONFIG") is { Length: > 0 } haFile)
+{
+    // The installer owns this machine-specific overlay. Site environment overrides
+    // retain their usual precedence over files.
+    builder.Configuration.AddJsonFile(Path.GetFullPath(haFile), optional:false, reloadOnChange:false)
+        .AddEnvironmentVariables();
+}
 
 GatewayIndustrialSecurityOptions securityOptions = GatewayIndustrialSecurityOptions.FromConfiguration(builder.Configuration);
 GatewayUpdateMaintenanceOptions updateOptions = GatewayUpdateMaintenanceOptions.FromConfiguration(builder.Configuration);
@@ -71,6 +94,9 @@ builder.Services.AddSingleton<GatewayApiTokenService>();
 builder.Services.AddSingleton<GatewayUpdatePackageService>();
 builder.Services.AddSingleton<GatewayWatchdogConfigurationStore>();
 builder.Services.AddSingleton<GatewayAuthService>();
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<GatewayLoginCaptchaService>();
+builder.Services.AddSingleton<GatewaySensitiveOperationService>();
 builder.Services.AddSingleton<GatewayMetricsCollector>();
 builder.Services.AddSingleton<GatewayMetricsInstrumentation>();
 builder.Services.AddSingleton<GatewayProtocolCatalogService>();
@@ -79,9 +105,20 @@ builder.Services.AddSingleton<GatewayTagBulkService>();
 builder.Services.AddSingleton<GatewayProjectBackupService>();
 builder.Services.AddSingleton<GatewayCompatibilityService>();
 builder.Services.AddSingleton<GatewayRuntimeEventHub>();
+builder.Services.AddHostedService<HaRoleEvents>();
+builder.Services.AddHostedService<HaEnrollmentWorker>();
+builder.Services.AddSingleton<HaHistoryReplica>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HaHistoryReplica>());
+builder.Services.AddGatewayHighAvailability(builder.Configuration);
+builder.Services.AddSingleton<HaDraftStore>();
+builder.Services.AddSingleton<HaManagementService>();
+builder.Services.AddSingleton<HaTransportManagementService>();
+builder.Services.AddSingleton<HaDisasterTakeoverService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HaDisasterTakeoverService>());
 builder.Services.AddSingleton<GatewayHistoryQueries>();
 builder.Services.AddSingleton<GatewayStartupState>();
 builder.Services.AddHostedService<GatewayRuntimeHostedService>();
+builder.Services.AddHostedService<SharedArtifactSynchronization>();
 builder.Services.AddSingleton<IScriptSecretProtector, GatewayScriptSecretProtector>();
 builder.Services.AddSingleton<IScriptTagAccessor, GatewayScriptTagAccessor>();
 // The runtime coordinator resolves these workers only after HTTP is listening and the project is loaded.
@@ -246,9 +283,14 @@ app.Use(async (context, next) =>
 });
 
 
+app.UseMiddleware<HaBusinessMiddleware>();
+app.UseMiddleware<GatewaySensitiveOperationMiddleware>();
+app.MapHaManagement();
 app.MapGatewayAuthEndpoints();
+app.MapGatewaySensitiveAuthEndpoints();
 app.MapGatewaySecurityEndpoints();
 app.MapGatewayHealthEndpoints();
+app.MapGatewayOpcUaHealthEndpoints();
 app.MapGatewayMetricsEndpoints(observabilityOptions);
 app.MapGatewayConfigurationEndpoints();
 app.MapAcquisitionDiagnosticsEndpoints();
@@ -259,6 +301,7 @@ app.MapRuleReplayEndpoints();
 app.MapTagPreflightEndpoints();
 app.MapGatewayCommercialEndpoints();
 app.MapGatewayUpdateEndpoints();
+app.MapGatewayUpdateWorkerEndpoints();
 app.MapGatewayWatchdogEndpoints();
 app.MapGatewayScriptEndpoints();
 app.MapGatewayModelEndpoints();
