@@ -30,6 +30,10 @@ IPC Gateway 面向制造业现场，连接 PLC、仪表和上位系统，将设�
 
 - 网关在线升级
 
+- 双机热备、防双主、主备仲裁
+
+- Nginx\HAProxy反向代理，WebAPI和OPC UA Server支持统一通过代理发布
+
 - 在线技术支持
 
 ## 系统能力
